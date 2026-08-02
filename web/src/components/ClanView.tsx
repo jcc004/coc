@@ -90,7 +90,7 @@ function RosterTable({ members }: { members: ClanMember[] }) {
 
   const [sortKey, setSortKey] = useState<RosterSortKey>('clanRank')
   const [ascending, setAscending] = useState(true)
-  const [limit, setLimit] = useRowLimit('coc:rosterLimit', 20)
+  const [limit, setLimit] = useRowLimit('coc:rosterLimit', 10)
   const [page, setPage] = useState(1)
   const [thFilter, setThFilter] = useState('')
   const [ownerFilter, setOwnerFilter] = useState('')
@@ -488,16 +488,6 @@ function RosterTable({ members }: { members: ClanMember[] }) {
           </select>
         </label>
 
-        <RowLimitSelect
-          id="roster-rows"
-          options={[20, 50]}
-          value={limit}
-          onChange={(next) => {
-            setLimit(next)
-            setPage(1)
-          }}
-        />
-
         {filtersActive ? (
           <button
             type="button"
@@ -593,9 +583,23 @@ function RosterTable({ members }: { members: ClanMember[] }) {
 
       {view.rows.length === 0 ? (
         <p className="empty-hint">No members match those filters.</p>
-      ) : (
+      ) : null}
+
+      {/* Under the table, beside the pager: the two controls answer the same
+          question ("what am I looking at, and how do I see the rest"), and the
+          count is what you reach for once you have scrolled to the bottom. */}
+      <div className="roster-footer">
+        <RowLimitSelect
+          id="roster-rows"
+          options={[5, 10, 20, 50]}
+          value={limit}
+          onChange={(next) => {
+            setLimit(next)
+            setPage(1)
+          }}
+        />
         <Pager view={view} noun="members" onPage={setPage} />
-      )}
+      </div>
 
       <datalist id={OWNER_LIST_ID}>
         {ownerNames.map((name) => (

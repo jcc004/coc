@@ -394,11 +394,24 @@ select {
 .roster-filters input {
   min-width: 140px;
 }
-/* RowLimitSelect carries its own inline label, so it aligns to the inputs rather
-   than to the taller stacked labels beside it. */
-.roster-filters .row-limit {
-  align-self: flex-end;
-  padding-bottom: 6px;
+/* Row count and pager share a bar under the table: both answer "what am I
+   looking at, and how do I see the rest". */
+.roster-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--grid);
+}
+/* The footer already draws the rule and the spacing, so the pager must not
+   draw them again. */
+.roster-footer .pager {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 
 .pager {
