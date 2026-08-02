@@ -1,36 +1,42 @@
-import { useSyncExternalStore } from 'react'
-import { normalizeTag } from '@coc/shared'
+import {
+  normalizeTag,
+  type OwnerBulkResponse,
+  type OwnerBulkRow,
+  type OwnerRecord,
+} from '@coc/shared'
+import { api } from './api.ts'
+import { createServerStore, type StoreSnapshot } from './server-store.ts'
 
 /**
- * Who owns which base. Purely local bookkeeping keyed by player tag — the API
- * has no concept of it, so nothing else in the app can supply or overwrite it.
- */
-export interface OwnerAssignment {
-  /** Canonical `#TAG`. The primary key. */
-  tag: string
-  /** Always non-empty: clearing an owner removes the entry outright. */
-  owner: string
-  /** ISO timestamp of the last edit. */
-  updatedAt?: string
-}
-
-const KEY = 'coc:owners'
-
-/**
- * The pre-migration saved-bases key. Read once, when `coc:owners` does not
- * exist yet, and never written — leaving it intact means an older build of the
- * app (or a mistaken migration) still has the original data to fall back on.
- */
-const LEGACY_KEY = 'coc:saved'
-
-/**
- * Extracts owner assignments from the old `coc:saved` payload, which stored a
- * whole curated player list (name, TH, trophies, clan, owner) of which only the
- * owner survives. Entries with no owner carried no local information, so they
- * are dropped rather than migrated as blanks.
+ * Who owns which base, keyed by player tag.
  *
- * Pure on purpose: it is the one piece of the store that has to be testable, and
- * it has to survive whatever is actually sitting in localStorage.
+ * **Shared, not per-browser.** This used to be `localStorage` under `coc:owners`,
+ * which meant the same person saw different answers on their phone and ten people
+ * saw ten different answers full stop. It is now one row per player tag on the
+ * server, so "who owns this base" has a single canonical answer — which is the
+ * point, and also why every write has to cope with somebody else having got there
+ * first (see `applyOwners`).
+ *
+ * The exported shape is deliberately the same as before — `useOwners`, `ownerFor`,
+ * `setOwner`, `clearOwner`, `knownOwners` — so the components barely changed. What
+ * did change is that the writes are async and can fail.
+ */
+
+/** A local alias, so existing imports keep reading the same. */
+export type OwnerAssignment = OwnerRecord
+
+/**
+ * The pre-server `coc:saved` payload. Read once, during the one-time import, and
+ * never written — leaving it intact means nothing is destroyed by a migration that
+ * turns out to be wrong.
+ *
+ * It extracts owner assignments from the old shape, which stored a whole curated
+ * player list (name, TH, trophies, clan, owner) of which only the owner survives.
+ * Entries with no owner carried no local information, so they are dropped rather
+ * than migrated as blanks.
+ *
+ * Pure on purpose: it has to survive whatever is actually sitting in localStorage,
+ * so it is the one piece of this that can be unit tested.
  */
 export function migrateLegacySaved(rawJson: string | null): OwnerAssignment[] {
   if (rawJson === null) return []
@@ -76,108 +82,74 @@ export function migrateLegacySaved(rawJson: string | null): OwnerAssignment[] {
   return migrated
 }
 
-/*
- * Same module-level external store as `saved-clans.ts`, and for the same reason:
- * the clan roster reads owners while the bulk bar writes them, and every
- * subscriber has to see one snapshot immediately.
- */
+const store = createServerStore<OwnerAssignment>(async () => (await api.owners()).owners)
 
-function read(): OwnerAssignment[] {
-  try {
-    const stored = localStorage.getItem(KEY)
-
-    if (stored === null) {
-      const migrated = migrateLegacySaved(localStorage.getItem(LEGACY_KEY))
-      if (migrated.length > 0) localStorage.setItem(KEY, JSON.stringify(migrated))
-      return migrated
-    }
-
-    const parsed: unknown = JSON.parse(stored)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (entry): entry is OwnerAssignment =>
-        typeof entry === 'object' &&
-        entry !== null &&
-        typeof (entry as OwnerAssignment).tag === 'string' &&
-        typeof (entry as OwnerAssignment).owner === 'string',
-    )
-  } catch {
-    return []
-  }
-}
-
-let snapshot: OwnerAssignment[] = read()
-const listeners = new Set<() => void>()
-
-function emit() {
-  for (const listener of listeners) listener()
-}
-
-function commit(next: OwnerAssignment[]) {
-  snapshot = next
-  localStorage.setItem(KEY, JSON.stringify(next))
-  emit()
-}
-
-// Another tab editing owners should not leave this one stale. Guarded so the
-// module stays importable outside a browser, which is how the migration above
-// gets unit tested.
-if (typeof window !== 'undefined') {
-  window.addEventListener('storage', (event) => {
-    if (event.key === KEY) {
-      snapshot = read()
-      emit()
-    }
-  })
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
-
+/** The entries alone, which is all most callers want. */
 export function useOwners(): OwnerAssignment[] {
-  return useSyncExternalStore(
-    subscribe,
-    () => snapshot,
-    () => snapshot,
-  )
+  return store.use().entries
+}
+
+/** Loading and error state, for the places that have to report it. */
+export function useOwnersState(): StoreSnapshot<OwnerAssignment> {
+  return store.use()
 }
 
 export function ownerFor(tag: string): string | undefined {
   const canonical = normalizeTag(tag)
-  return snapshot.find((entry) => entry.tag === canonical)?.owner
+  return store.peek().find((entry) => entry.tag === canonical)?.owner
 }
 
-/** Assigns an owner. A blank owner clears the entry rather than storing `""`. */
-export function setOwner(tag: string, owner: string): void {
-  const trimmed = owner.trim()
-  if (!trimmed) {
-    clearOwner(tag)
-    return
-  }
-
+/**
+ * Assigns one owner. A blank owner clears the entry rather than storing `""`.
+ *
+ * It goes through the same expected-value check as a bulk apply, using whatever
+ * this browser currently believes — so a single edit is no more able to clobber
+ * somebody else's change than a bulk one is. Rejects if the server refused.
+ */
+export async function setOwner(tag: string, owner: string): Promise<void> {
   const canonical = normalizeTag(tag)
-  const next: OwnerAssignment = {
-    tag: canonical,
-    owner: trimmed,
-    updatedAt: new Date().toISOString(),
-  }
+  const expectedOwner = ownerFor(canonical) ?? ''
 
-  commit(
-    snapshot.some((entry) => entry.tag === canonical)
-      ? snapshot.map((entry) => (entry.tag === canonical ? next : entry))
-      : [...snapshot, next],
+  const result = await store.mutate(() =>
+    api.applyOwners([{ tag: canonical, owner: owner.trim(), expectedOwner }]),
   )
+
+  const conflict = result.conflicts[0]
+  if (conflict) {
+    throw new Error(
+      `${canonical} was changed by someone else — it now reads "${conflict.currentOwner || '(none)'}". Nothing was written.`,
+    )
+  }
 }
 
-export function clearOwner(tag: string): void {
-  const canonical = normalizeTag(tag)
-  if (!snapshot.some((entry) => entry.tag === canonical)) return
-  commit(snapshot.filter((entry) => entry.tag !== canonical))
+export async function clearOwner(tag: string): Promise<void> {
+  await setOwner(tag, '')
+}
+
+/** Removes an assignment outright, whatever its current value. */
+export async function deleteOwner(tag: string): Promise<void> {
+  await store.mutate(() => api.removeOwner(tag))
+}
+
+/**
+ * The bulk path. Returns the server's verdict — applied, cleared, and the rows it
+ * refused because the expected value was stale — for the caller to put back in
+ * front of the user.
+ */
+export async function applyOwners(rows: OwnerBulkRow[]): Promise<OwnerBulkResponse> {
+  return store.mutate(() => api.applyOwners(rows))
 }
 
 /** Every distinct owner already in use — powers the datalist on the owner input. */
 export function knownOwners(): string[] {
-  return [...new Set(snapshot.map((entry) => entry.owner))].sort()
+  return [...new Set(store.peek().map((entry) => entry.owner))].sort()
+}
+
+export function reloadOwners(): Promise<void> {
+  return store.load()
+}
+
+/** Dropped on sign-out, so a shared machine hands nothing to the next person. */
+export function resetOwners(): void {
+  store.reset()
 }

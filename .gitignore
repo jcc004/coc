@@ -5,6 +5,8 @@ dist/
 web/public/coc/
 .env
 .env.local
+# SQLite auth database (DATABASE_PATH, default ./data/coc.db) — real accounts.
+data/
 *.log
 .DS_Store
 .vite/

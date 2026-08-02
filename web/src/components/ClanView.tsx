@@ -4,7 +4,7 @@ import { api } from '../api.ts'
 import { labelIcon } from '../coc-assets.ts'
 import { formatFull, formatStat, humanizeCamel, ratio } from '../format.ts'
 import { hrefFor, useAsync, type Recent } from '../hooks.ts'
-import { knownOwners, setOwner, useOwners } from '../owners.ts'
+import { applyOwners, knownOwners, useOwners, useOwnersState } from '../owners.ts'
 import { removeClan, saveClan, useSavedClans } from '../saved-clans.ts'
 import {
   planOwnerChange,
@@ -23,29 +23,47 @@ const OWNER_LIST_ID = 'known-owners'
 
 function SaveToggle({ clan }: { clan: Clan }) {
   const saved = useSavedClans().some((entry) => entry.tag === clan.tag)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+
+  async function toggle() {
+    setBusy(true)
+    setProblem(null)
+    try {
+      if (saved) {
+        await removeClan(clan.tag)
+      } else {
+        await saveClan({
+          tag: clan.tag,
+          name: clan.name,
+          clanLevel: clan.clanLevel,
+          members: clan.members,
+          warLeague: clan.warLeague?.name,
+          clanPoints: clan.clanPoints,
+        })
+      }
+    } catch (cause) {
+      // The list is shared and the write goes to the server, so a failure must
+      // not leave the star looking as though it stuck.
+      setProblem(cause instanceof Error ? cause.message : 'Could not save that.')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
-    <button
-      type="button"
-      className="icon-button"
-      style={{ marginBottom: 10 }}
-      onClick={() => {
-        if (saved) {
-          removeClan(clan.tag)
-        } else {
-          saveClan({
-            tag: clan.tag,
-            name: clan.name,
-            clanLevel: clan.clanLevel,
-            members: clan.members,
-            warLeague: clan.warLeague?.name,
-            clanPoints: clan.clanPoints,
-          })
-        }
-      }}
-    >
-      {saved ? '★ Saved' : '☆ Save'}
-    </button>
+    <>
+      <button
+        type="button"
+        className="icon-button"
+        style={{ marginBottom: 10 }}
+        disabled={busy}
+        onClick={() => void toggle()}
+      >
+        {busy ? '…' : saved ? '★ Saved' : '☆ Save'}
+      </button>
+      {problem ? <p className="notice__hint">{problem}</p> : null}
+    </>
   )
 }
 

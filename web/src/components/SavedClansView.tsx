@@ -241,14 +241,6 @@ export function SavedClansView() {
   return (
     <>
       <section className="card">
-        <h2 className="section-title">Add a saved clan</h2>
-        <AddForm />
-        <p className="empty-hint" style={{ marginTop: 8, fontSize: 13 }}>
-          Blank display name uses the in-game clan name.
-        </p>
-      </section>
-
-      <section className="card">
         <div className="card-header">
           <h2 className="section-title" style={{ margin: 0 }}>
             Saved clans{clans.length > 0 ? ` · ${clans.length}` : ''}
@@ -282,7 +274,7 @@ export function SavedClansView() {
 
         {clans.length === 0 ? (
           <p className="empty-hint">
-            No clans saved yet. Add a tag above, or open any clan and press <strong>Save</strong>.
+            No clans saved yet. Add a tag below, or open any clan and press <strong>Save</strong>.
           </p>
         ) : (
           <>
@@ -322,6 +314,14 @@ export function SavedClansView() {
             </p>
           </>
         )}
+      </section>
+
+      <section className="card">
+        <h2 className="section-title">Add a saved clan</h2>
+        <AddForm />
+        <p className="empty-hint" style={{ marginTop: 8, fontSize: 13 }}>
+          Blank display name uses the in-game clan name.
+        </p>
       </section>
     </>
   )

@@ -1,127 +1,60 @@
-import { useSyncExternalStore } from 'react'
-import { normalizeTag } from '@coc/shared'
+import { normalizeTag, type SavedClanInput, type SavedClanRecord } from '@coc/shared'
+import { api } from './api.ts'
+import { createServerStore, type StoreSnapshot } from './server-store.ts'
 
-export interface SavedClan {
-  /** Canonical `#TAG`. The primary key. */
-  tag: string
-  /** Label shown in the list. Defaults to the in-game name. */
-  name: string
-  /** Set once the user renames, so refresh stops overwriting their label. */
-  custom?: boolean
-  clanLevel?: number
-  members?: number
-  warLeague?: string
-  clanPoints?: number
-  /** ISO timestamp of the last successful refresh. */
-  updatedAt?: string
-}
-
-const KEY = 'coc:savedClans'
-
-/*
- * Same shape as the saved-players store in `saved.ts`, and for the same reason:
- * the save button on a clan profile and the saved list live in different
- * subtrees and must agree immediately.
+/**
+ * The saved clan list — one list for the whole install, on the server.
+ *
+ * It was `localStorage` under `coc:savedClans`, which made "the saved clans" a
+ * per-browser opinion. It is now shared for the same reason owners are: ten people
+ * curating ten private lists is not a list, it is ten of them.
+ *
+ * A rename marks the row `custom` server-side, so `Refresh all` cannot undo
+ * somebody else's label — the same rule as before, just enforced in one place
+ * instead of once per browser.
  */
 
-function read(): SavedClan[] {
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(KEY) ?? '[]')
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (entry): entry is SavedClan =>
-        typeof entry === 'object' && entry !== null && typeof (entry as SavedClan).tag === 'string',
-    )
-  } catch {
-    return []
-  }
-}
+/** A local alias, so existing imports keep reading the same. */
+export type SavedClan = SavedClanRecord
 
-let snapshot: SavedClan[] = read()
-const listeners = new Set<() => void>()
-
-function emit() {
-  for (const listener of listeners) listener()
-}
-
-function commit(next: SavedClan[]) {
-  snapshot = next
-  localStorage.setItem(KEY, JSON.stringify(next))
-  emit()
-}
-
-// Another tab editing the list should not leave this one stale.
-window.addEventListener('storage', (event) => {
-  if (event.key === KEY) {
-    snapshot = read()
-    emit()
-  }
-})
-
-function subscribe(listener: () => void) {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
+const store = createServerStore<SavedClan>(async () => (await api.savedClans()).clans)
 
 export function useSavedClans(): SavedClan[] {
-  return useSyncExternalStore(
-    subscribe,
-    () => snapshot,
-    () => snapshot,
-  )
+  return store.use().entries
+}
+
+export function useSavedClansState(): StoreSnapshot<SavedClan> {
+  return store.use()
 }
 
 export function isClanSaved(tag: string): boolean {
   const canonical = normalizeTag(tag)
-  return snapshot.some((entry) => entry.tag === canonical)
+  return store.peek().some((entry) => entry.tag === canonical)
 }
 
-/** Inserts, or merges into an existing entry without clobbering a custom name. */
-export function saveClan(entry: SavedClan): void {
-  const tag = normalizeTag(entry.tag)
-  const existing = snapshot.find((saved) => saved.tag === tag)
-
-  const merged: SavedClan = {
-    ...existing,
-    ...entry,
-    tag,
-    name: existing?.custom ? existing.name : entry.name,
-    custom: existing?.custom ?? entry.custom,
-    updatedAt: new Date().toISOString(),
-  }
-
-  commit(
-    existing ? snapshot.map((saved) => (saved.tag === tag ? merged : saved)) : [...snapshot, merged],
-  )
+/** Inserts, or refreshes an existing entry without clobbering a custom name. */
+export async function saveClan(entry: SavedClanInput): Promise<void> {
+  await store.mutate(() => api.saveClan(entry))
 }
 
-export function removeClan(tag: string): void {
-  const canonical = normalizeTag(tag)
-  commit(snapshot.filter((entry) => entry.tag !== canonical))
+export async function removeClan(tag: string): Promise<void> {
+  await store.mutate(() => api.removeClan(tag))
 }
 
 /**
- * Applies a user edit. A changed name is marked `custom` so `Refresh all` stops
- * overwriting it.
+ * Applies a user edit. A changed name marks the row `custom`, which is what stops
+ * `Refresh all` overwriting it.
  */
-export function updateClan(tag: string, patch: { name?: string }): void {
-  const canonical = normalizeTag(tag)
+export async function updateClan(tag: string, patch: { name?: string }): Promise<void> {
+  const name = patch.name?.trim()
+  if (!name) return
+  await store.mutate(() => api.renameClan(tag, name))
+}
 
-  commit(
-    snapshot.map((entry) => {
-      if (entry.tag !== canonical) return entry
+export function reloadSavedClans(): Promise<void> {
+  return store.load()
+}
 
-      const next: SavedClan = { ...entry }
-
-      if (patch.name !== undefined) {
-        const trimmed = patch.name.trim()
-        if (trimmed && trimmed !== entry.name) {
-          next.name = trimmed
-          next.custom = true
-        }
-      }
-
-      return next
-    }),
-  )
+export function resetSavedClans(): void {
+  store.reset()
 }

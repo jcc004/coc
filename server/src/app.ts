@@ -1,16 +1,43 @@
 import { Hono } from 'hono'
-import { InvalidTagError, type ApiErrorResponse } from '@coc/shared'
+import { InvalidTagError } from '@coc/shared'
+import {
+  requireAdmin,
+  requireAuth,
+  withSession,
+  type AuthEnv,
+} from './auth/middleware.ts'
+import { mountAuthRoutes } from './auth/routes.ts'
+import { createLoginLimiter, type LoginLimiter } from './auth/rate-limit.ts'
+import type { AuthStore } from './auth/store.ts'
 import { TtlCache } from './cache.ts'
+import { mountChatRoutes } from './chat/routes.ts'
+import type { ChatStore } from './chat/store.ts'
 import { CocApiError, type CocClient } from './coc-client.ts'
+import { errorBody } from './http.ts'
+import { mountSharedDataRoutes } from './shared-data/routes.ts'
+import type { SharedDataStore } from './shared-data/store.ts'
 
 export interface AppDeps {
   coc: CocClient
   cache: TtlCache
+  auth: AuthStore
+  chat: ChatStore
+  /** Saved clans and owner assignments — shared across every account. */
+  sharedData: SharedDataStore
+  /** Injectable so tests can trip the lockout in a few requests. */
+  loginLimiter?: LoginLimiter
+  /** `Secure` on the session cookie. Derive it with `cookieSecureFromEnv`. */
+  cookieSecure?: boolean
 }
 
-function errorBody(status: number, reason: string, message: string, hint?: string): ApiErrorResponse {
-  return { error: { status, reason, message, ...(hint ? { hint } : {}) } }
-}
+/**
+ * Routes that answer without a session. Everything else under `/api/` is denied
+ * to anonymous callers by default — deny-by-default because the whole point of
+ * this layer is that an unauthenticated `/api/*` is a free proxy onto a
+ * rate-limited Supercell token, and a route added later must not be able to
+ * become a hole by omission.
+ */
+const PUBLIC_API_PATHS = new Set(['/api/health', '/api/auth/login', '/api/auth/logout'])
 
 function positiveInt(raw: string | undefined): number | undefined {
   if (!raw) return undefined
@@ -18,10 +45,40 @@ function positiveInt(raw: string | undefined): number | undefined {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
 }
 
-export function createApp({ coc, cache }: AppDeps) {
-  const app = new Hono()
+export function createApp({
+  coc,
+  cache,
+  auth,
+  chat,
+  sharedData,
+  loginLimiter,
+  cookieSecure = false,
+}: AppDeps) {
+  const app = new Hono<AuthEnv>()
 
-  app.get('/api/health', (c) => c.json({ ok: true, cachedEntries: cache.size }))
+  // Order matters: middleware only runs ahead of a handler if it was registered
+  // first, so both gates go on before any route.
+  app.use('/api/*', withSession(auth))
+  app.use('/api/*', async (c, next) =>
+    PUBLIC_API_PATHS.has(c.req.path) ? next() : requireAuth(c, next),
+  )
+  app.use('/api/admin/*', requireAdmin)
+
+  mountAuthRoutes(app, auth, {
+    limiter: loginLimiter ?? createLoginLimiter(),
+    cookieSecure,
+  })
+
+  mountChatRoutes(app, chat)
+
+  mountSharedDataRoutes(app, sharedData)
+
+  // Public so a host's liveness probe can reach it, but the cache size is an
+  // internal detail an anonymous caller has no business seeing.
+  app.get('/api/health', (c) => {
+    const user = c.get('user')
+    return c.json(user ? { ok: true, cachedEntries: cache.size } : { ok: true })
+  })
 
   app.get('/api/players/:tag', async (c) => {
     const tag = c.req.param('tag')

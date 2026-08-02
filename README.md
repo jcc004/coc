@@ -8,14 +8,19 @@ component library. The API token stays on the server; the browser only ever talk
 
 ## Setup
 
+Needs **Node ≥ 22.5** — that is where `node:sqlite` arrives, which is what stores the accounts.
+
 ```sh
 npm install
 cp .env.example .env      # then paste your token into COC_API_TOKEN
-npm run dev
+
+# First run only: create the admin account. Nothing can sign in without this.
+ADMIN_USERNAME=you ADMIN_PASSWORD='a long throwaway you will change' npm run dev
 ```
 
-`npm run dev` starts the API on <http://localhost:8787> and the UI on
-<http://localhost:5173>. Vite proxies `/api` to the server, so open the Vite URL.
+After that first start, drop `ADMIN_PASSWORD` again and just `npm run dev`. The API is on
+<http://localhost:8787> and the UI on <http://localhost:5173>; Vite proxies `/api` to the
+server, so open the Vite URL and sign in.
 
 Get a token from <https://developer.clashofclans.com/#/account>.
 
@@ -28,14 +33,171 @@ leaving you to guess, because it is by far the most common failure.
 
 This is also the thing to solve before deploying anywhere: you need a static egress IP (a
 small VPS, or a proxy with a fixed address), because most PaaS hosts rotate outbound IPs.
+See [Deployment](#deployment).
+
+## Authentication
+
+**Why it exists.** The Supercell token lives server-side and is rate-limited *per token*. An
+open `/api/*` on the public internet is therefore a free proxy onto that budget — anyone who
+finds the URL can spend it, and Supercell throttles the key, not the caller. Authentication
+here is not a login form for decoration; it is what protects the token.
+
+### The model
+
+- **Server-side sessions, not JWT.** A session is a row in SQLite keyed by a 256-bit opaque
+  token (32 random bytes, base64url) in an `HttpOnly` cookie. With ten users the row costs
+  nothing and buys the thing a JWT cannot: **instant revocation**. Sign-out, a password
+  change, and disabling an account all take effect on the next request, because the check is a
+  lookup rather than a signature over a claim that stays valid until it expires. There is no
+  refresh-token dance and no key rotation to get wrong.
+- **Cookie**: `HttpOnly` (JavaScript cannot read the token, so an XSS bug cannot exfiltrate a
+  session), `SameSite=Lax` (the browser withholds it on cross-site POSTs, which is the CSRF
+  defence for every state-changing route), `Path=/`, and `Secure` whenever
+  `NODE_ENV=production` or `COOKIE_SECURE=true` — conditional only so plain-http localhost
+  still receives it.
+- **Expiry** is 30 days, slid forward on every authenticated request. An expired session is
+  rejected *and* deleted; a background sweep every hour keeps the table from growing.
+- **Passwords**: `scryptSync` with a 16-byte per-user random salt, compared with
+  `timingSafeEqual`. Cost is N = 2^15, r = 8, p = 1 (32 MiB, ~40 ms per hash on a laptop) and
+  the parameters are stored inside the hash string, so N can be raised later without
+  invalidating existing hashes. The reasoning for not using OWASP's N = 2^17 is in the comment
+  at the top of `server/src/auth/passwords.ts`. No plaintext password is logged, returned, or
+  stored.
+- **No open registration.** A public signup form for a ten-person tool is a liability. The
+  first admin comes from `ADMIN_USERNAME` / `ADMIN_PASSWORD`, applied **only when the `users`
+  table is empty** — which is what makes it idempotent: restart with the vars still set and it
+  finds a user and does nothing, so it can never reset a password you have since changed. With
+  no users *and* no credentials configured it logs a loud message and leaves the app unusable,
+  rather than falling back to a default password that is by definition already public.
+- **Failed login is not an oracle.** Unknown username, wrong password, and disabled account
+  return the identical 401 body, and the unknown-username path hashes against a decoy record
+  so it does the same scrypt work — otherwise the response time alone would tell an attacker
+  which usernames exist.
+- **Login is rate-limited** in memory (one process, ten users), with two independent buckets:
+  5 failures per username and 30 per client IP, each locking for 15 minutes. There is
+  deliberately no global counter — the worst failure mode for a tool with one admin is
+  everybody being locked out at once. The IP bucket is the loose one because a whole household
+  can share an address, and because behind an HTTPS terminator the address comes from
+  `X-Forwarded-For`, which is spoofable by anyone reaching the app directly; the username
+  bucket carries the real protection. With no usable address at all the IP bucket is skipped
+  rather than pooling every caller under one key — a shared key *is* a whole-app lockout.
+
+### Routes
+
+`/api/*` is **deny-by-default**: `server/src/app.ts` names `/api/health`, `/api/auth/login`
+and `/api/auth/logout` as the only public paths and requires a session for everything else, so
+a route added later cannot become a hole by omission.
+
+| Route | Who |
+|---|---|
+| `POST /api/auth/login` | anyone (rate-limited) |
+| `POST /api/auth/logout` | anyone; idempotent, clears the cookie either way |
+| `GET /api/auth/me` | signed in — the UI's boot probe |
+| `POST /api/auth/password` | signed in; re-checks the current password, then revokes every *other* session |
+| `GET /api/admin/users` | admin |
+| `POST /api/admin/users` | admin — `{ username, password, role }` |
+| `POST /api/admin/users/:id/disable` | admin — `{ disabled }`, so it re-enables too |
+
+Disabling an account deletes its sessions immediately. An admin cannot disable themselves,
+because with one admin that would leave nobody able to undo it.
+
+### The UI
+
+The app shell is not rendered until `GET /api/auth/me` answers; a 401 renders the login screen
+*instead of* the shell, so no panel gets to fire a request and paint its own 401. A **global
+401 handler** in `web/src/api.ts` (`setUnauthorizedHandler`, wired up by `web/src/session.ts`)
+means a session expiring in an open tab drops you back to the login screen rather than
+surfacing as a confusing error inside a data panel. The topbar shows your username — it links
+to `#/account`, which holds the password-change form and, for admins only, the user list —
+plus a **Sign out** button. Nothing is kept in `localStorage`: the cookie is the whole
+mechanism.
+
+### Storage
+
+One SQLite file, `DATABASE_PATH` (default `./data/coc.db`, resolved against the server
+workspace's working directory, so `npm run dev` puts it at `server/data/coc.db` — gitignored).
+The directory is created if missing. Two tables, `users` and `sessions`, created idempotently
+on boot; `users.username` is `COLLATE NOCASE`, so uniqueness and lookups are both
+case-insensitive.
+
+`node:sqlite` is used rather than `better-sqlite3` because it is in the runtime from Node 22.5
+on: no native module, nothing to compile on the host, nothing to rebuild when Node is
+upgraded. The cost is an `ExperimentalWarning` on every start. If that ever becomes a real
+problem — noisy logs, or a Node release changing the API — the swap is `better-sqlite3`, whose
+synchronous API is the same shape, and only `server/src/db.ts` and the `prepare/run/get/all`
+calls in `server/src/auth/store.ts` would change.
+
+### New environment variables
+
+All optional except the bootstrap pair on a fresh database. Full comments in `.env.example`.
+
+| Variable | Default | Does |
+|---|---|---|
+| `DATABASE_PATH` | `./data/coc.db` | SQLite file for users and sessions; directory created if absent |
+| `ADMIN_USERNAME` | — | First admin's username. Read only when `users` is empty |
+| `ADMIN_PASSWORD` | — | First admin's password, minimum 12 characters. Remove after the first boot |
+| `COOKIE_SECURE` | off | Forces `Secure` on the session cookie when you terminate TLS but do not set `NODE_ENV` |
+| `NODE_ENV` | — | `production` implies `COOKIE_SECURE` |
+
+### Where image upload will attach
+
+Upload is **not built**. The seam for it is `requireAuth`, exported from
+`server/src/auth/middleware.ts`, which reads only context state and so mounts anywhere:
+
+```ts
+app.post('/api/uploads', requireAuth, handler)   // already denied to anonymous callers anyway
+```
+
+Three things that must be decided when it is built, none of which this layer does for you:
+
+1. **A body-size limit before accepting any body** — Hono's `bodyLimit` middleware, mounted on
+   the upload route *ahead* of the handler. Without it, an authenticated user can exhaust the
+   host's disk or memory with one request.
+2. **Per-user scoping.** Files belong to `users.id`, both in the path on disk and in whatever
+   table indexes them, and a read must check ownership rather than trusting an id in the URL.
+   `users.id` is a plain integer primary key precisely so this can FK to it
+   (`user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE`, as `sessions` already
+   does).
+3. **Storage location on the host** — the same persistent volume as the database, or object
+   storage; the container filesystem is not it.
+
+## Deployment
+
+What the host actually has to provide:
+
+- **A persistent volume for the SQLite file.** Point `DATABASE_PATH` at an absolute path on it
+  (`/data/coc.db`). On an ephemeral filesystem every restart wipes the accounts and the
+  bootstrap runs again — which is also the one case where `ADMIN_PASSWORD` lingering in the
+  environment would silently recreate the admin.
+- **A static egress IP.** Supercell binds the API key to the IP addresses you name when you
+  create it, so the app's *outbound* address must be fixed. Most PaaS hosts rotate outbound
+  IPs, which is why this wants a small VPS or a fixed-address proxy. Symptom of getting it
+  wrong: every upstream call returns 403 `accessDenied`.
+- **HTTPS termination in front of the app.** The session cookie is sent with `Secure` in
+  production, and a browser will not return a `Secure` cookie over plain http — so on http the
+  app appears to accept your login and then immediately forget it. It is also the only thing
+  stopping the session token being readable on the wire.
+- **`NODE_ENV=production`**, which is what turns that flag on (or `COOKIE_SECURE=true` if you
+  terminate TLS but do not set `NODE_ENV`).
+- **`ADMIN_USERNAME` / `ADMIN_PASSWORD` for exactly one boot**, then remove `ADMIN_PASSWORD`
+  from the environment. Everything after that is created from the admin panel.
+
+The server runs under `tsx`; `npm start` is the whole command. Behind a reverse proxy, forward
+`X-Forwarded-For` — it is what the login rate limiter keys its IP bucket on.
 
 ## Layout
 
 ```
-shared/   types for the CoC API + tag parsing, imported by both sides
-server/   Hono API, upstream client, TTL cache
+shared/   types for the CoC API and the auth payloads, + tag parsing
+server/   Hono API, upstream client, TTL cache, auth (src/auth/, src/db.ts)
 web/      Vite + React UI
 ```
+
+Inside `server/src/auth/`: `passwords.ts` (scrypt), `store.ts` (the only code that touches the
+two tables), `sessions` live in that same store, `middleware.ts` (cookie → context, plus the
+exported `requireAuth` / `requireAdmin`), `rate-limit.ts`, `bootstrap.ts` (first admin), and
+`routes.ts`. `createApp({ coc, cache, auth })` stays dependency-injected, which is what lets
+the test suite drive the whole app over an in-memory database and a stub upstream.
 
 `shared` is consumed as TypeScript source through an npm workspace link — no build step,
 so a type change is visible on both sides immediately.
@@ -45,9 +207,13 @@ so a type change is visible on both sides immediately.
 The server exposes a thin, cached layer over the upstream API. Tags may be passed with or
 without the leading `#` (URL-encode it as `%23` if you include it).
 
+**Every route below requires a session** — see [Authentication](#authentication). The one
+exception is `/api/health`, which stays open for a host's liveness probe but answers a bare
+`{ ok: true }` to an anonymous caller and only adds `cachedEntries` for an authenticated one.
+
 | Route | Returns |
 |---|---|
-| `GET /api/health` | liveness + cache size |
+| `GET /api/health` | `{ ok: true }`, plus cache size when authenticated |
 | `GET /api/players/:tag` | full player profile |
 | `GET /api/clans/:tag` | clan detail including `memberList` |
 | `GET /api/clans/:tag/members` | clan roster only |
@@ -102,6 +268,16 @@ toggle.
 Storage is `localStorage` under `coc:savedClans`, through `web/src/saved-clans.ts` — a
 module-level external store, not component state, so the Save toggle on a clan page and the
 list stay in sync. Moving it server-side later means replacing that one module.
+
+> **Known follow-on, deliberately not done.** Now that there are real accounts, saved clans
+> (`coc:savedClans`) and owner assignments (`coc:owners`) arguably belong in the database,
+> per user — today they are per *browser*, so the same person sees a different list on their
+> phone. They were left in `localStorage` on purpose: migrating them is a data-migration
+> question (whose browser copy wins when three people have been curating separate lists?),
+> not an auth question. Nothing precludes it: `users.id` is an integer primary key, and a
+> `saved_clans` / `owners` table with `user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE
+> CASCADE` drops straight in beside `sessions`. Both stores are already single modules with
+> the same external-store shape, so each one is one file to swap.
 
 ### Row counts and paging
 
@@ -309,7 +485,7 @@ still shows their icons.
 | Command | Does |
 |---|---|
 | `npm run dev` | API + UI with reload |
-| `npm test` | unit tests for the table sort, paging, owner-overwrite, and `coc:saved` migration logic |
+| `npm test` | server auth suite (`app.request` against `createApp`, in-memory SQLite) + web unit tests for table sort, paging, owner-overwrite and `coc:saved` migration |
 | `npm run typecheck` | `tsc --noEmit` across all three workspaces |
 | `npm run build` | production bundle for the UI |
 | `npm run assets:coc` | re-download the vendored league and label icons |

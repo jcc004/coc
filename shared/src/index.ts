@@ -1,3 +1,7 @@
+export * from './auth-types.ts'
+export * from './chat-types.ts'
 export * from './coc-types.ts'
+export * from './email.ts'
+export * from './shared-data-types.ts'
 export * from './tags.ts'
 export * from './time.ts'

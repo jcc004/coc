@@ -1,10 +1,14 @@
+import { AccountView } from './components/AccountView.tsx'
 import { ClanSearchView } from './components/ClanSearchView.tsx'
 import { ClanView } from './components/ClanView.tsx'
+import { LoginScreen } from './components/Login.tsx'
 import { PlayerView } from './components/PlayerView.tsx'
 import { SavedClansView } from './components/SavedClansView.tsx'
 import { SearchBar } from './components/SearchBar.tsx'
 import { WarView } from './components/WarView.tsx'
-import { hrefFor, useRecents, useRoute, useTheme, type Theme } from './hooks.ts'
+import { hrefFor, useRecents, useRestoredRoute, useRoute, useTheme, type Theme } from './hooks.ts'
+import { useOneTimeImport } from './import.ts'
+import { useSession } from './session.ts'
 
 const NEXT_THEME: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' }
 const THEME_LABEL: Record<Theme, string> = { system: '◐ System', light: '☀ Light', dark: '☾ Dark' }
@@ -13,6 +17,33 @@ export function App() {
   const route = useRoute()
   const [recents, remember] = useRecents()
   const [theme, setTheme] = useTheme()
+  const session = useSession()
+
+  /* Resumes the page this account was last on. Declared before the early
+     returns below, since a hook cannot be called conditionally; it no-ops until
+     there is a signed-in user to key the history by. */
+  const signedInUser = session.state.status === 'signedIn' ? session.state.user : null
+  useRestoredRoute(signedInUser?.id ?? null)
+
+  // Saved clans and owners moved to the server. Anything this browser still holds
+  // in localStorage is handed over once, on the first sign-in after that change.
+  const imported = useOneTimeImport(signedInUser !== null)
+
+  /*
+   * Every /api route but health and login needs a session, so the shell is not
+   * rendered at all until we know who is asking — otherwise each panel would
+   * mount, fire a request, and paint its own 401. The same state is what a
+   * mid-session expiry falls back to, via the global handler in `api.ts`.
+   */
+  if (session.state.status === 'loading') {
+    return <div className="auth-screen">{/* brief; a spinner here would only flash */}</div>
+  }
+
+  if (session.state.status === 'anonymous') {
+    return <LoginScreen onSignedIn={session.signedIn} />
+  }
+
+  const user = session.state.user
 
   return (
     <div className="shell">
@@ -34,10 +65,36 @@ export function App() {
         >
           {THEME_LABEL[theme]}
         </button>
+        <a
+          className="icon-button"
+          href={hrefFor({ view: 'account' })}
+          title={user.role === 'admin' ? 'Password and users' : 'Change your password'}
+        >
+          {user.displayName}
+        </a>
+        <button type="button" className="icon-button" onClick={session.signOut}>
+          Sign out
+        </button>
       </header>
 
       <main className="shell__main">
+        {/*
+         * Shown once, and dismissible. The import is a one-off, but quietly moving
+         * somebody's data without saying what became of it is not on — especially
+         * when some rows were skipped because the server already had them.
+         */}
+        {imported.summary ? (
+          <div className="notice">
+            <p className="notice__body">{imported.summary}</p>
+            <button type="button" className="icon-button" onClick={imported.dismiss}>
+              Dismiss
+            </button>
+          </div>
+        ) : null}
+
         {route.view === 'home' ? <SavedClansView /> : null}
+
+        {route.view === 'account' ? <AccountView user={user} /> : null}
 
         {route.view === 'player' ? (
           <PlayerView key={route.tag} tag={route.tag} onLoaded={remember} />
@@ -54,7 +111,7 @@ export function App() {
 
       {/* Lookup lives here so it stays put while the main column scrolls. */}
       <aside className="shell__side">
-        <SearchBar recents={recents} />
+        <SearchBar recents={recents} currentUserId={user.id} />
       </aside>
 
       {/*

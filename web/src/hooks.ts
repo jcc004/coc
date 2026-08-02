@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ApiError } from './api.ts'
+import { hashTarget, lastRouteKey, routeToRemember, shouldRestoreRoute } from './last-route.ts'
+import { addRecent, parseRecents, RECENTS_KEY, type Recent } from './recents.ts'
 import { parseRowLimit, type RowLimit } from './saved-table.ts'
+
+export type { Recent } from './recents.ts'
 
 export type AsyncState<T> =
   | { status: 'idle' }
@@ -60,11 +64,13 @@ export type Route =
   | { view: 'clan'; tag: string }
   | { view: 'war'; tag: string }
   | { view: 'search'; name: string }
+  | { view: 'account' }
 
 export function parseHash(hash: string): Route {
   const [view, param] = hash.replace(/^#\/?/, '').split('/')
   const decoded = param ? decodeURIComponent(param) : ''
 
+  if (view === 'account') return { view: 'account' }
   if (view === 'player' && decoded) return { view: 'player', tag: decoded }
   if (view === 'clan' && decoded) return { view: 'clan', tag: decoded }
   if (view === 'war' && decoded) return { view: 'war', tag: decoded }
@@ -82,6 +88,8 @@ export function hrefFor(route: Route): string {
       return `#/war/${encodeURIComponent(route.tag)}`
     case 'search':
       return `#/search/${encodeURIComponent(route.name)}`
+    case 'account':
+      return '#/account'
     case 'home':
       return '#/'
   }
@@ -124,30 +132,54 @@ export function useTheme(): [Theme, (next: Theme) => void] {
   return [theme, setTheme]
 }
 
-/* ---------- recent lookups ---------- */
+/* ---------- last visited route ---------- */
 
-export interface Recent {
-  kind: 'player' | 'clan'
-  tag: string
-  name: string
+/**
+ * Records the current hash and, once per mount, restores the stored one when the
+ * app was opened without a hash — so signing in resumes where the user left off.
+ *
+ * Pass the signed-in user's id; the hook does nothing until there is one, which
+ * keeps the login screen from writing or reading anyone's history.
+ */
+export function useRestoredRoute(userId: number | null): void {
+  const restored = useRef(false)
+
+  useEffect(() => {
+    if (userId === null) return
+    const key = lastRouteKey(userId)
+
+    // Reading and subscribing live in one effect so the restore cannot race the
+    // first write and read back a hash it just cleared.
+    if (!restored.current) {
+      restored.current = true
+      const stored = localStorage.getItem(key)
+      if (shouldRestoreRoute(window.location.hash, stored) && stored) {
+        window.location.hash = hashTarget(stored)
+      }
+    }
+
+    const remember = () => {
+      const next = routeToRemember(window.location.hash)
+      if (next === null) localStorage.removeItem(key)
+      else localStorage.setItem(key, next)
+    }
+
+    remember()
+    window.addEventListener('hashchange', remember)
+    return () => window.removeEventListener('hashchange', remember)
+  }, [userId])
 }
 
-const RECENTS_KEY = 'coc:recents'
-const MAX_RECENTS = 8
+/* ---------- recent lookups ---------- */
 
 export function useRecents(): [Recent[], (entry: Recent) => void] {
-  const [recents, setRecents] = useState<Recent[]>(() => {
-    try {
-      const parsed: unknown = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? '[]')
-      return Array.isArray(parsed) ? (parsed as Recent[]) : []
-    } catch {
-      return []
-    }
-  })
+  const [recents, setRecents] = useState<Recent[]>(() =>
+    parseRecents(localStorage.getItem(RECENTS_KEY)),
+  )
 
   const remember = useCallback((entry: Recent) => {
     setRecents((current) => {
-      const next = [entry, ...current.filter((r) => r.tag !== entry.tag)].slice(0, MAX_RECENTS)
+      const next = addRecent(current, entry)
       localStorage.setItem(RECENTS_KEY, JSON.stringify(next))
       return next
     })

@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { isValidTag, normalizeTag, usesCanonicalAlphabet } from '@coc/shared'
-import { navigate, type Recent, type Route } from '../hooks.ts'
+import { navigate } from '../hooks.ts'
+import { recentsOfKind, type Recent } from '../recents.ts'
+import { ChatPanel } from './ChatPanel.tsx'
 
 const TAG_SHAPE = 'Tags are 3–12 letters and digits, e.g. #2PP0JCCLV.'
 
@@ -22,7 +24,35 @@ function Problem({ text }: { text: string }) {
   )
 }
 
-function PlayerLookup() {
+/**
+ * The few most recent visits of one kind, shown inside that kind's lookup card
+ * so each list sits directly under the box that produced it.
+ */
+function RecentList({ recents, kind }: { recents: Recent[]; kind: Recent['kind'] }) {
+  const shown = recentsOfKind(recents, kind)
+  if (shown.length === 0) return null
+
+  return (
+    <div className="recent-block">
+      <h3 className="recent-block__title">Recent {kind === 'player' ? 'players' : 'clans'}</h3>
+      <div className="recents recents--stacked">
+        {shown.map((recent) => (
+          <button
+            key={recent.tag}
+            type="button"
+            className="chip"
+            title={recent.tag}
+            onClick={() => navigate({ view: kind, tag: recent.tag })}
+          >
+            {recent.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function PlayerLookup({ recents }: { recents: Recent[] }) {
   const [query, setQuery] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -55,11 +85,12 @@ function PlayerLookup() {
         <button type="submit">Look up player</button>
       </form>
       {problem ? <Problem text={problem} /> : null}
+      <RecentList recents={recents} kind="player" />
     </section>
   )
 }
 
-function ClanLookup() {
+function ClanLookup({ recents }: { recents: Recent[] }) {
   const [query, setQuery] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -110,33 +141,23 @@ function ClanLookup() {
       </form>
       {problem ? <Problem text={problem} /> : null}
       {preview ? <p className="lookup-preview">{preview}</p> : null}
+      <RecentList recents={recents} kind="clan" />
     </section>
   )
 }
 
-export function SearchBar({ recents }: { recents: Recent[] }) {
+export function SearchBar({
+  recents,
+  currentUserId,
+}: {
+  recents: Recent[]
+  currentUserId: number
+}) {
   return (
     <>
-      <PlayerLookup />
-      <ClanLookup />
-
-      {recents.length > 0 ? (
-        <section className="card">
-          <h2 className="section-title">Recent</h2>
-          <div className="recents recents--stacked">
-            {recents.map((recent) => (
-              <button
-                key={recent.tag}
-                type="button"
-                className="chip"
-                onClick={() => navigate({ view: recent.kind, tag: recent.tag } as Route)}
-              >
-                {recent.name}
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
+      <PlayerLookup recents={recents} />
+      <ClanLookup recents={recents} />
+      <ChatPanel currentUserId={currentUserId} />
     </>
   )
 }
