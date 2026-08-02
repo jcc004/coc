@@ -1,0 +1,29 @@
+{
+  "name": "coc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Clash of Clans API explorer — player profiles and clan/member stats",
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm --workspace server run dev",
+    "dev:web": "npm --workspace web run dev",
+    "start": "npm --workspace server run start",
+    "build": "npm --workspace web run build",
+    "test": "npm --workspace web run test",
+    "assets:coc": "node scripts/fetch-coc-assets.mjs",
+    "typecheck": "npm --workspace shared run typecheck && npm --workspace server run typecheck && npm --workspace web run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  }
+}

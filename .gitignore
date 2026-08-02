@@ -1,0 +1,10 @@
+node_modules/
+dist/
+# Vendored Supercell icon art — theirs, not ours to redistribute. Regenerate with
+# `npm run assets:coc`; the app falls back to their CDN when it is absent.
+web/public/coc/
+.env
+.env.local
+*.log
+.DS_Store
+.vite/

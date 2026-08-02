@@ -1,0 +1,1221 @@
+/*
+ * Clash of Clans skin. The game's look is warm stone and parchment by day, dark
+ * wood by night, with gold-bevelled chrome and chunky pressed buttons — so the
+ * neutrals carry a brown cast and the chrome gets gold, while the data encoding
+ * is left exactly as it was.
+ *
+ * Palette roles still follow the project's data-viz reference instance: one
+ * sequential blue ramp for magnitude (meters, roster bars), the fixed status
+ * palette for state, and text always in ink tokens — never in the data color.
+ * Gold is chrome only (panel edges, buttons, the two display numerals); it never
+ * encodes a value, which is why --display exists as its own token rather than
+ * reusing --gold. Gold at full chroma fails contrast as text on parchment, so
+ * light mode's --display is the deep gold and only dark mode uses the bright one.
+ *
+ * Dark values are declared twice on purpose: the media query covers the OS
+ * setting, the [data-theme] scope covers the in-app toggle, and the :not() guard
+ * lets an explicit light choice beat OS dark.
+ */
+:root {
+  color-scheme: light;
+
+  --plane: #e6dcc3;
+  --surface: #f6efdc;
+  --ink: #33240f;
+  --ink-2: #6b5433;
+  --ink-muted: #8d7a56;
+  --grid: #ded0ae;
+  --baseline: #c3ae7f;
+  --border: rgba(51, 36, 15, 0.18);
+  --hover: rgba(51, 36, 15, 0.06);
+
+  /* sequential blue: fill = step 450, track = step 100 */
+  --accent: #1f6cb0;
+  --accent-hover: #17558f;
+  --track: #cfe0f2;
+
+  --good: #3f9e28;
+  --good-text: #2f7a1c;
+  --warning: #e8a022;
+  --critical: #c4342c;
+
+  /* chrome: gold plating for panel edges and buttons */
+  --gold: #f2b431;
+  --gold-deep: #d1900f;
+  --gold-edge: #8a5a08;
+  /* Display numerals only. Deep gold here — bright gold on parchment is ~1.9:1. */
+  --display: #8a5a08;
+  --on-gold: #33240f;
+
+  /* bevel: top highlight and bottom shade that give panels their pressed depth */
+  --bevel-light: rgba(255, 255, 255, 0.7);
+  --bevel-dark: rgba(51, 36, 15, 0.16);
+  --drop: rgba(51, 36, 15, 0.18);
+
+  --radius: 12px;
+  --radius-lg: 16px;
+  --gap: 16px;
+  --font-display: 'Trebuchet MS', 'Avenir Next', system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme='light'])) {
+    color-scheme: dark;
+    --plane: #16120c;
+    --surface: #241d14;
+    --ink: #f4e9d0;
+    --ink-2: #c9b795;
+    --ink-muted: #9b8965;
+    --grid: #352b1d;
+    --baseline: #4a3c28;
+    --border: rgba(244, 233, 208, 0.14);
+    --hover: rgba(244, 233, 208, 0.07);
+    --accent: #66aeee;
+    --accent-hover: #8cc4f4;
+    --track: #16304d;
+    --good: #4fb332;
+    --good-text: #6cc74a;
+    --warning: #f0b03c;
+    --critical: #e2564c;
+    --gold: #f5c04a;
+    --gold-deep: #c9930f;
+    --gold-edge: #6b4708;
+    /* Bright gold clears 9:1 on dark wood, so the display numerals can sing. */
+    --display: #f5c04a;
+    --on-gold: #241d14;
+    --bevel-light: rgba(244, 233, 208, 0.14);
+    --bevel-dark: rgba(0, 0, 0, 0.45);
+    --drop: rgba(0, 0, 0, 0.5);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --plane: #16120c;
+  --surface: #241d14;
+  --ink: #f4e9d0;
+  --ink-2: #c9b795;
+  --ink-muted: #9b8965;
+  --grid: #352b1d;
+  --baseline: #4a3c28;
+  --border: rgba(244, 233, 208, 0.14);
+  --hover: rgba(244, 233, 208, 0.07);
+  --accent: #66aeee;
+  --accent-hover: #8cc4f4;
+  --track: #16304d;
+  --good: #4fb332;
+  --good-text: #6cc74a;
+  --warning: #f0b03c;
+  --critical: #e2564c;
+  --gold: #f5c04a;
+  --gold-deep: #c9930f;
+  --gold-edge: #6b4708;
+  --display: #f5c04a;
+  --on-gold: #241d14;
+  --bevel-light: rgba(244, 233, 208, 0.14);
+  --bevel-dark: rgba(0, 0, 0, 0.45);
+  --drop: rgba(0, 0, 0, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/*
+ * The ground the panels sit on. Two radial washes plus a very low-contrast
+ * diagonal weave stand in for the game's stone-and-canvas field — all gradients,
+ * so there is no image to ship and nothing to load. Kept faint on purpose: the
+ * panels above it must stay the thing you read.
+ */
+body {
+  margin: 0;
+  background-color: var(--plane);
+  background-image:
+    radial-gradient(ellipse 90% 55% at 50% -10%, var(--hover), transparent 70%),
+    radial-gradient(ellipse 70% 40% at 50% 110%, var(--bevel-dark), transparent 70%),
+    repeating-linear-gradient(
+      45deg,
+      transparent 0 6px,
+      color-mix(in srgb, var(--ink) 2%, transparent) 6px 7px
+    );
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- layout ---------- */
+
+.shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+  display: grid;
+  /*
+   * 15% of the viewport with a 260px floor. The floor is the point: a bare 15vw
+   * is only ~192px at 1280px wide, which is too narrow for the lookup controls.
+   */
+  grid-template-columns: minmax(0, 1fr) max(260px, 15vw);
+  column-gap: var(--gap);
+  align-items: start;
+}
+
+/* Without this the widest table in the main column can push the grid wider than
+   the viewport instead of scrolling inside .table-wrap. */
+.shell__main {
+  min-width: 0;
+}
+
+.shell__side {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+}
+
+/* Single column on narrow screens, with the lookup stacked above the content so
+   it stays the first thing in reach. */
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .topbar {
+    order: 0;
+  }
+  .shell__side {
+    position: static;
+    order: 1;
+  }
+  .shell__main {
+    order: 2;
+  }
+}
+
+.topbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.topbar__title {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+  flex: 1;
+}
+.topbar__title a {
+  color: inherit;
+}
+
+.icon-button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 11px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.icon-button:hover {
+  background: var(--hover);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: var(--gap);
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  margin: 0 0 12px;
+}
+
+/* ---------- search ---------- */
+
+.search {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.search select,
+.search input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+}
+.search input {
+  flex: 1;
+  min-width: 200px;
+}
+.search input::placeholder {
+  color: var(--ink-muted);
+}
+
+.search button[type='submit'] {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 9px 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.search button[type='submit']:hover {
+  background: var(--accent-hover);
+}
+
+.search button[type='submit']:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* The sidebar column is too narrow for a label + input + button on one line. */
+.search--stacked {
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+.search--stacked input {
+  min-width: 0;
+  width: 100%;
+}
+
+.lookup-preview {
+  color: var(--ink-muted);
+  font-size: 12px;
+  margin: 8px 0 0;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.card-header__tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---------- row count & paging ---------- */
+
+.row-limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+.row-limit select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--grid);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.pager__status,
+.pager__page {
+  font-variant-numeric: tabular-nums;
+}
+.pager__page {
+  color: var(--ink-muted);
+}
+.pager .icon-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Saved-player rows are navigation targets; the name cell holds a real link so
+   keyboard and screen-reader users get a proper target, and the row click is an
+   affordance layered on top for pointer users. */
+table.roster tbody tr.clickable {
+  cursor: pointer;
+}
+
+td.tag-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+td.row-actions {
+  text-align: right;
+  cursor: default;
+}
+td.row-actions button + button {
+  margin-left: 6px;
+}
+
+td input {
+  background: var(--plane);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  width: 100%;
+  max-width: 200px;
+}
+
+.row-edit {
+  padding: 4px 0;
+}
+.row-edit input {
+  max-width: 220px;
+}
+
+/* ---------- selection & bulk owner ---------- */
+
+th.select-cell,
+td.select-cell {
+  width: 34px;
+  padding-right: 0;
+  cursor: default;
+}
+.select-cell input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.bulk-bar__count {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.bulk-bar input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 11px;
+  min-width: 200px;
+  flex: 1;
+}
+.bulk-bar button:not(.icon-button) {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bulk-bar button:not(.icon-button):hover {
+  background: var(--accent-hover);
+}
+
+.conflict-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.conflict-list li {
+  border-top: 1px solid var(--grid);
+  padding: 8px 0;
+}
+.conflict-list label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.conflict-list input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  margin-top: 3px;
+  flex: none;
+  cursor: pointer;
+}
+.conflict-list .tag-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.conflict-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--grid);
+}
+.conflict-actions button:not(.icon-button) {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.conflict-actions button:not(.icon-button):hover {
+  background: var(--accent-hover);
+}
+
+/* ---------- war ---------- */
+
+.war-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.war-side {
+  flex: 1;
+  min-width: 130px;
+}
+.war-side--right {
+  text-align: right;
+}
+.war-side img {
+  width: 56px;
+  height: 56px;
+}
+.war-side__name {
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+.war-side__meta {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.war-score {
+  text-align: center;
+  flex: none;
+}
+/* The one hero figure on this view: the head-to-head star score. */
+.war-score__value {
+  font-size: 48px;
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+}
+.war-score__dash {
+  color: var(--ink-muted);
+  margin: 0 10px;
+  font-weight: 400;
+}
+.war-score__label {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin-top: 4px;
+}
+.war-score__state {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+.war-score__time {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-top: 2px;
+}
+
+/* Result wears a status colour, but the word is always present — the label
+   carries the meaning, never the hue alone. */
+.result {
+  font-weight: 600;
+  font-size: 13px;
+}
+.result--win {
+  color: var(--good-text);
+}
+.result--lose {
+  color: var(--critical);
+}
+.result--tie {
+  color: var(--ink-2);
+}
+
+a.chip {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.recents {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+/* In the sidebar the heading already provides the spacing and the label. */
+.recents--stacked {
+  margin-top: 0;
+}
+
+.chip {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.chip:hover {
+  background: var(--hover);
+}
+.chip--static {
+  cursor: default;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chip img {
+  width: 14px;
+  height: 14px;
+}
+
+/* ---------- profile header ---------- */
+
+.profile {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.profile__badge {
+  width: 72px;
+  height: 72px;
+  flex: none;
+}
+
+.profile__main {
+  flex: 1;
+  min-width: 220px;
+}
+
+.profile__name {
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.profile__tag {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  color: var(--ink-muted);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.profile__tag:hover {
+  color: var(--ink-2);
+}
+
+.profile__meta {
+  color: var(--ink-2);
+  font-size: 13px;
+  margin-top: 6px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.profile__description {
+  color: var(--ink-2);
+  font-size: 14px;
+  margin: 12px 0 0;
+  white-space: pre-wrap;
+}
+
+/* The one hero figure per view: proportional figures, not tabular. */
+.hero-figure {
+  text-align: right;
+  flex: none;
+}
+.hero-figure__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hero-figure__value {
+  font-size: 48px;
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.hero-figure__label {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin-top: 4px;
+}
+.hero-figure__league {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.hero-figure__league img {
+  width: 24px;
+  height: 24px;
+}
+
+/* ---------- stat tiles ---------- */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.tile {
+  background: var(--surface);
+  padding: 14px 16px;
+}
+.tile__label {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+.tile__value {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-top: 2px;
+}
+.tile__note {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-top: 2px;
+}
+.tile__note--good {
+  color: var(--good-text);
+}
+
+/* ---------- meters ---------- */
+
+.meter-row {
+  display: grid;
+  grid-template-columns: 1fr 82px;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+}
+.meter-row + .meter-row {
+  border-top: 1px solid var(--grid);
+}
+.meter-row__name {
+  font-size: 14px;
+}
+.meter-row__level {
+  font-size: 13px;
+  color: var(--ink-2);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.meter-row__level--max {
+  color: var(--good-text);
+  font-weight: 600;
+}
+
+.meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+  margin-top: 5px;
+}
+.meter__fill {
+  height: 100%;
+  background: var(--accent);
+  /* square at the baseline, 4px rounded at the data end */
+  border-radius: 0 4px 4px 0;
+  min-width: 2px;
+}
+.meter__fill--max {
+  background: var(--good);
+  border-radius: 3px;
+}
+
+.meter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0 28px;
+}
+
+details.group {
+  border-top: 1px solid var(--grid);
+  padding-top: 12px;
+  margin-top: 16px;
+}
+details.group > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  list-style: none;
+}
+details.group > summary::-webkit-details-marker {
+  display: none;
+}
+details.group > summary::before {
+  content: '▸ ';
+  color: var(--ink-muted);
+}
+details.group[open] > summary::before {
+  content: '▾ ';
+}
+details.group > .group__body {
+  padding-top: 12px;
+}
+
+/* ---------- tables ---------- */
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table.roster {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+table.roster th,
+table.roster td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--grid);
+  white-space: nowrap;
+}
+table.roster th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  border-bottom: 1px solid var(--baseline);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+table.roster th.num,
+table.roster td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+table.roster tbody tr:hover {
+  background: var(--hover);
+}
+table.roster th button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+table.roster th button:hover {
+  color: var(--ink-2);
+}
+.sort-caret {
+  color: var(--accent);
+}
+
+.donation-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 96px;
+}
+.donation-cell .meter {
+  width: 100%;
+  margin-top: 0;
+}
+
+.role-pill {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+/* ---------- states ---------- */
+
+.notice {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-bottom: var(--gap);
+}
+.notice--error {
+  border-left-color: var(--critical);
+}
+.notice__title {
+  font-weight: 600;
+  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.notice__body {
+  color: var(--ink-2);
+  font-size: 14px;
+  margin: 0;
+}
+.notice__hint {
+  color: var(--ink-2);
+  font-size: 13px;
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--grid);
+}
+
+.skeleton {
+  color: var(--ink-muted);
+  font-size: 14px;
+  padding: 28px 0;
+  text-align: center;
+}
+
+.empty-hint {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.empty-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--hover);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.result-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.result-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--grid);
+}
+.result-list li:first-child {
+  border-top: none;
+}
+.result-list img {
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
+.result-list__meta {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.result-list__stats {
+  margin-left: auto;
+  text-align: right;
+  font-size: 13px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   Clash of Clans chrome
+   --------------------------------------------------------------------------
+   Everything below is surface treatment: bevels, gold plating and the pressed
+   button feel. It deliberately does not touch how any value is encoded — the
+   meters keep the sequential blue ramp, status keeps the status palette, and
+   table text keeps ink. Appended last so it layers over the base rules above.
+   ========================================================================== */
+
+/* Panels read as stone plaques: gold top edge, highlight along the top inner
+   face, shade along the bottom, and a hard bottom edge so they sit above the
+   ground rather than floating on it. */
+.card,
+.tiles,
+.notice {
+  border: 1px solid var(--gold-edge);
+  border-top-color: var(--gold-deep);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    inset 0 1px 0 var(--bevel-light),
+    inset 0 -2px 6px var(--bevel-dark),
+    0 2px 0 var(--gold-edge),
+    0 5px 14px var(--drop);
+}
+
+/*
+ * The base rule draws the tile grid's dividers by letting the container colour
+ * show through 1px gaps. That also fills any empty cell in a short last row, so
+ * with a plaque edge behind it a six-tile row followed by two tiles left a bare
+ * dark block. Painting the dividers per tile instead means unfilled cells simply
+ * show the panel surface.
+ */
+.tiles {
+  background: var(--surface);
+}
+.tile {
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.notice {
+  border-left: 4px solid var(--accent);
+}
+.notice--error {
+  border-left-color: var(--critical);
+}
+
+/* ---------- the gold banner ---------- */
+
+.topbar {
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid var(--gold-edge);
+  border-radius: var(--radius-lg);
+  color: var(--on-gold);
+  background: linear-gradient(180deg, var(--gold) 0%, var(--gold-deep) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -2px 6px rgba(0, 0, 0, 0.22),
+    0 2px 0 var(--gold-edge),
+    0 5px 14px var(--drop);
+}
+
+.topbar__title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  /* Embossed, the way the game sets its headings. */
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+/* On gold, the chrome buttons need their own treatment — the stone one below
+   would disappear into the banner. */
+.topbar .icon-button {
+  color: var(--on-gold);
+  background: rgba(255, 255, 255, 0.28);
+  border-color: var(--gold-edge);
+  font-weight: 600;
+}
+.topbar .icon-button:hover {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+/* ---------- buttons ---------- */
+
+/* Stone: the quiet button. */
+.icon-button {
+  border: 1px solid var(--baseline);
+  border-radius: var(--radius);
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 var(--bevel-light),
+    0 1px 0 var(--bevel-dark);
+}
+.icon-button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 3px var(--bevel-dark);
+}
+
+/* Gold: the committing button. One selector list so the submit button, the bulk
+   owner apply and the conflict actions all press the same way. */
+.search button[type='submit'],
+.bulk-bar button:not(.icon-button),
+.conflict-actions button:not(.icon-button) {
+  color: var(--on-gold);
+  background: linear-gradient(180deg, var(--gold) 0%, var(--gold-deep) 100%);
+  border: 1px solid var(--gold-edge);
+  border-radius: var(--radius);
+  font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 2px 0 var(--gold-edge),
+    0 3px 8px var(--drop);
+}
+.search button[type='submit']:hover,
+.bulk-bar button:not(.icon-button):hover,
+.conflict-actions button:not(.icon-button):hover {
+  background: linear-gradient(180deg, #ffc84d 0%, var(--gold) 100%);
+}
+/* Pressed: drop onto the hard edge, so the button visibly travels. */
+.search button[type='submit']:active:not(:disabled),
+.bulk-bar button:not(.icon-button):active,
+.conflict-actions button:not(.icon-button):active {
+  transform: translateY(2px);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* ---------- headings, display numerals ---------- */
+
+.section-title {
+  font-family: var(--font-display);
+  color: var(--display);
+  letter-spacing: 0.08em;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--gold-deep);
+}
+
+/* The one hero figure per view, plus the war score. Gold here is chrome, not an
+   encoding — and it comes from --display, which is the deep gold in light mode
+   so it stays readable on parchment. */
+.hero-figure__value,
+.war-score__value,
+.tile__value {
+  font-family: var(--font-display);
+  color: var(--display);
+  text-shadow: 0 1px 0 var(--bevel-light);
+}
+.hero-figure__value,
+.war-score__value {
+  font-weight: 700;
+}
+
+/* ---------- meters: chunky, but the same ramp ---------- */
+
+.meter {
+  height: 9px;
+  border: 1px solid var(--bevel-dark);
+  border-radius: 5px;
+  box-shadow: inset 0 1px 3px var(--bevel-dark);
+}
+.meter__fill {
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-hover) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.meter__fill--max {
+  background: linear-gradient(180deg, var(--good) 0%, var(--good-text) 100%);
+}
+
+/* ---------- chips, badges, tables ---------- */
+
+.chip {
+  border: 1px solid var(--baseline);
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 var(--bevel-light),
+    0 1px 0 var(--bevel-dark);
+}
+
+/* Clan badges and league icons are Supercell art; a gold ring frames them the
+   way the game's own slots do. */
+.profile__badge,
+.war-side img,
+.result-list img {
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 2px var(--gold-deep),
+    0 2px 6px var(--drop);
+}
+
+table.roster th {
+  font-family: var(--font-display);
+  color: var(--display);
+  letter-spacing: 0.05em;
+  background: var(--surface);
+  border-bottom: 2px solid var(--gold-deep);
+}
+
+/* ---------- required attribution ---------- */
+
+/*
+ * Supercell's Fan Content Policy requires this notice on fan work that uses
+ * their assets, which this app does: clan badges, league badges and label icons
+ * all come from their CDN. Spans the grid so it sits under both columns.
+ */
+.site-footer {
+  grid-column: 1 / -1;
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.site-footer a {
+  color: var(--accent);
+}
+
+/* The press travel is decoration; honour a request to sit still. */
+@media (prefers-reduced-motion: reduce) {
+  .icon-button:active:not(:disabled),
+  .search button[type='submit']:active:not(:disabled),
+  .bulk-bar button:not(.icon-button):active,
+  .conflict-actions button:not(.icon-button):active {
+    transform: none;
+  }
+}
