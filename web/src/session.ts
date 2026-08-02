@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { SessionUser } from '@coc/shared'
-import { api, setUnauthorizedHandler } from './api.ts'
+import { api, setPasswordChangeRequiredHandler, setUnauthorizedHandler } from './api.ts'
 import { resetOwners } from './owners.ts'
 import { resetSavedClans } from './saved-clans.ts'
 
@@ -48,6 +48,23 @@ export function useSession(): Session {
   useEffect(() => {
     setUnauthorizedHandler(() => setState({ status: 'anonymous' }))
     return () => setUnauthorizedHandler(null)
+  }, [])
+
+  /*
+   * And the same for a forced password change, which an admin can start while
+   * this tab is open. Flipping the flag on the session we already have is enough:
+   * the app renders the change screen off it. Nothing is re-fetched, because the
+   * 403 that got us here already *is* the server's answer.
+   */
+  useEffect(() => {
+    setPasswordChangeRequiredHandler(() =>
+      setState((current) =>
+        current.status === 'signedIn' && !current.user.mustChangePassword
+          ? { status: 'signedIn', user: { ...current.user, mustChangePassword: true } }
+          : current,
+      ),
+    )
+    return () => setPasswordChangeRequiredHandler(null)
   }, [])
 
   const signedIn = useCallback((user: SessionUser) => setState({ status: 'signedIn', user }), [])

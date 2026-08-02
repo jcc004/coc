@@ -28,6 +28,13 @@ export interface SessionUser {
   email: string | null
   role: UserRole
   createdAt: string
+  /**
+   * Set when an admin has issued a temporary password. While it is true the API
+   * refuses everything but `/api/auth/me`, `/api/auth/password` and
+   * `/api/auth/logout`, so the client's forced-change screen is backed by a
+   * server gate rather than being the only thing standing in the way.
+   */
+  mustChangePassword: boolean
 }
 
 /** Adds the one field only an admin has any use for. */
@@ -41,6 +48,26 @@ export interface MeResponse {
 
 export interface UsersResponse {
   users: AdminUser[]
+}
+
+/** `PATCH /api/admin/users/:id/email`. */
+export interface EmailChangeResponse {
+  user: AdminUser
+  /** Sessions of the *target* account that were revoked — never the caller's own. */
+  revokedSessions: number
+}
+
+/**
+ * `POST /api/admin/users/:id/temp-password`.
+ *
+ * `password` is plaintext and is the **only** time this value exists outside a
+ * hash: there is no email delivery, so the response body is the whole channel.
+ * Show it once, never persist it, never put it in a URL.
+ */
+export interface TempPasswordResponse {
+  user: AdminUser
+  password: string
+  revokedSessions: number
 }
 
 /**

@@ -1,6 +1,7 @@
 import { AccountView } from './components/AccountView.tsx'
 import { ClanSearchView } from './components/ClanSearchView.tsx'
 import { ClanView } from './components/ClanView.tsx'
+import { ForcedPasswordChange } from './components/ForcedPasswordChange.tsx'
 import { LoginScreen } from './components/Login.tsx'
 import { PlayerView } from './components/PlayerView.tsx'
 import { SavedClansView } from './components/SavedClansView.tsx'
@@ -25,9 +26,12 @@ export function App() {
   const signedInUser = session.state.status === 'signedIn' ? session.state.user : null
   useRestoredRoute(signedInUser?.id ?? null)
 
-  // Saved clans and owners moved to the server. Anything this browser still holds
-  // in localStorage is handed over once, on the first sign-in after that change.
-  const imported = useOneTimeImport(signedInUser !== null)
+  /* Saved clans and owners moved to the server. Anything this browser still holds
+     in localStorage is handed over once, on the first sign-in after that change.
+     Held back while a password change is forced, because `/api/import` is one of
+     the routes the server refuses until then — it would fail, say so alarmingly,
+     and then be retried anyway on the next sign-in. */
+  const imported = useOneTimeImport(signedInUser !== null && !signedInUser.mustChangePassword)
 
   /*
    * Every /api route but health and login needs a session, so the shell is not
@@ -44,6 +48,22 @@ export function App() {
   }
 
   const user = session.state.user
+
+  /*
+   * An admin has issued this account a temporary password, so nothing but the
+   * change form is reachable. The server enforces that independently — every
+   * other `/api/*` route answers 403 `passwordChangeRequired` while the flag is
+   * set — so this is the explanation and the form, not the lock itself.
+   */
+  if (user.mustChangePassword) {
+    return (
+      <ForcedPasswordChange
+        user={user}
+        onChanged={session.signedIn}
+        onSignOut={session.signOut}
+      />
+    )
+  }
 
   return (
     <div className="shell">
@@ -118,6 +138,12 @@ export function App() {
        * Required by Supercell's Fan Content Policy, near-verbatim: this app shows
        * their clan badges, league badges and label icons, so the notice has to be
        * on the page rather than buried in the README.
+       *
+       * The second paragraph now also names the community wiki, because unit art no
+       * longer comes from the API. Fandom hosts those files under its CC BY-SA text
+       * licence, which does not cover the images themselves — they are game rips and
+       * remain Supercell's, so the attribution has to credit the source without
+       * implying a licence it cannot grant.
        */}
       <footer className="site-footer">
         <p>
@@ -132,7 +158,8 @@ export function App() {
           .
         </p>
         <p>
-          Clash of Clans is a trademark of Supercell Oy. Game data and icons come from the{' '}
+          Clash of Clans is a trademark of Supercell Oy. Game data, clan and league badges come
+          from the{' '}
           <a
             href="https://developer.clashofclans.com/"
             target="_blank"
@@ -140,7 +167,16 @@ export function App() {
           >
             official Clash of Clans API
           </a>
-          ; all game artwork remains the property of Supercell.
+          ; troop, spell, hero, equipment and Town Hall artwork comes from the{' '}
+          <a
+            href="https://clashofclans.fandom.com/"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            Clash of Clans Wiki
+          </a>
+          . All game artwork remains the property of Supercell. This is a non-commercial fan
+          project and does not use Supercell's assets as its own branding.
         </p>
       </footer>
     </div>

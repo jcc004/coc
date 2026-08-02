@@ -16,7 +16,16 @@ import {
   type RosterSortKey,
 } from '../saved-table.ts'
 import { CapitalRaidsCard } from './CapitalRaidsCard.tsx'
-import { Card, ErrorPanel, GameIcon, Loading, Meter, StatTile, TileRow } from './primitives.tsx'
+import {
+  Card,
+  ErrorPanel,
+  GameIcon,
+  Loading,
+  Meter,
+  StatTile,
+  TileRow,
+  TownHallBadge,
+} from './primitives.tsx'
 import { TagButton } from './TagButton.tsx'
 
 const OWNER_LIST_ID = 'known-owners'
@@ -415,7 +424,10 @@ function RosterTable({ members }: { members: ClanMember[] }) {
                   <span className="role-pill">{ROLE_LABELS[row.role]}</span>
                 </td>
                 <td>{row.owner ?? <span className="role-pill">—</span>}</td>
-                <td className="num">{row.townHallLevel}</td>
+                {/* Badge only — sorting still reads `row.townHallLevel`, untouched. */}
+                <td className="num">
+                  <TownHallBadge level={row.townHallLevel} />
+                </td>
                 <td className="num">{formatFull(row.trophies)}</td>
                 <td className="num">
                   <div className="donation-cell">

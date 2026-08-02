@@ -1,0 +1,16 @@
+[Unit]
+Description=CoC API server
+After=network.target
+
+[Service]
+Type=simple
+User=jcc
+WorkingDirectory=/home/jcc/coc
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+# The app reads ~/coc/.env itself (via tsx --env-file-if-exists), so no
+# EnvironmentFile is needed here. Keep NODE_ENV unset for IP-only HTTP so the
+# session cookie is not marked Secure (a Secure cookie is never sent over http).
+
+[Install]
+WantedBy=multi-user.target

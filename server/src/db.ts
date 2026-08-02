@@ -181,7 +181,25 @@ CREATE TABLE owner_assignments (
 `)
 }
 
-const MIGRATIONS: Migration[] = [v1, v2]
+/**
+ * v3 — `must_change_password` on users: the flag an admin-issued temporary
+ * password sets, and the self-service password change clears.
+ *
+ * A plain `ALTER TABLE ADD COLUMN` is enough where v2 needed a whole rebuild.
+ * SQLite refuses to add a `UNIQUE` or a bare `NOT NULL` column to a populated
+ * table, but `NOT NULL DEFAULT 0` is fine, and 0 is what every existing row
+ * wants: nobody who already knows their own password should be met by a
+ * change-it-now screen because the schema moved under them.
+ *
+ * Idempotence is the version pragma's job, as for every other step — `ADD COLUMN`
+ * has no `IF NOT EXISTS`, so a second run would throw rather than no-op, which is
+ * exactly why the marker is what guards it.
+ */
+const v3: Migration = (db) => {
+  db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0')
+}
+
+const MIGRATIONS: Migration[] = [v1, v2, v3]
 
 /** The version a fully migrated database reports. */
 export const SCHEMA_VERSION = MIGRATIONS.length

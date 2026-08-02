@@ -96,7 +96,7 @@ function postJson(path: string, body: unknown, cookie?: string): [string, Reques
   ]
 }
 
-function patchJson(path: string, body: unknown, cookie: string): [string, RequestInit] {
+function patchJson(path: string, body: unknown, cookie?: string): [string, RequestInit] {
   const [, init] = postJson(path, body, cookie)
   return [path, { ...init, method: 'PATCH' }]
 }
@@ -1137,6 +1137,557 @@ describe('the shared-data routes need a session', () => {
 
     assert.deepEqual(harness.shared.listSavedClans(), [])
     assert.deepEqual(harness.shared.listOwners(), [])
+    harness.db.close()
+  })
+})
+
+/* ---------- admin-mediated recovery: there is no email, so an admin is the channel ---------- */
+
+const MEMBER = { email: 'member@example.com', password: 'the-members-own-password' }
+
+/** Admin cookie, a plain member's id, and that member's own signed-in cookie. */
+async function withMember(
+  harness: Harness,
+): Promise<{ admin: string; memberId: number; member: string }> {
+  const admin = await loggedIn(harness)
+  const memberId = await addUser(harness, admin, {
+    email: MEMBER.email,
+    displayName: 'A Member',
+    password: MEMBER.password,
+  })
+  const { cookie: member } = await login(harness, MEMBER)
+  assert.ok(member)
+  return { admin, memberId, member }
+}
+
+async function meStatus(harness: Harness, cookie: string): Promise<number> {
+  return (await harness.app.request('/api/auth/me', { headers: { cookie } })).status
+}
+
+describe('an admin can change a user’s email', () => {
+  it('normalises the new address and reports the updated row', async () => {
+    const harness = createHarness()
+    const { admin, memberId } = await withMember(harness)
+
+    const response = await harness.app.request(
+      ...patchJson(`/api/admin/users/${memberId}/email`, { email: '  Fixed@Example.COM ' }, admin),
+    )
+    assert.equal(response.status, 200)
+    const body = (await response.json()) as { user: { email: string; id: number } }
+    assert.equal(body.user.id, memberId)
+    assert.equal(body.user.email, 'fixed@example.com')
+    assert.equal(harness.store.findUser(memberId)?.email, 'fixed@example.com')
+
+    // The corrected address is the credential now, and the old one is not.
+    assert.equal((await login(harness, MEMBER)).response.status, 401)
+    assert.equal(
+      (await login(harness, { email: 'FIXED@example.com', password: MEMBER.password })).response
+        .status,
+      200,
+    )
+    harness.db.close()
+  })
+
+  it('refuses a body whose email is not an email, changing nothing', async () => {
+    const harness = createHarness()
+    const { admin, memberId } = await withMember(harness)
+
+    for (const email of ['', 'nope', 'two@at@signs.com', 'has space@example.com', '   ']) {
+      const response = await harness.app.request(
+        ...patchJson(`/api/admin/users/${memberId}/email`, { email }, admin),
+      )
+      assert.equal(response.status, 400, `${JSON.stringify(email)} should be refused`)
+    }
+    assert.equal(harness.store.findUser(memberId)?.email, MEMBER.email)
+    harness.db.close()
+  })
+
+  it('answers 409 on a collision, case-insensitively, not a 500 from the index', async () => {
+    const harness = createHarness()
+    const { admin, memberId } = await withMember(harness)
+
+    // The admin's own address, shouted. COLLATE NOCASE is what catches it, and
+    // the point of the test is that it surfaces as a clean conflict.
+    const response = await harness.app.request(
+      ...patchJson(`/api/admin/users/${memberId}/email`, { email: 'ADMIN@EXAMPLE.COM' }, admin),
+    )
+    assert.equal(response.status, 409)
+    const body = (await response.json()) as { error: { reason: string } }
+    assert.equal(body.error.reason, 'conflict')
+    assert.equal(harness.store.findUser(memberId)?.email, MEMBER.email)
+    harness.db.close()
+  })
+
+  it('404s an unknown id and 400s a non-numeric one', async () => {
+    const harness = createHarness()
+    const admin = await loggedIn(harness)
+
+    const missing = await harness.app.request(
+      ...patchJson('/api/admin/users/9999/email', { email: 'nobody@example.com' }, admin),
+    )
+    assert.equal(missing.status, 404)
+
+    const nonsense = await harness.app.request(
+      ...patchJson('/api/admin/users/abc/email', { email: 'nobody@example.com' }, admin),
+    )
+    assert.equal(nonsense.status, 400)
+    harness.db.close()
+  })
+
+  it('refuses a non-admin and an anonymous caller', async () => {
+    const harness = createHarness()
+    const { admin, memberId, member } = await withMember(harness)
+
+    const asMember = await harness.app.request(
+      ...patchJson(`/api/admin/users/${memberId}/email`, { email: 'self@example.com' }, member),
+    )
+    assert.equal(asMember.status, 403)
+
+    const anonymous = await harness.app.request(
+      ...patchJson(`/api/admin/users/${memberId}/email`, { email: 'anon@example.com' }),
+    )
+    assert.equal(anonymous.status, 401)
+
+    // Neither attempt moved the address; the admin's own call still does.
+    assert.equal(harness.store.findUser(memberId)?.email, MEMBER.email)
+    assert.equal(
+      (
+        await harness.app.request(
+          ...patchJson(`/api/admin/users/${memberId}/email`, { email: 'ok@example.com' }, admin),
+        )
+      ).status,
+      200,
+    )
+    harness.db.close()
+  })
+
+  it('revokes the target’s sessions', async () => {
+    const harness = createHarness()
+    const { admin, memberId, member } = await withMember(harness)
+    // A second tab for the same member, to prove it is every session and not one.
+    const { cookie: secondTab } = await login(harness, MEMBER)
+    assert.ok(secondTab)
+    assert.equal(await meStatus(harness, member), 200)
+
+    const response = await harness.app.request(
+      ...patchJson(`/api/admin/users/${memberId}/email`, { email: 'moved@example.com' }, admin),
+    )
+    assert.equal(response.status, 200)
+    const body = (await response.json()) as { revokedSessions: number }
+    assert.equal(body.revokedSessions, 2)
+
+    // Changing the login identifier is a credential change, so both are gone.
+    assert.equal(await meStatus(harness, member), 401)
+    assert.equal(await meStatus(harness, secondTab), 401)
+    harness.db.close()
+  })
+
+  it('never revokes the calling admin’s own session, even fixing their own address', async () => {
+    const harness = createHarness()
+    const stale = await loggedIn(harness)
+    const current = await loggedIn(harness)
+    const admin = harness.store.listUsers()[0]
+    assert.ok(admin)
+
+    const response = await harness.app.request(
+      ...patchJson(`/api/admin/users/${admin.id}/email`, { email: 'admin@corrected.com' }, current),
+    )
+    assert.equal(response.status, 200)
+
+    // The session that made the change is still usable — otherwise an admin
+    // correcting their own typo signs themselves out mid-task.
+    assert.equal(await meStatus(harness, current), 200)
+    // …while their other sessions go, exactly as for any other account.
+    assert.equal(await meStatus(harness, stale), 401)
+    assert.equal((await response.json() as { revokedSessions: number }).revokedSessions, 1)
+
+    // And the admin can carry straight on with admin work.
+    const list = await harness.app.request('/api/admin/users', { headers: { cookie: current } })
+    assert.equal(list.status, 200)
+    harness.db.close()
+  })
+})
+
+describe('an admin can issue a temporary password', () => {
+  it('returns one that works, kills the old one, revokes sessions, and sets the flag', async () => {
+    const harness = createHarness()
+    const { admin, memberId, member } = await withMember(harness)
+    assert.equal(await meStatus(harness, member), 200)
+
+    const response = await harness.app.request(
+      ...postJson(`/api/admin/users/${memberId}/temp-password`, {}, admin),
+    )
+    assert.equal(response.status, 200)
+    const body = (await response.json()) as {
+      password: string
+      revokedSessions: number
+      user: { id: number; mustChangePassword: boolean }
+    }
+
+    // Long, and drawn from an alphabet with no glyph you could misread aloud.
+    assert.ok(body.password.length >= 16, 'at least 16 characters')
+    assert.match(body.password, /^[A-HJ-NP-Za-km-z2-9]+$/)
+    assert.equal(body.user.id, memberId)
+    assert.equal(body.user.mustChangePassword, true)
+    assert.equal(harness.store.findUser(memberId)?.mustChangePassword, true)
+
+    // The member's session is gone, so the old password cannot ride one out.
+    assert.equal(body.revokedSessions, 1)
+    assert.equal(await meStatus(harness, member), 401)
+
+    // The old password no longer authenticates; the issued one does.
+    assert.equal((await login(harness, MEMBER)).response.status, 401)
+    const fresh = await login(harness, { email: MEMBER.email, password: body.password })
+    assert.equal(fresh.response.status, 200)
+    const signedIn = (await fresh.response.json()) as { user: { mustChangePassword: boolean } }
+    // The login answer carries the flag, so the first render is the change screen.
+    assert.equal(signedIn.user.mustChangePassword, true)
+    harness.db.close()
+  })
+
+  it('ignores a password supplied by the client and mints its own', async () => {
+    const harness = createHarness()
+    const { admin, memberId } = await withMember(harness)
+
+    const response = await harness.app.request(
+      ...postJson(
+        `/api/admin/users/${memberId}/temp-password`,
+        { password: 'chosen-by-the-admin' },
+        admin,
+      ),
+    )
+    assert.equal(response.status, 200)
+    const { password } = (await response.json()) as { password: string }
+    assert.notEqual(password, 'chosen-by-the-admin')
+
+    // The attacker-friendly reading of this route — "set a known password on any
+    // account" — must not be available at all.
+    assert.equal(
+      (await login(harness, { email: MEMBER.email, password: 'chosen-by-the-admin' })).response
+        .status,
+      401,
+    )
+    assert.equal(
+      (await login(harness, { email: MEMBER.email, password })).response.status,
+      200,
+    )
+    harness.db.close()
+  })
+
+  it('gives a different password every time', async () => {
+    const harness = createHarness()
+    const { admin, memberId } = await withMember(harness)
+
+    const issued = new Set<string>()
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await harness.app.request(
+        ...postJson(`/api/admin/users/${memberId}/temp-password`, {}, admin),
+      )
+      const { password } = (await response.json()) as { password: string }
+      issued.add(password)
+    }
+    assert.equal(issued.size, 5)
+    harness.db.close()
+  })
+
+  it('works on yourself and leaves you the session you need to use it', async () => {
+    const harness = createHarness()
+    const admin = await loggedIn(harness)
+    const adminId = harness.store.listUsers()[0]?.id
+    assert.ok(adminId)
+
+    const response = await harness.app.request(
+      ...postJson(`/api/admin/users/${adminId}/temp-password`, {}, admin),
+    )
+    assert.equal(response.status, 200)
+    const { password } = (await response.json()) as { password: string }
+
+    /*
+     * The calling session survives on purpose: the password is shown exactly once,
+     * so revoking the session that is reading it would throw the value away. It is
+     * not a way around the change — the gate below refuses everything else.
+     */
+    assert.equal(await meStatus(harness, admin), 200)
+    const gated = await harness.app.request('/api/admin/users', { headers: { cookie: admin } })
+    assert.equal(gated.status, 403)
+
+    const changed = await harness.app.request(
+      ...postJson(
+        '/api/auth/password',
+        { currentPassword: password, newPassword: 'the-admins-new-password' },
+        admin,
+      ),
+    )
+    assert.equal(changed.status, 200)
+    assert.equal(
+      (await harness.app.request('/api/admin/users', { headers: { cookie: admin } })).status,
+      200,
+    )
+    harness.db.close()
+  })
+
+  it('404s an unknown id, 400s a non-numeric one, and refuses non-admins', async () => {
+    const harness = createHarness()
+    const { admin, memberId, member } = await withMember(harness)
+
+    assert.equal(
+      (await harness.app.request(...postJson('/api/admin/users/9999/temp-password', {}, admin)))
+        .status,
+      404,
+    )
+    assert.equal(
+      (await harness.app.request(...postJson('/api/admin/users/abc/temp-password', {}, admin)))
+        .status,
+      400,
+    )
+    // A user must not be able to reset anyone — including themselves, which would
+    // be a way to bypass knowing the current password.
+    assert.equal(
+      (
+        await harness.app.request(
+          ...postJson(`/api/admin/users/${memberId}/temp-password`, {}, member),
+        )
+      ).status,
+      403,
+    )
+    assert.equal(harness.store.findUser(memberId)?.mustChangePassword, false)
+    harness.db.close()
+  })
+})
+
+describe('the forced password change is a server gate, not a screen', () => {
+  /** A member whose password an admin has just reset, signed in on the temp one. */
+  async function flagged(
+    harness: Harness,
+  ): Promise<{ admin: string; memberId: number; cookie: string; password: string }> {
+    const { admin, memberId } = await withMember(harness)
+    const issued = await harness.app.request(
+      ...postJson(`/api/admin/users/${memberId}/temp-password`, {}, admin),
+    )
+    const { password } = (await issued.json()) as { password: string }
+    const { cookie } = await login(harness, { email: MEMBER.email, password })
+    assert.ok(cookie)
+    return { admin, memberId, cookie, password }
+  }
+
+  it('refuses every ordinary route while the flag is set', async () => {
+    const harness = createHarness()
+    const { cookie } = await flagged(harness)
+
+    const blocked: [string, RequestInit][] = [
+      [`/api/clans/${CLAN_TAG}`, {}],
+      ['/api/players/%232GCJ2QPU', {}],
+      ['/api/owners', {}],
+      ['/api/saved/clans', {}],
+      ['/api/chat', {}],
+      ['/api/owners/bulk', postJson('/api/owners/bulk', { rows: [] }, cookie)[1]],
+      ['/api/admin/users', {}],
+    ]
+
+    for (const [path, init] of blocked) {
+      const response = await harness.app.request(path, {
+        ...init,
+        headers: { ...(init.headers as Record<string, string>), cookie },
+      })
+      assert.equal(response.status, 403, `${path} must be refused`)
+      const body = (await response.json()) as { error: { reason: string } }
+      assert.equal(body.error.reason, 'passwordChangeRequired')
+    }
+
+    // 403 rather than 401 matters: a 401 would trip the client's global
+    // signed-out handler and bounce them to a login screen they cannot pass,
+    // because the change form lives behind the session they already hold.
+    assert.deepEqual(harness.calls, [], 'and no upstream call was spent')
+    harness.db.close()
+  })
+
+  it('still serves /api/auth/me — reporting the flag — plus password and logout', async () => {
+    const harness = createHarness()
+    const { memberId, cookie, password } = await flagged(harness)
+
+    const me = await harness.app.request('/api/auth/me', { headers: { cookie } })
+    assert.equal(me.status, 200)
+    const body = (await me.json()) as { user: { mustChangePassword: boolean; email: string } }
+    assert.equal(body.user.mustChangePassword, true, 'the client needs this to show the screen')
+    assert.equal(body.user.email, MEMBER.email)
+
+    // A wrong current password is still refused — the flag is not a free pass.
+    const wrong = await harness.app.request(
+      ...postJson(
+        '/api/auth/password',
+        { currentPassword: 'not-the-temp-one', newPassword: 'a-chosen-long-password' },
+        cookie,
+      ),
+    )
+    assert.equal(wrong.status, 401)
+    assert.equal(harness.store.findUser(memberId)?.mustChangePassword, true)
+
+    // …and too-short is still refused, so the flag cannot be cleared by a weak one.
+    const short = await harness.app.request(
+      ...postJson('/api/auth/password', { currentPassword: password, newPassword: 'short' }, cookie),
+    )
+    assert.equal(short.status, 400)
+
+    const out = await harness.app.request(...postJson('/api/auth/logout', {}, cookie))
+    assert.equal(out.status, 200)
+    harness.db.close()
+  })
+
+  it('clears the flag on a successful change and lets the app through again', async () => {
+    const harness = createHarness()
+    const { memberId, cookie, password } = await flagged(harness)
+
+    const changed = await harness.app.request(
+      ...postJson(
+        '/api/auth/password',
+        { currentPassword: password, newPassword: 'a-password-they-chose' },
+        cookie,
+      ),
+    )
+    assert.equal(changed.status, 200)
+    assert.equal(harness.store.findUser(memberId)?.mustChangePassword, false)
+
+    const me = await harness.app.request('/api/auth/me', { headers: { cookie } })
+    const body = (await me.json()) as { user: { mustChangePassword: boolean } }
+    assert.equal(body.user.mustChangePassword, false)
+
+    // The same session that was gated a moment ago now reaches the real routes.
+    for (const path of [`/api/clans/${CLAN_TAG}`, '/api/owners', '/api/saved/clans']) {
+      assert.equal(
+        (await harness.app.request(path, { headers: { cookie } })).status,
+        200,
+        `${path} should be served once the password has been changed`,
+      )
+    }
+
+    // And the temporary password is spent: only the chosen one signs in now.
+    assert.equal((await login(harness, { email: MEMBER.email, password })).response.status, 401)
+    assert.equal(
+      (await login(harness, { email: MEMBER.email, password: 'a-password-they-chose' })).response
+        .status,
+      200,
+    )
+    harness.db.close()
+  })
+
+  it('does not gate anyone else', async () => {
+    const harness = createHarness()
+    const { admin } = await flagged(harness)
+    // The admin who issued it is unaffected, which is the whole point of keying
+    // the gate on the account rather than on some global state.
+    assert.equal(
+      (await harness.app.request(`/api/clans/${CLAN_TAG}`, { headers: { cookie: admin } })).status,
+      200,
+    )
+    harness.db.close()
+  })
+})
+
+describe('the recovery routes open no anonymous hole', () => {
+  it('refuses every one of them without a session, changing nothing', async () => {
+    const harness = createHarness()
+    const { memberId } = await withMember(harness)
+    const before = harness.store.findUser(memberId)
+    assert.ok(before)
+
+    const requests: [string, RequestInit][] = [
+      [
+        `/api/admin/users/${memberId}/email`,
+        patchJson(`/api/admin/users/${memberId}/email`, { email: 'anon@example.com' })[1],
+      ],
+      [
+        `/api/admin/users/${memberId}/temp-password`,
+        postJson(`/api/admin/users/${memberId}/temp-password`, {})[1],
+      ],
+      // The shapes an attacker would try if a public reset route existed at all.
+      ['/api/auth/reset', postJson('/api/auth/reset', { email: MEMBER.email })[1]],
+      ['/api/auth/forgot-password', postJson('/api/auth/forgot-password', { email: MEMBER.email })[1]],
+      ['/api/auth/reset-password', postJson('/api/auth/reset-password', { token: 'x' })[1]],
+    ]
+
+    for (const [path, init] of requests) {
+      const response = await harness.app.request(path, init)
+      assert.equal(response.status, 401, `${init.method ?? 'GET'} ${path} must not be public`)
+      const body = (await response.json()) as { error: { reason: string } }
+      // Deny-by-default answers 401 even for a route that does not exist, so an
+      // anonymous caller cannot even map which recovery endpoints are real.
+      assert.equal(body.error.reason, 'unauthenticated')
+    }
+
+    assert.deepEqual(harness.store.findUser(memberId), before, 'nothing was changed')
+    harness.db.close()
+  })
+})
+
+describe('the last active admin cannot be disabled', () => {
+  it('refuses when the target is the only one left', async () => {
+    const harness = createHarness()
+    const cookie = await loggedIn(harness)
+    const admin = harness.store.listUsers()[0]
+    assert.ok(admin)
+    assert.equal(harness.store.countActiveAdmins(), 1)
+
+    const response = await harness.app.request(
+      ...postJson(`/api/admin/users/${admin.id}/disable`, {}, cookie),
+    )
+    assert.equal(response.status, 400)
+    const body = (await response.json()) as { error: { message: string } }
+    assert.match(body.error.message, /only active admin/)
+    assert.equal(harness.store.findUser(admin.id)?.disabledAt, null)
+    assert.equal(harness.store.countActiveAdmins(), 1)
+    harness.db.close()
+  })
+
+  it('allows it once there is a second admin, and never leaves zero', async () => {
+    const harness = createHarness()
+    const cookie = await loggedIn(harness)
+    const first = harness.store.listUsers()[0]
+    assert.ok(first)
+
+    const secondId = await addUser(harness, cookie, {
+      email: 'deputy@example.com',
+      displayName: 'Deputy',
+      password: 'the-deputys-password',
+      role: 'admin',
+    })
+    assert.equal(harness.store.countActiveAdmins(), 2)
+
+    const disabled = await harness.app.request(
+      ...postJson(`/api/admin/users/${secondId}/disable`, {}, cookie),
+    )
+    assert.equal(disabled.status, 200)
+    assert.equal(harness.store.countActiveAdmins(), 1)
+
+    // Now the first admin is the last one, and is refused again.
+    const cornered = await harness.app.request(
+      ...postJson(`/api/admin/users/${first.id}/disable`, {}, cookie),
+    )
+    assert.equal(cornered.status, 400)
+    assert.equal(harness.store.countActiveAdmins(), 1)
+
+    // Re-enabling is never blocked — the guard is one-directional.
+    const restored = await harness.app.request(
+      ...postJson(`/api/admin/users/${secondId}/disable`, { disabled: false }, cookie),
+    )
+    assert.equal(restored.status, 200)
+    assert.equal(harness.store.countActiveAdmins(), 2)
+    harness.db.close()
+  })
+
+  it('does not get in the way of disabling a plain user', async () => {
+    const harness = createHarness()
+    const cookie = await loggedIn(harness)
+    const memberId = await addUser(harness, cookie, {
+      email: 'ordinary@example.com',
+      password: 'an-ordinary-password',
+    })
+
+    // One active admin, but the target is not an admin, so nothing is at stake.
+    const response = await harness.app.request(
+      ...postJson(`/api/admin/users/${memberId}/disable`, {}, cookie),
+    )
+    assert.equal(response.status, 200)
+    assert.ok(harness.store.findUser(memberId)?.disabledAt)
     harness.db.close()
   })
 })

@@ -4,7 +4,17 @@ import { api } from '../api.ts'
 import { labelIcon, leagueIcon } from '../coc-assets.ts'
 import { formatFull, formatStat, ratio } from '../format.ts'
 import { hrefFor, useAsync, type Recent } from '../hooks.ts'
-import { Card, ErrorPanel, GameIcon, LevelRow, Loading, StatTile, TileRow } from './primitives.tsx'
+import { artFor, type ArtKind } from '../wiki-art.ts'
+import {
+  Card,
+  ErrorPanel,
+  GameIcon,
+  LevelRow,
+  Loading,
+  StatTile,
+  TileRow,
+  TownHallBadge,
+} from './primitives.tsx'
 import { TagButton } from './TagButton.tsx'
 
 function homeVillage(items: PlayerItemLevel[] | undefined): PlayerItemLevel[] {
@@ -15,7 +25,15 @@ function builderBase(items: PlayerItemLevel[] | undefined): PlayerItemLevel[] {
   return (items ?? []).filter((item) => item.village === 'builderBase')
 }
 
-function LevelGroup({ title, items }: { title: string; items: PlayerItemLevel[] }) {
+function LevelGroup({
+  title,
+  items,
+  kind,
+}: {
+  title: string
+  items: PlayerItemLevel[]
+  kind: ArtKind
+}) {
   if (items.length === 0) return null
   return (
     <details className="group">
@@ -29,6 +47,9 @@ function LevelGroup({ title, items }: { title: string; items: PlayerItemLevel[] 
             name={item.superTroopIsActive ? `${item.name} (boosted)` : item.name}
             level={item.level}
             maxLevel={item.maxLevel}
+            /* The API name, not the decorated one: "(boosted)" is display text and
+               would never resolve to art. */
+            art={artFor(kind, item.name)}
           />
         ))}
       </div>
@@ -59,7 +80,10 @@ export function PlayerView({ tag, onLoaded }: { tag: string; onLoaded: (entry: R
             <h1 className="profile__name">{player.name}</h1>
             <TagButton tag={player.tag} />
             <div className="profile__meta">
-              <span>Town Hall {player.townHallLevel}</span>
+              <TownHallBadge
+                level={player.townHallLevel}
+                text={`Town Hall ${player.townHallLevel}`}
+              />
               {player.townHallWeaponLevel ? <span>· Weapon {player.townHallWeaponLevel}</span> : null}
               <span>· Level {player.expLevel}</span>
               {player.clan ? (
@@ -139,17 +163,23 @@ export function PlayerView({ tag, onLoaded }: { tag: string; onLoaded: (entry: R
         <Card title="Heroes">
           <div className="meter-grid">
             {heroes.map((hero) => (
-              <LevelRow key={hero.name} name={hero.name} level={hero.level} maxLevel={hero.maxLevel} />
+              <LevelRow
+                key={hero.name}
+                name={hero.name}
+                level={hero.level}
+                maxLevel={hero.maxLevel}
+                art={artFor('hero', hero.name)}
+              />
             ))}
           </div>
         </Card>
       ) : null}
 
       <Card title="Progression">
-        <LevelGroup title="Home village troops" items={homeVillage(player.troops)} />
-        <LevelGroup title="Spells" items={homeVillage(player.spells)} />
-        <LevelGroup title="Hero equipment" items={equipment} />
-        <LevelGroup title="Builder base troops" items={builderBase(player.troops)} />
+        <LevelGroup title="Home village troops" items={homeVillage(player.troops)} kind="troop" />
+        <LevelGroup title="Spells" items={homeVillage(player.spells)} kind="spell" />
+        <LevelGroup title="Hero equipment" items={equipment} kind="equipment" />
+        <LevelGroup title="Builder base troops" items={builderBase(player.troops)} kind="troop" />
         <details className="group">
           <summary>Achievements ({player.achievements.length})</summary>
           <div className="group__body meter-grid">

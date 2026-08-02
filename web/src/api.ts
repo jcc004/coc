@@ -9,6 +9,7 @@ import {
   type ClanMembersResponse,
   type ClanSearchResponse,
   type CurrentWar,
+  type EmailChangeResponse,
   type ImportRequest,
   type ImportResponse,
   type MeResponse,
@@ -20,6 +21,7 @@ import {
   type SavedClanRecord,
   type SavedClansResponse,
   type SessionUser,
+  type TempPasswordResponse,
   type UserRole,
   type UsersResponse,
   type WarLogResponse,
@@ -49,6 +51,22 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
   onUnauthorized = handler
 }
 
+/**
+ * The same idea for the forced password change. An admin can flag an account
+ * while its owner has the app open — or flag their own, from the admin panel —
+ * and from that moment the server 403s every route but `/api/auth/{me,password,
+ * logout}`. Without this, that shows up as an error inside whichever panel asked
+ * first, with no clue that the fix is a password change.
+ *
+ * It is not the enforcement, only the routing of it: the gate is
+ * `requirePasswordUpToDate` on the server, and it holds whatever the client does.
+ */
+let onPasswordChangeRequired: (() => void) | null = null
+
+export function setPasswordChangeRequiredHandler(handler: (() => void) | null): void {
+  onPasswordChangeRequired = handler
+}
+
 interface RequestOptions {
   signal?: AbortSignal
   body?: unknown
@@ -74,9 +92,15 @@ async function request<T>(
   })
 
   if (!response.ok) {
-    if (response.status === 401 && !expectsAuthFailure) onUnauthorized?.()
-
+    // Parsed before either handler fires, because the forced-change case is
+    // identified by the `reason` in the body rather than by the status alone.
     const errorBody = (await response.json().catch(() => undefined)) as ApiErrorResponse | undefined
+
+    if (response.status === 401 && !expectsAuthFailure) onUnauthorized?.()
+    if (response.status === 403 && errorBody?.error.reason === 'passwordChangeRequired') {
+      onPasswordChangeRequired?.()
+    }
+
     throw new ApiError(
       response.status,
       errorBody?.error.reason ?? 'unknown',
@@ -161,6 +185,19 @@ export const api = {
 
   setUserDisabled: (id: number, disabled: boolean) =>
     request<{ user: AdminUser }>('POST', `/api/admin/users/${id}/disable`, { body: { disabled } }),
+
+  /** Corrects a login address. Revokes that account's sessions, never the caller's. */
+  setUserEmail: (id: number, email: string) =>
+    request<EmailChangeResponse>('PATCH', `/api/admin/users/${id}/email`, { body: { email } }),
+
+  /**
+   * Issues a temporary password. The server picks it — there is deliberately no
+   * argument for one — and the plaintext in the response is the only copy that
+   * will ever exist, since there is no email to send it by. It goes on screen once
+   * and is never written to storage, a URL, or a log.
+   */
+  issueTempPassword: (id: number) =>
+    request<TempPasswordResponse>('POST', `/api/admin/users/${id}/temp-password`, { body: {} }),
 
   /* ---------- shared data: saved clans and owners ---------- */
 

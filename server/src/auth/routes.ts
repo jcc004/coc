@@ -11,6 +11,7 @@ import {
 } from './middleware.ts'
 import type { LoginLimiter } from './rate-limit.ts'
 import { DISPLAY_NAME_MAX, EmailTakenError, isValidDisplayName, type AuthStore } from './store.ts'
+import { generateTemporaryPassword } from './temp-password.ts'
 
 /**
  * `/api/auth/*` and `/api/admin/*`.
@@ -43,6 +44,20 @@ function passwordProblem(password: string): string | undefined {
     return `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`
   }
   return undefined
+}
+
+/** The `:id` path segment, or `undefined` when it is not a whole number. */
+function userIdParam(c: AuthContext): number | undefined {
+  const id = Number(c.req.param('id'))
+  return Number.isInteger(id) ? id : undefined
+}
+
+function badUserId(c: AuthContext) {
+  return c.json(errorBody(400, 'badRequest', 'User id must be an integer.'), 400)
+}
+
+function noSuchUser(c: AuthContext, id: number) {
+  return c.json(errorBody(404, 'notFound', `No user with id ${id}.`), 404)
 }
 
 export interface AuthRouteOptions {
@@ -102,6 +117,10 @@ export function mountAuthRoutes(
         email: user.email,
         role: user.role,
         createdAt: user.createdAt,
+        // The client needs this in the login answer as well as from /me, or the
+        // first render after signing in with a temporary password would be the
+        // app shell rather than the change-password screen.
+        mustChangePassword: user.mustChangePassword,
       },
     })
   })
@@ -137,6 +156,9 @@ export function mountAuthRoutes(
       return c.json(errorBody(401, 'invalidCredentials', 'Current password is incorrect.'), 401)
     }
 
+    // Third argument defaults to false, which is what clears
+    // `must_change_password`: this is the account holder choosing a password, so
+    // the reason the flag was set no longer holds. It is the only way it clears.
     store.setPassword(user.id, newPassword)
     // Changing a password is also how you get rid of someone who has your old
     // one, so every other session for this user goes with it.
@@ -181,16 +203,37 @@ export function mountAuthRoutes(
 
   app.post('/api/admin/users/:id/disable', async (c) => {
     const admin = currentUser(c)
-    const id = Number(c.req.param('id'))
-    if (!Number.isInteger(id)) {
-      return c.json(errorBody(400, 'badRequest', 'User id must be an integer.'), 400)
-    }
+    const id = userIdParam(c)
+    if (id === undefined) return badUserId(c)
 
     // `disabled: false` re-enables, so this one route covers both directions.
     const body = await readJson(c)
     const disabled = body['disabled'] !== false
 
-    // The only admin disabling themselves would leave nobody who can undo it.
+    /*
+     * Nobody may empty the set of accounts that can administer this install:
+     * there is no route back from zero active admins, only hand-editing SQLite.
+     *
+     * Stated as "the last active admin" rather than only as "not yourself"
+     * because the two are different rules that happen to coincide today. The
+     * self-check below cannot be the whole guard — it would stop protecting the
+     * install the moment a route existed that could demote an admin's role.
+     */
+    const target = disabled ? store.findUser(id) : undefined
+    if (target && target.role === 'admin' && !target.disabledAt && store.countActiveAdmins() <= 1) {
+      return c.json(
+        errorBody(
+          400,
+          'badRequest',
+          `"${target.displayName}" is the only active admin, so disabling that account would leave nobody able to manage users.`,
+          'Make somebody else an admin first.',
+        ),
+        400,
+      )
+    }
+
+    // Still worth its own message: with other admins around, this is a nudge to
+    // ask one of them rather than a warning about locking the whole app.
     if (disabled && id === admin.id) {
       return c.json(
         errorBody(
@@ -204,7 +247,84 @@ export function mountAuthRoutes(
     }
 
     const user = store.setDisabled(id, disabled)
-    if (!user) return c.json(errorBody(404, 'notFound', `No user with id ${id}.`), 404)
+    if (!user) return noSuchUser(c, id)
     return c.json({ user })
+  })
+
+  /*
+   * Correcting somebody's login address. Until this existed the only way to fix a
+   * typo in an email was editing the SQLite file by hand, which had already had
+   * to be done twice on the live database.
+   */
+  app.patch('/api/admin/users/:id/email', async (c) => {
+    const id = userIdParam(c)
+    if (id === undefined) return badUserId(c)
+
+    const body = await readJson(c)
+    const email = normalizeEmail(asString(body['email']))
+    if (!isValidEmail(email)) {
+      return c.json(errorBody(400, 'badRequest', EMAIL_PROBLEM), 400)
+    }
+
+    let user
+    try {
+      user = store.setEmail(id, email)
+    } catch (cause) {
+      // A collision is the UNIQUE index doing its job, and the column is
+      // COLLATE NOCASE, so `A@B.com` conflicts with `a@b.com`. Caught and turned
+      // into a 409 rather than escaping as an unhandled 500.
+      if (cause instanceof EmailTakenError) {
+        return c.json(errorBody(409, 'conflict', cause.message), 409)
+      }
+      throw cause
+    }
+    if (!user) return noSuchUser(c, id)
+
+    /*
+     * The login identifier is a credential, so changing it revokes the target's
+     * sessions — except the caller's own. That exception is what stops an admin
+     * fixing their *own* address from signing themselves out half way through the
+     * job. It cannot spare anything it should not: when the target is somebody
+     * else the caller's session row has a different `user_id`, so it is not in
+     * the set being deleted in the first place.
+     */
+    const revokedSessions = store.deleteUserSessions(id, c.get('sessionId') ?? undefined)
+    return c.json({ user, revokedSessions })
+  })
+
+  /*
+   * The whole password-recovery story, given there is no mail infrastructure: an
+   * admin issues a temporary password out of band. See the README for why a
+   * reset-by-email link is deliberately absent.
+   */
+  app.post('/api/admin/users/:id/temp-password', (c) => {
+    const id = userIdParam(c)
+    if (id === undefined) return badUserId(c)
+
+    /*
+     * The body is ignored on purpose — the server picks the password and neither
+     * the client nor the admin gets a say. An admin-chosen string would be
+     * human-memorable by construction, and it would exist in whatever they typed
+     * it into; a client-supplied one would also mean this route could set a known
+     * password on any account, which is a far worse primitive than it looks.
+     */
+    const password = generateTemporaryPassword()
+    const user = store.setPassword(id, password, true)
+    if (!user) return noSuchUser(c, id)
+
+    /*
+     * Every session of the target goes, or the old password would keep one alive
+     * and the forced change would never be reached. The caller's own is spared
+     * for the self-issue case: without that, an admin resetting themselves would
+     * be signed out by the very response carrying the password, and it is shown
+     * exactly once. The spared session is not a way around the change — it is
+     * gated to /me, /password and /logout like any other flagged session.
+     */
+    const revokedSessions = store.deleteUserSessions(id, c.get('sessionId') ?? undefined)
+
+    // Returned once, in this body, and nowhere else. Never logged, never stored
+    // in plaintext, never in a URL — the URL has no room for it and a log line
+    // would outlive the one-time channel this is supposed to be.
+    return c.json({ user, password, revokedSessions })
   })
 }

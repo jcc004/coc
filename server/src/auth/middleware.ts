@@ -52,6 +52,45 @@ export const requireAuth: MiddlewareHandler<AuthEnv> = async (c, next) => {
   await next()
 }
 
+/**
+ * The only paths reachable while `must_change_password` is set. Everything else
+ * under `/api/` is refused until the password has actually been replaced.
+ *
+ * This is the difference between a forced change and a suggestion. Surfacing the
+ * flag in the UI alone would leave the whole API open to a client that simply
+ * navigated somewhere else, so the gate is here and the screen is the courtesy.
+ * `/api/health` and login are on the list because they are public anyway.
+ */
+const FORCED_CHANGE_PATHS = new Set([
+  '/api/health',
+  '/api/auth/login',
+  '/api/auth/logout',
+  '/api/auth/me',
+  '/api/auth/password',
+])
+
+/**
+ * 403, deliberately, not 401: the session is perfectly valid, so answering 401
+ * would trip the client's global "you have been signed out" handler and bounce
+ * someone to the login screen they cannot get past — the credential they have is
+ * the temporary one, and the change form is behind the session.
+ */
+export const requirePasswordUpToDate: MiddlewareHandler<AuthEnv> = async (c, next) => {
+  const user = c.get('user')
+  if (user?.mustChangePassword && !FORCED_CHANGE_PATHS.has(c.req.path)) {
+    return c.json(
+      errorBody(
+        403,
+        'passwordChangeRequired',
+        'Your password was reset by an admin. Change it before using the rest of the app.',
+        'POST /api/auth/password',
+      ),
+      403,
+    )
+  }
+  await next()
+}
+
 export const requireAdmin: MiddlewareHandler<AuthEnv> = async (c, next) => {
   const user = c.get('user')
   if (!user) {

@@ -9,7 +9,15 @@ import {
 import { api } from '../api.ts'
 import { formatDateTime, formatFull, formatRelative } from '../format.ts'
 import { hrefFor, useAsync } from '../hooks.ts'
-import { Card, ErrorPanel, Loading, Meter, StatTile, TileRow } from './primitives.tsx'
+import {
+  Card,
+  ErrorPanel,
+  Loading,
+  Meter,
+  StatTile,
+  TileRow,
+  TownHallBadge,
+} from './primitives.tsx'
 
 const STATE_LABEL: Record<string, string> = {
   notInWar: 'Not in war',
@@ -64,7 +72,10 @@ function SideRoster({ side, war }: { side: WarClan; war: CurrentWar }) {
               <td>
                 <a href={hrefFor({ view: 'player', tag: member.tag })}>{member.name}</a>
               </td>
-              <td className="num">{member.townhallLevel}</td>
+              {/* `townhallLevel` — lowercase `h` is the war payload's own spelling. */}
+              <td className="num">
+                <TownHallBadge level={member.townhallLevel} />
+              </td>
               <td className="num">{starsEarned(member)}</td>
               <td className="num">
                 {member.attacks?.length ? `${bestDestruction(member)}%` : '—'}

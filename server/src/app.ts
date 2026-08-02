@@ -3,6 +3,7 @@ import { InvalidTagError } from '@coc/shared'
 import {
   requireAdmin,
   requireAuth,
+  requirePasswordUpToDate,
   withSession,
   type AuthEnv,
 } from './auth/middleware.ts'
@@ -62,6 +63,9 @@ export function createApp({
   app.use('/api/*', async (c, next) =>
     PUBLIC_API_PATHS.has(c.req.path) ? next() : requireAuth(c, next),
   )
+  // Ahead of requireAdmin, so a flagged *admin* is gated too — the role does not
+  // exempt anyone from replacing a password somebody else picked for them.
+  app.use('/api/*', requirePasswordUpToDate)
   app.use('/api/admin/*', requireAdmin)
 
   mountAuthRoutes(app, auth, {

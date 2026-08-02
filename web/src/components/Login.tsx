@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import type { SessionUser } from '@coc/shared'
 import { ApiError, api } from '../api.ts'
+import { PasswordField } from './primitives.tsx'
 
 /**
  * Rendered instead of the app shell when there is no session. There is no signup
@@ -68,12 +69,10 @@ export function LoginScreen({ onSignedIn }: { onSignedIn: (user: SessionUser) =>
             spellCheck={false}
             autoFocus
           />
-          <input
-            type="password"
+          <PasswordField
+            label="Password"
             value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="Password"
-            aria-label="Password"
+            onChange={setPassword}
             autoComplete="current-password"
           />
           <button type="submit" disabled={busy || !email.trim() || !password}>
@@ -81,8 +80,11 @@ export function LoginScreen({ onSignedIn }: { onSignedIn: (user: SessionUser) =>
           </button>
         </form>
 
+        {/* No "forgot password" link, because there is no email to send one to.
+            Saying who to ask is more use than a link that cannot work. */}
         <p className="lookup-preview">
-          Accounts are created by an admin — there is no self-service signup.
+          Accounts are created by an admin — there is no self-service signup. Forgotten your
+          password? Ask an admin for a temporary one; they can also correct your email address.
         </p>
       </section>
     </div>

@@ -156,6 +156,7 @@ describe('migration from a v1 database', () => {
       'role',
       'created_at',
       'disabled_at',
+      'must_change_password',
     ])
     assert.deepEqual(columnsOf(path, 'owner_assignments'), [
       'player_tag',
@@ -241,11 +242,68 @@ describe('migration bookkeeping', () => {
     const path = join(tempDir(), 'coc.db')
     createV1Database(path, [{ username: 'jcc' }])
 
-    // Mark it as already at v1 — which it effectively is — so only v2 should run.
+    // Mark it as already at v1 — which it effectively is — so v2 onwards run.
     const marked = new DatabaseSync(path)
     marked.exec('PRAGMA user_version = 1')
-    assert.deepEqual(migrate(marked), [2])
+    assert.deepEqual(migrate(marked), [2, 3])
     marked.close()
+  })
+})
+
+describe('migration v3 — must_change_password', () => {
+  it('adds the column, defaults it off, and preserves the existing rows', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV1Database(path, [{ username: 'jcc@example.com' }, { username: 'other@example.com' }])
+
+    const db = openDatabase(path)
+    const store = createAuthStore(db)
+
+    const users = store.listUsers()
+    assert.equal(users.length, 2, 'both rows survived the column being added')
+    // Nobody who already knows their own password gets a change-it-now screen
+    // because the schema moved under them.
+    assert.deepEqual(
+      users.map((user) => user.mustChangePassword),
+      [false, false],
+    )
+    // …and the passwords still verify, i.e. v3 did not rebuild the table.
+    assert.ok(store.authenticate('jcc@example.com', LEGACY_PASSWORD))
+    db.close()
+
+    assert.ok(columnsOf(path, 'users').includes('must_change_password'))
+  })
+
+  it('is idempotent across two boots, flag values and all', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const first = openDatabase(path)
+    const store = createAuthStore(first)
+    const [user] = store.listUsers()
+    assert.ok(user)
+    // Set the flag, so the second boot has something it could destroy.
+    store.setPassword(user.id, 'an-admin-issued-one', true)
+    assert.equal(store.findUser(user.id)?.mustChangePassword, true)
+    first.close()
+
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+
+    /*
+     * `ALTER TABLE ADD COLUMN` has no `IF NOT EXISTS`, so a v3 that ran twice
+     * would throw rather than quietly duplicate — opening at all is half the
+     * assertion, and the flag still reading true is the other half.
+     */
+    const second = openDatabase(path)
+    const reopened = createAuthStore(second)
+    assert.deepEqual(migrate(second), [], 'nothing left to apply')
+    assert.equal(reopened.findUser(user.id)?.mustChangePassword, true)
+    assert.equal(reopened.countUsers(), 1)
+    assert.ok(
+      reopened.authenticate('jcc@example.com', 'an-admin-issued-one'),
+      'the temporary password survives a restart',
+    )
+    second.close()
+    assert.equal(userVersion(path), SCHEMA_VERSION)
   })
 })
 

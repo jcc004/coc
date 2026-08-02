@@ -1,7 +1,11 @@
 node_modules/
 dist/
-# Vendored Supercell icon art — theirs, not ours to redistribute. Regenerate with
-# `npm run assets:coc`; the app falls back to their CDN when it is absent.
+# Vendored Supercell icon art — theirs, not ours to redistribute, and keeping it out
+# of the repo is a licensing decision rather than housekeeping. Regenerate with
+# `npm run assets:coc` (league + label icons, from the API) and `npm run assets:wiki`
+# (unit and Town Hall art, from the community wiki). Absent, the API-sourced icons
+# fall back to Supercell's CDN and the wiki-sourced ones render nothing at all, which
+# is the layout the app had before they existed.
 web/public/coc/
 .env
 .env.local

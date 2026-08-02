@@ -419,11 +419,78 @@ td input {
   max-width: 200px;
 }
 
+/* Flex, because the email editor puts Save / Cancel beside the field and the
+   `td input { width: 100% }` rule above would otherwise push them onto their own
+   line. Harmless for the single-input uses. */
 .row-edit {
   padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .row-edit input {
   max-width: 220px;
+}
+
+/* A rejected row write is reported here, under the buttons that caused it —
+   never as a page-level message, where it reads as unrelated to the click. */
+.row-actions__problem {
+  color: var(--critical);
+  font-size: 12px;
+  margin: 6px 0 0 auto;
+  max-width: 260px;
+}
+
+/* ---------- passwords ---------- */
+
+/* The reveal toggle sits inside the field, so a form that used a bare input can
+   swap the component in without its own layout changing. */
+.password-field {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+  min-width: 200px;
+}
+.password-field input {
+  flex: 1;
+  min-width: 0;
+}
+.search--stacked .password-field {
+  min-width: 0;
+  width: 100%;
+}
+.password-field__toggle {
+  flex: none;
+}
+
+/* The one-time temporary password. Loud on purpose: this is the only moment the
+   value is legible anywhere, and losing it means issuing another one. Warning
+   rather than critical on the edge — nothing has gone wrong, but it does need
+   acting on before the panel is dismissed. Two classes deep so it outranks the
+   plain `.notice` edge that the chrome block further down re-declares. */
+.notice.temp-password {
+  border-left-color: var(--warning);
+}
+.temp-password__value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: var(--plane);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin: 10px 0;
+  /* Selectable by hand, for wherever the clipboard is unavailable. */
+  user-select: all;
+  overflow-wrap: anywhere;
+}
+.temp-password__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* ---------- selection & bulk owner ---------- */
@@ -793,6 +860,12 @@ a.chip {
 }
 .meter-row__name {
   font-size: 14px;
+  /* Flex, not an inline image, so the gap belongs to the row: when the art is not
+     vendored the icon is not rendered at all and the name closes up flush rather
+     than sitting behind an empty slot. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .meter-row__level {
   font-size: 13px;
@@ -854,6 +927,36 @@ details.group[open] > summary::before {
 }
 details.group > .group__body {
   padding-top: 12px;
+}
+
+/* ---------- unit art ---------- */
+
+/*
+ * Wiki-sourced troop, spell, hero, equipment and Town Hall art. One size
+ * everywhere: 20px is within a pixel of the line box it sits in, so adding it
+ * neither bloats a meter row nor grows a table row enough to reflow a roster.
+ * `contain` matters because the source art is not square — a 33x48 Super Bowler
+ * must letterbox, not stretch.
+ */
+.art-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  /* `flex` for the meter row, `vertical-align` for the inline Town Hall badge;
+     each is inert in the other's context. */
+  flex: none;
+  vertical-align: middle;
+}
+
+/*
+ * Town Hall badge. `.th-badge` deliberately adds no display of its own: with no
+ * vendored art the span holds nothing but the number, and must lay out exactly
+ * like the bare number it replaced. Making it inline-flex grew every roster row by
+ * ~2px even with no icon in it, because an inline-flex box reports its child's
+ * baseline as its own. Measured in a browser, not reasoned about.
+ */
+.th-badge .art-icon {
+  margin-right: 5px;
 }
 
 /* ---------- tables ---------- */

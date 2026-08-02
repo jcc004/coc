@@ -98,9 +98,84 @@ a route added later cannot become a hole by omission.
 | `GET /api/admin/users` | admin |
 | `POST /api/admin/users` | admin — `{ email, displayName?, password, role }` |
 | `POST /api/admin/users/:id/disable` | admin — `{ disabled }`, so it re-enables too |
+| `PATCH /api/admin/users/:id/email` | admin — `{ email }`; corrects a login address |
+| `POST /api/admin/users/:id/temp-password` | admin — no body; the server mints the password |
 
-Disabling an account deletes its sessions immediately. An admin cannot disable themselves,
-because with one admin that would leave nobody able to undo it.
+Disabling an account deletes its sessions immediately. Two guards sit in front of it: an admin
+cannot disable **themselves**, and nobody can disable the **last active admin** — with zero
+active admins there is no route back, only hand-editing SQLite. The two rules coincide today
+(the only way to reach zero is via your own row) and are still stated separately, because the
+self-check would stop protecting the install the moment a route existed that could change an
+admin's role.
+
+### Password recovery is admin-mediated, and there is deliberately no email reset
+
+There is **no** `POST /api/auth/forgot-password`, no `password_reset_tokens` table, no SMTP
+config and no mail provider. That is a decision, not a gap:
+
+- **There is no mail infrastructure**, and adding it for a ten-person tool means a provider
+  account, a domain with SPF/DKIM, deliverability to worry about, and one more credential in
+  `.env` — all so that a link can do what a person saying a password out loud already does.
+- **A public reset route would be the first hole in a deny-by-default API.** `/api/*` currently
+  has exactly three public paths, all of which either return nothing interesting or are the
+  login itself. A reset endpoint has to accept an unauthenticated body naming an account, which
+  is a strictly larger attack surface than anything the app has today, plus a token lifecycle
+  (single use, expiry, storage, revocation on use) that is a classic source of bugs.
+- **It would also be an enumeration oracle.** Everything in this layer is built so that an
+  outsider cannot tell which addresses exist — same 401 body for every failure, decoy scrypt
+  work on the unknown-address path. A reset form answering "check your inbox" for a real address
+  and anything else for an unknown one throws that away, and answering identically for both
+  means a real user cannot tell a typo from a mail delay.
+
+So the two routes above **are** the recovery story, and they need one human to vouch for
+another, which is the right shape for a group that already knows each other.
+
+**`PATCH /api/admin/users/:id/email`** — validates the shape with `shared/src/email.ts`, trims
+and lowercases, and relies on the existing `COLLATE NOCASE UNIQUE` for uniqueness. A collision
+is a **409**, caught from the index rather than escaping as a 500; a malformed address is a 400;
+an unknown id is a 404. Changing the login identifier is a credential change, so it **revokes
+that account's sessions** — except the caller's own, so that an admin fixing a typo in their own
+address does not sign themselves out mid-task. That exception cannot spare anything it should
+not: when the target is somebody else, the caller's session row has a different `user_id` and is
+not in the set being deleted at all.
+
+**`POST /api/admin/users/:id/temp-password`** — the body is ignored. The server generates the
+password from `randomBytes`: 20 characters over a 57-symbol alphabet (~117 bits) with `l`, `1`,
+`O`, `0` and `I` removed, because this gets read down a phone or copied by hand and a glyph
+nobody can name is a support call. Sampling is by rejection rather than `byte % 57`, so the
+distribution is exactly uniform. An admin-chosen password is not accepted either — it would be
+human-memorable by construction, and a client-supplied one would turn this route into "set a
+known password on any account".
+
+The plaintext is **returned in that one response body and nowhere else**. There is no email, so
+the body is the entire channel. It is never logged, never stored unhashed, never put in a URL,
+and the UI shows it once with a copy button and says so. Lose it and the only remedy is issuing
+another one. Issuing to yourself is supported and works.
+
+The route also revokes the target's sessions — otherwise the old password would keep one alive —
+sparing the caller's own for the self-issue case, since revoking the session that is *reading*
+the one-time password would throw the value away. That spared session is not a way around the
+change: it is gated exactly like any other flagged session, as below.
+
+### The forced change is enforced, not cosmetic
+
+`must_change_password` on `users` (migration **v3**) is set by the temp-password route and
+cleared **only** by a successful `POST /api/auth/password`. While it is set,
+`requirePasswordUpToDate` in `server/src/auth/middleware.ts` refuses every `/api/*` path except
+`/api/health`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me` and `/api/auth/password`.
+It is mounted **ahead of `requireAdmin`**, so a flagged admin is gated too — the role does not
+exempt anyone from replacing a password somebody else picked for them.
+
+The refusal is **403 `passwordChangeRequired`**, not 401. A 401 would trip the client's global
+signed-out handler and bounce someone to a login screen they cannot get past, because the only
+credential they hold is the temporary one and the change form lives behind the session they
+already have.
+
+`GET /api/auth/me` reports the flag, so the client renders the change screen instead of the app
+shell. That screen is a courtesy, not the lock: navigating around it, or editing the React
+state, yields an app whose every request 403s. The self-service change route still demands the
+current password and still enforces the 12-character minimum — the flag is not a free pass to a
+weak password, and it clears only on a change that actually succeeded.
 
 ### The UI
 
@@ -114,6 +189,23 @@ but not editable), the password-change form and, for admins only, the user list 
 **Sign out** button. No credential is kept in `localStorage`: the cookie is the whole
 mechanism.
 
+**Every password field** in the app — login, change-password, the new-user form, the forced
+change screen — is the one `PasswordField` component in `web/src/components/primitives.tsx`, so
+the behaviour cannot drift between them. It defaults to `type="password"` and only the toggle
+switches it to `text`; the toggle's accessible label names the action *and* the field and
+changes with the state (`Show password` / `Hide password`), with `aria-pressed` carrying the
+state itself. `autoComplete` is a required prop rather than an optional one, because the wrong
+value is worse than none — a browser offering a saved password into a "new password" box is how
+people re-set the password they were trying to replace. The revealed value is never persisted:
+no `localStorage`, no query string, and nothing autofills the temporary password.
+
+When `mustChangePassword` is set, `web/src/components/ForcedPasswordChange.tsx` replaces the
+whole shell. It has exactly two exits — change the password, or sign out — and an admin who
+flags an account mid-session pushes that tab onto the same screen, via a global
+`passwordChangeRequired` handler in `web/src/api.ts` that mirrors the 401 one. In the admin
+panel, a failed email change or temp-password issue is reported **at that row's own controls**,
+never as a page-level message, and a failed request never reports success.
+
 ### Email is the credential (it used to be a username)
 
 `users.username` is **gone**. In its place:
@@ -122,7 +214,8 @@ mechanism.
 |---|---|
 | `guid` | `crypto.randomUUID()`, unique, not null. A stable external handle: `id` stays the integer other rows FK to, while the guid is the one safe to show or quote, since it leaks neither how many accounts exist nor in what order they were made. Shown on the account page, not editable |
 | `display_name` | Not null, free text, 1–64 characters. The human label — topbar, user list, and the attribution on every shared row. **Never a credential** |
-| `email` | Unique, `COLLATE NOCASE` so both the constraint and every lookup are case-insensitive. Trimmed and lowercased on the way in. **Nullable — and a null email means that account cannot authenticate at all**, because `WHERE email = ?` matches no NULL for any value. That is enforced by the schema rather than merely documented, and it is asserted in the tests |
+| `email` | Unique, `COLLATE NOCASE` so both the constraint and every lookup are case-insensitive. Trimmed and lowercased on the way in. **Nullable — and a null email means that account cannot authenticate at all**, because `WHERE email = ?` matches no NULL for any value. That is enforced by the schema rather than merely documented, and it is asserted in the tests. An admin can correct it with `PATCH /api/admin/users/:id/email`, which revokes that account's sessions |
+| `must_change_password` | Migration v3. `NOT NULL DEFAULT 0`. Set by `POST /api/admin/users/:id/temp-password`, cleared only by a successful `POST /api/auth/password`. While it is 1 the API refuses every route but `/api/auth/{me,password,logout}` and `/api/health` |
 
 Validation of an address is deliberately minimal — non-empty, exactly one `@`, non-empty local
 and domain parts, no whitespace (`shared/src/email.ts`, shared by the server and the login
@@ -145,6 +238,15 @@ schema changes) because v2 has to drop and re-create `users`.
   rebuild rather than `ALTER TABLE` because SQLite cannot add a `UNIQUE` or `NOT NULL` column
   to a populated table, and all three are wanted; the rows are copied in JS rather than with
   one `INSERT…SELECT` because each needs its own fresh UUID, which SQL alone cannot produce.
+- **v3** — `must_change_password INTEGER NOT NULL DEFAULT 0` on `users`, the flag behind an
+  admin-issued temporary password. One `ALTER TABLE ADD COLUMN`, where v2 needed a whole
+  rebuild: SQLite refuses a `UNIQUE` or bare `NOT NULL` column on a populated table, but
+  `NOT NULL DEFAULT 0` is fine, and 0 is what every existing row wants — nobody who already
+  knows their own password should meet a change-it-now screen because the schema moved under
+  them. Existing rows, their passwords, their sessions and the shared data are all untouched.
+  `ADD COLUMN` has no `IF NOT EXISTS`, so a second run would *throw* rather than no-op — which
+  is precisely why `user_version` is the thing guarding it, and there is a test that boots the
+  same file twice and checks a flag set on the first boot still reads back on the second.
 
 Backfill, per row:
 
@@ -245,6 +347,26 @@ What the host actually has to provide:
 The server runs under `tsx`; `npm start` is the whole command. Behind a reverse proxy, forward
 `X-Forwarded-For` — it is what the login rate limiter keys its IP bucket on.
 
+### Fetch the art as part of the build
+
+`web/public/coc/` is gitignored, so **a deployed host has no game art until the asset scripts
+run**. Neither is optional if you want the icons; both are safe to re-run, and both skip work
+they have already done.
+
+```sh
+npm run assets:coc    # league + label icons, from the CoC API (needs COC_API_TOKEN)
+npm run assets:wiki   # troop/spell/hero/equipment/Town Hall art, from the wiki (needs COC_API_TOKEN too)
+npm run build         # must come after: Vite copies web/public into dist
+```
+
+Order matters — `vite build` copies `web/public` into `dist`, so anything fetched afterwards is
+not in the bundle you shipped. Skip them entirely and the app still works: every icon is
+optional and the UI falls back to the text-and-meter layout it had before the art existed.
+
+`assets:wiki` needs `COC_API_TOKEN` as well, because it asks the CoC API which units exist
+before it goes looking for their pictures. It takes about a minute on a cold run (requests are
+serialised and paced) and a few seconds when the files are already on disk.
+
 ## Layout
 
 ```
@@ -257,8 +379,9 @@ web/      Vite + React UI
 
 Inside `server/src/auth/`: `passwords.ts` (scrypt), `store.ts` (the only code that touches
 `users` and `sessions`), `middleware.ts` (cookie → context, plus the exported `requireAuth` /
-`requireAdmin`), `rate-limit.ts`, `bootstrap.ts` (first admin and the email escape hatch), and
-`routes.ts`. `server/src/shared-data/` is the same split for the shared rows: `store.ts` is the
+`requireAdmin` / `requirePasswordUpToDate`), `rate-limit.ts`, `bootstrap.ts` (first admin and the
+email escape hatch), `temp-password.ts` (the unambiguous alphabet and the rejection sampling),
+and `routes.ts`. `server/src/shared-data/` is the same split for the shared rows: `store.ts` is the
 only code touching `saved_clans` and `owner_assignments`, `routes.ts` mounts them. Migrations
 live in `server/src/db.ts`.
 
@@ -267,6 +390,11 @@ lets the test suite drive the whole app over an in-memory database and a stub up
 
 `shared` is consumed as TypeScript source through an npm workspace link — no build step,
 so a type change is visible on both sides immediately.
+
+Two asset-mapping modules in `web/src/` are machine-written and must not be hand-edited:
+`coc-assets.ts` (which league and label ids are vendored) and `wiki-art.generated.ts` (which
+unit names have wiki art). The hand-written half of the second one is `wiki-art.ts` — the
+normalisation and lookup — which is where the tests point.
 
 ## API
 
@@ -600,8 +728,11 @@ The UI wears a Clash-themed skin — parchment and stone by day, dark wood by ni
 gold-bevelled panels and pressed buttons. All of that is CSS: gradients and bevels,
 no image assets, so it costs nothing to load and works in both themes.
 
-The actual game art is a different matter. Three things come from Supercell's CDN
-via the API, and only these three:
+The actual game art is a different matter, and it arrives from two different places.
+
+### What the API gives you
+
+Three things come from Supercell's CDN via the API, and only these three:
 
 | Asset | Source | Vendored? |
 |---|---|---|
@@ -614,32 +745,108 @@ regenerates `web/src/coc-assets.ts` with the ids that landed. Vendoring them mea
 the app is not hotlinking `api-assets.clashofclans.com`, so it survives offline and
 under a strict CSP.
 
-`web/public/coc/` is **gitignored** — the art is Supercell's, not ours to
-redistribute through this repo. A fresh clone therefore has the ids but no files,
-which is why `GameIcon` falls back to the CDN URL the API supplied instead of
-showing a broken image. Run the script and it uses the local copies again.
+That is the whole list. The API returns **no** imagery for troops, spells, heroes,
+hero equipment, Town Halls or resources — those arrays carry only `name`, `level`,
+`maxLevel` and `village`, which is why the progression section was level meters with
+no pictures.
 
-Note what the API does *not* give you: troop, spell, hero and equipment artwork,
-Town Hall imagery, achievement icons, resource icons, and the Clash of Clans
-wordmark. Those arrays carry only `name`, `level`, `maxLevel` and `village`, which
-is why the progression section uses level meters rather than unit icons. Sourcing
-that art means scraped game files, so the app does without it.
+### What the wiki gives you
 
-Supercell's [Fan Content Policy](https://supercell.com/en/fan-content-policy/)
-requires an unofficial-and-not-endorsed notice on fan work that uses their assets.
-It is rendered in the page footer (`.site-footer` in `App.tsx`) rather than buried
-here, because that is where the policy wants it. **Do not remove it** while the app
-still shows their icons.
+`npm run assets:wiki` fills that gap from the community
+[Clash of Clans Wiki](https://clashofclans.fandom.com/), via its MediaWiki API —
+`action=query&prop=imageinfo`, never HTML scraping.
+
+| Asset | Count | Wiki file convention |
+|---|---|---|
+| Heroes | 8 | `File:<Name> info.png` |
+| Hero equipment | 41 | `File:<Name>.png` |
+| Troops (home + builder base) | 81 | `File:<Name> info.png` |
+| Spells | 18 | `File:<Name> info.png` |
+| Town Halls 1–18 | 18 | `File:Town Hall<n>.png`, or `File:Town Hall <n> info.png` for TH17 |
+
+166 files, ~358 KiB on disk, against a 3 MiB cap the script enforces and reports
+against. It stays small because `iiurlwidth`/`iiurlheight` make MediaWiki render the
+thumbnail server-side: the app asks for 48px art for a 20px slot instead of pulling
+a 4000×4000 original and needing an image library to shrink it. There is no `sharp`
+here and there should not be.
+
+It is polite by construction: existence checks batch 50 titles per request,
+downloads run serially with a 300ms delay, anything already on disk is skipped, and
+the `User-Agent` names the tool (override the contact via `WIKI_CONTACT`).
+
+**Names are resolved by convention, never by fuzzy matching.** The script derives
+candidate file titles from the API's own `name` string and takes the first that
+exists; a name that matches nothing stays unmapped and is listed in the coverage
+report the script prints. That matters because a confidently wrong troop icon is
+worse than a missing one — `"Super Goblin"` must not borrow the Goblin's picture.
+Coverage is currently 166/166. `web/src/wiki-art.ts` holds the normalisation and
+lookup (case-, punctuation- and accent-insensitive, so `P.E.K.K.A` → `pekka`) and is
+unit tested in `web/src/wiki-art.test.ts`; `web/src/wiki-art.generated.ts` holds only
+the machine-written map.
+
+Per-file provenance lives in `web/public/coc/wiki/manifest.json` — every entry records
+the API name, the exact wiki file title it came from and a link to that file's page,
+so attribution is traceable rather than folklore.
+
+### Absent art is the normal case, not an error
+
+`web/public/coc/` is **gitignored** — the art is Supercell's, not ours to redistribute
+through this repo. So a fresh clone, and any host that has not run the asset scripts,
+has the ids and paths but none of the files. Both layers degrade rather than break:
+
+- **League and label icons** fall back to the CDN URL the API supplied, so they still
+  render.
+- **Wiki unit art has no fallback on purpose** — hotlinking the wiki would be rude and
+  fragile. `GameIcon` called without a `fallback` removes itself on error instead, so
+  the row reads exactly as it did before the art existed: name, meter, level. Verified
+  in a browser, not assumed: a meter row measures 49.0px with art, with a 404, and with
+  no art at all, and a roster row with no art is 38.0px — the same as before this
+  change.
+
+Never a broken image, never a reserved empty slot, never a reflowed table.
+
+### Licensing, and why it matters more now
+
+Supercell's [Fan Content Policy](https://supercell.com/en/fan-content-policy/) permits
+their assets in fan projects on conditions. **This app is going to public hosting**,
+which turns those conditions from theoretical into binding — private local use is one
+thing, publishing is another. So, plainly:
+
+- **Keep it non-commercial.** No ads, no payments, no selling access.
+- **Keep the disclaimer.** The unofficial-and-not-endorsed notice is rendered in the
+  page footer (`.site-footer` in `App.tsx`), which is where the policy wants it rather
+  than buried in this file. **Do not remove it** while the app shows their art.
+- **Do not use Supercell's art as branding.** Not as a logo, favicon, app icon, social
+  card or wordmark. It labels game data inside the app; that is all.
+- **The repo redistributes nothing.** Keeping `web/public/coc/` gitignored is a
+  licensing decision, not a housekeeping one. Do not commit the art to make deployment
+  easier — run the fetch scripts on the host instead.
+
+One thing to be clear about: Fandom's text is CC BY-SA, and **that licence does not
+extend to these images**. They are user-uploaded game rips. Crediting the wiki as the
+source (the footer does) is honest attribution; it is not a licence, and no licence is
+available — the art is Supercell's, used under their fan policy or not at all.
+
+### Not covered
+
+- **Capital district art does not exist on the wiki.** Checked: there is no per-district
+  image for Wizard Valley, Balloon Lagoon, Golem Quarry and the rest, only a generic
+  `District_Hall<n>.png` by level. Mapping that generic building onto district names
+  would show the same picture for every district, which is worse than no picture, so
+  `CapitalRaidsCard` has none.
+- **Resource and achievement icons** are not fetched. Nothing in the UI is keyed to a
+  resource type by name, so there is nowhere to put them.
 
 ## Scripts
 
 | Command | Does |
 |---|---|
 | `npm run dev` | API + UI with reload |
-| `npm test` | server auth suite (`app.request` against `createApp`, in-memory SQLite) + web unit tests for table sort, paging, owner-overwrite and `coc:saved` migration |
+| `npm test` | server auth suite (`app.request` against `createApp`, in-memory SQLite) + web unit tests for table sort, paging, owner-overwrite, `coc:saved` migration and wiki-art name lookup |
 | `npm run typecheck` | `tsc --noEmit` across all three workspaces |
-| `npm run build` | production bundle for the UI |
-| `npm run assets:coc` | re-download the vendored league and label icons |
+| `npm run build` | production bundle for the UI — run the two asset scripts *first* |
+| `npm run assets:coc` | re-download the vendored league and label icons from the CoC API |
+| `npm run assets:wiki` | re-download troop / spell / hero / equipment / Town Hall art from the wiki, and print a coverage report |
 | `npm start` | API only, no watcher |
 
 The server runs through `tsx` in both dev and production — there is no server build step.

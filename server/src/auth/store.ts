@@ -59,12 +59,13 @@ function toAdminUser(row: Record<string, unknown>): AdminUser {
     role: asRole(row['role']),
     createdAt: asText(row['created_at']),
     disabledAt: asTextOrNull(row['disabled_at']),
+    mustChangePassword: asInt(row['must_change_password']) !== 0,
   }
 }
 
 function toSessionUser(row: Record<string, unknown>): SessionUser {
-  const { id, guid, displayName, email, role, createdAt } = toAdminUser(row)
-  return { id, guid, displayName, email, role, createdAt }
+  const { id, guid, displayName, email, role, createdAt, mustChangePassword } = toAdminUser(row)
+  return { id, guid, displayName, email, role, createdAt, mustChangePassword }
 }
 
 export interface ResolvedSession {
@@ -88,11 +89,23 @@ export interface AuthStore {
   countUsers(): number
   /** How many accounts hold an email, i.e. how many can sign in at all. */
   countUsersWithEmail(): number
+  /**
+   * Admins who are not disabled. The one number behind "do not lock everybody
+   * out": an install with zero of these has nobody who can create or re-enable an
+   * account, and no route can undo that.
+   */
+  countActiveAdmins(): number
   listUsers(): AdminUser[]
   findUser(id: number): AdminUser | undefined
   createUser(input: CreateUserInput): AdminUser
   setDisabled(id: number, disabled: boolean): AdminUser | undefined
-  setPassword(id: number, password: string): void
+  /**
+   * Replaces the password. `mustChangePassword` is the flag an admin-issued
+   * temporary password sets and a self-chosen one clears, so it is a parameter of
+   * the same write rather than a second statement that could be forgotten.
+   * `undefined` for an unknown id — nothing was written.
+   */
+  setPassword(id: number, password: string, mustChangePassword?: boolean): AdminUser | undefined
   /** Fills in a missing (or corrects an existing) email. Never touches the password. */
   setEmail(id: number, email: string): AdminUser | undefined
   /** The lowest-id admin with no email — the account the escape hatch targets. */
@@ -115,12 +128,16 @@ export interface AuthStore {
   pruneSessions(now?: Date): number
 }
 
-const USER_COLUMNS = 'id, guid, display_name, email, role, created_at, disabled_at'
+const USER_COLUMNS =
+  'id, guid, display_name, email, role, created_at, disabled_at, must_change_password'
 
 export function createAuthStore(db: DatabaseSync): AuthStore {
   const statements = {
     countUsers: db.prepare('SELECT COUNT(*) AS n FROM users'),
     countUsersWithEmail: db.prepare('SELECT COUNT(*) AS n FROM users WHERE email IS NOT NULL'),
+    countActiveAdmins: db.prepare(
+      "SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND disabled_at IS NULL",
+    ),
     listUsers: db.prepare(`SELECT ${USER_COLUMNS} FROM users ORDER BY id`),
     findUser: db.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`),
     // COLLATE NOCASE on the column makes this comparison case-insensitive.
@@ -137,7 +154,10 @@ export function createAuthStore(db: DatabaseSync): AuthStore {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ),
     setDisabled: db.prepare('UPDATE users SET disabled_at = ? WHERE id = ?'),
-    setPassword: db.prepare('UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?'),
+    setPassword: db.prepare(
+      `UPDATE users SET password_hash = ?, password_salt = ?, must_change_password = ?
+        WHERE id = ?`,
+    ),
     setEmail: db.prepare('UPDATE users SET email = ? WHERE id = ?'),
 
     insertSession: db.prepare(
@@ -148,7 +168,8 @@ export function createAuthStore(db: DatabaseSync): AuthStore {
     selectSession: db.prepare(
       `SELECT s.id AS session_id, s.expires_at AS expires_at,
               u.id AS id, u.guid AS guid, u.display_name AS display_name, u.email AS email,
-              u.role AS role, u.created_at AS created_at, u.disabled_at AS disabled_at
+              u.role AS role, u.created_at AS created_at, u.disabled_at AS disabled_at,
+              u.must_change_password AS must_change_password
          FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.id = ?`,
     ),
@@ -171,6 +192,10 @@ export function createAuthStore(db: DatabaseSync): AuthStore {
 
     countUsersWithEmail() {
       return asInt(statements.countUsersWithEmail.get()?.['n'])
+    },
+
+    countActiveAdmins() {
+      return asInt(statements.countActiveAdmins.get()?.['n'])
     },
 
     listUsers() {
@@ -215,9 +240,13 @@ export function createAuthStore(db: DatabaseSync): AuthStore {
       return findUser(id)
     },
 
-    setPassword(id, password) {
+    setPassword(id, password, mustChangePassword = false) {
       const { hash, salt } = hashPassword(password)
-      statements.setPassword.run(hash, salt, id)
+      // The flag rides along with the hash: a password the account holder chose
+      // clears it, and one an admin issued sets it, in a single write. Splitting
+      // the two would allow a state where the password moved and the flag did not.
+      statements.setPassword.run(hash, salt, mustChangePassword ? 1 : 0, id)
+      return findUser(id)
     },
 
     setEmail(id, email) {
