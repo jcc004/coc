@@ -44,27 +44,35 @@ function MemberBreakdown({ season }: { season: CapitalRaidSeason }) {
           <p className="empty-hint">Nobody has attacked yet this weekend.</p>
         ) : (
           <div className="table-wrap">
-            <table className="roster">
-              <thead>
-                <tr>
-                  <th>Member</th>
-                  <th className="num">Attacks</th>
-                  <th className="num">Capital loot</th>
+            {/* Stacks into one labelled card per member on a phone; the roles keep
+                it a table for assistive tech once `display` changes. */}
+            <table className="roster roster--stack" role="table">
+              <thead role="rowgroup">
+                <tr role="row">
+                  <th role="columnheader">Member</th>
+                  <th className="num" role="columnheader">
+                    Attacks
+                  </th>
+                  <th className="num" role="columnheader">
+                    Capital loot
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup">
                 {[...members]
                   .sort((a, b) => b.capitalResourcesLooted - a.capitalResourcesLooted)
                   .map((member) => (
-                    <tr key={member.tag}>
-                      <td>
+                    <tr key={member.tag} role="row">
+                      <td className="stack-title" role="cell">
                         <a href={hrefFor({ view: 'player', tag: member.tag })}>{member.name}</a>
                       </td>
                       {/* The limit is base + bonus; `attacks` legitimately reaches it. */}
-                      <td className="num">
+                      <td className="num" role="cell" data-label="Attacks">
                         {member.attacks}/{member.attackLimit + member.bonusAttackLimit}
                       </td>
-                      <td className="num">{formatFull(member.capitalResourcesLooted)}</td>
+                      <td className="num" role="cell" data-label="Capital loot">
+                        {formatFull(member.capitalResourcesLooted)}
+                      </td>
                     </tr>
                   ))}
               </tbody>
@@ -88,30 +96,53 @@ function RaidSeasons({ seasons }: { seasons: CapitalRaidSeason[] }) {
   return (
     <>
       <div className="table-wrap">
-        <table className="roster">
-          <thead>
-            <tr>
-              <th>Weekend</th>
-              <th>State</th>
-              <th className="num">Capital loot</th>
-              <th className="num">Raids</th>
-              <th className="num">Enemy districts</th>
-              <th className="num">Offensive reward</th>
-              <th className="num">Defensive reward</th>
+        <table className="roster roster--stack" role="table">
+          <thead role="rowgroup">
+            <tr role="row">
+              <th role="columnheader">Weekend</th>
+              <th role="columnheader">State</th>
+              <th className="num" role="columnheader">
+                Capital loot
+              </th>
+              <th className="num" role="columnheader">
+                Raids
+              </th>
+              <th className="num" role="columnheader">
+                Enemy districts
+              </th>
+              <th className="num" role="columnheader">
+                Offensive reward
+              </th>
+              <th className="num" role="columnheader">
+                Defensive reward
+              </th>
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {seasons.map((season) => (
-              <tr key={season.startTime}>
-                <td title={weekendTitle(season)}>{weekendRange(season)}</td>
-                <td>
+              <tr key={season.startTime} role="row">
+                {/* The date range is what names a weekend, so it heads the card. */}
+                <td className="stack-title" role="cell" title={weekendTitle(season)}>
+                  {weekendRange(season)}
+                </td>
+                <td role="cell" data-label="State">
                   <span className="role-pill">{STATE_LABEL[season.state] ?? season.state}</span>
                 </td>
-                <td className="num">{formatFull(season.capitalTotalLoot)}</td>
-                <td className="num">{season.raidsCompleted}</td>
-                <td className="num">{season.enemyDistrictsDestroyed}</td>
-                <td className="num">{formatFull(season.offensiveReward)}</td>
-                <td className="num">{formatFull(season.defensiveReward)}</td>
+                <td className="num" role="cell" data-label="Capital loot">
+                  {formatFull(season.capitalTotalLoot)}
+                </td>
+                <td className="num" role="cell" data-label="Raids">
+                  {season.raidsCompleted}
+                </td>
+                <td className="num" role="cell" data-label="Enemy districts">
+                  {season.enemyDistrictsDestroyed}
+                </td>
+                <td className="num" role="cell" data-label="Offensive reward">
+                  {formatFull(season.offensiveReward)}
+                </td>
+                <td className="num" role="cell" data-label="Defensive reward">
+                  {formatFull(season.defensiveReward)}
+                </td>
               </tr>
             ))}
           </tbody>

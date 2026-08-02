@@ -290,19 +290,84 @@ describe('a whole base is written in one request', () => {
     harness.db.close()
   })
 
-  it('empties a base when every count is zero', async () => {
+  it('empties a base to zero cards but keeps its stamp', async () => {
     const harness = createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     await save(harness, cookie, BASE_A, [{ cardId: 1, count: 2 }])
     assert.equal((await save(harness, cookie, BASE_A, [{ cardId: 1, count: 0 }])).status, 200)
 
-    // No rows left, so the base drops out of the list entirely — and with it the
-    // stamp, since the stamp is derived from the rows.
-    assert.deepEqual(await readAll(harness, cookie), [])
+    // The counts really are gone — storage stays sparse …
+    assert.equal(
+      Number(harness.db.prepare('SELECT COUNT(*) AS n FROM card_inventory').get()?.['n']),
+      0,
+    )
+
+    // … but "when was this last checked" must still answer, which is the whole
+    // reason the stamp is its own table rather than a MAX() over the counts.
     const emptied = await readOne(harness, cookie, BASE_A)
     assert.deepEqual(emptied.counts, [])
-    assert.equal(emptied.updatedAt, undefined)
+    assert.ok(emptied.updatedAt, 'an emptied base keeps the time it was emptied')
+    assert.equal(emptied.updatedBy, ADMIN_NAME)
+
+    assert.deepEqual(
+      (await readAll(harness, cookie)).map((b) => [b.tag, b.counts.length]),
+      [[BASE_A, 0]],
+      'and stays listed, rather than being silently forgotten',
+    )
+    harness.db.close()
+  })
+
+  it('records the stamp even when the very first save is empty', async () => {
+    const harness = createHarness()
+    const cookie = await signIn(harness, ADMIN)
+
+    // Someone opened the base, found nothing worth recording, and saved. That is
+    // a real check, and has to be logged as one or the base looks unvisited.
+    assert.equal((await save(harness, cookie, BASE_A, [])).status, 200)
+
+    const base = await readOne(harness, cookie, BASE_A)
+    assert.deepEqual(base.counts, [])
+    assert.ok(base.updatedAt)
+    assert.equal(base.updatedBy, ADMIN_NAME)
+    harness.db.close()
+  })
+
+  it('moves the stamp forward on every save, naming the latest editor', async () => {
+    const harness = createHarness()
+    const a = await signIn(harness, ADMIN)
+    const b = await signIn(harness, SECOND)
+
+    await save(harness, a, BASE_A, [{ cardId: 1, count: 2 }])
+    const first = await readOne(harness, a, BASE_A)
+    assert.ok(first.updatedAt)
+
+    await save(harness, b, BASE_A, [{ cardId: 1, count: 3 }])
+    const second = await readOne(harness, a, BASE_A)
+    assert.ok(second.updatedAt)
+    // Two saves can land in the same millisecond, so assert it never goes
+    // backwards rather than that it strictly increased.
+    assert.ok(second.updatedAt >= first.updatedAt, 'the stamp must not go backwards')
+    assert.equal(second.updatedBy, SECOND_NAME, 'and must name whoever wrote last')
+    harness.db.close()
+  })
+
+  it('keeps one stamp row per base, never one per card', async () => {
+    const harness = createHarness()
+    const cookie = await signIn(harness, ADMIN)
+
+    await save(harness, cookie, BASE_A, [
+      { cardId: 1, count: 2 },
+      { cardId: 2, count: 3 },
+      { cardId: 3, count: 4 },
+    ])
+    await save(harness, cookie, BASE_B, [{ cardId: 1, count: 2 }])
+
+    assert.equal(
+      Number(harness.db.prepare('SELECT COUNT(*) AS n FROM card_base_updates').get()?.['n']),
+      2,
+      'two bases, two stamps — against four count rows',
+    )
     harness.db.close()
   })
 
@@ -316,8 +381,12 @@ describe('a whole base is written in one request', () => {
 
     const bases = await readAll(harness, cookie)
     assert.deepEqual(
-      bases.map((b) => b.tag),
-      [BASE_B],
+      bases.map((b) => [b.tag, b.counts.length]),
+      [
+        [BASE_A, 0],
+        [BASE_B, 1],
+      ],
+      "emptying A must not disturb B's counts",
     )
     harness.db.close()
   })

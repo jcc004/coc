@@ -241,7 +241,49 @@ CREATE TABLE card_inventory (
 `)
 }
 
-const MIGRATIONS: Migration[] = [v1, v2, v3, v4]
+/**
+ * v5 — `card_base_updates`, one row per base saying when its counts were last
+ * edited and by whom.
+ *
+ * Why this is not just derived from `card_inventory`, which is where it started:
+ * the counts are stored **sparsely**, so a base whose every count is set back to
+ * zero has no rows left — and with them went the only record that anyone had
+ * touched it. "When was this base last checked" then had no answer for exactly
+ * the base most likely to prompt the question. The stamp has to outlive the
+ * rows, so it needs a row of its own.
+ *
+ * One row per base rather than per card: a base is saved whole, in one
+ * transaction, so a per-card stamp would be sixty copies of one fact.
+ *
+ * The backfill takes each base's newest surviving `card_inventory` row, so an
+ * install already at v4 keeps the attribution it had rather than resetting every
+ * base to "never edited". A base already emptied before this migration has
+ * nothing to recover and stays absent — that history is genuinely gone.
+ */
+const v5: Migration = (db) => {
+  db.exec(`
+CREATE TABLE card_base_updates (
+  season             TEXT NOT NULL,
+  player_tag         TEXT NOT NULL,
+  updated_at         TEXT NOT NULL,
+  updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  PRIMARY KEY (season, player_tag)
+);
+
+INSERT INTO card_base_updates (season, player_tag, updated_at, updated_by_user_id)
+SELECT season, player_tag, MAX(updated_at),
+       -- The updater of the newest row, which is the one the stamp describes.
+       (SELECT i2.updated_by_user_id
+          FROM card_inventory i2
+         WHERE i2.season = i1.season AND i2.player_tag = i1.player_tag
+         ORDER BY i2.updated_at DESC, i2.card_id ASC
+         LIMIT 1)
+  FROM card_inventory i1
+ GROUP BY season, player_tag;
+`)
+}
+
+const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5]
 
 /** The version a fully migrated database reports. */
 export const SCHEMA_VERSION = MIGRATIONS.length

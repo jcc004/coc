@@ -234,6 +234,12 @@ select {
   .shell__main {
     order: 2;
   }
+  /* Without this the footer keeps the default `order: 0` and sorts alongside the
+     banner — which put the Supercell notice between the banner and the lookup on
+     every narrow screen, above the content it belongs under. */
+  .site-footer {
+    order: 3;
+  }
 }
 
 /*
@@ -1163,6 +1169,14 @@ details.group > .group__body {
   text-align: center;
   /* A long name wraps rather than widening the column and reflowing the grid. */
   overflow-wrap: anywhere;
+  /*
+   * Two lines' worth, always. Without it a name that wraps ("Baby Dragon
+   * (Builder)", "Apprentice Warden", "Super Wall Breaker") makes its tile taller
+   * than its neighbours, the grid row stretches to match, and the count boxes
+   * stop lining up across the row — which is the line the eye follows when
+   * entering sixty numbers. Seen in a screenshot, not reasoned about.
+   */
+  min-height: 2.5em;
 }
 .card-tile__state {
   font-size: 11px;
@@ -1185,6 +1199,17 @@ details.group > .group__body {
 .card-meta {
   font-size: 12px;
   color: var(--ink-2);
+}
+
+/*
+ * Groups a pair's options in the wide trade table. A pair is named on its first
+ * row only, so the rule above that row is what tells the eye the blank Base
+ * cells beneath mean "the same two bases" rather than "we lost the data". The
+ * stacked layout names the base in each row's label instead and needs no rule,
+ * which is why this is scoped to the table presentation.
+ */
+table.roster tbody tr[data-pair-start='true']:not(:first-child) > td {
+  border-top: 2px solid var(--baseline);
 }
 
 /* One side of a suggested swap, in the trade table. */
@@ -1702,4 +1727,413 @@ table.roster th {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/*
+ * The tap target around a roster checkbox. The input stays visually small; this
+ * label is the thing a pointer actually has to hit.
+ *
+ * 24px here and 44px only on a touch-sized screen, because the header row has no
+ * 32px art icon to hide the growth behind: at 34px it pushed that row from 38px
+ * to 51px on a desktop, which is a change nobody asked for. 24px costs it 2px
+ * and still beats the 22x14 the bare checkbox offered.
+ *
+ * A wrapping <label> rather than a pseudo-element because a checkbox is a
+ * replaced element and does not reliably render one — and because a label
+ * forwards the click to the input for free. The input keeps its `aria-label`,
+ * which outranks an empty wrapping label in the accessible-name calculation, so
+ * the per-row name is unchanged.
+ */
+.select-hit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  cursor: pointer;
+}
+
+/*
+ * Label/value pairs rather than a grid of records — the account identity table.
+ * It is two columns wide at every size, so it never stacks; it only has to be
+ * allowed to wrap, because a 36-character guid does not fit a 320px screen on
+ * one line.
+ */
+table.roster--pairs th,
+table.roster--pairs td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   Responsive: phones and tablets first
+   --------------------------------------------------------------------------
+   This app is read mostly on a phone, so what follows is the other half of the
+   design rather than a set of patches. Three bands, all authored as max-width
+   so they cascade into one another and cannot leave a gap between them:
+
+     <= 600px   phone     stacked tables, one-column forms, tight gutters
+     <= 900px   tablet    single column (declared up in the layout section)
+      > 900px   desktop   untouched
+
+   600px is where a two-up control row stops fitting: phones in use run
+   320–430px and a portrait tablet is 768px, so the line falls in the empty
+   space between the two rather than through the middle of either. 900px was
+   already the column-collapse point and is left exactly where it was.
+
+   Tap targets key off `(max-width: 900px), (pointer: coarse)` instead of width
+   alone, because a landscape tablet is 1024px wide and still driven by a thumb.
+
+   This section is last in the file on purpose: a media query adds no
+   specificity, so it has to come after the Clash chrome block above, which
+   re-declares several of the same selectors.
+   ========================================================================== */
+
+/* ---------- tap targets ---------- */
+
+@media (max-width: 900px), (pointer: coarse) {
+  /*
+   * ~44px is the accepted floor for a fingertip. A <button>, <select> and
+   * <input> all centre their own content, so a min-height is the whole fix for
+   * them; the anchors and pills that merely look like buttons need padding too.
+   *
+   * Checkboxes are excluded because min-height outranks their explicit height
+   * and would stretch the box itself into an oblong. They get `.select-hit`.
+   */
+  button,
+  select,
+  textarea,
+  input:not([type='checkbox']) {
+    min-height: 44px;
+  }
+
+  /* Both of these are worn by anchors and spans as well as buttons, so they
+     restate the height rather than inheriting it from the rule above. */
+  .icon-button {
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+  /* Vertical padding on an inline box paints but does not push. */
+  a.icon-button {
+    display: inline-block;
+  }
+
+  .chip,
+  a.chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 6px 14px;
+  }
+
+  /* The disclosure rows on the player and capital views are tap targets too,
+     and a bare summary line measures 19.5px — 13px each side clears 44. */
+  details.group > summary {
+    padding: 13px 0;
+  }
+
+  /* A sort header was a bare run of 12px text; give it the whole cell width so
+     the target is the column, not the word. `inherit` keeps a numeric column
+     right-aligned, which a button's own centred default would undo. */
+  table.roster th button {
+    display: block;
+    width: 100%;
+    text-align: inherit;
+  }
+
+  .select-cell input[type='checkbox'],
+  .conflict-list input[type='checkbox'] {
+    width: 20px;
+    height: 20px;
+  }
+
+  .select-hit {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .conflict-list li {
+    padding: 12px 0;
+  }
+
+  /* The card grid's only control, and the one a phone user touches sixty times. */
+  .card-tile__input {
+    width: 100%;
+    padding: 6px 4px;
+  }
+}
+
+/* ---------- tablet, and every table on it ---------- */
+
+@media (max-width: 900px) {
+  .shell {
+    padding: 20px 16px 56px;
+  }
+
+  /* ---------- tables become stacked records ---------- */
+
+  /*
+   * Sideways-scrolling an eight-column roster is miserable, so below this width
+   * every wide table turns into one card per row with each cell carrying its
+   * own label.
+   *
+   * 900px, not the 600px phone line, because measurement said so: at 768px — a
+   * tablet in portrait — four of the eight tables still wanted a sideways
+   * scroll, and the users table wanted 1124px against 694px of content. 900px
+   * is also already the width at which this layout gives up its second column,
+   * so a table gives up its columns at the same moment rather than at a width
+   * of its own.
+   *
+   * Changing `display` on a table strips its semantics from the accessibility
+   * tree in Chrome and Safari alike, so every element that stacks carries an
+   * explicit `role` in the markup — table / rowgroup / row / columnheader /
+   * rowheader / cell. The header row is never removed either: a sortable table
+   * keeps it as a visible bar of sort buttons, and a table with nothing to sort
+   * hides it with the `.visually-hidden` recipe rather than `display: none`, so
+   * a screen reader still reads real column headers against real cells.
+   *
+   * The label is a float rather than a flex or grid column because a cell's
+   * value is arbitrary inline content — a link, then text, then a pill — and any
+   * of those would be torn into separate flex items.
+   */
+  table.roster--stack,
+  table.roster--stack thead,
+  table.roster--stack tbody,
+  table.roster--stack tr,
+  table.roster--stack th,
+  table.roster--stack td {
+    display: block;
+  }
+
+  table.roster--stack tbody tr {
+    border: 1px solid var(--baseline);
+    border-radius: var(--radius);
+    padding: 4px 12px;
+    margin-bottom: 10px;
+  }
+
+  table.roster--stack td {
+    /* flow-root, not block: it contains the label float without clipping. */
+    display: flow-root;
+    width: auto;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--grid);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  table.roster--stack tr td:last-child {
+    border-bottom: none;
+  }
+  /* A cell the row had nothing to put in — the second and later rows of a trade
+     pair, the empty actions header — is a blank line, so it goes. */
+  table.roster--stack td:empty {
+    display: none;
+  }
+
+  table.roster--stack td[data-label]::before {
+    content: attr(data-label);
+    float: left;
+    width: 40%;
+    max-width: 9rem;
+    padding-right: 10px;
+    /* Explicit, because a `.num` cell aligns right and the float would otherwise
+       inherit it — which left the labels ragged down the middle of the card
+       instead of squared up on the left. */
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-muted);
+    overflow-wrap: anywhere;
+  }
+
+  /* The row's identity: no label, because a name needs none, and it reads as
+     the card's heading. */
+  table.roster--stack td.stack-title {
+    font-size: 15px;
+    font-weight: 600;
+    padding-top: 10px;
+  }
+
+  table.roster--stack td.row-actions {
+    text-align: left;
+  }
+  table.roster--stack td.row-actions button + button {
+    margin-left: 0;
+  }
+  table.roster--stack .row-actions__problem {
+    margin-left: 0;
+    max-width: none;
+  }
+
+  /* The donation bar sizes itself off the cell, not a 96px floor. */
+  table.roster--stack .donation-cell {
+    min-width: 0;
+  }
+
+  /* An inline row editor is a whole form, so it drops below its label rather
+     than squeezing input, Save and Cancel into the 60% left beside it. */
+  table.roster--stack .row-edit {
+    clear: both;
+  }
+
+  /*
+   * The header row is hidden, never dropped: it is the only thing tying a value
+   * to a column name for assistive tech, and `display: none` would take it out
+   * of the accessibility tree along with the `aria-sort` it carries.
+   *
+   * It holds no buttons at this width. The sortable tables render plain text in
+   * their `th`s and a `.sort-control` above the table instead, so nothing
+   * focusable is hiding in here for a keyboard user to fall into. See
+   * `useStackedTables` in hooks.ts for why that is a render decision, not a CSS
+   * one. Reflowing the head into a strip of sort buttons was the first attempt
+   * and it read as a run of unexplained gold words above cards that already
+   * print their own field names.
+   */
+  table.roster--stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /*
+   * The card's own navigation target. A member name sat in an 18px line box —
+   * the smallest thing on the page and the one people actually aim at. Padding
+   * rather than a bigger font, so the text stays the size it was and only the
+   * box grows.
+   *
+   * `:has()` so a title cell holding no link keeps its own padding: the users
+   * table and the raid weekends put plain text here. It is a safe floor for this
+   * project — `color-mix()`, already used at the top of this file, is the newer
+   * of the two features.
+   */
+  table.roster--stack td.stack-title:has(> a) {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  table.roster--stack td.stack-title > a {
+    display: inline-block;
+    /* 13px each side of an 18px line box clears 44. The negative margin hands
+       back the side padding so the name still starts at the card's edge. */
+    padding: 13px 4px;
+    margin-left: -4px;
+  }
+}
+
+/* ---------- phone ---------- */
+
+@media (max-width: 600px) {
+  /*
+   * 12px each side rather than 20px. On a 390px screen the old gutters took
+   * 10% of the width before anything was drawn in it.
+   */
+  .shell {
+    padding: 14px 12px 48px;
+  }
+  .auth-screen {
+    padding: 6vh 12px 48px;
+  }
+
+  .card {
+    padding: 14px;
+  }
+
+  .topbar {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .topbar__title {
+    font-size: 18px;
+  }
+
+  /* iOS zooms the page whenever a focused control is under 16px. Spelled out
+     per selector because several of these set a smaller size by class, which
+     a bare `input` rule would lose to. */
+  input,
+  select,
+  textarea,
+  .search input,
+  .search select,
+  .roster-filters input,
+  .roster-filters select,
+  .row-limit select,
+  .chat__form textarea {
+    font-size: 16px;
+  }
+
+  /* Two 200px-floor inputs side by side overflow at 360px, so every lookup and
+     entry form becomes one control per line — which is what `--stacked`
+     already does in the sidebar. */
+  .search {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .search input,
+  .search select,
+  .password-field {
+    min-width: 0;
+    width: 100%;
+  }
+  .row-edit input {
+    max-width: none;
+  }
+
+  .card-header {
+    flex-wrap: wrap;
+  }
+
+  /* Two filters per line at 390px; the 140px floor made it one and a bit. */
+  .roster-filters > label {
+    flex: 1 1 40%;
+    min-width: 0;
+  }
+  .roster-filters input,
+  .roster-filters select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .bulk-bar input {
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+
+  td input {
+    max-width: none;
+  }
+
+  /* Right-aligned beside a left-aligned name reads as a stray on one column. */
+  .hero-figure,
+  .hero-figure__actions,
+  .hero-figure__league {
+    text-align: left;
+    justify-content: flex-start;
+  }
+
+  .war-side--right {
+    text-align: left;
+  }
+
+  /* Badge, name and stats each get their own line instead of being squeezed. */
+  .result-list li {
+    flex-wrap: wrap;
+  }
+  .result-list__stats {
+    margin-left: 0;
+    text-align: left;
+  }
+
+  /* Three across instead of two: the tiles are square-ish art, and a 60-card
+     deck at two columns is thirty rows of scrolling. */
+  .card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 8px;
+  }
 }

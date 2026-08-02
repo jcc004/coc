@@ -250,6 +250,11 @@ schema changes) because v2 has to drop and re-create `users`.
 - **v4** — `card_inventory`, the hand-entered card counts. See
   [The card-collecting event](#the-card-collecting-event). A plain `CREATE TABLE`, which would
   also throw on a second run — same guard, same two-boot test.
+- **v5** — `card_base_updates`, one row per base recording when its counts were last edited and
+  by whom, plus a backfill from the newest `card_inventory` row each base has. Needed because a
+  stamp derived from sparse count rows disappears when a base is cleared to zero; see the same
+  section. The backfill is inside the versioned step, so a second boot cannot re-run it over a
+  stamp that has since moved on — there is a test for exactly that.
 
 Backfill, per row:
 
@@ -395,6 +400,66 @@ Three modules in `web/src/` are machine-written and must not be hand-edited: `co
 (which league and label ids are vendored), `wiki-art.generated.ts` (which unit names have wiki
 art) and `cards.generated.ts` (the sixty event cards). Each has a hand-written half where the
 tests point — `wiki-art.ts` for the second, `cards.ts` for the third.
+
+## Phones and tablets first
+
+This app is read mostly on a phone, so small screens are the design rather than a fallback.
+All of it is hand-written CSS in `web/src/styles.css`; the responsive rules live in one block
+at the **end** of that file, because a media query adds no specificity and the Clash chrome
+section above re-declares several of the same selectors.
+
+Two breakpoints, both authored as `max-width` so they cascade into each other and cannot leave
+a gap in the middle:
+
+| Band | What changes |
+| --- | --- |
+| **≤ 900px** (tablet and phone) | One column, lookup stacked above the content, footer forced last. **Every wide table becomes one card per row.** Gutters drop to `20px 16px`. |
+| **≤ 600px** (phone) | Gutters drop again to `14px 12px`, every `.search` form goes one control per line, form controls go to 16px, the 60-card grid tightens to a 96px column floor, and the hero and war blocks left-align. |
+| **> 900px** (desktop) | Unchanged. |
+
+600px is the line where a two-up control row stops fitting: phones in use run 320–430px and a
+portrait tablet is 768px, so it falls in the empty space between the two. 900px was already the
+point at which the layout gives up its second column.
+
+Tables stack at **900px, not 600px**, and that is a measured decision — at 768px, a tablet in
+portrait, four of the eight tables still wanted a sideways scroll, and the users table wanted
+1124px against 694px of available content width.
+
+**Tap targets** key off `@media (max-width: 900px), (pointer: coarse)` rather than width alone,
+because a landscape tablet is 1024px wide and still driven by a thumb. Inside that block every
+button, input, select and pill clears 44px. Checkboxes are the exception — `min-height` would
+outrank their explicit `height` and stretch the box — so a roster checkbox is wrapped in a
+`.select-hit` label, 24px on a desktop and 44px on a touch screen.
+
+The 16px floor on phone form controls is not cosmetic: iOS Safari zooms the whole page whenever
+a focused control is smaller than that.
+
+### A new table has to take the stacked treatment
+
+Otherwise it will scroll sideways on a phone. The recipe:
+
+1. Put `roster--stack` on the table, plus `roster--sortable` if its header row holds sort
+   buttons — that keeps the header on screen as a wrapped bar of buttons instead of hiding it.
+2. Give every cell a `data-label`; that is what the stacked card prints in place of the column
+   head. The row's identity cell takes `class="stack-title"` and **no** label, so it reads as
+   the card's heading instead. For the two sortable tables the label comes from
+   `rosterColumnLabel()` / `clanColumnLabel()` in `saved-table.ts`, so a stacked label cannot
+   drift from the column header it stands in for.
+3. Add the ARIA. Changing `display` on a table strips its semantics from the accessibility tree
+   in Chrome and Safari alike, so every element carries the role it would otherwise have had:
+   `role="table"` / `rowgroup` / `row` / `columnheader` / `rowheader` / `cell`. The header row
+   is never `display: none` either — a table with nothing to sort hides it with the
+   `.visually-hidden` recipe, so a screen reader still reads real column headers against real
+   cells.
+
+A cell the row had nothing to put in is dropped (`td:empty`), so a blank line never appears.
+The label is a **float**, not a flex or grid column, because a cell's value is arbitrary inline
+content — a link, then text, then a pill — and any of those would be torn into separate flex
+items by a flex or grid container.
+
+The one table that does not stack is the account identity table. It is two columns at every
+width, so it wears `roster--pairs`, which only lets its cells wrap — a 36-character guid does
+not fit a 320px screen on one line.
 
 ## API
 
@@ -670,15 +735,19 @@ unique and must not be treated as a key.
 
 ### The data model, and why inventory is shared
 
-Migration **v4** adds one table, shared across every account for exactly the reason
-`owner_assignments` is: how many Barbarian cards a base holds is a *fact about the base*, not a
-private opinion, and trade suggestions only mean anything if everybody is reading the same
-numbers. Ten private copies would produce ten disagreeing sets of suggestions.
+Cards are collected **per player**, so counts are keyed by base — one set of sixty per player
+tag — and migrations **v4** and **v5** add two tables. Both are shared across every account for
+exactly the reason `owner_assignments` is: how many Barbarian cards a base holds is a *fact
+about the base*, not a private opinion, and trade suggestions only mean anything if everybody is
+reading the same numbers. Ten private copies would produce ten disagreeing sets of suggestions.
 
 ```
-card_inventory  (season, player_tag, card_id) PK, count,
-                updated_at, updated_by_user_id → users(id) ON DELETE SET NULL
-                CHECK (card_id BETWEEN 1 AND 60), CHECK (count BETWEEN 0 AND 10)
+card_inventory     (season, player_tag, card_id) PK, count,
+                   updated_at, updated_by_user_id → users(id) ON DELETE SET NULL
+                   CHECK (card_id BETWEEN 1 AND 60), CHECK (count BETWEEN 0 AND 10)
+
+card_base_updates  (season, player_tag) PK, updated_at,
+                   updated_by_user_id → users(id) ON DELETE SET NULL
 ```
 
 - **Rows are sparse: absent means zero.** A base holding nine cards has nine rows, not sixty. A
@@ -691,10 +760,16 @@ card_inventory  (season, player_tag, card_id) PK, count,
 - **`updated_by_user_id` is nullable, `ON DELETE SET NULL`** — the counts outlive the account
   that typed them, and **disabling an account touches no row here**, which is covered by a test.
   Attribution is joined on read, so a rename never leaves old edits credited to a stale name.
-- **A base's stamp is derived from its newest row.** All of a base's rows are written in one
-  transaction with one timestamp, so they agree. The consequence to know: a base whose every
-  count is set back to zero keeps no rows, and so loses its stamp along with them — it reads as
-  "nothing recorded", the same as a base nobody ever entered.
+- **The edit time is always captured, in its own table.** `card_base_updates` holds one row per
+  base saying when its counts were last saved and by whom, written on **every** save inside the
+  same transaction as the counts. It started out derived from `MAX(updated_at)` over the count
+  rows, and that was wrong: because storage is sparse, a base cleared back to zero has no count
+  rows left, so the derived stamp vanished for precisely the base most likely to prompt "when
+  did we last check this one?". Saving a base with *nothing* on it is a real check and is
+  recorded as one. v5 backfills each base from its newest surviving count row, so an install
+  already at v4 keeps the attribution it had. One row per base, not per card — a base is saved
+  whole, so a per-card stamp would be sixty copies of one fact.
+- **An emptied base stays listed**, reporting zero cards and its stamp, rather than disappearing.
 
 ### The season constant
 
@@ -789,6 +864,35 @@ somehow has counts but no owner assignment is still listed, so its rows are neve
   are so nothing has to be re-entered. `Saved` never appears unless the request succeeded.
 - **Trade suggestions** are a third panel, driven entirely by the pure module and grouped by the
   pair of bases involved, with both owners named.
+
+### Proposing a trade over chat
+
+Every suggestion carries a **Propose in chat** button. It writes the swap into the chat composer
+in the sidebar — which is on screen already, since the sidebar spans every route — focuses it,
+and stops there.
+
+**It never posts.** A suggestion is a draft by definition: the two owners may want to change the
+wording or say when, and a button that silently posted to the group channel would be a nasty
+surprise. The label says "Propose", the composer's own **Send** is what sends, and the button's
+confirmation (`In chat box ↗`) is about the composer, never about a message having gone out.
+
+The message is built by `tradeProposalMessage` in `web/src/card-trades.ts` — pure and tested,
+because it has rules. It reads:
+
+```
+Card trade (Elixir): #2GCJ2QPU (Jared) gives Barbarian <-> #AAABBB (Sam) gives Archer.
+```
+
+Both bases *and* both owners are named, since a tag alone tells nobody who to talk to. Owner
+names are unbounded free text, so the message can overrun `MAX_CHAT_LENGTH` and be refused by the
+chat route — it therefore degrades in a deliberate order: **drop the owner names first** (the
+tags still identify the bases), and only then truncate. That ordering is what the tests pin down.
+
+The plumbing is `web/src/chat-draft.ts`, a module-level external store over
+`useSyncExternalStore` — the same mechanism as the shared lists, because the card page and the
+chat panel sit in different columns with no component between them to thread a prop through. It
+carries a `serial` as well as the text, so proposing the same trade twice re-fills a box the user
+has since cleared, which a bare string comparison would swallow. It is dropped on sign-out.
 
 ## War view
 

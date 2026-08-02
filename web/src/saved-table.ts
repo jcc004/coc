@@ -100,11 +100,24 @@ export type RosterSortKey =
   | 'donations'
   | 'donationsReceived'
 
-export const ROSTER_COLUMNS: { key: RosterSortKey; label: string; numeric: boolean }[] = [
-  { key: 'clanRank', label: '#', numeric: true },
+/**
+ * `long` is the name this column answers to when it is read on its own rather
+ * than at the top of its column — in the stacked layout's Sort menu, where "#"
+ * and "TH" have no column of numbers underneath to explain them. Only the
+ * abbreviated headings need one.
+ */
+export interface TableColumn<K> {
+  key: K
+  label: string
+  numeric: boolean
+  long?: string
+}
+
+export const ROSTER_COLUMNS: TableColumn<RosterSortKey>[] = [
+  { key: 'clanRank', label: '#', numeric: true, long: 'Clan rank' },
   { key: 'name', label: 'Member', numeric: false },
   { key: 'owner', label: 'Owner', numeric: false },
-  { key: 'townHallLevel', label: 'TH', numeric: true },
+  { key: 'townHallLevel', label: 'TH', numeric: true, long: 'Town Hall' },
   { key: 'trophies', label: 'Trophies', numeric: true },
   { key: 'donations', label: 'Donated', numeric: true },
   { key: 'donationsReceived', label: 'Received', numeric: true },
@@ -112,6 +125,41 @@ export const ROSTER_COLUMNS: { key: RosterSortKey; label: string; numeric: boole
 
 /** Ranks and text read best ascending; every stat reads best highest-first. */
 export const ROSTER_ASCENDING_BY_DEFAULT: RosterSortKey[] = ['clanRank', 'name', 'owner']
+
+/**
+ * The header text for one column.
+ *
+ * Below the phone breakpoint the roster stacks and each cell prints its own
+ * label from `data-label` instead of sitting under a column head. Looking the
+ * text up here rather than repeating it in the JSX is what stops the two
+ * spellings drifting apart the next time a column is renamed.
+ */
+export function rosterColumnLabel(key: RosterSortKey): string {
+  return ROSTER_COLUMNS.find((column) => column.key === key)?.label ?? key
+}
+
+/** How a column names itself in the stacked Sort menu. See {@link TableColumn.long}. */
+export function sortOptionLabel<K>(column: TableColumn<K>): string {
+  return column.long ?? column.label
+}
+
+/**
+ * What clicking a column head does: a fresh column adopts its natural direction,
+ * the column already sorted just reverses.
+ *
+ * Both sortable tables ran their own copy of this and they had drifted — the
+ * roster listed the keys that default to *ascending* and the saved-clans table
+ * listed the ones that default to *descending*, so the two read as opposites.
+ * One function, one meaning, and the Sort control and the column heads share it.
+ */
+export function nextSortState<K>(
+  current: { key: K; ascending: boolean },
+  chosen: K,
+  ascendingByDefault: readonly K[],
+): { key: K; ascending: boolean } {
+  if (chosen === current.key) return { key: chosen, ascending: !current.ascending }
+  return { key: chosen, ascending: ascendingByDefault.includes(chosen) }
+}
 
 export function compareRosterRows(
   a: RosterRow,
@@ -153,7 +201,7 @@ export function sortRosterRows(
 
 export type ClanSortKey = 'name' | 'tag' | 'clanLevel' | 'members' | 'clanPoints' | 'warLeague'
 
-export const CLAN_COLUMNS: { key: ClanSortKey; label: string; numeric: boolean }[] = [
+export const CLAN_COLUMNS: TableColumn<ClanSortKey>[] = [
   { key: 'name', label: 'Name', numeric: false },
   { key: 'tag', label: 'Tag', numeric: false },
   { key: 'clanLevel', label: 'Level', numeric: true },
@@ -163,6 +211,19 @@ export const CLAN_COLUMNS: { key: ClanSortKey; label: string; numeric: boolean }
 ]
 
 export const CLAN_DESCENDING_BY_DEFAULT: ClanSortKey[] = ['clanLevel', 'members', 'clanPoints']
+
+/**
+ * The same fact as {@link CLAN_DESCENDING_BY_DEFAULT}, stated the way
+ * {@link nextSortState} wants it, and derived from it so the two cannot disagree.
+ */
+export const CLAN_ASCENDING_BY_DEFAULT: ClanSortKey[] = CLAN_COLUMNS.map(
+  (column) => column.key,
+).filter((key) => !CLAN_DESCENDING_BY_DEFAULT.includes(key))
+
+/** As {@link rosterColumnLabel}, for the saved-clans table. */
+export function clanColumnLabel(key: ClanSortKey): string {
+  return CLAN_COLUMNS.find((column) => column.key === key)?.label ?? key
+}
 
 export function compareClanEntries(
   a: SavedClan,

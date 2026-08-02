@@ -38,7 +38,11 @@ function asInt(value: unknown): number {
 }
 
 export interface CardInventoryStore {
-  /** Every base with at least one card recorded this season, by tag. */
+  /**
+   * Every base anyone has saved this season, by tag — **including** a base whose
+   * counts are now all zero. Such a base has no `card_inventory` rows left but
+   * still has its stamp, so "when was this last checked" has an answer for it.
+   */
   listInventory(season: string): BaseInventory[]
   /** One base. A base with nothing recorded comes back with an empty `counts`. */
   getInventory(season: string, tag: string): BaseInventory
@@ -56,66 +60,92 @@ export interface CardInventoryStore {
   saveBase(season: string, tag: string, counts: CardCount[], userId: number): BaseInventory
 }
 
+const COUNTS_SELECT = `
+  SELECT player_tag, card_id, count FROM card_inventory WHERE season = ?
+`
+
 /* Attribution is joined on read rather than copied onto the row, so a
-   display-name change cannot leave old edits credited to a stale name. */
-const SELECT = `
-  SELECT i.player_tag, i.card_id, i.count, i.updated_at, u.display_name AS updated_by
-    FROM card_inventory i LEFT JOIN users u ON u.id = i.updated_by_user_id
+   display-name change cannot leave old edits credited to a stale name. The
+   stamp comes from `card_base_updates`, not from the count rows, so it survives
+   a base being emptied — see migration v5. */
+const STAMP_SELECT = `
+  SELECT b.player_tag, b.updated_at, u.display_name AS updated_by
+    FROM card_base_updates b LEFT JOIN users u ON u.id = b.updated_by_user_id
+   WHERE b.season = ?
 `
 
 /**
- * Folds the flat rows into one record per base.
+ * Folds count rows and stamp rows into one record per base.
  *
- * A base's stamp is the newest row it has, and the attribution is that same
- * row's. All sixty of a base's rows are written in one transaction with one
- * timestamp, so in practice they agree; taking the max is what keeps the answer
- * sensible if they ever do not.
+ * A base appears if it has *either*, so an emptied base keeps its entry and its
+ * timestamp while reporting no cards, and a base with counts but somehow no
+ * stamp still reports its counts.
  */
-function groupByBase(rows: Record<string, unknown>[]): BaseInventory[] {
+function groupByBase(
+  countRows: Record<string, unknown>[],
+  stampRows: Record<string, unknown>[],
+): BaseInventory[] {
   const bases = new Map<string, BaseInventory>()
 
-  for (const row of rows) {
-    const tag = asText(row['player_tag'])
+  const of = (tag: string): BaseInventory => {
     let base = bases.get(tag)
     if (!base) {
       base = { tag, counts: [] }
       bases.set(tag, base)
     }
-
-    base.counts.push({ cardId: asInt(row['card_id']), count: asInt(row['count']) })
-
-    const updatedAt = asText(row['updated_at'])
-    if (base.updatedAt === undefined || updatedAt > base.updatedAt) {
-      base.updatedAt = updatedAt
-      base.updatedBy = asTextOrNull(row['updated_by'])
-    }
+    return base
   }
 
-  return [...bases.values()]
+  for (const row of countRows) {
+    of(asText(row['player_tag'])).counts.push({
+      cardId: asInt(row['card_id']),
+      count: asInt(row['count']),
+    })
+  }
+
+  for (const row of stampRows) {
+    const base = of(asText(row['player_tag']))
+    base.updatedAt = asText(row['updated_at'])
+    base.updatedBy = asTextOrNull(row['updated_by'])
+  }
+
+  return [...bases.values()].sort((a, b) => a.tag.localeCompare(b.tag))
 }
 
 export function createCardInventoryStore(db: DatabaseSync): CardInventoryStore {
   const statements = {
-    listAll: db.prepare(`${SELECT} WHERE i.season = ? ORDER BY i.player_tag, i.card_id`),
-    listOne: db.prepare(
-      `${SELECT} WHERE i.season = ? AND i.player_tag = ? ORDER BY i.card_id`,
-    ),
+    listCounts: db.prepare(`${COUNTS_SELECT} ORDER BY player_tag, card_id`),
+    listStamps: db.prepare(`${STAMP_SELECT} ORDER BY b.player_tag`),
+    oneCounts: db.prepare(`${COUNTS_SELECT} AND player_tag = ? ORDER BY card_id`),
+    oneStamp: db.prepare(`${STAMP_SELECT} AND b.player_tag = ?`),
     deleteBase: db.prepare('DELETE FROM card_inventory WHERE season = ? AND player_tag = ?'),
     insert: db.prepare(
       `INSERT INTO card_inventory
          (season, player_tag, card_id, count, updated_at, updated_by_user_id)
        VALUES (?, ?, ?, ?, ?, ?)`,
     ),
+    // Always written on a save, whatever the counts turn out to be — that is what
+    // makes the edit time survive a base being cleared to nothing.
+    upsertStamp: db.prepare(
+      `INSERT INTO card_base_updates (season, player_tag, updated_at, updated_by_user_id)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(season, player_tag) DO UPDATE SET
+         updated_at = excluded.updated_at,
+         updated_by_user_id = excluded.updated_by_user_id`,
+    ),
   }
 
   function readOne(season: string, tag: string): BaseInventory {
-    const rows = statements.listOne.all(season, tag)
-    return groupByBase(rows)[0] ?? { tag, counts: [] }
+    const merged = groupByBase(
+      statements.oneCounts.all(season, tag),
+      statements.oneStamp.all(season, tag),
+    )
+    return merged[0] ?? { tag, counts: [] }
   }
 
   return {
     listInventory(season) {
-      return groupByBase(statements.listAll.all(season))
+      return groupByBase(statements.listCounts.all(season), statements.listStamps.all(season))
     },
 
     getInventory(season, tag) {
@@ -127,7 +157,8 @@ export function createCardInventoryStore(db: DatabaseSync): CardInventoryStore {
       const now = new Date().toISOString()
 
       // One transaction, so a rejected row (a CHECK the route missed) leaves the
-      // base as it was rather than half-erased.
+      // base as it was rather than half-erased — and so the stamp can never land
+      // without the counts it describes, or the other way round.
       db.exec('BEGIN')
       try {
         statements.deleteBase.run(season, canonical)
@@ -135,6 +166,7 @@ export function createCardInventoryStore(db: DatabaseSync): CardInventoryStore {
           if (entry.count <= 0) continue
           statements.insert.run(season, canonical, entry.cardId, entry.count, now, userId)
         }
+        statements.upsertStamp.run(season, canonical, now, userId)
         db.exec('COMMIT')
       } catch (cause) {
         db.exec('ROLLBACK')

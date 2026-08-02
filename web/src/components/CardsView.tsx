@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CARD_SEASON, MAX_CARD_COUNT, type BaseInventory } from '@coc/shared'
 import { inventoryFor, saveBaseCounts, useCardInventoryState } from '../card-inventory.ts'
-import { groupTradesByPair, suggestTrades } from '../card-trades.ts'
+import {
+  groupTradesByPair,
+  suggestTrades,
+  tradeProposalMessage,
+  type TradeSuggestion,
+} from '../card-trades.ts'
 import {
   ALL_CARDS,
   cardById,
@@ -14,6 +19,7 @@ import {
   inventorySummary,
   toCardCounts,
 } from '../cards.ts'
+import { requestChatDraft } from '../chat-draft.ts'
 import { formatDateTime } from '../format.ts'
 import { hrefFor } from '../hooks.ts'
 import { useOwners } from '../owners.ts'
@@ -239,6 +245,44 @@ function TradeCard({ cardId }: { cardId: number }) {
 }
 
 /**
+ * Loads a proposal into the chat composer in the sidebar.
+ *
+ * It fills the box; it does **not** post. A suggestion is a draft by definition —
+ * the owners may want to change the wording, or say when — and a button that
+ * silently posted to the group channel would be a nasty surprise. The label says
+ * "Propose", the composer's own Send button is what sends, and the confirmation
+ * below is about the composer, never about a message having gone out.
+ */
+function ProposeButton({
+  trade,
+  ownerOf,
+}: {
+  trade: TradeSuggestion
+  ownerOf: (tag: string) => string | undefined
+}) {
+  const [offered, setOffered] = useState(false)
+
+  return (
+    <button
+      type="button"
+      className="chip"
+      onClick={() => {
+        requestChatDraft(
+          tradeProposalMessage(trade, {
+            cardName: (id) => cardById(id)?.name,
+            owner: ownerOf,
+          }),
+        )
+        setOffered(true)
+      }}
+      title="Put this proposal in the chat box — you still press Send"
+    >
+      {offered ? 'In chat box ↗' : 'Propose in chat'}
+    </button>
+  )
+}
+
+/**
  * Every swap the current counts allow, grouped by the pair of bases involved.
  *
  * The rules are entirely in `suggestTrades`; this only renders them, and names
@@ -270,34 +314,65 @@ function TradeSuggestions({
   return (
     <>
       <div className="table-wrap">
-        <table className="roster">
-          <thead>
-            <tr>
-              <th>Base</th>
-              <th>Gives</th>
-              <th>Base</th>
-              <th>Gives</th>
-              <th>Category</th>
+        {/* Stacks into one labelled card per swap on a phone; the explicit roles
+            keep it a table for assistive tech once `display` changes. Nothing
+            sorts, so the header row is hidden there rather than kept — see the
+            note in styles.css. */}
+        <table className="roster roster--stack" role="table">
+          <thead role="rowgroup">
+            <tr role="row">
+              <th role="columnheader">Base</th>
+              <th role="columnheader">Gives</th>
+              <th role="columnheader">Base</th>
+              <th role="columnheader">Gives</th>
+              <th role="columnheader">Category</th>
+              <th role="columnheader" />
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {pairs.flatMap((pair) =>
               pair.trades.map((trade, index) => (
-                <tr key={`${trade.baseA}-${trade.baseB}-${trade.cardFromA}-${trade.cardFromB}`}>
-                  {/* The pair is named once per group; the rows under it are its options. */}
-                  <td>
+                <tr
+                  key={`${trade.baseA}-${trade.baseB}-${trade.cardFromA}-${trade.cardFromB}`}
+                  role="row"
+                  /*
+                   * Marks where one pair's block of options begins, so the wide
+                   * table can rule a line above it. Without that, a continuation
+                   * row's empty Base cells read as missing data rather than as
+                   * "same two bases as above" — seen in a screenshot, where the
+                   * second option rendered as a bare "Minion / Hog Rider" row
+                   * with nobody's name on it.
+                   */
+                  data-pair-start={index === 0 ? 'true' : undefined}
+                >
+                  {/* The pair is named once per group; the rows under it are its
+                      options. A cell for a later row is genuinely empty, which is
+                      how the stacked layout knows to drop the line rather than
+                      print a blank one. */}
+                  <td className="stack-title" role="cell">
                     {index === 0 ? <BaseLabel tag={pair.baseA} owner={ownerOf(pair.baseA)} /> : null}
                   </td>
-                  <td>
+                  {/*
+                   * Stacked, a row is its own card, so a later option in a pair has
+                   * no base named above it and two bare "Gives" lines would not say
+                   * whose. Those rows name the base in the label instead; the first
+                   * does not need to, because the base is the line above it.
+                   */}
+                  <td role="cell" data-label={index === 0 ? 'Gives' : `${pair.baseA} gives`}>
                     <TradeCard cardId={trade.cardFromA} />
                   </td>
-                  <td>
+                  <td className="stack-title" role="cell">
                     {index === 0 ? <BaseLabel tag={pair.baseB} owner={ownerOf(pair.baseB)} /> : null}
                   </td>
-                  <td>
+                  <td role="cell" data-label={index === 0 ? 'Gives' : `${pair.baseB} gives`}>
                     <TradeCard cardId={trade.cardFromB} />
                   </td>
-                  <td className="card-meta">{trade.category}</td>
+                  <td className="card-meta" role="cell" data-label="Category">
+                    {trade.category}
+                  </td>
+                  <td className="row-actions" role="cell">
+                    <ProposeButton trade={trade} ownerOf={ownerOf} />
+                  </td>
                 </tr>
               )),
             )}
@@ -307,7 +382,8 @@ function TradeSuggestions({
       <p className="empty-hint" style={{ marginTop: 12, fontSize: 13 }}>
         {pairs.length} pair{pairs.length === 1 ? '' : 's'} could trade. Each row is one option, not
         a commitment — one spare can appear against several partners, so pick one per card and
-        re-enter the counts afterwards.
+        re-enter the counts afterwards. <strong>Propose in chat</strong> writes the swap into the
+        chat box in the sidebar for you to edit; nothing is posted until you press Send.
       </p>
     </>
   )

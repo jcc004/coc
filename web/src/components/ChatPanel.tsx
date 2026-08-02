@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { MAX_CHAT_LENGTH, type ChatMessage } from '@coc/shared'
 import { ApiError, api } from '../api.ts'
+import { useChatDraft } from '../chat-draft.ts'
 import { formatRelative } from '../format.ts'
 
 /**
@@ -40,9 +41,32 @@ export function ChatPanel({ currentUserId }: { currentUserId: number }) {
   const [problem, setProblem] = useState<string | null>(null)
 
   const logRef = useRef<HTMLOListElement>(null)
+  const draftRef = useRef<HTMLTextAreaElement>(null)
   // Read inside the poll without making it a dependency, which would tear down
   // and rebuild the interval on every new message.
   const newestId = useRef(0)
+
+  /*
+   * A message offered by another part of the app — today, "Propose in chat" on a
+   * trade suggestion. It fills the box and focuses it; it never sends, so the
+   * wording is the user's to edit and Send is theirs to press.
+   *
+   * Keyed on the serial rather than the text so re-proposing the same trade
+   * re-fills a box the user has since cleared. It deliberately replaces whatever
+   * is in the box: clicking Propose is an explicit request for this text.
+   */
+  const offered = useChatDraft()
+  const appliedSerial = useRef(0)
+
+  useEffect(() => {
+    if (offered.serial === 0 || offered.serial === appliedSerial.current) return
+    appliedSerial.current = offered.serial
+    setDraft(offered.text)
+    const box = draftRef.current
+    box?.focus()
+    // The panel is in the other column and may be off-screen on a narrow window.
+    box?.scrollIntoView({ block: 'nearest' })
+  }, [offered])
 
   const absorb = useCallback((incoming: ChatMessage[]) => {
     if (incoming.length === 0) return
@@ -141,6 +165,7 @@ export function ChatPanel({ currentUserId }: { currentUserId: number }) {
         </label>
         <textarea
           id="chat-draft"
+          ref={draftRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {

@@ -73,10 +73,12 @@ export interface CardCount {
  * actually holds appear, so an empty base is an empty array rather than sixty
  * zeroes.
  *
- * `updatedAt` / `updatedBy` are derived from the newest row the base has. A base
- * whose every count has been set back to zero therefore keeps no rows and loses
- * its stamp along with them, which reads as "nothing recorded" — the same thing
- * a base that was never entered shows.
+ * `updatedAt` / `updatedBy` are recorded on **every** save, in their own table
+ * (`card_base_updates`, migration v5) rather than derived from the count rows.
+ * That is deliberate: counts are sparse, so a base cleared back to zero has no
+ * count rows left, and a stamp derived from them would vanish for exactly the
+ * base most likely to prompt "when did we last check this one?". They are absent
+ * only for a base nobody has ever saved.
  */
 export interface BaseInventory {
   /** Canonical `#TAG`. */

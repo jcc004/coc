@@ -41,8 +41,10 @@ function IdentityCard({ user }: { user: SessionUser }) {
   return (
     <section className="card">
       <h2 className="section-title">Your account</h2>
+      {/* Two columns at every width, so this one never stacks — `--pairs` only
+          lets the cells wrap, which a 36-character guid needs on a phone. */}
       <div className="table-wrap">
-        <table className="roster">
+        <table className="roster roster--pairs">
           <tbody>
             <tr>
               <th scope="row">Display name</th>
@@ -351,7 +353,8 @@ function NameCell({
 
   if (!editing) {
     return (
-      <td>
+      /* The card's heading when the table stacks, so it carries no `data-label`. */
+      <td className="stack-title" role="cell">
         {user.displayName}
         {isSelf ? <span className="role-pill"> (you)</span> : null}{' '}
         <button
@@ -371,7 +374,7 @@ function NameCell({
   }
 
   return (
-    <td>
+    <td className="stack-title" role="cell">
       <form className="row-edit" onSubmit={submit}>
         <input
           value={draft}
@@ -439,7 +442,7 @@ function EmailCell({
 
   if (!editing) {
     return (
-      <td>
+      <td role="cell" data-label="Email">
         {/* No email means this account cannot sign in at all. */}
         {user.email ?? <span className="role-pill">No email — cannot sign in</span>}{' '}
         <button
@@ -459,7 +462,7 @@ function EmailCell({
   }
 
   return (
-    <td>
+    <td role="cell" data-label="Email">
       <form className="row-edit" onSubmit={submit}>
         <input
           type="email"
@@ -629,20 +632,22 @@ function UsersCard({ currentUserId }: { currentUserId: number }) {
 
       {state.status === 'ready' ? (
         <div className="table-wrap">
-          <table className="roster">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Role</th>
-                <th>Added</th>
-                <th>Status</th>
-                <th />
+          {/* One labelled card per user on a phone; nothing sorts, so the header
+              row is hidden rather than kept — see the note in styles.css. */}
+          <table className="roster roster--stack" role="table">
+            <thead role="rowgroup">
+              <tr role="row">
+                <th role="columnheader">Name</th>
+                <th role="columnheader">Email</th>
+                <th role="columnheader">Role</th>
+                <th role="columnheader">Added</th>
+                <th role="columnheader">Status</th>
+                <th role="columnheader" />
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {state.data.users.map((user) => (
-                <tr key={user.id}>
+                <tr key={user.id} role="row">
                   <NameCell
                     user={user}
                     isSelf={user.id === currentUserId}
@@ -650,7 +655,7 @@ function UsersCard({ currentUserId }: { currentUserId: number }) {
                     onProblem={setRowProblem}
                   />
                   <EmailCell user={user} onSaved={reload} onProblem={setRowProblem} />
-                  <td>
+                  <td role="cell" data-label="Role">
                     <span className="role-pill">{user.role === 'admin' ? 'Admin' : 'User'}</span>{' '}
                     <button
                       type="button"
@@ -666,9 +671,11 @@ function UsersCard({ currentUserId }: { currentUserId: number }) {
                       {user.role === 'admin' ? 'Remove admin' : 'Make admin'}
                     </button>
                   </td>
-                  <td>{formatDateTime(new Date(user.createdAt))}</td>
+                  <td role="cell" data-label="Added">
+                    {formatDateTime(new Date(user.createdAt))}
+                  </td>
                   {/* Words, not a colour: disabled has to be legible on its own. */}
-                  <td>
+                  <td role="cell" data-label="Status">
                     {user.disabledAt ? 'Disabled' : 'Active'}
                     {user.mustChangePassword ? (
                       <>
@@ -677,7 +684,7 @@ function UsersCard({ currentUserId }: { currentUserId: number }) {
                       </>
                     ) : null}
                   </td>
-                  <td className="row-actions">
+                  <td className="row-actions" role="cell">
                     <button
                       type="button"
                       className="icon-button"

@@ -3,15 +3,17 @@ import { ROLE_LABELS, type Clan, type ClanMember } from '@coc/shared'
 import { api } from '../api.ts'
 import { labelIcon } from '../coc-assets.ts'
 import { formatFull, formatStat, humanizeCamel, ratio } from '../format.ts'
-import { hrefFor, useAsync, useRowLimit, type Recent } from '../hooks.ts'
+import { hrefFor, useAsync, useRowLimit, useStackedTables, type Recent } from '../hooks.ts'
 import { applyOwners, knownOwners, useOwnersState } from '../owners.ts'
 import { removeClan, saveClan, useSavedClans } from '../saved-clans.ts'
 import {
   filterRosterRows,
   hasRosterFilters,
+  nextSortState,
   paginate,
   planOwnerChange,
   ROSTER_ASCENDING_BY_DEFAULT,
+  rosterColumnLabel,
   ROSTER_COLUMNS,
   rosterTownHallLevels,
   sortRosterRows,
@@ -30,6 +32,7 @@ import {
   Meter,
   Pager,
   RowLimitSelect,
+  SortControl,
   StatTile,
   TileRow,
   TownHallBadge,
@@ -87,6 +90,7 @@ function SaveToggle({ clan }: { clan: Clan }) {
 function RosterTable({ members }: { members: ClanMember[] }) {
   const ownersState = useOwnersState()
   const owners = ownersState.entries
+  const stacked = useStackedTables()
 
   const [sortKey, setSortKey] = useState<RosterSortKey>('clanRank')
   const [ascending, setAscending] = useState(true)
@@ -180,12 +184,9 @@ function RosterTable({ members }: { members: ClanMember[] }) {
     // Back to page 1: keeping the offset would land you in the middle of a
     // freshly reordered list, which reads as rows having gone missing.
     setPage(1)
-    if (key === sortKey) {
-      setAscending((current) => !current)
-    } else {
-      setSortKey(key)
-      setAscending(ROSTER_ASCENDING_BY_DEFAULT.includes(key))
-    }
+    const next = nextSortState({ key: sortKey, ascending }, key, ROSTER_ASCENDING_BY_DEFAULT)
+    setSortKey(next.key)
+    setAscending(next.ascending)
   }
 
   function toggleSelected(tag: string) {
@@ -510,59 +511,102 @@ function RosterTable({ members }: { members: ClanMember[] }) {
         ) : null}
       </div>
 
+      {/* Stacked, the column heads are hidden, so the Sort control is the visible
+          way to reorder. Rendered instead of the head buttons rather than
+          alongside them — see `useStackedTables`. */}
+      {stacked ? (
+        <SortControl
+          id="roster-sort"
+          columns={ROSTER_COLUMNS}
+          sortKey={sortKey}
+          ascending={ascending}
+          onSort={toggleSort}
+        />
+      ) : null}
+
+      {/*
+       * `roster--stack` turns this into one labelled card per member at tablet
+       * width and below. Stacking changes `display`, which strips a table's
+       * semantics from the accessibility tree, so every element here carries the
+       * role it would have had — see the note in styles.css.
+       */}
       <div className="table-wrap">
-        <table className="roster">
-          <thead>
-            <tr>
-              <th className="select-cell">
-                <input
-                  ref={selectAllRef}
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleSelectAll}
-                  aria-label={`Select the ${view.rows.length} members on this page`}
-                  title={`Select the ${view.rows.length} members on this page`}
-                />
+        <table className="roster roster--stack" role="table">
+          <thead role="rowgroup">
+            <tr role="row">
+              <th className="select-cell" role="columnheader">
+                <label className="select-hit">
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    aria-label={`Select the ${view.rows.length} members on this page`}
+                    title={`Select the ${view.rows.length} members on this page`}
+                  />
+                </label>
               </th>
               {ROSTER_COLUMNS.map((column) => (
-                <th key={column.key} className={column.numeric ? 'num' : undefined}>
-                  <button
-                    type="button"
-                    onClick={() => toggleSort(column.key)}
-                    aria-label={`Sort by ${column.label}`}
-                  >
-                    {column.label}
-                    {sortKey === column.key ? (
-                      <span className="sort-caret"> {ascending ? '↑' : '↓'}</span>
-                    ) : null}
-                  </button>
+                <th
+                  key={column.key}
+                  className={column.numeric ? 'num' : undefined}
+                  role="columnheader"
+                  /* Carries the sort state whichever control set it, so the table
+                     reports its own ordering rather than leaving it to the button. */
+                  aria-sort={
+                    sortKey === column.key ? (ascending ? 'ascending' : 'descending') : 'none'
+                  }
+                >
+                  {stacked ? (
+                    column.label
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(column.key)}
+                      aria-label={`Sort by ${column.label}`}
+                    >
+                      {column.label}
+                      {sortKey === column.key ? (
+                        <span className="sort-caret"> {ascending ? '↑' : '↓'}</span>
+                      ) : null}
+                    </button>
+                  )}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {view.rows.map((row) => (
-              <tr key={row.tag}>
-                <td className="select-cell">
-                  <input
-                    type="checkbox"
-                    checked={selectedTags.has(row.tag)}
-                    onChange={() => toggleSelected(row.tag)}
-                    aria-label={`Select ${row.name}`}
-                  />
+              <tr key={row.tag} role="row">
+                <td className="select-cell" role="cell" data-label="Select">
+                  <label className="select-hit">
+                    <input
+                      type="checkbox"
+                      checked={selectedTags.has(row.tag)}
+                      onChange={() => toggleSelected(row.tag)}
+                      aria-label={`Select ${row.name}`}
+                    />
+                  </label>
                 </td>
-                <td className="num">{row.clanRank}</td>
-                <td>
+                <td className="num" role="cell" data-label={rosterColumnLabel('clanRank')}>
+                  {row.clanRank}
+                </td>
+                {/* The card's heading when stacked, so it takes no `data-label`. */}
+                <td className="stack-title" role="cell">
                   <a href={hrefFor({ view: 'player', tag: row.tag })}>{row.name}</a>{' '}
                   <span className="role-pill">{ROLE_LABELS[row.role]}</span>
                 </td>
-                <td>{row.owner ?? <span className="role-pill">—</span>}</td>
+                <td role="cell" data-label={rosterColumnLabel('owner')}>
+                  {row.owner ?? <span className="role-pill">—</span>}
+                </td>
                 {/* Badge only — sorting still reads `row.townHallLevel`, untouched. */}
-                <td className="num">
+                <td className="num" role="cell" data-label={rosterColumnLabel('townHallLevel')}>
                   <TownHallBadge level={row.townHallLevel} />
                 </td>
-                <td className="num">{formatFull(row.trophies)}</td>
-                <td className="num">
+                <td className="num" role="cell" data-label={rosterColumnLabel('trophies')}>
+                  {formatFull(row.trophies)}
+                </td>
+                <td className="num" role="cell" data-label={rosterColumnLabel('donations')}>
                   <div className="donation-cell">
                     <span title={`${ratio(row.donations, row.donationsReceived)} donated/received`}>
                       {formatFull(row.donations)}
@@ -574,7 +618,9 @@ function RosterTable({ members }: { members: ClanMember[] }) {
                     />
                   </div>
                 </td>
-                <td className="num">{formatFull(row.donationsReceived)}</td>
+                <td className="num" role="cell" data-label={rosterColumnLabel('donationsReceived')}>
+                  {formatFull(row.donationsReceived)}
+                </td>
               </tr>
             ))}
           </tbody>

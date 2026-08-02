@@ -1,7 +1,12 @@
 import { useState, type ReactNode } from 'react'
 import type { ApiError } from '../api.ts'
 import { formatFull, formatStat } from '../format.ts'
-import type { PagedRows, RowLimit } from '../saved-table.ts'
+import {
+  sortOptionLabel,
+  type PagedRows,
+  type RowLimit,
+  type TableColumn,
+} from '../saved-table.ts'
 import { townHallArt } from '../wiki-art.ts'
 
 /**
@@ -200,6 +205,74 @@ export function RowLimitSelect({
         ))}
       </select>
     </label>
+  )
+}
+
+/**
+ * Sorting, for a table that has stacked into cards.
+ *
+ * A stacked card has no column heads, so there is nowhere to put the seven sort
+ * buttons a wide table carries — reflowing them into a strip above the cards was
+ * the first attempt and it read as a run of unexplained gold words. This is the
+ * replacement: name the column once, name the direction in words, and put both
+ * on controls a thumb can hit.
+ *
+ * The column heads still exist in the (visually hidden) header row, so the table
+ * keeps real `columnheader` cells and its `aria-sort` for assistive tech; this
+ * is the visible affordance only, which is why the select is labelled "Sort by"
+ * rather than repeating the column names as headings.
+ */
+export function SortControl<K extends string>({
+  id,
+  columns,
+  sortKey,
+  ascending,
+  onSort,
+}: {
+  id: string
+  columns: TableColumn<K>[]
+  sortKey: K
+  ascending: boolean
+  /** Same handler the column heads use, so both routes share one behaviour. */
+  onSort: (key: K) => void
+}) {
+  const current = columns.find((column) => column.key === sortKey)
+  const currentLabel = current ? sortOptionLabel(current) : sortKey
+  const direction = ascending ? 'ascending' : 'descending'
+
+  return (
+    <div className="sort-control">
+      <label className="sort-control__field" htmlFor={id}>
+        Sort by
+        <select
+          id={id}
+          value={sortKey}
+          onChange={(event) => onSort(event.target.value as K)}
+        >
+          {columns.map((column) => (
+            <option key={column.key} value={column.key}>
+              {sortOptionLabel(column)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {/*
+       * Re-picking the column that is already sorted is what reverses it, so this
+       * button simply asks for the current column again. The label says which way
+       * the list runs *now* and the name says what pressing it will do, because a
+       * bare arrow leaves both ambiguous.
+       */}
+      <button
+        type="button"
+        className="icon-button"
+        onClick={() => onSort(sortKey)}
+        aria-label={`Sorted by ${currentLabel}, ${direction}. Reverse to ${
+          ascending ? 'descending' : 'ascending'
+        }.`}
+      >
+        {ascending ? '↑ Ascending' : '↓ Descending'}
+      </button>
+    </div>
   )
 }
 

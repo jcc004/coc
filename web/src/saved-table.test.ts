@@ -2,9 +2,13 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { SavedClan } from './saved-clans.ts'
 import {
+  clanColumnLabel,
+  CLAN_COLUMNS,
   filterRosterRows,
   hasRosterFilters,
   NO_ROSTER_FILTERS,
+  ROSTER_COLUMNS,
+  rosterColumnLabel,
   rosterTownHallLevels,
   UNASSIGNED_OWNER,
   numberCompare,
@@ -440,6 +444,26 @@ describe('rosterTownHallLevels', () => {
 
   it('is empty for an empty roster', () => {
     assert.deepEqual(rosterTownHallLevels([]), [])
+  })
+})
+
+describe('rosterColumnLabel / clanColumnLabel', () => {
+  it('returns the same text the column header shows', () => {
+    assert.equal(rosterColumnLabel('townHallLevel'), 'TH')
+    assert.equal(rosterColumnLabel('donationsReceived'), 'Received')
+    assert.equal(clanColumnLabel('clanPoints'), 'Points')
+    assert.equal(clanColumnLabel('warLeague'), 'War league')
+  })
+
+  /* The stacked phone layout prints these instead of a column head, so every
+     column must resolve — a missing one would leave a cell unlabelled. */
+  it('covers every column both tables declare', () => {
+    for (const column of ROSTER_COLUMNS) {
+      assert.equal(rosterColumnLabel(column.key), column.label)
+    }
+    for (const column of CLAN_COLUMNS) {
+      assert.equal(clanColumnLabel(column.key), column.label)
+    }
   })
 })
 

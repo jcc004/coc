@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import type { BaseInventory, CardCategory } from '@coc/shared'
-import { groupTradesByPair, suggestTrades, type TradeSuggestion } from './card-trades.ts'
+import { MAX_CHAT_LENGTH, type BaseInventory, type CardCategory } from '@coc/shared'
+import {
+  groupTradesByPair,
+  suggestTrades,
+  tradeProposalMessage,
+  type TradeSuggestion,
+} from './card-trades.ts'
 
 /*
  * A five-card toy deck, so every rule can be exercised on its own instead of
@@ -272,6 +277,90 @@ describe('suggestTrades — several bases and several options', () => {
       '#BBB:2 <-> #CCC:1 (Elixir)',
       '#BBB:4 <-> #CCC:3 (Dark Elixir)',
     ])
+  })
+})
+
+describe('tradeProposalMessage', () => {
+  const trade: TradeSuggestion = {
+    baseA: '#AAA',
+    baseB: '#BBB',
+    cardFromA: 1,
+    cardFromB: 2,
+    category: 'Elixir',
+  }
+  const NAMES: Record<number, string> = { 1: 'Barbarian', 2: 'Archer' }
+  const cardName = (id: number) => NAMES[id]
+  const OWNERS: Record<string, string> = { '#AAA': 'Jared', '#BBB': 'Sam' }
+  const owner = (tag: string) => OWNERS[tag]
+
+  it('names both bases, both owners and both cards', () => {
+    assert.equal(
+      tradeProposalMessage(trade, { cardName, owner }),
+      'Card trade (Elixir): #AAA (Jared) gives Barbarian <-> #BBB (Sam) gives Archer.',
+    )
+  })
+
+  it('falls back to the bare tag when a base has no owner', () => {
+    assert.equal(
+      tradeProposalMessage(trade, { cardName, owner: (tag) => (tag === '#AAA' ? 'Jared' : '') }),
+      'Card trade (Elixir): #AAA (Jared) gives Barbarian <-> #BBB gives Archer.',
+    )
+  })
+
+  it('works with no owner resolver at all', () => {
+    assert.equal(
+      tradeProposalMessage(trade, { cardName }),
+      'Card trade (Elixir): #AAA gives Barbarian <-> #BBB gives Archer.',
+    )
+  })
+
+  it('names an unknown card by its id rather than leaving a gap', () => {
+    assert.equal(
+      tradeProposalMessage({ ...trade, cardFromB: 99 }, { cardName }),
+      'Card trade (Elixir): #AAA gives Barbarian <-> #BBB gives card 99.',
+    )
+  })
+
+  it('drops the owner names before it truncates, when they will not fit', () => {
+    // Owner names are unbounded free text, so this is a real case and not a
+    // theoretical one — an over-long body is a 400 from the chat route.
+    const long = (tag: string) => (tag === '#AAA' ? 'J'.repeat(200) : 'S'.repeat(200))
+    const message = tradeProposalMessage(trade, { cardName, owner: long, maxLength: 120 })
+
+    assert.ok(message.length <= 120)
+    assert.equal(message, 'Card trade (Elixir): #AAA gives Barbarian <-> #BBB gives Archer.')
+    assert.ok(!message.includes('JJJ'), 'the giant owner name must be gone')
+  })
+
+  it('keeps the owners when they do fit', () => {
+    const message = tradeProposalMessage(trade, { cardName, owner, maxLength: 120 })
+    assert.ok(message.includes('(Jared)') && message.includes('(Sam)'))
+  })
+
+  it('truncates only as a last resort, still naming the first base', () => {
+    const message = tradeProposalMessage(trade, { cardName, owner, maxLength: 40 })
+    assert.ok(message.length <= 40, `got ${message.length}`)
+    assert.ok(message.endsWith('…'))
+    assert.ok(message.startsWith('Card trade (Elixir): #AAA'))
+  })
+
+  it('never exceeds the limit it was given', () => {
+    for (const maxLength of [20, 30, 64, 120, 500]) {
+      const message = tradeProposalMessage(
+        { ...trade, category: 'Dark Elixir' },
+        { cardName, owner, maxLength },
+      )
+      assert.ok(message.length <= maxLength, `${maxLength}: got ${message.length}`)
+    }
+  })
+
+  it('fits the chat limit by default, with the longest realistic names', () => {
+    const message = tradeProposalMessage(trade, {
+      cardName: () => 'Super Wall Breaker',
+      owner: () => 'Somebody With A Fairly Long Name',
+    })
+    assert.ok(message.length <= MAX_CHAT_LENGTH)
+    assert.ok(message.includes('Super Wall Breaker'))
   })
 })
 

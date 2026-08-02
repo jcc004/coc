@@ -245,7 +245,7 @@ describe('migration bookkeeping', () => {
     // Mark it as already at v1 — which it effectively is — so v2 onwards run.
     const marked = new DatabaseSync(path)
     marked.exec('PRAGMA user_version = 1')
-    assert.deepEqual(migrate(marked), [2, 3, 4])
+    assert.deepEqual(migrate(marked), [2, 3, 4, 5])
     marked.close()
   })
 })
@@ -391,6 +391,130 @@ describe('migration v4 — card_inventory', () => {
     db.exec(`DELETE FROM users WHERE id = ${userId}`)
     const row = db.prepare('SELECT count, updated_by_user_id FROM card_inventory').get()
     assert.equal(Number(row?.['count']), 3, 'the count must survive')
+    assert.equal(row?.['updated_by_user_id'], null, 'only the attribution is lost')
+    db.close()
+  })
+})
+
+describe('migration v5 — card_base_updates', () => {
+  it('creates the stamp table, keyed one row per base', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const db = openDatabase(path)
+    assert.deepEqual(columnsOf(path, 'card_base_updates'), [
+      'season',
+      'player_tag',
+      'updated_at',
+      'updated_by_user_id',
+    ])
+
+    const keyColumns = db
+      .prepare('PRAGMA table_info(card_base_updates)')
+      .all()
+      .filter((row) => Number(row['pk']) > 0)
+      .sort((a, b) => Number(a['pk']) - Number(b['pk']))
+      .map((row) => String(row['name']))
+    assert.deepEqual(keyColumns, ['season', 'player_tag'])
+    db.close()
+  })
+
+  /*
+   * The upgrade case that matters: an install already at v4 has stamps living on
+   * its count rows. v5 must lift them across rather than resetting every base to
+   * "never edited".
+   */
+  it('backfills each base from the newest count row it has', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    // Wind back to a realistic v4-shaped database for the backfill to read.
+    const staged = new DatabaseSync(path)
+    migrate(staged)
+    staged.exec('DROP TABLE card_base_updates')
+    staged.exec('PRAGMA user_version = 4')
+
+    const userId = Number(staged.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
+    const insert = staged.prepare(
+      `INSERT INTO card_inventory (season, player_tag, card_id, count, updated_at, updated_by_user_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    insert.run('2026-08', '#AAABBB', 1, 2, '2026-08-01T10:00:00.000Z', userId)
+    insert.run('2026-08', '#AAABBB', 2, 3, '2026-08-02T10:00:00.000Z', userId)
+    insert.run('2026-08', '#CCCDDD', 5, 1, '2026-08-03T10:00:00.000Z', null)
+    // A second season must get its own stamp, not be folded into the first.
+    insert.run('2027-08', '#AAABBB', 9, 4, '2027-08-01T10:00:00.000Z', userId)
+
+    assert.deepEqual(migrate(staged), [5], 'only v5 should be outstanding')
+
+    const stamps = staged
+      .prepare(
+        `SELECT season, player_tag, updated_at, updated_by_user_id
+           FROM card_base_updates ORDER BY season, player_tag`,
+      )
+      .all()
+      .map((row) => [
+        row['season'],
+        row['player_tag'],
+        row['updated_at'],
+        row['updated_by_user_id'],
+      ])
+
+    assert.deepEqual(stamps, [
+      // The newer of A's two rows, and that row's updater.
+      ['2026-08', '#AAABBB', '2026-08-02T10:00:00.000Z', userId],
+      ['2026-08', '#CCCDDD', '2026-08-03T10:00:00.000Z', null],
+      ['2027-08', '#AAABBB', '2027-08-01T10:00:00.000Z', userId],
+    ])
+    staged.close()
+  })
+
+  it('backfills nothing when there were no counts to lift', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const db = openDatabase(path)
+    assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM card_base_updates').get()?.['n']), 0)
+    db.close()
+  })
+
+  it('is idempotent across two boots, stamps and all', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const first = openDatabase(path)
+    first
+      .prepare('INSERT INTO card_base_updates (season, player_tag, updated_at) VALUES (?, ?, ?)')
+      .run('2026-08', '#AAABBB', '2026-08-02T10:00:00.000Z')
+    first.close()
+
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+
+    const second = openDatabase(path)
+    assert.deepEqual(migrate(second), [], 'nothing left to apply')
+    assert.equal(
+      second.prepare('SELECT updated_at FROM card_base_updates').get()?.['updated_at'],
+      '2026-08-02T10:00:00.000Z',
+      'a second boot must not re-run the backfill over a live stamp',
+    )
+    second.close()
+  })
+
+  it('keeps a stamp when the account that wrote it is deleted', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const db = openDatabase(path)
+    const userId = createAuthStore(db).listUsers()[0]?.id
+    assert.ok(userId)
+    db.prepare(
+      `INSERT INTO card_base_updates (season, player_tag, updated_at, updated_by_user_id)
+       VALUES (?, ?, ?, ?)`,
+    ).run('2026-08', '#AAABBB', '2026-08-02T10:00:00.000Z', userId)
+
+    db.exec(`DELETE FROM users WHERE id = ${userId}`)
+    const row = db.prepare('SELECT updated_at, updated_by_user_id FROM card_base_updates').get()
+    assert.equal(row?.['updated_at'], '2026-08-02T10:00:00.000Z', 'the time must survive')
     assert.equal(row?.['updated_by_user_id'], null, 'only the attribution is lost')
     db.close()
   })

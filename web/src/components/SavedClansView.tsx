@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent, type MouseEvent } from 'react'
 import { isValidTag, normalizeTag, usesCanonicalAlphabet } from '@coc/shared'
 import { ApiError, api } from '../api.ts'
 import { formatFull } from '../format.ts'
-import { hrefFor, navigate, useRowLimit } from '../hooks.ts'
+import { hrefFor, navigate, useRowLimit, useStackedTables } from '../hooks.ts'
 import {
   removeClan,
   saveClan,
@@ -11,14 +11,16 @@ import {
   type SavedClan,
 } from '../saved-clans.ts'
 import {
+  clanColumnLabel,
+  CLAN_ASCENDING_BY_DEFAULT,
   CLAN_COLUMNS,
-  CLAN_DESCENDING_BY_DEFAULT,
+  nextSortState,
   paginate,
   sortClanEntries,
   type ClanSortKey,
   type RowLimit,
 } from '../saved-table.ts'
-import { ErrorPanel, Loading, Pager, RowLimitSelect } from './primitives.tsx'
+import { ErrorPanel, Loading, Pager, RowLimitSelect, SortControl } from './primitives.tsx'
 
 const LIMIT_KEY = 'coc:savedClans:limit'
 const LIMIT_OPTIONS: RowLimit[] = [5, 10, 20, 50, 'all']
@@ -168,8 +170,8 @@ function SavedClanRow({
 
   if (editing) {
     return (
-      <tr>
-        <td colSpan={7}>
+      <tr role="row">
+        <td colSpan={7} role="cell">
           <form className="search row-edit" onSubmit={(event) => void commit(event)}>
             <input
               value={nameDraft}
@@ -191,22 +193,34 @@ function SavedClanRow({
   }
 
   return (
-    <tr className="clickable" onClick={() => navigate({ view: 'clan', tag: entry.tag })}>
-      <td>
+    <tr
+      className="clickable"
+      role="row"
+      onClick={() => navigate({ view: 'clan', tag: entry.tag })}
+    >
+      <td className="stack-title" role="cell">
         <a href={hrefFor({ view: 'clan', tag: entry.tag })} onClick={swallow}>
           {entry.name}
         </a>
       </td>
-      <td className="tag-cell">{entry.tag}</td>
-      <td className="num">{entry.clanLevel ?? '—'}</td>
-      <td className="num">{entry.members ?? '—'}</td>
-      <td className="num">{entry.clanPoints === undefined ? '—' : formatFull(entry.clanPoints)}</td>
-      <td>
+      <td className="tag-cell" role="cell" data-label={clanColumnLabel('tag')}>
+        {entry.tag}
+      </td>
+      <td className="num" role="cell" data-label={clanColumnLabel('clanLevel')}>
+        {entry.clanLevel ?? '—'}
+      </td>
+      <td className="num" role="cell" data-label={clanColumnLabel('members')}>
+        {entry.members ?? '—'}
+      </td>
+      <td className="num" role="cell" data-label={clanColumnLabel('clanPoints')}>
+        {entry.clanPoints === undefined ? '—' : formatFull(entry.clanPoints)}
+      </td>
+      <td role="cell" data-label={clanColumnLabel('warLeague')}>
         {entry.warLeague ?? (
           <span className="role-pill">{entry.updatedAt ? 'None' : 'Unknown'}</span>
         )}
       </td>
-      <td className="row-actions" onClick={swallow}>
+      <td className="row-actions" role="cell" onClick={swallow}>
         <a className="chip" href={hrefFor({ view: 'war', tag: entry.tag })}>
           War
         </a>
@@ -226,6 +240,7 @@ export function SavedClansView() {
   const clans = state.entries
   const [rowProblem, setRowProblem] = useState<string | null>(null)
 
+  const stacked = useStackedTables()
   const [sortKey, setSortKey] = useState<ClanSortKey>('name')
   const [ascending, setAscending] = useState(true)
   const [limit, setLimit] = useRowLimit(LIMIT_KEY, 5)
@@ -242,12 +257,9 @@ export function SavedClansView() {
   const view = paginate(ordered, limit, page)
 
   function toggleSort(key: ClanSortKey) {
-    if (key === sortKey) {
-      setAscending((current) => !current)
-    } else {
-      setSortKey(key)
-      setAscending(!CLAN_DESCENDING_BY_DEFAULT.includes(key))
-    }
+    const next = nextSortState({ key: sortKey, ascending }, key, CLAN_ASCENDING_BY_DEFAULT)
+    setSortKey(next.key)
+    setAscending(next.ascending)
     // A new order makes the old page number meaningless.
     setPage(1)
   }
@@ -321,28 +333,53 @@ export function SavedClansView() {
           </p>
         ) : (
           <>
+            {/* Stacked, the column heads are hidden, so this is the visible way
+                to reorder — see `useStackedTables`. */}
+            {stacked ? (
+              <SortControl
+                id="saved-clans-sort"
+                columns={CLAN_COLUMNS}
+                sortKey={sortKey}
+                ascending={ascending}
+                onSort={toggleSort}
+              />
+            ) : null}
+
             <div className="table-wrap">
-              <table className="roster">
-                <thead>
-                  <tr>
+              {/* One labelled card per clan at tablet width and below — see the
+                  note in styles.css. */}
+              <table className="roster roster--stack" role="table">
+                <thead role="rowgroup">
+                  <tr role="row">
                     {CLAN_COLUMNS.map((column) => (
-                      <th key={column.key} className={column.numeric ? 'num' : undefined}>
-                        <button
-                          type="button"
-                          onClick={() => toggleSort(column.key)}
-                          aria-label={`Sort by ${column.label}`}
-                        >
-                          {column.label}
-                          {sortKey === column.key ? (
-                            <span className="sort-caret"> {ascending ? '↑' : '↓'}</span>
-                          ) : null}
-                        </button>
+                      <th
+                        key={column.key}
+                        className={column.numeric ? 'num' : undefined}
+                        role="columnheader"
+                        aria-sort={
+                          sortKey === column.key ? (ascending ? 'ascending' : 'descending') : 'none'
+                        }
+                      >
+                        {stacked ? (
+                          column.label
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => toggleSort(column.key)}
+                            aria-label={`Sort by ${column.label}`}
+                          >
+                            {column.label}
+                            {sortKey === column.key ? (
+                              <span className="sort-caret"> {ascending ? '↑' : '↓'}</span>
+                            ) : null}
+                          </button>
+                        )}
                       </th>
                     ))}
-                    <th />
+                    <th role="columnheader" />
                   </tr>
                 </thead>
-                <tbody>
+                <tbody role="rowgroup">
                   {view.rows.map((entry) => (
                     <SavedClanRow key={entry.tag} entry={entry} onProblem={setRowProblem} />
                   ))}

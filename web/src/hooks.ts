@@ -119,6 +119,41 @@ export function navigate(route: Route): void {
   window.location.hash = hrefFor(route).slice(1)
 }
 
+/* ---------- stacked tables ---------- */
+
+/**
+ * The width at which a table stops being a table and becomes one card per row.
+ * It must stay in step with the `roster--stack` block in styles.css, which is
+ * what actually restyles the markup this decides to render.
+ */
+const STACKED_TABLES = '(max-width: 900px)'
+
+function subscribeToStackedTables(onChange: () => void): () => void {
+  const query = window.matchMedia(STACKED_TABLES)
+  query.addEventListener('change', onChange)
+  return () => query.removeEventListener('change', onChange)
+}
+
+/**
+ * True while tables are rendering as stacked cards.
+ *
+ * The one place this responsive pass needs JavaScript rather than CSS. A stacked
+ * card has no column heading to hang a sort button off, and the header row
+ * reflowed into a strip of gold labels above cards that already print their own
+ * field names reads as noise. So the two sortable tables render *different DOM*
+ * at this width: plain `<th>` text plus a single Sort control, in place of a row
+ * of header buttons. Rendering both and hiding one in CSS would leave the hidden
+ * set in the accessibility tree, giving a keyboard user a run of invisible
+ * duplicate controls to tab through.
+ */
+export function useStackedTables(): boolean {
+  return useSyncExternalStore(
+    subscribeToStackedTables,
+    () => window.matchMedia(STACKED_TABLES).matches,
+    () => false,
+  )
+}
+
 /* ---------- theme ---------- */
 
 export type Theme = 'light' | 'dark' | 'system'

@@ -52,38 +52,57 @@ function SideRoster({ side, war }: { side: WarClan; war: CurrentWar }) {
   const perMember = war.attacksPerMember ?? 2
 
   return (
+    /* `roster--stack` gives one labelled card per member on a phone; the explicit
+       roles are what keeps it a table for assistive tech once `display` changes.
+       Nothing here sorts, so the header row is hidden rather than kept. */
     <div className="table-wrap">
-      <table className="roster">
-        <thead>
-          <tr>
-            <th className="num">#</th>
-            <th>Member</th>
-            <th className="num">TH</th>
-            <th className="num">Stars</th>
-            <th className="num">Best hit</th>
-            <th className="num">Attacks</th>
-            <th className="num">Defended</th>
+      <table className="roster roster--stack" role="table">
+        <thead role="rowgroup">
+          <tr role="row">
+            <th className="num" role="columnheader">
+              #
+            </th>
+            <th role="columnheader">Member</th>
+            <th className="num" role="columnheader">
+              TH
+            </th>
+            <th className="num" role="columnheader">
+              Stars
+            </th>
+            <th className="num" role="columnheader">
+              Best hit
+            </th>
+            <th className="num" role="columnheader">
+              Attacks
+            </th>
+            <th className="num" role="columnheader">
+              Defended
+            </th>
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           {members.map((member) => (
-            <tr key={member.tag}>
-              <td className="num">{member.mapPosition}</td>
-              <td>
+            <tr key={member.tag} role="row">
+              <td className="num" role="cell" data-label="#">
+                {member.mapPosition}
+              </td>
+              <td className="stack-title" role="cell">
                 <a href={hrefFor({ view: 'player', tag: member.tag })}>{member.name}</a>
               </td>
               {/* `townhallLevel` — lowercase `h` is the war payload's own spelling. */}
-              <td className="num">
+              <td className="num" role="cell" data-label="TH">
                 <TownHallBadge level={member.townhallLevel} />
               </td>
-              <td className="num">{starsEarned(member)}</td>
-              <td className="num">
+              <td className="num" role="cell" data-label="Stars">
+                {starsEarned(member)}
+              </td>
+              <td className="num" role="cell" data-label="Best hit">
                 {member.attacks?.length ? `${bestDestruction(member)}%` : '—'}
               </td>
-              <td className="num">
+              <td className="num" role="cell" data-label="Attacks">
                 {member.attacks?.length ?? 0}/{perMember}
               </td>
-              <td className="num">
+              <td className="num" role="cell" data-label="Defended">
                 {member.bestOpponentAttack
                   ? `${member.bestOpponentAttack.stars}★ ${member.bestOpponentAttack.destructionPercentage}%`
                   : '—'}
@@ -236,15 +255,17 @@ function CurrentWarPanel({ war }: { war: CurrentWar }) {
 function WarLogRow({ entry }: { entry: WarLogEntry }) {
   const ended = parseCocTimestamp(entry.endTime)
   return (
-    <tr>
-      <td>
+    <tr role="row">
+      {/* The opponent is what identifies a war, so it heads the stacked card and
+          the result keeps a label like every other value. */}
+      <td role="cell" data-label="Result">
         {entry.result ? (
           <span className={`result result--${entry.result}`}>{RESULT_LABEL[entry.result]}</span>
         ) : (
           <span className="role-pill">CWL</span>
         )}
       </td>
-      <td>
+      <td className="stack-title" role="cell">
         {entry.opponent.tag ? (
           <a href={hrefFor({ view: 'clan', tag: entry.opponent.tag })}>
             {entry.opponent.name ?? entry.opponent.tag}
@@ -253,16 +274,24 @@ function WarLogRow({ entry }: { entry: WarLogEntry }) {
           (entry.opponent.name ?? '—')
         )}
       </td>
-      <td className="num">
+      <td className="num" role="cell" data-label="Stars">
         {entry.clan.stars}–{entry.opponent.stars}
       </td>
-      <td className="num">{entry.clan.destructionPercentage.toFixed(1)}%</td>
-      <td className="num">{entry.opponent.destructionPercentage.toFixed(1)}%</td>
-      <td className="num">
+      <td className="num" role="cell" data-label="Destruction">
+        {entry.clan.destructionPercentage.toFixed(1)}%
+      </td>
+      <td className="num" role="cell" data-label="Theirs">
+        {entry.opponent.destructionPercentage.toFixed(1)}%
+      </td>
+      <td className="num" role="cell" data-label="Size">
         {entry.teamSize}v{entry.teamSize}
       </td>
-      <td className="num">{entry.clan.expEarned === undefined ? '—' : formatFull(entry.clan.expEarned)}</td>
-      <td title={formatDateTime(ended)}>{formatRelative(ended)}</td>
+      <td className="num" role="cell" data-label="XP">
+        {entry.clan.expEarned === undefined ? '—' : formatFull(entry.clan.expEarned)}
+      </td>
+      <td role="cell" data-label="Ended" title={formatDateTime(ended)}>
+        {formatRelative(ended)}
+      </td>
     </tr>
   )
 }
@@ -282,20 +311,30 @@ function WarLogPanel({ tag }: { tag: string }) {
         <p className="empty-hint">No recorded wars.</p>
       ) : (
         <div className="table-wrap">
-          <table className="roster">
-            <thead>
-              <tr>
-                <th>Result</th>
-                <th>Opponent</th>
-                <th className="num">Stars</th>
-                <th className="num">Destruction</th>
-                <th className="num">Theirs</th>
-                <th className="num">Size</th>
-                <th className="num">XP</th>
-                <th>Ended</th>
+          <table className="roster roster--stack" role="table">
+            <thead role="rowgroup">
+              <tr role="row">
+                <th role="columnheader">Result</th>
+                <th role="columnheader">Opponent</th>
+                <th className="num" role="columnheader">
+                  Stars
+                </th>
+                <th className="num" role="columnheader">
+                  Destruction
+                </th>
+                <th className="num" role="columnheader">
+                  Theirs
+                </th>
+                <th className="num" role="columnheader">
+                  Size
+                </th>
+                <th className="num" role="columnheader">
+                  XP
+                </th>
+                <th role="columnheader">Ended</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {entries.map((entry) => (
                 <WarLogRow key={`${entry.endTime}-${entry.opponent.tag ?? entry.opponent.name}`} entry={entry} />
               ))}
