@@ -293,6 +293,80 @@ export function mountAuthRoutes(
   })
 
   /*
+   * Correcting a display name. Purely cosmetic — it is not a credential, so
+   * unlike the email route this revokes nothing.
+   */
+  app.patch('/api/admin/users/:id/display-name', async (c) => {
+    const id = userIdParam(c)
+    if (id === undefined) return badUserId(c)
+
+    const body = await readJson(c)
+    const displayName = asString(body['displayName']).trim()
+    if (!isValidDisplayName(displayName)) {
+      return c.json(
+        errorBody(400, 'badRequest', `Display name must be 1–${DISPLAY_NAME_MAX} characters.`),
+        400,
+      )
+    }
+
+    const user = store.setDisplayName(id, displayName)
+    if (!user) return noSuchUser(c, id)
+    return c.json({ user })
+  })
+
+  /*
+   * Promotion and demotion. The last-active-admin guard here is the case the
+   * disable route's comment anticipated: without it, demoting the only admin
+   * would leave nobody able to manage users, with no route back but hand-editing
+   * SQLite.
+   */
+  app.patch('/api/admin/users/:id/role', async (c) => {
+    const admin = currentUser(c)
+    const id = userIdParam(c)
+    if (id === undefined) return badUserId(c)
+
+    const body = await readJson(c)
+    const role: UserRole = asString(body['role']) === 'admin' ? 'admin' : 'user'
+
+    const target = store.findUser(id)
+    if (!target) return noSuchUser(c, id)
+
+    const losingAdmin = target.role === 'admin' && role === 'user' && !target.disabledAt
+    if (losingAdmin && store.countActiveAdmins() <= 1) {
+      return c.json(
+        errorBody(
+          400,
+          'badRequest',
+          `"${target.displayName}" is the only active admin, so demoting that account would leave nobody able to manage users.`,
+          'Make somebody else an admin first.',
+        ),
+        400,
+      )
+    }
+
+    /*
+     * Demoting yourself is allowed when another admin exists — it is how you hand
+     * the role over — but it is one-way from your side, so it is worth being an
+     * explicit choice rather than a silent side effect of a dropdown.
+     */
+    if (losingAdmin && id === admin.id && asString(body['confirm']) !== 'yes') {
+      return c.json(
+        errorBody(
+          400,
+          'badRequest',
+          'Removing your own admin role means you cannot restore it yourself.',
+          'Re-send with confirm: "yes" if that is what you intend.',
+        ),
+        400,
+      )
+    }
+
+    const user = store.setRole(id, role)
+    if (!user) return noSuchUser(c, id)
+    return c.json({ user })
+  })
+
+  /*
    * The whole password-recovery story, given there is no mail infrastructure: an
    * admin issues a temporary password out of band. See the README for why a
    * reset-by-email link is deliberately absent.

@@ -1691,3 +1691,225 @@ describe('the last active admin cannot be disabled', () => {
     harness.db.close()
   })
 })
+
+describe('PATCH /api/admin/users/:id/display-name', () => {
+  it('renames a user without touching their sessions', async () => {
+    const harness = createHarness()
+    const cookie = await loggedIn(harness)
+    const memberId = await addUser(harness, cookie, {
+      email: 'renamed@example.com',
+      displayName: 'Old Name',
+      password: 'a-perfectly-fine-password',
+    })
+
+    const { cookie: theirs } = await login(harness, {
+      email: 'renamed@example.com',
+      password: 'a-perfectly-fine-password',
+    })
+    assert.ok(theirs)
+
+    const response = await harness.app.request(
+      ...patchJson(`/api/admin/users/${memberId}/display-name`, { displayName: 'New Name' }, cookie),
+    )
+    assert.equal(response.status, 200)
+    assert.equal(harness.store.findUser(memberId)?.displayName, 'New Name')
+
+    // A display name is not a credential, so unlike the email route this must
+    // leave the renamed user signed in.
+    const stillSignedIn = await harness.app.request('/api/auth/me', { headers: { cookie: theirs } })
+    assert.equal(stillSignedIn.status, 200)
+    harness.db.close()
+  })
+
+  it('trims, and rejects a blank or absent name', async () => {
+    const harness = createHarness()
+    const cookie = await loggedIn(harness)
+    const memberId = await addUser(harness, cookie, {
+      email: 'trimmed@example.com',
+      password: 'another-fine-password',
+    })
+
+    const trimmed = await harness.app.request(
+      ...patchJson(`/api/admin/users/${memberId}/display-name`, { displayName: '  Spaced  ' }, cookie),
+    )
+    assert.equal(trimmed.status, 200)
+    assert.equal(harness.store.findUser(memberId)?.displayName, 'Spaced')
+
+    for (const displayName of ['', '   ', undefined]) {
+      const response = await harness.app.request(
+        ...patchJson(`/api/admin/users/${memberId}/display-name`, { displayName }, cookie),
+      )
+      assert.equal(response.status, 400, `expected 400 for ${JSON.stringify(displayName)}`)
+    }
+    // The rejected writes left the last good value alone.
+    assert.equal(harness.store.findUser(memberId)?.displayName, 'Spaced')
+    harness.db.close()
+  })
+
+  it('is refused anonymously and to non-admins, and 404s for an unknown id', async () => {
+    const harness = createHarness()
+    const cookie = await loggedIn(harness)
+    const memberId = await addUser(harness, cookie, {
+      email: 'plain@example.com',
+      password: 'yet-another-password',
+    })
+    const { cookie: theirs } = await login(harness, {
+      email: 'plain@example.com',
+      password: 'yet-another-password',
+    })
+    assert.ok(theirs)
+
+    const anonymous = await harness.app.request(
+      ...patchJson(`/api/admin/users/${memberId}/display-name`, { displayName: 'Nope' }),
+    )
+    assert.equal(anonymous.status, 401)
+
+    const nonAdmin = await harness.app.request(
+      ...patchJson(`/api/admin/users/${memberId}/display-name`, { displayName: 'Nope' }, theirs),
+    )
+    assert.equal(nonAdmin.status, 403)
+
+    const missing = await harness.app.request(
+      ...patchJson('/api/admin/users/9999/display-name', { displayName: 'Nope' }, cookie),
+    )
+    assert.equal(missing.status, 404)
+
+    assert.equal(harness.store.findUser(memberId)?.displayName, 'plain')
+    harness.db.close()
+  })
+})
+
+describe('PATCH /api/admin/users/:id/role', () => {
+  it('promotes a user to admin, who can then use an admin route', async () => {
+    const harness = createHarness()
+    const cookie = await loggedIn(harness)
+    const memberId = await addUser(harness, cookie, {
+      email: 'promoted@example.com',
+      password: 'the-promotion-password',
+    })
+    const { cookie: theirs } = await login(harness, {
+      email: 'promoted@example.com',
+      password: 'the-promotion-password',
+    })
+    assert.ok(theirs)
+
+    const before = await harness.app.request('/api/admin/users', { headers: { cookie: theirs } })
+    assert.equal(before.status, 403)
+
+    const response = await harness.app.request(
+      ...patchJson(`/api/admin/users/${memberId}/role`, { role: 'admin' }, cookie),
+    )
+    assert.equal(response.status, 200)
+    assert.equal(harness.store.findUser(memberId)?.role, 'admin')
+    assert.equal(harness.store.countActiveAdmins(), 2)
+
+    // The role is read from `users` on every request, so the existing session
+    // picks it up without re-authenticating.
+    const after = await harness.app.request('/api/admin/users', { headers: { cookie: theirs } })
+    assert.equal(after.status, 200)
+    harness.db.close()
+  })
+
+  it('refuses to demote the only active admin', async () => {
+    const harness = createHarness()
+    const cookie = await loggedIn(harness)
+    const admin = harness.store.listUsers()[0]
+    assert.ok(admin)
+
+    const response = await harness.app.request(
+      ...patchJson(`/api/admin/users/${admin.id}/role`, { role: 'user', confirm: 'yes' }, cookie),
+    )
+    assert.equal(response.status, 400)
+    const body = (await response.json()) as { error: { message: string } }
+    assert.match(body.error.message, /only active admin/)
+    assert.equal(harness.store.findUser(admin.id)?.role, 'admin')
+    assert.equal(harness.store.countActiveAdmins(), 1)
+    harness.db.close()
+  })
+
+  it('needs explicit confirmation to drop your own admin role', async () => {
+    const harness = createHarness()
+    const cookie = await loggedIn(harness)
+    const admin = harness.store.listUsers()[0]
+    assert.ok(admin)
+    // A second admin, so the last-admin guard is not what is being tested.
+    await addUser(harness, cookie, {
+      email: 'deputy@example.com',
+      password: 'the-deputy-password',
+      role: 'admin',
+    })
+
+    const unconfirmed = await harness.app.request(
+      ...patchJson(`/api/admin/users/${admin.id}/role`, { role: 'user' }, cookie),
+    )
+    assert.equal(unconfirmed.status, 400)
+    assert.equal(harness.store.findUser(admin.id)?.role, 'admin')
+
+    const confirmed = await harness.app.request(
+      ...patchJson(`/api/admin/users/${admin.id}/role`, { role: 'user', confirm: 'yes' }, cookie),
+    )
+    assert.equal(confirmed.status, 200)
+    assert.equal(harness.store.findUser(admin.id)?.role, 'user')
+
+    // And having given it up, they can no longer reach an admin route.
+    const locked = await harness.app.request('/api/admin/users', { headers: { cookie } })
+    assert.equal(locked.status, 403)
+    harness.db.close()
+  })
+
+  it('demotes another admin without confirmation, and never needs it to promote', async () => {
+    const harness = createHarness()
+    const cookie = await loggedIn(harness)
+    const deputyId = await addUser(harness, cookie, {
+      email: 'deputy2@example.com',
+      password: 'the-other-deputy-pw',
+      role: 'admin',
+    })
+    assert.equal(harness.store.countActiveAdmins(), 2)
+
+    const demoted = await harness.app.request(
+      ...patchJson(`/api/admin/users/${deputyId}/role`, { role: 'user' }, cookie),
+    )
+    assert.equal(demoted.status, 200)
+    assert.equal(harness.store.findUser(deputyId)?.role, 'user')
+
+    const repromoted = await harness.app.request(
+      ...patchJson(`/api/admin/users/${deputyId}/role`, { role: 'admin' }, cookie),
+    )
+    assert.equal(repromoted.status, 200)
+    assert.equal(harness.store.findUser(deputyId)?.role, 'admin')
+    harness.db.close()
+  })
+
+  it('is refused anonymously and to non-admins, and 404s for an unknown id', async () => {
+    const harness = createHarness()
+    const cookie = await loggedIn(harness)
+    const memberId = await addUser(harness, cookie, {
+      email: 'nobody@example.com',
+      password: 'the-nobody-password',
+    })
+    const { cookie: theirs } = await login(harness, {
+      email: 'nobody@example.com',
+      password: 'the-nobody-password',
+    })
+    assert.ok(theirs)
+
+    const anonymous = await harness.app.request(
+      ...patchJson(`/api/admin/users/${memberId}/role`, { role: 'admin' }),
+    )
+    assert.equal(anonymous.status, 401)
+
+    // The obvious privilege escalation: promoting yourself.
+    const selfPromotion = await harness.app.request(
+      ...patchJson(`/api/admin/users/${memberId}/role`, { role: 'admin' }, theirs),
+    )
+    assert.equal(selfPromotion.status, 403)
+    assert.equal(harness.store.findUser(memberId)?.role, 'user')
+
+    const missing = await harness.app.request(
+      ...patchJson('/api/admin/users/9999/role', { role: 'admin' }, cookie),
+    )
+    assert.equal(missing.status, 404)
+    harness.db.close()
+  })
+})

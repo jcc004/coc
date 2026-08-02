@@ -3,15 +3,21 @@ import { ROLE_LABELS, type Clan, type ClanMember } from '@coc/shared'
 import { api } from '../api.ts'
 import { labelIcon } from '../coc-assets.ts'
 import { formatFull, formatStat, humanizeCamel, ratio } from '../format.ts'
-import { hrefFor, useAsync, type Recent } from '../hooks.ts'
+import { hrefFor, useAsync, useRowLimit, type Recent } from '../hooks.ts'
 import { applyOwners, knownOwners, useOwnersState } from '../owners.ts'
 import { removeClan, saveClan, useSavedClans } from '../saved-clans.ts'
 import {
+  filterRosterRows,
+  hasRosterFilters,
+  paginate,
   planOwnerChange,
   ROSTER_ASCENDING_BY_DEFAULT,
   ROSTER_COLUMNS,
+  rosterTownHallLevels,
   sortRosterRows,
+  UNASSIGNED_OWNER,
   type OwnerConflict,
+  type RosterFilters,
   type RosterRow,
   type RosterSortKey,
 } from '../saved-table.ts'
@@ -22,6 +28,8 @@ import {
   GameIcon,
   Loading,
   Meter,
+  Pager,
+  RowLimitSelect,
   StatTile,
   TileRow,
   TownHallBadge,
@@ -82,6 +90,11 @@ function RosterTable({ members }: { members: ClanMember[] }) {
 
   const [sortKey, setSortKey] = useState<RosterSortKey>('clanRank')
   const [ascending, setAscending] = useState(true)
+  const [limit, setLimit] = useRowLimit('coc:rosterLimit', 20)
+  const [page, setPage] = useState(1)
+  const [thFilter, setThFilter] = useState('')
+  const [ownerFilter, setOwnerFilter] = useState('')
+  const [memberFilter, setMemberFilter] = useState('')
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set())
   const [bulkOwner, setBulkOwner] = useState('')
   const [conflicts, setConflicts] = useState<OwnerConflict[] | null>(null)
@@ -107,21 +120,48 @@ function RosterTable({ members }: { members: ClanMember[] }) {
     return members.map((member) => ({ ...member, owner: byTag.get(member.tag) }))
   }, [members, owners])
 
-  const ordered = useMemo(
-    () => sortRosterRows(rows, sortKey, ascending),
-    [rows, sortKey, ascending],
+  /** Town Hall levels actually present, so the filter never offers an empty result. */
+  const thLevels = useMemo(() => rosterTownHallLevels(rows), [rows])
+
+  const filters = useMemo<RosterFilters>(
+    () => ({ townHall: thFilter, owner: ownerFilter, member: memberFilter }),
+    [thFilter, ownerFilter, memberFilter],
   )
 
+  const filtered = useMemo(() => filterRosterRows(rows, filters), [rows, filters])
+
+  const ordered = useMemo(
+    () => sortRosterRows(filtered, sortKey, ascending),
+    [filtered, sortKey, ascending],
+  )
+
+  const view = useMemo(() => paginate(ordered, limit, page), [ordered, limit, page])
+
+  // Landing on a page past the end after filtering or a deletion would show an
+  // empty table; `paginate` clamps, and this puts the control back in step.
+  useEffect(() => {
+    if (view.page !== page) setPage(view.page)
+  }, [view.page, page])
+
+  const filtersActive = hasRosterFilters(filters)
+
   /*
-   * The game caps a clan at 50 members, so this table is never paged and the
-   * header checkbox can safely mean the whole roster — every row it ticks is on
-   * screen, which is what made page-scoped select-all necessary elsewhere.
+   * Page-scoped, like the saved tables: the header checkbox may only ever tick
+   * rows that are on screen. It used to mean the whole roster, which was safe
+   * only while the table was unpaged and unfiltered — now that it is both,
+   * whole-roster would silently select members the filter is hiding.
    */
+  const pageTags = useMemo(() => new Set(view.rows.map((row) => row.tag)), [view.rows])
   const selected = useMemo(
     () => rows.filter((row) => selectedTags.has(row.tag)),
     [rows, selectedTags],
   )
-  const allSelected = rows.length > 0 && selected.length === rows.length
+  const selectedOnPage = useMemo(
+    () => view.rows.filter((row) => selectedTags.has(row.tag)).length,
+    [view.rows, selectedTags],
+  )
+  const offPage = selected.length - selectedOnPage
+  const allSelected = view.rows.length > 0 && selectedOnPage === view.rows.length
 
   // The donation bar is a magnitude comparison within this roster, so it scales
   // to the clan's top donor rather than to some absolute ceiling.
@@ -132,11 +172,14 @@ function RosterTable({ members }: { members: ClanMember[] }) {
 
   useEffect(() => {
     if (selectAllRef.current) {
-      selectAllRef.current.indeterminate = selected.length > 0 && !allSelected
+      selectAllRef.current.indeterminate = selectedOnPage > 0 && !allSelected
     }
-  }, [selected.length, allSelected])
+  }, [selectedOnPage, allSelected])
 
   function toggleSort(key: RosterSortKey) {
+    // Back to page 1: keeping the offset would land you in the middle of a
+    // freshly reordered list, which reads as rows having gone missing.
+    setPage(1)
     if (key === sortKey) {
       setAscending((current) => !current)
     } else {
@@ -154,8 +197,16 @@ function RosterTable({ members }: { members: ClanMember[] }) {
     })
   }
 
+  /** Adds or removes only this page's rows, leaving any off-page selection alone. */
   function toggleSelectAll() {
-    setSelectedTags(allSelected ? new Set() : new Set(rows.map((row) => row.tag)))
+    setSelectedTags((current) => {
+      const next = new Set(current)
+      for (const tag of pageTags) {
+        if (allSelected) next.delete(tag)
+        else next.add(tag)
+      }
+      return next
+    })
   }
 
   /**
@@ -265,7 +316,13 @@ function RosterTable({ members }: { members: ClanMember[] }) {
     <>
       {selected.length > 0 ? (
         <div className="bulk-bar">
-          <span className="bulk-bar__count">{selected.length} selected</span>
+          {/* Off-page counted separately: with filters and paging, a selection can
+              include members you cannot currently see, and a bulk apply would
+              still hit them. */}
+          <span className="bulk-bar__count">
+            {selected.length} selected
+            {offPage > 0 ? ` · ${offPage} not shown` : ''}
+          </span>
           <input
             value={bulkOwner}
             onChange={(event) => setBulkOwner(event.target.value)}
@@ -377,6 +434,92 @@ function RosterTable({ members }: { members: ClanMember[] }) {
         </div>
       ) : null}
 
+      <div className="roster-filters">
+        <label htmlFor="roster-member">
+          Member
+          <input
+            id="roster-member"
+            value={memberFilter}
+            onChange={(event) => {
+              setMemberFilter(event.target.value)
+              setPage(1)
+            }}
+            placeholder="Search name"
+            autoComplete="off"
+          />
+        </label>
+
+        <label htmlFor="roster-th">
+          TH
+          <select
+            id="roster-th"
+            value={thFilter}
+            onChange={(event) => {
+              setThFilter(event.target.value)
+              setPage(1)
+            }}
+          >
+            <option value="">All</option>
+            {thLevels.map((level) => (
+              <option key={level} value={String(level)}>
+                {level}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label htmlFor="roster-owner">
+          Owner
+          <select
+            id="roster-owner"
+            value={ownerFilter}
+            onChange={(event) => {
+              setOwnerFilter(event.target.value)
+              setPage(1)
+            }}
+          >
+            <option value="">All</option>
+            <option value={UNASSIGNED_OWNER}>Unassigned</option>
+            {ownerNames.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <RowLimitSelect
+          id="roster-rows"
+          options={[20, 50]}
+          value={limit}
+          onChange={(next) => {
+            setLimit(next)
+            setPage(1)
+          }}
+        />
+
+        {filtersActive ? (
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => {
+              setThFilter('')
+              setOwnerFilter('')
+              setMemberFilter('')
+              setPage(1)
+            }}
+          >
+            Clear filters
+          </button>
+        ) : null}
+
+        {filtersActive ? (
+          <span className="role-pill">
+            {filtered.length} of {rows.length} members
+          </span>
+        ) : null}
+      </div>
+
       <div className="table-wrap">
         <table className="roster">
           <thead>
@@ -387,8 +530,8 @@ function RosterTable({ members }: { members: ClanMember[] }) {
                   type="checkbox"
                   checked={allSelected}
                   onChange={toggleSelectAll}
-                  aria-label={`Select all ${rows.length} members`}
-                  title={`Select all ${rows.length} members`}
+                  aria-label={`Select the ${view.rows.length} members on this page`}
+                  title={`Select the ${view.rows.length} members on this page`}
                 />
               </th>
               {ROSTER_COLUMNS.map((column) => (
@@ -408,7 +551,7 @@ function RosterTable({ members }: { members: ClanMember[] }) {
             </tr>
           </thead>
           <tbody>
-            {ordered.map((row) => (
+            {view.rows.map((row) => (
               <tr key={row.tag}>
                 <td className="select-cell">
                   <input
@@ -448,17 +591,17 @@ function RosterTable({ members }: { members: ClanMember[] }) {
         </table>
       </div>
 
+      {view.rows.length === 0 ? (
+        <p className="empty-hint">No members match those filters.</p>
+      ) : (
+        <Pager view={view} noun="members" onPage={setPage} />
+      )}
+
       <datalist id={OWNER_LIST_ID}>
         {ownerNames.map((name) => (
           <option key={name} value={name} />
         ))}
       </datalist>
-
-      <p className="empty-hint" style={{ marginTop: 12, fontSize: 13 }}>
-        Owner is stored on the server, keyed by player tag, and is{' '}
-        <strong>shared with everyone</strong> — one answer per base, not one per device. Tick
-        members to set it in bulk; the header checkbox takes the whole roster.
-      </p>
     </>
   )
 }

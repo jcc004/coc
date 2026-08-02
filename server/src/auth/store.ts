@@ -108,6 +108,13 @@ export interface AuthStore {
   setPassword(id: number, password: string, mustChangePassword?: boolean): AdminUser | undefined
   /** Fills in a missing (or corrects an existing) email. Never touches the password. */
   setEmail(id: number, email: string): AdminUser | undefined
+  setDisplayName(id: number, displayName: string): AdminUser | undefined
+  /**
+   * Promote or demote. Sessions are deliberately left alone: `resolveSession`
+   * reads the role from `users` on every request, so a change takes effect on the
+   * target's next call without signing them out.
+   */
+  setRole(id: number, role: UserRole): AdminUser | undefined
   /** The lowest-id admin with no email — the account the escape hatch targets. */
   findOldestAdminWithoutEmail(): AdminUser | undefined
   /**
@@ -159,6 +166,8 @@ export function createAuthStore(db: DatabaseSync): AuthStore {
         WHERE id = ?`,
     ),
     setEmail: db.prepare('UPDATE users SET email = ? WHERE id = ?'),
+    setDisplayName: db.prepare('UPDATE users SET display_name = ? WHERE id = ?'),
+    setRole: db.prepare('UPDATE users SET role = ? WHERE id = ?'),
 
     insertSession: db.prepare(
       'INSERT INTO sessions (id, user_id, created_at, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)',
@@ -246,6 +255,18 @@ export function createAuthStore(db: DatabaseSync): AuthStore {
       // clears it, and one an admin issued sets it, in a single write. Splitting
       // the two would allow a state where the password moved and the flag did not.
       statements.setPassword.run(hash, salt, mustChangePassword ? 1 : 0, id)
+      return findUser(id)
+    },
+
+    setDisplayName(id, displayName) {
+      if (!findUser(id)) return undefined
+      statements.setDisplayName.run(displayName.trim(), id)
+      return findUser(id)
+    },
+
+    setRole(id, role) {
+      if (!findUser(id)) return undefined
+      statements.setRole.run(role, id)
       return findUser(id)
     },
 

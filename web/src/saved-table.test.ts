@@ -2,6 +2,11 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { SavedClan } from './saved-clans.ts'
 import {
+  filterRosterRows,
+  hasRosterFilters,
+  NO_ROSTER_FILTERS,
+  rosterTownHallLevels,
+  UNASSIGNED_OWNER,
   numberCompare,
   paginate,
   parseRowLimit,
@@ -359,5 +364,98 @@ describe('parseRowLimit', () => {
     assert.equal(parseRowLimit('0', 5), 5)
     assert.equal(parseRowLimit('-10', 5), 5)
     assert.equal(parseRowLimit('2.5', 5), 5)
+  })
+})
+
+/* ---------- roster filters ---------- */
+
+const FILTER_ROSTER: RosterRow[] = [
+  member({ tag: '#A', name: 'darek', townHallLevel: 18, owner: 'Jared' }),
+  member({ tag: '#B', name: 'Turtle', townHallLevel: 12, owner: 'Sam' }),
+  member({ tag: '#C', name: 'Alt one', townHallLevel: 12 }),
+  member({ tag: '#D', name: 'DAREK II', townHallLevel: 18, owner: 'Jared' }),
+  member({ tag: '#E', name: 'Blank owner', townHallLevel: 9, owner: '  ' }),
+]
+
+const filterNames = (rows: RosterRow[]) => rows.map((r) => r.name)
+
+describe('filterRosterRows', () => {
+  it('returns everything when no filter is set', () => {
+    assert.deepEqual(filterRosterRows(FILTER_ROSTER, NO_ROSTER_FILTERS), FILTER_ROSTER)
+    assert.equal(hasRosterFilters(NO_ROSTER_FILTERS), false)
+  })
+
+  it('filters by Town Hall level', () => {
+    const rows = filterRosterRows(FILTER_ROSTER, { ...NO_ROSTER_FILTERS, townHall: '12' })
+    assert.deepEqual(filterNames(rows), ['Turtle', 'Alt one'])
+  })
+
+  it('filters by exact owner', () => {
+    const rows = filterRosterRows(FILTER_ROSTER, { ...NO_ROSTER_FILTERS, owner: 'Jared' })
+    assert.deepEqual(filterNames(rows), ['darek', 'DAREK II'])
+  })
+
+  it('treats absent and whitespace-only owners as unassigned', () => {
+    const rows = filterRosterRows(FILTER_ROSTER, { ...NO_ROSTER_FILTERS, owner: UNASSIGNED_OWNER })
+    assert.deepEqual(filterNames(rows), ['Alt one', 'Blank owner'])
+  })
+
+  it('matches the member name case-insensitively, as a substring', () => {
+    const rows = filterRosterRows(FILTER_ROSTER, { ...NO_ROSTER_FILTERS, member: 'dar' })
+    assert.deepEqual(filterNames(rows), ['darek', 'DAREK II'])
+    // Surrounding whitespace in the box must not change the result.
+    assert.deepEqual(
+      filterNames(filterRosterRows(FILTER_ROSTER, { ...NO_ROSTER_FILTERS, member: '  dar  ' })),
+      ['darek', 'DAREK II'],
+    )
+  })
+
+  it('ANDs the filters together', () => {
+    const rows = filterRosterRows(FILTER_ROSTER, { townHall: '18', owner: 'Jared', member: 'ii' })
+    assert.deepEqual(filterNames(rows), ['DAREK II'])
+  })
+
+  it('can legitimately match nothing', () => {
+    assert.deepEqual(filterRosterRows(FILTER_ROSTER, { ...NO_ROSTER_FILTERS, member: 'zzz' }), [])
+    // Which is what the table's own empty state exists for.
+    assert.equal(hasRosterFilters({ ...NO_ROSTER_FILTERS, member: 'zzz' }), true)
+  })
+
+  it('does not mutate its input', () => {
+    const before = filterNames(FILTER_ROSTER)
+    filterRosterRows(FILTER_ROSTER, { ...NO_ROSTER_FILTERS, townHall: '18' })
+    assert.deepEqual(filterNames(FILTER_ROSTER), before)
+  })
+
+  it('reports whitespace-only member text as no filter at all', () => {
+    // Otherwise the "N of M" badge and Clear button would appear for a stray space.
+    assert.equal(hasRosterFilters({ ...NO_ROSTER_FILTERS, member: '   ' }), false)
+  })
+})
+
+describe('rosterTownHallLevels', () => {
+  it('lists the levels present, highest first, without duplicates', () => {
+    assert.deepEqual(rosterTownHallLevels(FILTER_ROSTER), [18, 12, 9])
+  })
+
+  it('is empty for an empty roster', () => {
+    assert.deepEqual(rosterTownHallLevels([]), [])
+  })
+})
+
+describe('filters compose with paging', () => {
+  it('pages the filtered set, not the whole roster', () => {
+    const filtered = filterRosterRows(FILTER_ROSTER, { ...NO_ROSTER_FILTERS, townHall: '12' })
+    const view = paginate(filtered, 1, 2)
+    assert.equal(view.total, 2, 'total reflects the filter, not the 5-row roster')
+    assert.equal(view.pageCount, 2)
+    assert.deepEqual(filterNames(view.rows), ['Alt one'])
+  })
+
+  it('clamps to page 1 when a filter shrinks the set below the current page', () => {
+    const filtered = filterRosterRows(FILTER_ROSTER, { ...NO_ROSTER_FILTERS, member: 'dar' })
+    const view = paginate(filtered, 20, 3)
+    assert.equal(view.page, 1)
+    assert.deepEqual(filterNames(view.rows), ['darek', 'DAREK II'])
   })
 })

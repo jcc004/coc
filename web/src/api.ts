@@ -190,6 +190,21 @@ export const api = {
   setUserEmail: (id: number, email: string) =>
     request<EmailChangeResponse>('PATCH', `/api/admin/users/${id}/email`, { body: { email } }),
 
+  /** Cosmetic, so unlike the email it revokes nothing. */
+  setUserDisplayName: (id: number, displayName: string) =>
+    request<{ user: AdminUser }>('PATCH', `/api/admin/users/${id}/display-name`, {
+      body: { displayName },
+    }),
+
+  /**
+   * Promote or demote. `confirm` is required only to remove your *own* admin
+   * role, which you cannot then restore yourself.
+   */
+  setUserRole: (id: number, role: UserRole, confirm = false) =>
+    request<{ user: AdminUser }>('PATCH', `/api/admin/users/${id}/role`, {
+      body: confirm ? { role, confirm: 'yes' } : { role },
+    }),
+
   /**
    * Issues a temporary password. The server picks it — there is deliberately no
    * argument for one — and the plaintext in the response is the only copy that

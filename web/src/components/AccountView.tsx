@@ -307,6 +307,97 @@ function TempPasswordPanel({
   )
 }
 
+/**
+ * The inline editor in the name cell. Same shape as the email cell, but a display
+ * name is not a credential, so saving it revokes nothing.
+ */
+function NameCell({
+  user,
+  isSelf,
+  onSaved,
+  onProblem,
+}: {
+  user: AdminUser
+  isSelf: boolean
+  onSaved: () => void
+  onProblem: (id: number, text: string | null) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(user.displayName)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(event: FormEvent): Promise<void> {
+    event.preventDefault()
+    if (busy) return
+
+    const trimmed = draft.trim()
+    if (!trimmed) {
+      onProblem(user.id, 'A display name cannot be blank.')
+      return
+    }
+
+    setBusy(true)
+    onProblem(user.id, null)
+    try {
+      await api.setUserDisplayName(user.id, trimmed)
+      setEditing(false)
+      onSaved()
+    } catch (cause) {
+      onProblem(user.id, describe(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <td>
+        {user.displayName}
+        {isSelf ? <span className="role-pill"> (you)</span> : null}{' '}
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => {
+            setDraft(user.displayName)
+            onProblem(user.id, null)
+            setEditing(true)
+          }}
+          aria-label={`Change the display name for ${user.displayName}`}
+        >
+          Edit
+        </button>
+      </td>
+    )
+  }
+
+  return (
+    <td>
+      <form className="row-edit" onSubmit={submit}>
+        <input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          aria-label={`Display name for ${user.displayName}`}
+          autoComplete="off"
+          autoFocus
+        />
+        <button type="submit" className="icon-button" disabled={busy || !draft.trim()}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => {
+            setEditing(false)
+            onProblem(user.id, null)
+          }}
+        >
+          Cancel
+        </button>
+      </form>
+    </td>
+  )
+}
+
 /** The inline editor in the email cell. Own form, so Enter saves that one row. */
 function EmailCell({
   user,
@@ -439,6 +530,32 @@ function UsersCard({ currentUserId }: { currentUserId: number }) {
     }
   }
 
+  async function changeRole(user: AdminUser): Promise<void> {
+    const promoting = user.role !== 'admin'
+    const isSelf = user.id === currentUserId
+
+    const question = promoting
+      ? `Make ${user.displayName} an admin? They will be able to manage users, including issuing temporary passwords.`
+      : isSelf
+        ? 'Remove your own admin role? You will not be able to restore it yourself — another admin would have to.'
+        : `Remove admin from ${user.displayName}?`
+    if (!window.confirm(question)) return
+
+    setProblem(null)
+    setRowProblem(user.id, null)
+    setBusyId(user.id)
+    try {
+      // The server demands explicit confirmation to strip your own admin role;
+      // the dialog above is that confirmation.
+      await api.setUserRole(user.id, promoting ? 'admin' : 'user', isSelf)
+      reload()
+    } catch (cause) {
+      setRowProblem(user.id, describe(cause))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function issueTempPassword(user: AdminUser): Promise<void> {
     const isSelf = user.id === currentUserId
     if (
@@ -517,7 +634,6 @@ function UsersCard({ currentUserId }: { currentUserId: number }) {
               <tr>
                 <th>Name</th>
                 <th>Email</th>
-                <th>ID</th>
                 <th>Role</th>
                 <th>Added</th>
                 <th>Status</th>
@@ -527,13 +643,29 @@ function UsersCard({ currentUserId }: { currentUserId: number }) {
             <tbody>
               {state.data.users.map((user) => (
                 <tr key={user.id}>
-                  <td>
-                    {user.displayName}
-                    {user.id === currentUserId ? <span className="role-pill"> (you)</span> : null}
-                  </td>
+                  <NameCell
+                    user={user}
+                    isSelf={user.id === currentUserId}
+                    onSaved={reload}
+                    onProblem={setRowProblem}
+                  />
                   <EmailCell user={user} onSaved={reload} onProblem={setRowProblem} />
-                  <td className="tag-cell">{user.guid}</td>
-                  <td className="role-pill">{user.role === 'admin' ? 'Admin' : 'User'}</td>
+                  <td>
+                    <span className="role-pill">{user.role === 'admin' ? 'Admin' : 'User'}</span>{' '}
+                    <button
+                      type="button"
+                      className="icon-button"
+                      onClick={() => void changeRole(user)}
+                      disabled={busyId === user.id}
+                      aria-label={
+                        user.role === 'admin'
+                          ? `Remove admin from ${user.displayName}`
+                          : `Make ${user.displayName} an admin`
+                      }
+                    >
+                      {user.role === 'admin' ? 'Remove admin' : 'Make admin'}
+                    </button>
+                  </td>
                   <td>{formatDateTime(new Date(user.createdAt))}</td>
                   {/* Words, not a colour: disabled has to be legible on its own. */}
                   <td>

@@ -43,6 +43,54 @@ export interface RosterRow extends ClanMember {
   owner?: string
 }
 
+/**
+ * Owner-filter sentinel for "nobody is set on this base". `''` already means "no
+ * filter", so the third state needs a value of its own. A leading `#` cannot
+ * collide with a real owner: owner names are trimmed free text, and anything
+ * starting with `#` would be a tag.
+ */
+export const UNASSIGNED_OWNER = '#unassigned'
+
+export interface RosterFilters {
+  /** Town Hall level as a string, `''` for all. */
+  townHall: string
+  /** Exact owner, `''` for all, or {@link UNASSIGNED_OWNER}. */
+  owner: string
+  /** Case-insensitive substring of the member name. */
+  member: string
+}
+
+export const NO_ROSTER_FILTERS: RosterFilters = { townHall: '', owner: '', member: '' }
+
+export function hasRosterFilters(filters: RosterFilters): boolean {
+  return filters.townHall !== '' || filters.owner !== '' || filters.member.trim() !== ''
+}
+
+/** Every filter ANDs with the others, and an empty one never excludes anything. */
+export function filterRosterRows(rows: RosterRow[], filters: RosterFilters): RosterRow[] {
+  const needle = filters.member.trim().toLowerCase()
+
+  return rows.filter((row) => {
+    if (filters.townHall !== '' && String(row.townHallLevel) !== filters.townHall) return false
+
+    if (filters.owner === UNASSIGNED_OWNER) {
+      // Blank counts as unassigned as well as absent: the store deletes the field
+      // on clear, but a row that came from elsewhere could still carry `''`.
+      if (row.owner?.trim()) return false
+    } else if (filters.owner !== '' && row.owner !== filters.owner) {
+      return false
+    }
+
+    if (needle && !row.name.toLowerCase().includes(needle)) return false
+    return true
+  })
+}
+
+/** Town Hall levels present in these rows, highest first, for the filter options. */
+export function rosterTownHallLevels(rows: RosterRow[]): number[] {
+  return [...new Set(rows.map((row) => row.townHallLevel))].sort((a, b) => b - a)
+}
+
 export type RosterSortKey =
   | 'clanRank'
   | 'name'

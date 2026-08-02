@@ -4,21 +4,17 @@ Config for hosting this app on a $6 DigitalOcean droplet (`146.190.196.236`),
 **HTTPS only** — port 80 redirects and answers ACME challenges, and serves no
 application traffic.
 
-## You need a hostname first
+## Hostname
 
-A browser-trusted certificate cannot be issued for a bare IP address. Serving
-the app on `146.190.196.236` alone would mean a self-signed certificate and a
-click-through warning for every user, which trains people to dismiss TLS
-warnings — worse than no TLS at all.
+The app is served at **`coc.jcciv.com`**, whose `A` record already points at
+`146.190.196.236`. That name is baked into `nginx-coc.conf` in four places —
+`server_name` in both blocks and the two certificate paths — so changing it
+means changing all of them.
 
-Any name pointing at the droplet works:
-
-- a domain you own, or
-- a free subdomain from a dynamic-DNS provider such as `duckdns.org`, which
-  works with Let's Encrypt.
-
-Point an `A` record at `146.190.196.236`, confirm it resolves, then substitute
-that name for `coc.example.com` everywhere in `nginx-coc.conf`.
+A hostname is required rather than convenient: a browser-trusted certificate
+cannot be issued for a bare IP, and the alternative — a self-signed certificate
+— would put a click-through warning in front of every user, which teaches people
+to dismiss TLS warnings and is worse than no TLS at all.
 
 This matters because the app has real accounts: without TLS, passwords and
 session cookies cross the network in clear text.
@@ -67,11 +63,11 @@ sudo systemctl enable --now coc
 
 # Certificate, then Nginx
 sudo mkdir -p /var/www/certbot
-sudo cp deploy/nginx-coc.conf /etc/nginx/sites-available/coc   # after editing the hostname
+sudo cp deploy/nginx-coc.conf /etc/nginx/sites-available/coc
 sudo ln -sf /etc/nginx/sites-available/coc /etc/nginx/sites-enabled/coc
 sudo rm -f /etc/nginx/sites-enabled/default
 chmod o+x /home/jcc
-sudo certbot certonly --webroot -w /var/www/certbot -d coc.example.com
+sudo certbot certonly --webroot -w /var/www/certbot -d coc.jcciv.com
 sudo nginx -t && sudo systemctl reload nginx
 
 # NOW turn on the Secure cookie, once TLS actually works
@@ -79,7 +75,7 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo systemctl restart coc
 ```
 
-Then open `https://coc.example.com` and log in.
+Then open `https://coc.jcciv.com` and log in.
 
 ### Why `NODE_ENV=production` comes last
 
