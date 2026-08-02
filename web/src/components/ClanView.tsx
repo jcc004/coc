@@ -4,7 +4,7 @@ import { api } from '../api.ts'
 import { labelIcon } from '../coc-assets.ts'
 import { formatFull, formatStat, humanizeCamel, ratio } from '../format.ts'
 import { hrefFor, useAsync, type Recent } from '../hooks.ts'
-import { applyOwners, knownOwners, useOwners, useOwnersState } from '../owners.ts'
+import { applyOwners, knownOwners, useOwnersState } from '../owners.ts'
 import { removeClan, saveClan, useSavedClans } from '../saved-clans.ts'
 import {
   planOwnerChange,
@@ -68,7 +68,8 @@ function SaveToggle({ clan }: { clan: Clan }) {
 }
 
 function RosterTable({ members }: { members: ClanMember[] }) {
-  const owners = useOwners()
+  const ownersState = useOwnersState()
+  const owners = ownersState.entries
 
   const [sortKey, setSortKey] = useState<RosterSortKey>('clanRank')
   const [ascending, setAscending] = useState(true)
@@ -77,10 +78,18 @@ function RosterTable({ members }: { members: ClanMember[] }) {
   const [conflicts, setConflicts] = useState<OwnerConflict[] | null>(null)
   const [approvedTags, setApprovedTags] = useState<Set<string>>(new Set())
   const [applyNote, setApplyNote] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
 
   const selectAllRef = useRef<HTMLInputElement>(null)
 
   const ownerNames = useMemo(() => knownOwners(), [owners])
+
+  // Server conflicts arrive carrying only a tag, so the roster supplies the name.
+  const nameByTag = useMemo(
+    () => new Map(members.map((member) => [member.tag, member.name])),
+    [members],
+  )
 
   // Owner is a local annotation keyed by tag, so the roster is the API's member
   // list joined against the store whenever either side changes.
@@ -141,40 +150,106 @@ function RosterTable({ members }: { members: ClanMember[] }) {
   }
 
   /**
-   * Applies the owner to every selected member that has none, and defers members
-   * that already carry one to an explicit per-row approval step. Clearing (an
+   * Applies the owner to every selected member that this browser believes has
+   * none, and defers the rest to an explicit per-row approval step. Clearing (an
    * empty owner box) is destructive too, so it takes the same route.
+   *
+   * The data is shared, so there is a second source of conflict beyond the ones
+   * `planOwnerChange` can see: somebody else may have set an owner since this page
+   * loaded. Each row therefore carries the value this tab believes is stored, and
+   * the server refuses any row where that no longer holds. Those refusals join the
+   * locally-known conflicts in the very same approval list, now showing the real
+   * current value.
    */
-  function applyOwnerToSelected() {
+  async function applyOwnerToSelected() {
     const plan = planOwnerChange(selected, bulkOwner)
+    const next = bulkOwner.trim()
 
-    for (const row of plan.toApply) {
-      setOwner(row.tag, bulkOwner)
+    setBusy(true)
+    setProblem(null)
+    try {
+      // `expectedOwner: ''` is the assertion "I believe nobody owns this".
+      const rows = plan.toApply.map((row) => ({ tag: row.tag, owner: next, expectedOwner: '' }))
+      const result = rows.length > 0 ? await applyOwners(rows) : null
+
+      const stale: OwnerConflict[] = (result?.conflicts ?? []).map((conflict) => ({
+        tag: conflict.tag,
+        name: nameByTag.get(conflict.tag) ?? conflict.tag,
+        currentOwner: conflict.currentOwner,
+        nextOwner: next,
+      }))
+
+      const pending = [...plan.conflicts, ...stale]
+      const written = (result?.applied.length ?? 0) + (result?.cleared.length ?? 0)
+
+      const notes: string[] = []
+      if (written > 0) notes.push(`${written} updated`)
+      if (plan.unchanged.length > 0) notes.push(`${plan.unchanged.length} already matched`)
+      if (pending.length > 0) notes.push(`${pending.length} need approval below`)
+      setApplyNote(notes.length > 0 ? notes.join(' · ') : 'Nothing selected.')
+
+      setConflicts(pending.length > 0 ? pending : null)
+      setApprovedTags(new Set())
+      if (pending.length === 0) setSelectedTags(new Set())
+    } catch (cause) {
+      // Nothing is claimed to have happened, because it may well not have.
+      setApplyNote(null)
+      setProblem(cause instanceof Error ? cause.message : 'Could not apply that owner.')
+    } finally {
+      setBusy(false)
     }
-
-    const notes: string[] = []
-    if (plan.toApply.length > 0) notes.push(`${plan.toApply.length} updated`)
-    if (plan.unchanged.length > 0) notes.push(`${plan.unchanged.length} already matched`)
-    if (plan.conflicts.length > 0) notes.push(`${plan.conflicts.length} need approval below`)
-    setApplyNote(notes.length > 0 ? notes.join(' · ') : 'Nothing selected.')
-
-    setConflicts(plan.conflicts.length > 0 ? plan.conflicts : null)
-    setApprovedTags(new Set())
-
-    if (plan.conflicts.length === 0) setSelectedTags(new Set())
   }
 
-  function commitApprovedOverwrites() {
-    for (const conflict of conflicts ?? []) {
-      // A blank `nextOwner` means "clear"; setOwner routes that to clearOwner.
-      if (approvedTags.has(conflict.tag)) setOwner(conflict.tag, conflict.nextOwner)
+  async function commitApprovedOverwrites() {
+    const approved = (conflicts ?? []).filter((conflict) => approvedTags.has(conflict.tag))
+    if (approved.length === 0) {
+      setConflicts(null)
+      setApprovedTags(new Set())
+      setSelectedTags(new Set())
+      return
     }
-    const approvedCount = approvedTags.size
-    const skipped = (conflicts?.length ?? 0) - approvedCount
-    setApplyNote(`${approvedCount} overwritten · ${skipped} kept as-is`)
-    setConflicts(null)
-    setApprovedTags(new Set())
-    setSelectedTags(new Set())
+
+    setBusy(true)
+    setProblem(null)
+    try {
+      // The approval was given against `currentOwner`, so that is what the write
+      // is conditional on — approving a value and then overwriting a *different*
+      // one would be exactly the silent clobber this flow exists to prevent.
+      const result = await applyOwners(
+        approved.map((conflict) => ({
+          tag: conflict.tag,
+          owner: conflict.nextOwner,
+          expectedOwner: conflict.currentOwner,
+        })),
+      )
+
+      const rejected: OwnerConflict[] = result.conflicts.map((conflict) => ({
+        tag: conflict.tag,
+        name: nameByTag.get(conflict.tag) ?? conflict.tag,
+        currentOwner: conflict.currentOwner,
+        nextOwner:
+          approved.find((row) => row.tag === conflict.tag)?.nextOwner ?? '',
+      }))
+
+      const written = result.applied.length + result.cleared.length
+      const kept = (conflicts?.length ?? 0) - approved.length
+
+      setApplyNote(
+        rejected.length > 0
+          ? `${written} overwritten · ${kept} kept as-is · ${rejected.length} changed again while you were deciding — approve below against the new value`
+          : `${written} overwritten · ${kept} kept as-is`,
+      )
+      // A rejected row goes straight back into the list, now showing what is
+      // really stored, so the decision is made against the truth.
+      setConflicts(rejected.length > 0 ? rejected : null)
+      setApprovedTags(new Set())
+      if (rejected.length === 0) setSelectedTags(new Set())
+    } catch (cause) {
+      setApplyNote(null)
+      setProblem(cause instanceof Error ? cause.message : 'Could not apply those changes.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -190,8 +265,8 @@ function RosterTable({ members }: { members: ClanMember[] }) {
             list={OWNER_LIST_ID}
             autoComplete="off"
           />
-          <button type="button" onClick={applyOwnerToSelected}>
-            Apply to selected
+          <button type="button" onClick={() => void applyOwnerToSelected()} disabled={busy}>
+            {busy ? 'Applying…' : 'Apply to selected'}
           </button>
           <button
             type="button"
@@ -208,6 +283,22 @@ function RosterTable({ members }: { members: ClanMember[] }) {
       ) : null}
 
       {applyNote ? <p className="notice__hint">{applyNote}</p> : null}
+
+      {/* A write that failed must never be left looking like one that worked. */}
+      {problem ? (
+        <div className="notice notice--error">
+          <p className="notice__body">{problem}</p>
+        </div>
+      ) : null}
+
+      {ownersState.status === 'error' && !problem ? (
+        <div className="notice notice--error">
+          <p className="notice__body">
+            Could not load owners — the column below may be out of date.{' '}
+            {ownersState.error?.message}
+          </p>
+        </div>
+      ) : null}
 
       {conflicts ? (
         <div className="notice">
@@ -256,8 +347,12 @@ function RosterTable({ members }: { members: ClanMember[] }) {
             >
               {approvedTags.size === conflicts.length ? 'Approve none' : 'Approve all'}
             </button>
-            <button type="button" onClick={commitApprovedOverwrites}>
-              Apply {approvedTags.size} approved
+            <button
+              type="button"
+              onClick={() => void commitApprovedOverwrites()}
+              disabled={busy}
+            >
+              {busy ? 'Applying…' : `Apply ${approvedTags.size} approved`}
             </button>
             <button
               type="button"
@@ -348,8 +443,9 @@ function RosterTable({ members }: { members: ClanMember[] }) {
       </datalist>
 
       <p className="empty-hint" style={{ marginTop: 12, fontSize: 13 }}>
-        Owner is stored only on this device, keyed by player tag. Tick members to set it in bulk —
-        the header checkbox takes the whole roster.
+        Owner is stored on the server, keyed by player tag, and is{' '}
+        <strong>shared with everyone</strong> — one answer per base, not one per device. Tick
+        members to set it in bulk; the header checkbox takes the whole roster.
       </p>
     </>
   )

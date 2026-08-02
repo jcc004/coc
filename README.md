@@ -15,7 +15,8 @@ npm install
 cp .env.example .env      # then paste your token into COC_API_TOKEN
 
 # First run only: create the admin account. Nothing can sign in without this.
-ADMIN_USERNAME=you ADMIN_PASSWORD='a long throwaway you will change' npm run dev
+# The credential is an email address — see "Email is the credential" below.
+ADMIN_EMAIL=you@example.com ADMIN_PASSWORD='a long throwaway you will change' npm run dev
 ```
 
 After that first start, drop `ADMIN_PASSWORD` again and just `npm run dev`. The API is on
@@ -64,21 +65,21 @@ here is not a login form for decoration; it is what protects the token.
   at the top of `server/src/auth/passwords.ts`. No plaintext password is logged, returned, or
   stored.
 - **No open registration.** A public signup form for a ten-person tool is a liability. The
-  first admin comes from `ADMIN_USERNAME` / `ADMIN_PASSWORD`, applied **only when the `users`
+  first admin comes from `ADMIN_EMAIL` / `ADMIN_PASSWORD`, applied **only when the `users`
   table is empty** — which is what makes it idempotent: restart with the vars still set and it
   finds a user and does nothing, so it can never reset a password you have since changed. With
   no users *and* no credentials configured it logs a loud message and leaves the app unusable,
   rather than falling back to a default password that is by definition already public.
-- **Failed login is not an oracle.** Unknown username, wrong password, and disabled account
-  return the identical 401 body, and the unknown-username path hashes against a decoy record
-  so it does the same scrypt work — otherwise the response time alone would tell an attacker
-  which usernames exist.
+- **Failed login is not an oracle.** Unknown address, wrong password, disabled account, and
+  an account whose email is null return the identical 401 body, and the unknown-address path
+  hashes against a decoy record so it does the same scrypt work — otherwise the response time
+  alone would tell an attacker which addresses exist.
 - **Login is rate-limited** in memory (one process, ten users), with two independent buckets:
-  5 failures per username and 30 per client IP, each locking for 15 minutes. There is
+  5 failures per email and 30 per client IP, each locking for 15 minutes. There is
   deliberately no global counter — the worst failure mode for a tool with one admin is
   everybody being locked out at once. The IP bucket is the loose one because a whole household
   can share an address, and because behind an HTTPS terminator the address comes from
-  `X-Forwarded-For`, which is spoofable by anyone reaching the app directly; the username
+  `X-Forwarded-For`, which is spoofable by anyone reaching the app directly; the email
   bucket carries the real protection. With no usable address at all the IP bucket is skipped
   rather than pooling every caller under one key — a shared key *is* a whole-app lockout.
 
@@ -95,7 +96,7 @@ a route added later cannot become a hole by omission.
 | `GET /api/auth/me` | signed in — the UI's boot probe |
 | `POST /api/auth/password` | signed in; re-checks the current password, then revokes every *other* session |
 | `GET /api/admin/users` | admin |
-| `POST /api/admin/users` | admin — `{ username, password, role }` |
+| `POST /api/admin/users` | admin — `{ email, displayName?, password, role }` |
 | `POST /api/admin/users/:id/disable` | admin — `{ disabled }`, so it re-enables too |
 
 Disabling an account deletes its sessions immediately. An admin cannot disable themselves,
@@ -107,18 +108,74 @@ The app shell is not rendered until `GET /api/auth/me` answers; a 401 renders th
 *instead of* the shell, so no panel gets to fire a request and paint its own 401. A **global
 401 handler** in `web/src/api.ts` (`setUnauthorizedHandler`, wired up by `web/src/session.ts`)
 means a session expiring in an open tab drops you back to the login screen rather than
-surfacing as a confusing error inside a data panel. The topbar shows your username — it links
-to `#/account`, which holds the password-change form and, for admins only, the user list —
-plus a **Sign out** button. Nothing is kept in `localStorage`: the cookie is the whole
+surfacing as a confusing error inside a data panel. The topbar shows your **display name** — it
+links to `#/account`, which shows your identity (display name, email, guid — the guid is shown
+but not editable), the password-change form and, for admins only, the user list — plus a
+**Sign out** button. No credential is kept in `localStorage`: the cookie is the whole
 mechanism.
+
+### Email is the credential (it used to be a username)
+
+`users.username` is **gone**. In its place:
+
+| Column | |
+|---|---|
+| `guid` | `crypto.randomUUID()`, unique, not null. A stable external handle: `id` stays the integer other rows FK to, while the guid is the one safe to show or quote, since it leaks neither how many accounts exist nor in what order they were made. Shown on the account page, not editable |
+| `display_name` | Not null, free text, 1–64 characters. The human label — topbar, user list, and the attribution on every shared row. **Never a credential** |
+| `email` | Unique, `COLLATE NOCASE` so both the constraint and every lookup are case-insensitive. Trimmed and lowercased on the way in. **Nullable — and a null email means that account cannot authenticate at all**, because `WHERE email = ?` matches no NULL for any value. That is enforced by the schema rather than merely documented, and it is asserted in the tests |
+
+Validation of an address is deliberately minimal — non-empty, exactly one `@`, non-empty local
+and domain parts, no whitespace (`shared/src/email.ts`, shared by the server and the login
+form). Full RFC 5322 is not implementable in a regex, and every attempt rejects addresses that
+actually deliver; the only real test of an address is sending to it, which this app never does.
+
+### The migration, and the escape hatch
+
+Schema changes are **versioned** with SQLite's `user_version` pragma rather than applied ad
+hoc, so a step runs exactly once, in order, and a database already at the head does nothing on
+boot. `server/src/db.ts` holds an array indexed by the version it upgrades *from*; each step
+runs in its own transaction, with `foreign_keys` off for the duration (SQLite's own advice for
+schema changes) because v2 has to drop and re-create `users`.
+
+- **v1** — the original `users` / `sessions` / `chat_messages` tables, written `IF NOT EXISTS`
+  because a database created before `user_version` was used already has them and still reports
+  version 0. So v1 is a no-op for an old file and a create for a fresh one, and both then take
+  the same path.
+- **v2** — rebuilds `users` with the three new columns and creates the two shared tables. A
+  rebuild rather than `ALTER TABLE` because SQLite cannot add a `UNIQUE` or `NOT NULL` column
+  to a populated table, and all three are wanted; the rows are copied in JS rather than with
+  one `INSERT…SELECT` because each needs its own fresh UUID, which SQL alone cannot produce.
+
+Backfill, per row:
+
+- `guid` — a fresh v4 UUID. Nothing derived from the username, so it carries no information.
+- `display_name` — the old username. It was the only human label there was.
+- `email` — **the old username if it contains an `@`**, normalised; otherwise **null**.
+  Somebody who signed up with their address should not have to re-enter it, and inventing one
+  for everybody else would either be wrong or would hand a login credential to whoever guessed
+  the pattern. (If two legacy usernames normalise to the same address, the first keeps it and
+  the second is left null rather than aborting the migration on the UNIQUE index.)
+
+**The escape hatch.** A row left with a null email cannot sign in — which, for a database whose
+only account had a plain username, would mean locking its owner out of their own app. So
+`bootstrapAdmin` gained a second job: if `users` is non-empty and the **oldest admin has no
+email**, and `ADMIN_EMAIL` is set, it fills that address in **without touching the password**.
+Sign in with the new address and the password you already had. It is idempotent — once the
+address is set, the query that looks for a candidate returns nothing, so it can neither run
+twice nor be used to *move* an address that is already set. `ADMIN_PASSWORD` is ignored on this
+path, precisely so it can never reset a password that has since been changed.
+
+If after all that no account has a usable email, the server logs a loud, specific message
+naming the stranded account and the variable to set, and leaves the app unusable. It never
+invents a credential: a guessable admin on the public internet is worse than an app nobody can
+log into.
 
 ### Storage
 
 One SQLite file, `DATABASE_PATH` (default `./data/coc.db`, resolved against the server
 workspace's working directory, so `npm run dev` puts it at `server/data/coc.db` — gitignored).
-The directory is created if missing. Two tables, `users` and `sessions`, created idempotently
-on boot; `users.username` is `COLLATE NOCASE`, so uniqueness and lookups are both
-case-insensitive.
+The directory is created if missing. Five tables — `users`, `sessions`, `chat_messages`,
+`saved_clans`, `owner_assignments` — created and migrated on boot by `user_version`.
 
 `node:sqlite` is used rather than `better-sqlite3` because it is in the runtime from Node 22.5
 on: no native module, nothing to compile on the host, nothing to rebuild when Node is
@@ -133,9 +190,10 @@ All optional except the bootstrap pair on a fresh database. Full comments in `.e
 
 | Variable | Default | Does |
 |---|---|---|
-| `DATABASE_PATH` | `./data/coc.db` | SQLite file for users and sessions; directory created if absent |
-| `ADMIN_USERNAME` | — | First admin's username. Read only when `users` is empty |
-| `ADMIN_PASSWORD` | — | First admin's password, minimum 12 characters. Remove after the first boot |
+| `DATABASE_PATH` | `./data/coc.db` | SQLite file for accounts and the shared data; directory created if absent |
+| `ADMIN_EMAIL` | — | **Replaces `ADMIN_USERNAME`.** First admin's email when `users` is empty; *and* the escape hatch that fills in a missing email on an existing admin, without touching the password |
+| `ADMIN_DISPLAY_NAME` | local part of `ADMIN_EMAIL` | Display name for the first admin, only while creating it. Never overwrites an existing account's name |
+| `ADMIN_PASSWORD` | — | First admin's password, minimum 12 characters. Remove after the first boot. Ignored by the escape-hatch path |
 | `COOKIE_SECURE` | off | Forces `Secure` on the session cookie when you terminate TLS but do not set `NODE_ENV` |
 | `NODE_ENV` | — | `production` implies `COOKIE_SECURE` |
 
@@ -179,8 +237,10 @@ What the host actually has to provide:
   stopping the session token being readable on the wire.
 - **`NODE_ENV=production`**, which is what turns that flag on (or `COOKIE_SECURE=true` if you
   terminate TLS but do not set `NODE_ENV`).
-- **`ADMIN_USERNAME` / `ADMIN_PASSWORD` for exactly one boot**, then remove `ADMIN_PASSWORD`
-  from the environment. Everything after that is created from the admin panel.
+- **`ADMIN_EMAIL` / `ADMIN_PASSWORD` for exactly one boot**, then remove `ADMIN_PASSWORD`
+  from the environment. Everything after that is created from the admin panel. Upgrading an
+  existing deployment past the username→email change needs `ADMIN_EMAIL` set for one boot too,
+  or nobody can sign in — see the escape hatch above.
 
 The server runs under `tsx`; `npm start` is the whole command. Behind a reverse proxy, forward
 `X-Forwarded-For` — it is what the login rate limiter keys its IP bucket on.
@@ -188,16 +248,22 @@ The server runs under `tsx`; `npm start` is the whole command. Behind a reverse 
 ## Layout
 
 ```
-shared/   types for the CoC API and the auth payloads, + tag parsing
-server/   Hono API, upstream client, TTL cache, auth (src/auth/, src/db.ts)
+shared/   types for the CoC API, the auth payloads and the shared data, + tag
+          parsing and email normalisation
+server/   Hono API, upstream client, TTL cache, auth (src/auth/), the shared
+          saved clans and owners (src/shared-data/), migrations (src/db.ts)
 web/      Vite + React UI
 ```
 
-Inside `server/src/auth/`: `passwords.ts` (scrypt), `store.ts` (the only code that touches the
-two tables), `sessions` live in that same store, `middleware.ts` (cookie → context, plus the
-exported `requireAuth` / `requireAdmin`), `rate-limit.ts`, `bootstrap.ts` (first admin), and
-`routes.ts`. `createApp({ coc, cache, auth })` stays dependency-injected, which is what lets
-the test suite drive the whole app over an in-memory database and a stub upstream.
+Inside `server/src/auth/`: `passwords.ts` (scrypt), `store.ts` (the only code that touches
+`users` and `sessions`), `middleware.ts` (cookie → context, plus the exported `requireAuth` /
+`requireAdmin`), `rate-limit.ts`, `bootstrap.ts` (first admin and the email escape hatch), and
+`routes.ts`. `server/src/shared-data/` is the same split for the shared rows: `store.ts` is the
+only code touching `saved_clans` and `owner_assignments`, `routes.ts` mounts them. Migrations
+live in `server/src/db.ts`.
+
+`createApp({ coc, cache, auth, chat, sharedData })` stays dependency-injected, which is what
+lets the test suite drive the whole app over an in-memory database and a stub upstream.
 
 `shared` is consumed as TypeScript source through an npm workspace link — no build step,
 so a type change is visible on both sides immediately.
@@ -263,21 +329,102 @@ members, points, and war league. Add a tag and the app fetches the clan to valid
 prefill the in-game name. Clicking a row opens the clan and **War** opens its current war;
 **Edit** renames (which marks the row `custom` so **Refresh all** stops overwriting the
 label), and **Remove** deletes after a confirm. Any clan page also has a **★ Saved / ☆ Save**
-toggle.
+toggle. The list is **shared** — everyone signed in sees and edits the same one, so removing a
+clan removes it for everybody, which the confirm now says.
 
-Storage is `localStorage` under `coc:savedClans`, through `web/src/saved-clans.ts` — a
-module-level external store, not component state, so the Save toggle on a clan page and the
-list stay in sync. Moving it server-side later means replacing that one module.
+## The shared data model
 
-> **Known follow-on, deliberately not done.** Now that there are real accounts, saved clans
-> (`coc:savedClans`) and owner assignments (`coc:owners`) arguably belong in the database,
-> per user — today they are per *browser*, so the same person sees a different list on their
-> phone. They were left in `localStorage` on purpose: migrating them is a data-migration
-> question (whose browser copy wins when three people have been curating separate lists?),
-> not an auth question. Nothing precludes it: `users.id` is an integer primary key, and a
-> `saved_clans` / `owners` table with `user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE
-> CASCADE` drops straight in beside `sessions`. Both stores are already single modules with
-> the same external-store shape, so each one is one file to swap.
+Saved clans and owner assignments used to be `localStorage`, under `coc:savedClans` and
+`coc:owners`. They are now rows on the server, and — the important part —
+**shared across every account, not per user**.
+
+That is the whole point of the exercise. Ten people looking at the same clan need *one*
+canonical answer to "who owns this base"; per-user copies give ten answers and no way to
+reconcile them, and the same person sees a different list on their phone. So there is one row
+per clan tag and one per player tag for the install, and every signed-in caller reads and
+writes the same ones. There is no per-user filter in any handler.
+
+```
+saved_clans        clan_tag PK, name, custom, clan_level, members, clan_points,
+                   war_league, updated_at, updated_by_user_id → users(id)
+owner_assignments  player_tag PK, owner, updated_at, updated_by_user_id → users(id)
+```
+
+- **`owner` is free text, deliberately not a FK to `users`.** The owner of a base is a person
+  in the clan, who need not have an account in this app. *Future option:* if that stops being
+  true, the column could become a nullable `owner_user_id` alongside the text, so a linked
+  owner renders as an account and an unlinked one still renders as a name.
+- **`updated_by_user_id` is nullable, `ON DELETE SET NULL`.** The data outlives the account
+  that entered it. Losing an attribution is acceptable; losing the assignment because somebody
+  left the clan is not. **Disabling an account touches no row here at all** — disable is a
+  timestamp on `users`, not a delete — and that is covered by a test.
+- **Attribution is joined on read**, not copied onto the row, so renaming somebody does not
+  leave old edits credited to a stale name. Every record carries `updatedAt` and `updatedBy`
+  so the UI can say who last touched it.
+
+All routes are authenticated; `/api/*` is deny-by-default, so they were protected before they
+were written, and a test asserts each one 401s anonymously.
+
+| Route | |
+|---|---|
+| `GET /api/saved/clans` | the shared list |
+| `POST /api/saved/clans` | insert or refresh; an existing `custom` label survives |
+| `PATCH /api/saved/clans/:tag` | rename, which marks the row `custom` |
+| `DELETE /api/saved/clans/:tag` | remove, for everyone |
+| `GET /api/owners` | every assignment |
+| `DELETE /api/owners/:tag` | remove one |
+| `POST /api/owners/bulk` | the conditional bulk apply, below |
+| `POST /api/import` | the one-time browser hand-off, below |
+
+### Optimistic concurrency on the bulk owner apply
+
+Shared data means two people can race on one row. `POST /api/owners/bulk` therefore takes, on
+**every** row, the owner value the client *believed* was current — `""` meaning "I believe
+nobody owns this". The server writes a row only if the stored value still matches, and returns
+any mismatch as a conflict carrying the **real** current value, its timestamp and who set it.
+Rows that did match are still applied: one stale row must not block the other nine.
+
+`expectedOwner` is **required**, not defaulted. A missing one would read as `""`, which is
+precisely the silent clobber the endpoint exists to prevent, so the request is refused with a
+400 instead.
+
+This maps onto the approval dialog that already existed in `ClanView`. `planOwnerChange` still
+does the client-side partitioning — it is reused, not duplicated — and a row the *server*
+rejects is appended to the very same list, now showing the real current value, for re-approval
+against the truth. Approving is itself conditional on the value that was approved, so a row
+that changes again while somebody is deciding comes back a second time rather than being
+overwritten. Single-owner edits go through the same check, using whatever that tab believes.
+
+### The one-time import of browser data
+
+On the first sign-in after this change, whatever the browser still holds under `coc:owners`,
+`coc:savedClans` (and the older `coc:saved`) is POSTed once to `/api/import`, and a
+`coc:importedToServer` flag stops it happening again.
+
+**It fills gaps only. It never overwrites a value already on the server.** With shared data and
+several people importing their own copy, an overwriting import would mean whoever signed in
+last silently won every disagreement. The insert is `ON CONFLICT DO NOTHING`, which also makes
+the endpoint idempotent regardless of what the client does — the flag only saves a round trip,
+the server is the real guard. The response counts what was applied against what was skipped,
+and the UI shows that as a short, dismissible summary: quietly moving somebody's data without
+saying what became of it is not on, least of all when some of it was skipped.
+
+The `localStorage` keys are **read and never cleared**, so if the import turns out to have been
+wrong the original data is still sitting there.
+
+### The client stores
+
+`web/src/owners.ts` and `web/src/saved-clans.ts` keep the shape they had — `useOwners()`,
+`useSavedClans()`, `setOwner`, `saveClan`, … — so the components barely changed. Both are built
+on `web/src/server-store.ts`, one module-level external store over `useSyncExternalStore`, the
+same mechanism as before, so the Save toggle on a clan page and the list on the landing page
+still agree instantly.
+
+What changed is that the snapshot is now a *cache of something another person can alter*, so
+`status` and `error` are part of it: reads have a real loading state, and **a failed write is
+made visible rather than dropped**. `mutate` records the error *and* rethrows, so the button
+that was pressed can say the write did not happen — the UI never claims a change succeeded
+when the request failed. Signing out empties both caches.
 
 ### Row counts and paging
 
@@ -301,20 +448,20 @@ with a display name, Town Hall, trophies, clan, and an **owner**. The clan page 
 all of that for every member, so the table was redundant and is gone. The one thing worth
 keeping is the owner, because it is the only field the API cannot supply.
 
-Owner is now a bare annotation keyed by player tag, in `localStorage` under `coc:owners`
-through `web/src/owners.ts` — the same module-level external store shape as `saved-clans.ts`.
+Owner is now a bare annotation keyed by player tag, stored on the server and **shared with
+everyone** (see [The shared data model](#the-shared-data-model)), through `web/src/owners.ts`.
 The clan roster joins it in as a sortable **Owner** column, so the place you assign an owner
 is the place you can already see the Town Hall, trophies and rank you are deciding from.
 
 Removing the bases table also removed the **Save** button from player profiles. Player pages
 themselves stay, and the sidebar still looks players up.
 
-### Migrating `coc:saved` → `coc:owners`
+### Migrating `coc:saved` → `coc:owners` → the server
 
-On first read, if `coc:owners` is absent, `migrateLegacySaved` parses the old `coc:saved`
-payload and carries over every entry with a non-empty owner, discarding the name, stats and
-clan along with any entry that had no owner at all. **`coc:saved` is not deleted** — it stays
-put as a fallback, so nothing is destroyed by a migration that turns out to be wrong.
+`migrateLegacySaved` parses the old `coc:saved` payload and carries over every entry with a
+non-empty owner, discarding the name, stats and clan along with any entry that had no owner at
+all. It now feeds the one-time import rather than a second `localStorage` key. **Neither key is
+deleted** — both stay put, so nothing is destroyed by a migration that turns out to be wrong.
 
 The migration is a pure exported function, `migrateLegacySaved(rawJson)`, precisely so it can
 be tested against what a browser might really be holding: malformed JSON, a non-array, a
@@ -330,11 +477,15 @@ made a page-scoped select-all necessary in the old bases table.
 
 Type an owner, press **Apply to selected**, and:
 
-- members with **no owner** are written straight away;
+- members with **no owner** are written straight away — conditionally, asserting that belief,
+  so the write still fails safely if somebody else got there first;
 - members that **already have a different owner** are held back for approval, listed one per
   line with the old and new value, each unticked by default — nothing is overwritten until
   you tick it and press **Apply N approved**;
-- members that already match are counted as unchanged and left alone.
+- members that already match are counted as unchanged and left alone;
+- members the **server** refuses, because the value changed underneath this tab, join that
+  same approval list showing the real current value. See
+  [Optimistic concurrency](#optimistic-concurrency-on-the-bulk-owner-apply).
 
 Clearing an owner (empty box) takes the same approval path, since it destroys information
 just as much as replacing it. The owner input is backed by a `datalist` of owners already in

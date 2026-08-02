@@ -3,7 +3,13 @@ import { isValidTag, normalizeTag, usesCanonicalAlphabet } from '@coc/shared'
 import { ApiError, api } from '../api.ts'
 import { formatFull } from '../format.ts'
 import { hrefFor, navigate, useRowLimit } from '../hooks.ts'
-import { removeClan, saveClan, updateClan, useSavedClans, type SavedClan } from '../saved-clans.ts'
+import {
+  removeClan,
+  saveClan,
+  updateClan,
+  useSavedClansState,
+  type SavedClan,
+} from '../saved-clans.ts'
 import {
   CLAN_COLUMNS,
   CLAN_DESCENDING_BY_DEFAULT,
@@ -12,18 +18,22 @@ import {
   type ClanSortKey,
   type RowLimit,
 } from '../saved-table.ts'
-import { Pager, RowLimitSelect } from './primitives.tsx'
+import { ErrorPanel, Loading, Pager, RowLimitSelect } from './primitives.tsx'
 
 const LIMIT_KEY = 'coc:savedClans:limit'
 const LIMIT_OPTIONS: RowLimit[] = [5, 10, 20, 50, 'all']
 
-/** Only the API-derived columns; a custom label and the tag are left alone. */
+/**
+ * Only the API-derived columns; a custom label and the tag are left alone. The
+ * server keeps the label whenever the row is already marked custom, so a refresh
+ * cannot undo somebody else's rename either.
+ */
 async function refreshOne(entry: SavedClan): Promise<void> {
   const clan = await api.clan(entry.tag)
-  saveClan({
+  await saveClan({
     tag: clan.tag,
     name: clan.name,
-    custom: entry.custom,
+    ...(entry.custom ? { custom: true } : {}),
     clanLevel: clan.clanLevel,
     members: clan.members,
     warLeague: clan.warLeague?.name,
@@ -51,10 +61,10 @@ function AddForm() {
     setProblem(null)
     try {
       const clan = await api.clan(raw)
-      saveClan({
+      await saveClan({
         tag: clan.tag,
         name: label.trim() || clan.name,
-        custom: label.trim().length > 0,
+        ...(label.trim() ? { custom: true } : {}),
         clanLevel: clan.clanLevel,
         members: clan.members,
         warLeague: clan.warLeague?.name,
@@ -111,9 +121,16 @@ function AddForm() {
   )
 }
 
-function SavedClanRow({ entry }: { entry: SavedClan }) {
+function SavedClanRow({
+  entry,
+  onProblem,
+}: {
+  entry: SavedClan
+  onProblem: (text: string) => void
+}) {
   const [editing, setEditing] = useState(false)
   const [nameDraft, setNameDraft] = useState(entry.name)
+  const [busy, setBusy] = useState(false)
 
   /* Controls inside a row that is itself a navigation target must stop the
      click reaching the row handler. */
@@ -125,17 +142,35 @@ function SavedClanRow({ entry }: { entry: SavedClan }) {
     setEditing(true)
   }
 
-  function commit(event: FormEvent) {
+  async function commit(event: FormEvent) {
     event.preventDefault()
-    updateClan(entry.tag, { name: nameDraft })
-    setEditing(false)
+    setBusy(true)
+    try {
+      await updateClan(entry.tag, { name: nameDraft })
+      setEditing(false)
+    } catch (cause) {
+      // Stay in the editor: closing it would imply the rename landed.
+      onProblem(cause instanceof Error ? cause.message : `Could not rename ${entry.tag}.`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove() {
+    // Shared data, so the confirm has to say what it really does.
+    if (!confirm(`Remove ${entry.name} (${entry.tag})? This removes it for everyone.`)) return
+    try {
+      await removeClan(entry.tag)
+    } catch (cause) {
+      onProblem(cause instanceof Error ? cause.message : `Could not remove ${entry.tag}.`)
+    }
   }
 
   if (editing) {
     return (
       <tr>
         <td colSpan={7}>
-          <form className="search row-edit" onSubmit={commit}>
+          <form className="search row-edit" onSubmit={(event) => void commit(event)}>
             <input
               value={nameDraft}
               onChange={(event) => setNameDraft(event.target.value)}
@@ -143,7 +178,9 @@ function SavedClanRow({ entry }: { entry: SavedClan }) {
               placeholder="Display name"
               autoFocus
             />
-            <button type="submit">Save</button>
+            <button type="submit" disabled={busy}>
+              {busy ? 'Saving…' : 'Save'}
+            </button>
             <button type="button" className="icon-button" onClick={() => setEditing(false)}>
               Cancel
             </button>
@@ -176,15 +213,7 @@ function SavedClanRow({ entry }: { entry: SavedClan }) {
         <button type="button" className="chip" onClick={startEditing}>
           Edit
         </button>
-        <button
-          type="button"
-          className="chip"
-          onClick={() => {
-            if (confirm(`Remove ${entry.name} (${entry.tag}) from your saved clans?`)) {
-              removeClan(entry.tag)
-            }
-          }}
-        >
+        <button type="button" className="chip" onClick={() => void remove()}>
           Remove
         </button>
       </td>
@@ -193,7 +222,9 @@ function SavedClanRow({ entry }: { entry: SavedClan }) {
 }
 
 export function SavedClansView() {
-  const clans = useSavedClans()
+  const state = useSavedClansState()
+  const clans = state.entries
+  const [rowProblem, setRowProblem] = useState<string | null>(null)
 
   const [sortKey, setSortKey] = useState<ClanSortKey>('name')
   const [ascending, setAscending] = useState(true)
@@ -224,6 +255,7 @@ export function SavedClansView() {
   async function refreshAll() {
     setRefreshing(true)
     setRefreshProblem(null)
+    setRowProblem(null)
     // Sequential on purpose, matching the players table: keeps the upstream rate
     // limit comfortable even as the list grows.
     const failures: string[] = []
@@ -272,7 +304,18 @@ export function SavedClansView() {
 
         {refreshProblem ? <p className="notice__hint">{refreshProblem}</p> : null}
 
-        {clans.length === 0 ? (
+        {/* A write that failed must be said out loud, not swallowed. */}
+        {rowProblem ? (
+          <div className="notice notice--error">
+            <p className="notice__body">{rowProblem}</p>
+          </div>
+        ) : null}
+
+        {state.status === 'error' && state.error ? <ErrorPanel error={state.error} /> : null}
+
+        {clans.length === 0 && state.status === 'loading' ? (
+          <Loading what="saved clans" />
+        ) : clans.length === 0 && state.status === 'idle' ? null : clans.length === 0 ? (
           <p className="empty-hint">
             No clans saved yet. Add a tag below, or open any clan and press <strong>Save</strong>.
           </p>
@@ -301,7 +344,7 @@ export function SavedClansView() {
                 </thead>
                 <tbody>
                   {view.rows.map((entry) => (
-                    <SavedClanRow key={entry.tag} entry={entry} />
+                    <SavedClanRow key={entry.tag} entry={entry} onProblem={setRowProblem} />
                   ))}
                 </tbody>
               </table>
@@ -310,7 +353,8 @@ export function SavedClansView() {
             <Pager view={view} noun="clans" onPage={setPage} />
 
             <p className="empty-hint" style={{ marginTop: 12, fontSize: 13 }}>
-              Click a row to open the clan, or <strong>War</strong> for its current war.
+              Click a row to open the clan, or <strong>War</strong> for its current war. This list
+              is <strong>shared</strong> — everyone signed in sees and edits the same one.
             </p>
           </>
         )}

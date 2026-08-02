@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../.env src/index.ts",
     "start": "tsx --env-file-if-exists=../.env src/index.ts",
-    "test": "node --import tsx --test src/app.test.ts src/db.test.ts src/auth/passwords.test.ts",
+    "test": "node --import tsx --test src/app.test.ts src/db.test.ts src/chat/chat.test.ts src/auth/passwords.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
