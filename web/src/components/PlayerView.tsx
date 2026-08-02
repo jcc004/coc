@@ -4,37 +4,8 @@ import { api } from '../api.ts'
 import { labelIcon, leagueIcon } from '../coc-assets.ts'
 import { formatFull, formatStat, ratio } from '../format.ts'
 import { hrefFor, useAsync, type Recent } from '../hooks.ts'
-import { removePlayer, savePlayer, useSavedPlayers } from '../saved.ts'
 import { Card, ErrorPanel, GameIcon, LevelRow, Loading, StatTile, TileRow } from './primitives.tsx'
 import { TagButton } from './TagButton.tsx'
-
-function SaveToggle({ player }: { player: Player }) {
-  const saved = useSavedPlayers().some((entry) => entry.tag === player.tag)
-
-  return (
-    <button
-      type="button"
-      className="icon-button"
-      style={{ marginBottom: 10 }}
-      onClick={() => {
-        if (saved) {
-          removePlayer(player.tag)
-        } else {
-          savePlayer({
-            tag: player.tag,
-            name: player.name,
-            clanTag: player.clan?.tag,
-            clanName: player.clan?.name,
-            townHallLevel: player.townHallLevel,
-            trophies: player.trophies,
-          })
-        }
-      }}
-    >
-      {saved ? '★ Saved' : '☆ Save'}
-    </button>
-  )
-}
 
 function homeVillage(items: PlayerItemLevel[] | undefined): PlayerItemLevel[] {
   return (items ?? []).filter((item) => item.village === 'home')
@@ -122,7 +93,6 @@ export function PlayerView({ tag, onLoaded }: { tag: string; onLoaded: (entry: R
           </div>
 
           <div className="hero-figure">
-            <SaveToggle player={player} />
             <div className="hero-figure__value" title={formatFull(player.trophies)}>
               {formatStat(player.trophies)}
             </div>

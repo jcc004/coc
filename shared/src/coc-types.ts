@@ -243,6 +243,94 @@ export interface WarLogResponse {
   paging?: { cursors: { after?: string; before?: string } }
 }
 
+/* ---------- capital raid weekends ---------- */
+
+export type CapitalRaidState = 'ongoing' | 'ended'
+
+export interface CapitalRaidMember {
+  tag: string
+  name: string
+  /**
+   * Attacks used, which routinely *exceeds* `attackLimit` — the base limit and
+   * the bonus are reported separately, so the usable total is
+   * `attackLimit + bonusAttackLimit`.
+   */
+  attacks: number
+  attackLimit: number
+  bonusAttackLimit: number
+  capitalResourcesLooted: number
+}
+
+export interface CapitalRaidDistrictAttack {
+  attacker: { tag: string; name: string }
+  destructionPercent: number
+  stars: number
+}
+
+export interface CapitalRaidDistrict {
+  id: number
+  name: string
+  districtHallLevel: number
+  destructionPercent: number
+  stars: number
+  attackCount: number
+  totalLooted: number
+  /** Absent on an untouched district, and on every district of an ended weekend. */
+  attacks?: CapitalRaidDistrictAttack[]
+}
+
+export interface CapitalRaidClanSummary {
+  tag: string
+  name: string
+  /** Clan level. Spelled `level` here, not `clanLevel` as everywhere else. */
+  level: number
+  badgeUrls: BadgeUrls
+}
+
+interface CapitalRaidLogEntry {
+  attackCount: number
+  districtCount: number
+  districtsDestroyed: number
+  districts: CapitalRaidDistrict[]
+}
+
+/** One clan this clan raided. */
+export interface CapitalRaidAttackLogEntry extends CapitalRaidLogEntry {
+  defender: CapitalRaidClanSummary
+}
+
+/** One clan that raided this clan. */
+export interface CapitalRaidDefenseLogEntry extends CapitalRaidLogEntry {
+  attacker: CapitalRaidClanSummary
+}
+
+export interface CapitalRaidSeason {
+  state: CapitalRaidState
+  /** Basic-format timestamps again — parse with `parseCocTimestamp`. */
+  startTime: string
+  endTime: string
+  capitalTotalLoot: number
+  raidsCompleted: number
+  totalAttacks: number
+  enemyDistrictsDestroyed: number
+  offensiveReward: number
+  defensiveReward: number
+  /**
+   * Only present while `state` is `ongoing` — verified live against two clans,
+   * where every `ended` weekend omitted `members` entirely (not an empty array).
+   * Past weekends therefore give totals but no per-member attribution at all.
+   */
+  members?: CapitalRaidMember[]
+  attackLog: CapitalRaidAttackLogEntry[]
+  /** An empty array, not absent, for a clan nobody raided. */
+  defenseLog: CapitalRaidDefenseLogEntry[]
+}
+
+export interface CapitalRaidSeasonsResponse {
+  items: CapitalRaidSeason[]
+  paging?: { cursors: { after?: string; before?: string } }
+}
+
 /** Shape of the error body the CoC API returns on a non-2xx response. */
 export interface CocErrorBody {
   reason: string

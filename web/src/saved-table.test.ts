@@ -1,29 +1,64 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { SavedClan } from './saved-clans.ts'
-import type { SavedPlayer } from './saved.ts'
 import {
+  numberCompare,
   paginate,
   parseRowLimit,
   planOwnerChange,
   sortClanEntries,
-  sortEntries,
+  sortRosterRows,
+  textCompare,
+  type OwnableRow,
+  type RosterRow,
 } from './saved-table.ts'
 
-const entry = (over: Partial<SavedPlayer> & { tag: string; name: string }): SavedPlayer => over
+/** A clan-roster row: the API's required member fields plus the local owner. */
+const member = (over: Partial<RosterRow> & { tag: string; name: string }): RosterRow => ({
+  role: 'member',
+  townHallLevel: 1,
+  expLevel: 1,
+  trophies: 0,
+  clanRank: 1,
+  previousClanRank: 1,
+  donations: 0,
+  donationsReceived: 0,
+  ...over,
+})
 
-const ROSTER: SavedPlayer[] = [
-  { tag: '#AAA', name: 'darek', owner: 'Jared', townHallLevel: 18, trophies: 5200 },
-  { tag: '#BBB', name: 'Alt one' },
-  { tag: '#CCC', name: 'Turtle', owner: 'Sam', townHallLevel: 12, trophies: 1800 },
-  { tag: '#DDD', name: 'Alt two', owner: 'Jared', townHallLevel: 9 },
+const ROSTER: RosterRow[] = [
+  member({ tag: '#AAA', name: 'darek', owner: 'Jared', trophies: 5200, clanRank: 1 }),
+  member({ tag: '#BBB', name: 'Alt one', trophies: 900, clanRank: 4 }),
+  member({ tag: '#CCC', name: 'Turtle', owner: 'Sam', trophies: 1800, clanRank: 2 }),
+  member({ tag: '#DDD', name: 'Alt two', owner: 'Jared', trophies: 1200, clanRank: 3 }),
 ]
 
-const names = (entries: SavedPlayer[]) => entries.map((e) => e.name)
+const names = (rows: OwnableRow[]) => rows.map((row) => row.name)
 
-describe('sortEntries', () => {
+describe('textCompare / numberCompare', () => {
+  it('sinks blank text to the bottom in both directions', () => {
+    assert.equal(textCompare(undefined, 'Sam', true), 1)
+    assert.equal(textCompare(undefined, 'Sam', false), 1)
+    assert.equal(textCompare('Sam', '   ', true), -1)
+    assert.equal(textCompare('Sam', '   ', false), -1)
+    assert.equal(textCompare('', undefined, true), 0)
+  })
+
+  it('sinks unknown numbers to the bottom in both directions', () => {
+    assert.equal(numberCompare(undefined, 5, true), 1)
+    assert.equal(numberCompare(undefined, 5, false), 1)
+    assert.equal(numberCompare(5, undefined, true), -1)
+    assert.equal(numberCompare(5, undefined, false), -1)
+    assert.equal(numberCompare(undefined, undefined, true), 0)
+    // Direction still decides values that are actually present.
+    assert.ok(numberCompare(1, 2, true) < 0)
+    assert.ok(numberCompare(1, 2, false) > 0)
+  })
+})
+
+describe('sortRosterRows', () => {
   it('groups by owner ascending with blanks last', () => {
-    assert.deepEqual(names(sortEntries(ROSTER, 'owner', true)), [
+    assert.deepEqual(names(sortRosterRows(ROSTER, 'owner', true)), [
       'Alt two',
       'darek',
       'Turtle',
@@ -32,39 +67,38 @@ describe('sortEntries', () => {
   })
 
   it('keeps blanks last when the owner sort is reversed', () => {
-    const sorted = sortEntries(ROSTER, 'owner', false)
+    const sorted = sortRosterRows(ROSTER, 'owner', false)
     assert.equal(names(sorted).at(-1), 'Alt one', 'the ownerless row must stay at the bottom')
     assert.deepEqual(names(sorted).slice(0, 3), ['Turtle', 'Alt two', 'darek'])
   })
 
-  it('keeps undefined numbers last in both directions', () => {
-    // Alt one / Alt two both lack trophies, so they land at the bottom in name order.
-    assert.deepEqual(names(sortEntries(ROSTER, 'trophies', false)), [
+  it('orders stats highest-first when descending', () => {
+    assert.deepEqual(names(sortRosterRows(ROSTER, 'trophies', false)), [
       'darek',
       'Turtle',
-      'Alt one',
       'Alt two',
+      'Alt one',
     ])
-    assert.deepEqual(names(sortEntries(ROSTER, 'trophies', true)), [
-      'Turtle',
-      'darek',
+    assert.deepEqual(names(sortRosterRows(ROSTER, 'trophies', true)), [
       'Alt one',
       'Alt two',
+      'Turtle',
+      'darek',
     ])
   })
 
   it('breaks ties on name so ordering is stable', () => {
     const tied = [
-      entry({ tag: '#1', name: 'Zed', owner: 'Jared' }),
-      entry({ tag: '#2', name: 'Abe', owner: 'Jared' }),
+      member({ tag: '#1', name: 'Zed', owner: 'Jared' }),
+      member({ tag: '#2', name: 'Abe', owner: 'Jared' }),
     ]
-    assert.deepEqual(names(sortEntries(tied, 'owner', true)), ['Abe', 'Zed'])
-    assert.deepEqual(names(sortEntries(tied, 'owner', false)), ['Abe', 'Zed'])
+    assert.deepEqual(names(sortRosterRows(tied, 'owner', true)), ['Abe', 'Zed'])
+    assert.deepEqual(names(sortRosterRows(tied, 'owner', false)), ['Abe', 'Zed'])
   })
 
   it('does not mutate its input', () => {
     const before = names(ROSTER)
-    sortEntries(ROSTER, 'name', false)
+    sortRosterRows(ROSTER, 'name', false)
     assert.deepEqual(names(ROSTER), before)
   })
 })
@@ -112,7 +146,7 @@ describe('planOwnerChange', () => {
   })
 
   it('ignores surrounding whitespace on both sides of the comparison', () => {
-    const padded = [entry({ tag: '#1', name: 'A', owner: '  Jared  ' })]
+    const padded = [member({ tag: '#1', name: 'A', owner: '  Jared  ' })]
     assert.deepEqual(planOwnerChange(padded, 'Jared ').unchanged.length, 1)
     assert.deepEqual(planOwnerChange(padded, 'Casey').conflicts.length, 1)
   })
@@ -120,6 +154,24 @@ describe('planOwnerChange', () => {
   it('handles an empty selection', () => {
     const plan = planOwnerChange([], 'Casey')
     assert.deepEqual(plan, { toApply: [], conflicts: [], unchanged: [] })
+  })
+
+  it('accepts a bare tag/name/owner row and hands the caller its own objects back', () => {
+    // The parameter type is the minimal ownable shape, so a full clan member and
+    // a hand-rolled row both satisfy it — and the plan carries the caller's own
+    // object, not a copy, so the caller can act on fields the planner never saw.
+    const rows = [
+      { tag: '#1', name: 'Fresh' },
+      { tag: '#2', name: 'Taken', owner: 'Sam' },
+    ]
+    const plan = planOwnerChange(rows, 'Casey')
+
+    assert.equal(plan.toApply.length, 1)
+    assert.equal(plan.toApply.at(0), rows.at(0))
+    assert.deepEqual(
+      plan.conflicts.map((c) => [c.tag, c.currentOwner]),
+      [['#2', 'Sam']],
+    )
   })
 })
 

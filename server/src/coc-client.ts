@@ -1,5 +1,6 @@
 import {
   encodeTagForPath,
+  type CapitalRaidSeasonsResponse,
   type Clan,
   type ClanMembersResponse,
   type ClanSearchResponse,
@@ -31,6 +32,10 @@ export class CocApiError extends Error {
  * the clan has set its war log to private — verified: a private-war-log clan
  * returns 403 accessDenied for both /currentwar and /warlog. Showing the IP
  * hint there would send you chasing the wrong problem.
+ *
+ * /capitalraidseasons is deliberately *not* in that branch: verified against
+ * four private-war-log clans, it answers 200 with full raid history. A 403 there
+ * really is the IP binding, so it gets the default hint.
  */
 function describeFailure(
   status: number,
@@ -125,6 +130,10 @@ export function createCocClient({
 
     getWarLog(tag: string, limit?: number): Promise<WarLogResponse> {
       return request(`/clans/${encodeTagForPath(tag)}/warlog`, { limit: limit ?? 20 })
+    },
+
+    getCapitalRaidSeasons(tag: string, limit?: number): Promise<CapitalRaidSeasonsResponse> {
+      return request(`/clans/${encodeTagForPath(tag)}/capitalraidseasons`, { limit: limit ?? 10 })
     },
 
     searchClans(params: {

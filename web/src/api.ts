@@ -1,6 +1,7 @@
 import {
   normalizeTag,
   type ApiErrorResponse,
+  type CapitalRaidSeasonsResponse,
   type Clan,
   type ClanMembersResponse,
   type ClanSearchResponse,
@@ -52,6 +53,12 @@ export const api = {
 
   warLog: (tag: string, signal?: AbortSignal) =>
     get<WarLogResponse>(`/api/clans/${tagPath(tag)}/warlog?limit=20`, signal),
+
+  capitalRaidSeasons: (tag: string, signal?: AbortSignal) =>
+    get<CapitalRaidSeasonsResponse>(
+      `/api/clans/${tagPath(tag)}/capitalraidseasons?limit=6`,
+      signal,
+    ),
 
   searchClans: (name: string, signal?: AbortSignal) =>
     get<ClanSearchResponse>(`/api/clans?name=${encodeURIComponent(name)}`, signal),

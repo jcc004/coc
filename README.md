@@ -1,6 +1,7 @@
 # coc
 
-A Clash of Clans API explorer: look up player profiles, clan details, and clan rosters.
+A Clash of Clans API explorer: look up player profiles, clan details, clan rosters, wars, and
+capital raid weekends.
 
 TypeScript throughout — [Hono](https://hono.dev) API on Node, React + Vite frontend, no
 component library. The API token stays on the server; the browser only ever talks to `/api`.
@@ -52,6 +53,7 @@ without the leading `#` (URL-encode it as `%23` if you include it).
 | `GET /api/clans/:tag/members` | clan roster only |
 | `GET /api/clans/:tag/currentwar` | live war, both rosters (20s cache) |
 | `GET /api/clans/:tag/warlog` | past wars, newest first |
+| `GET /api/clans/:tag/capitalraidseasons` | capital raid weekends, newest first (`?limit=`) |
 | `GET /api/clans?name=…` | clan search by name (min 3 chars) |
 
 Errors come back as `{ error: { status, reason, message, hint? } }`.
@@ -88,68 +90,26 @@ same flat 404 for a malformed tag as for an unknown one and is the only authorit
 
 **Recent** chips sit below the two forms.
 
-## Saved bases
-
-The landing page carries two lists — saved bases, then saved clans below them. A base is a
-tag, a display name you control, and an **owner**.
-Add a tag and the app fetches the profile to validate it and prefill the in-game name;
-supply your own label to override it. Clicking a row opens the player, the clan cell opens
-the clan, and **War** opens that clan's war. Rows are grouped by owner, unassigned last.
-
-**Owner is local-only** — the API has no concept of it, so a refresh never touches it. The
-owner input is backed by a `datalist` of owners already in use, so repeat entries are one
-keystroke. **Refresh all** re-fetches every entry to update Town Hall, trophies, and clan,
-leaving both your custom name and the owner alone.
-
-### Bulk owner assignment
-
-Tick rows and a bulk bar appears. The header checkbox is scoped to the **rows on the current
-page only** — ticking rows you cannot see and then bulk-editing them is a footgun, so its
-label says how many rows that is. Selections made on another page are kept, and the bulk bar
-counts them separately (`24 selected · 4 on other pages`) so nothing is edited invisibly.
-
-Type an owner, press **Apply to selected**, and:
-
-- rows with **no owner** are written straight away;
-- rows that **already have a different owner** are held back for approval, listed one per
-  line with the old and new value, each unticked by default — nothing is overwritten until
-  you tick it and press **Apply N approved**;
-- rows that already match are counted as unchanged and left alone.
-
-Clearing an owner (empty box) takes the same approval path, since it destroys information
-just as much as replacing it. The per-row Edit button is exempt: it is a single explicit
-row you are already looking at, with the current value visible in the input.
-
-Every column of both tables sorts, and blank or unknown values stay at the bottom in **both**
-directions — reversing a column should not bring a wall of dashes to the top.
-
-The ordering, paging, and approval-partitioning logic all live in `web/src/saved-table.ts`,
-apart from the components, and are covered by `npm test`.
-
-Storage is `localStorage` under `coc:saved`, so the list is per-browser. The store in
-`web/src/saved.ts` is a module-level external store, not component state, so the Save
-button on a profile and the list stay in sync. Moving it server-side later means replacing
-that one module.
-
 ## Saved clans
 
-Below the saved bases is the same idea for clans: tag, a display name you control, level,
+The landing page carries one list: saved clans — tag, a display name you control, level,
 members, points, and war league. Add a tag and the app fetches the clan to validate it and
 prefill the in-game name. Clicking a row opens the clan and **War** opens its current war;
 **Edit** renames (which marks the row `custom` so **Refresh all** stops overwriting the
 label), and **Remove** deletes after a confirm. Any clan page also has a **★ Saved / ☆ Save**
-toggle, the same as a player profile.
+toggle.
 
-Storage is `localStorage` under `coc:savedClans`, through `web/src/saved-clans.ts` — the same
-module-level external store shape as `saved.ts`, for the same reason.
+Storage is `localStorage` under `coc:savedClans`, through `web/src/saved-clans.ts` — a
+module-level external store, not component state, so the Save toggle on a clan page and the
+list stay in sync. Moving it server-side later means replacing that one module.
 
 ### Row counts and paging
 
-Each table has a **Rows** select: bases default to 20 (20 / 50 / All), clans to 5
-(5 / 10 / 20 / 50 / All). Both choices persist in `localStorage`, so they survive a reload.
+The table has a **Rows** select, defaulting to 5 (5 / 10 / 20 / 50 / All). The choice persists
+in `localStorage`, so it survives a reload.
 
 A limit never silently hides rows. Whenever the list is longer than the limit, a footer says
-`Showing 1–20 of 63` with **Previous** / **Next**. The page resets to 1 when the limit or the
+`Showing 1–5 of 63` with **Previous** / **Next**. The page resets to 1 when the limit or the
 sort changes, and is clamped if rows are removed underneath it, so the view can never land on
 an empty page past the end.
 
@@ -158,12 +118,88 @@ returning `{ rows, page, pageCount, from, to, total }` where `'all'` (or `null`)
 paging. The returned `page` is authoritative — that is where clamping happens, so a stale
 page number in a component cannot produce a blank table.
 
+## Owners live on the clan page
+
+There used to be a second landing-page table of saved *bases*: a curated list of player tags
+with a display name, Town Hall, trophies, clan, and an **owner**. The clan page already shows
+all of that for every member, so the table was redundant and is gone. The one thing worth
+keeping is the owner, because it is the only field the API cannot supply.
+
+Owner is now a bare annotation keyed by player tag, in `localStorage` under `coc:owners`
+through `web/src/owners.ts` — the same module-level external store shape as `saved-clans.ts`.
+The clan roster joins it in as a sortable **Owner** column, so the place you assign an owner
+is the place you can already see the Town Hall, trophies and rank you are deciding from.
+
+Removing the bases table also removed the **Save** button from player profiles. Player pages
+themselves stay, and the sidebar still looks players up.
+
+### Migrating `coc:saved` → `coc:owners`
+
+On first read, if `coc:owners` is absent, `migrateLegacySaved` parses the old `coc:saved`
+payload and carries over every entry with a non-empty owner, discarding the name, stats and
+clan along with any entry that had no owner at all. **`coc:saved` is not deleted** — it stays
+put as a fallback, so nothing is destroyed by a migration that turns out to be wrong.
+
+The migration is a pure exported function, `migrateLegacySaved(rawJson)`, precisely so it can
+be tested against what a browser might really be holding: malformed JSON, a non-array, a
+non-object entry, a missing or unparseable `tag`, a missing or blank `owner`, duplicate tags.
+`web/src/owners.test.ts` covers all of those.
+
+### Bulk owner assignment
+
+Tick members and a bulk bar appears; the header checkbox goes indeterminate on a partial
+selection. The game caps a clan at 50 members, so this table is never paged and the header
+checkbox safely means the **whole roster** — every row it ticks is on screen, which is what
+made a page-scoped select-all necessary in the old bases table.
+
+Type an owner, press **Apply to selected**, and:
+
+- members with **no owner** are written straight away;
+- members that **already have a different owner** are held back for approval, listed one per
+  line with the old and new value, each unticked by default — nothing is overwritten until
+  you tick it and press **Apply N approved**;
+- members that already match are counted as unchanged and left alone.
+
+Clearing an owner (empty box) takes the same approval path, since it destroys information
+just as much as replacing it. The owner input is backed by a `datalist` of owners already in
+use, so repeat entries are one keystroke.
+
+Every column of both tables sorts, and blank or unknown values stay at the bottom in **both**
+directions — reversing a column should not bring a wall of dashes to the top. The two
+comparators that do that are exported from `web/src/saved-table.ts` so each table shares the
+one behaviour rather than reimplementing it.
+
+Comparators, ordering, paging, and the approval partitioning all live in
+`web/src/saved-table.ts`, apart from the components, and are covered by `npm test`.
+`planOwnerChange` takes the minimal `{ tag, name, owner? }` shape, which is why a live clan
+member satisfies it directly.
+
 ## War view
 
 `#/war/<clanTag>` shows the current war and the war log together, fetched independently so
 one failing does not blank the other. Head-to-head star score, destruction, attack usage
 meters, and both rosters with per-member stars, best hit, attacks used, and best defence
 against them.
+
+## Capital raid weekends
+
+Below the roster, the clan page shows the last few raid weekends from
+`GET /api/clans/:tag/capitalraidseasons` — date range, state, total capital loot, raids
+completed, enemy districts destroyed, and the offensive and defensive reward. Each weekend
+also gets a `<details>` expander with the per-member breakdown: attacks used out of the limit,
+and capital resources looted, ordered by loot.
+
+Two things about that payload are worth knowing before reading the code:
+
+- **`members` is only present while a weekend is `ongoing`.** Every `ended` weekend omits the
+  key entirely — not an empty array — verified across two clans and ten weekends each. So past
+  weekends have totals but no attribution at all, and the expander says so rather than
+  pretending the clan had no participants.
+- **Attacks used can exceed `attackLimit`**, because the bonus attack is reported separately.
+  The usable total is `attackLimit + bonusAttackLimit`, which is what the table divides by.
+
+A clan that has never taken part gets `{"items": []}`, which the card handles with a plain
+message.
 
 ## What the API exposes per player tag
 
@@ -212,6 +248,15 @@ its response. So client-side alphabet validation cannot be trusted to gate a loo
   not automatically an IP-binding problem. `describeFailure` in `server/src/coc-client.ts`
   branches on the path to give the right hint; the war one also tells you how to tell the
   two cases apart.
+- **`/capitalraidseasons` is *not* gated on the war log.** Verified against four clans whose
+  `/warlog` returns 403: all four answered 200 with full raid history. So the capital path is
+  deliberately absent from that 403 branch — a 403 there really is the IP binding.
+- **Capital raid `members` only appears while a weekend is `ongoing`.** Ended weekends omit
+  the key, so `CapitalRaidSeason.members` is optional and past weekends carry no per-member
+  attribution. Their `districts[].attacks` are dropped too.
+- Capital raid `attacks` can exceed `attackLimit`: the bonus attack is reported separately as
+  `bonusAttackLimit`, so the usable total is the sum. A raid clan summary spells its level
+  `level`, not `clanLevel`.
 - **War members use `townhallLevel`** (lowercase `h`), while player profiles use
   `townHallLevel`. Both spellings are correct for their own payload. Verified live.
 - **Timestamps are ISO 8601 *basic* format** — `20260802T045542.000Z` — which `new Date()`
@@ -264,7 +309,7 @@ still shows their icons.
 | Command | Does |
 |---|---|
 | `npm run dev` | API + UI with reload |
-| `npm test` | unit tests for the saved-table sort, paging, and owner-overwrite logic |
+| `npm test` | unit tests for the table sort, paging, owner-overwrite, and `coc:saved` migration logic |
 | `npm run typecheck` | `tsc --noEmit` across all three workspaces |
 | `npm run build` | production bundle for the UI |
 | `npm run assets:coc` | re-download the vendored league and label icons |

@@ -2,7 +2,6 @@ import { ClanSearchView } from './components/ClanSearchView.tsx'
 import { ClanView } from './components/ClanView.tsx'
 import { PlayerView } from './components/PlayerView.tsx'
 import { SavedClansView } from './components/SavedClansView.tsx'
-import { SavedPlayersView } from './components/SavedPlayersView.tsx'
 import { SearchBar } from './components/SearchBar.tsx'
 import { WarView } from './components/WarView.tsx'
 import { hrefFor, useRecents, useRoute, useTheme, type Theme } from './hooks.ts'
@@ -24,7 +23,7 @@ export function App() {
         {/* Present on every sub page, absent on the list it points at. */}
         {route.view !== 'home' ? (
           <a className="icon-button" href={hrefFor({ view: 'home' })}>
-            ← Saved bases
+            ← Saved clans
           </a>
         ) : null}
         <button
@@ -38,12 +37,7 @@ export function App() {
       </header>
 
       <main className="shell__main">
-        {route.view === 'home' ? (
-          <>
-            <SavedPlayersView />
-            <SavedClansView />
-          </>
-        ) : null}
+        {route.view === 'home' ? <SavedClansView /> : null}
 
         {route.view === 'player' ? (
           <PlayerView key={route.tag} tag={route.tag} onLoaded={remember} />

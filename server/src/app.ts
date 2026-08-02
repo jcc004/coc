@@ -77,6 +77,15 @@ export function createApp({ coc, cache }: AppDeps) {
     return c.json(log)
   })
 
+  app.get('/api/clans/:tag/capitalraidseasons', async (c) => {
+    const tag = c.req.param('tag')
+    const limit = positiveInt(c.req.query('limit'))
+    const seasons = await cache.wrap(`capitalRaidSeasons:${tag}:${limit ?? 10}`, () =>
+      coc.getCapitalRaidSeasons(tag, limit),
+    )
+    return c.json(seasons)
+  })
+
   app.get('/api/clans/:tag/members', async (c) => {
     const tag = c.req.param('tag')
     const limit = positiveInt(c.req.query('limit'))

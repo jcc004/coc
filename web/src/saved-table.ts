@@ -1,31 +1,22 @@
+import type { ClanMember } from '@coc/shared'
 import type { SavedClan } from './saved-clans.ts'
-import type { SavedPlayer } from './saved.ts'
 
 /**
- * Pure logic behind the saved tables: ordering, paging, and working out which of
+ * Pure logic behind the app's tables: ordering, paging, and working out which of
  * a bulk owner change needs the user's approval. Kept out of the components so
  * it can be reasoned about and tested without a DOM.
  */
 
-export type SortKey = 'name' | 'owner' | 'tag' | 'townHallLevel' | 'trophies' | 'clanName'
-
-export const COLUMNS: { key: SortKey; label: string; numeric: boolean }[] = [
-  { key: 'name', label: 'Name', numeric: false },
-  { key: 'owner', label: 'Owner', numeric: false },
-  { key: 'tag', label: 'Tag', numeric: false },
-  { key: 'townHallLevel', label: 'TH', numeric: true },
-  { key: 'trophies', label: 'Trophies', numeric: true },
-  { key: 'clanName', label: 'Clan', numeric: false },
-]
-
-/** Stats read best highest-first; text reads best A→Z. */
-export const DESCENDING_BY_DEFAULT: SortKey[] = ['townHallLevel', 'trophies']
-
 /**
  * Blank and unknown values sort last in *both* directions — reversing a column
- * should not drag a wall of dashes to the top.
+ * should not drag a wall of dashes to the top. Both comparators are exported so
+ * every table shares this one behaviour instead of reimplementing it.
  */
-function textCompare(a: string | undefined, b: string | undefined, ascending: boolean): number {
+export function textCompare(
+  a: string | undefined,
+  b: string | undefined,
+  ascending: boolean,
+): number {
   const left = a?.trim() ?? ''
   const right = b?.trim() ?? ''
   if (!left && !right) return 0
@@ -34,17 +25,50 @@ function textCompare(a: string | undefined, b: string | undefined, ascending: bo
   return ascending ? left.localeCompare(right) : right.localeCompare(left)
 }
 
-function numberCompare(a: number | undefined, b: number | undefined, ascending: boolean): number {
+export function numberCompare(
+  a: number | undefined,
+  b: number | undefined,
+  ascending: boolean,
+): number {
   if (a === undefined && b === undefined) return 0
   if (a === undefined) return 1
   if (b === undefined) return -1
   return ascending ? a - b : b - a
 }
 
-export function compareEntries(
-  a: SavedPlayer,
-  b: SavedPlayer,
-  key: SortKey,
+/* ---------- clan roster ---------- */
+
+/** A live clan member joined with the local owner annotation for its tag. */
+export interface RosterRow extends ClanMember {
+  owner?: string
+}
+
+export type RosterSortKey =
+  | 'clanRank'
+  | 'name'
+  | 'owner'
+  | 'townHallLevel'
+  | 'trophies'
+  | 'donations'
+  | 'donationsReceived'
+
+export const ROSTER_COLUMNS: { key: RosterSortKey; label: string; numeric: boolean }[] = [
+  { key: 'clanRank', label: '#', numeric: true },
+  { key: 'name', label: 'Member', numeric: false },
+  { key: 'owner', label: 'Owner', numeric: false },
+  { key: 'townHallLevel', label: 'TH', numeric: true },
+  { key: 'trophies', label: 'Trophies', numeric: true },
+  { key: 'donations', label: 'Donated', numeric: true },
+  { key: 'donationsReceived', label: 'Received', numeric: true },
+]
+
+/** Ranks and text read best ascending; every stat reads best highest-first. */
+export const ROSTER_ASCENDING_BY_DEFAULT: RosterSortKey[] = ['clanRank', 'name', 'owner']
+
+export function compareRosterRows(
+  a: RosterRow,
+  b: RosterRow,
+  key: RosterSortKey,
   ascending: boolean,
 ): number {
   switch (key) {
@@ -52,24 +76,26 @@ export function compareEntries(
       return textCompare(a.name, b.name, ascending)
     case 'owner':
       return textCompare(a.owner, b.owner, ascending)
-    case 'tag':
-      return textCompare(a.tag, b.tag, ascending)
-    case 'clanName':
-      return textCompare(a.clanName, b.clanName, ascending)
+    case 'clanRank':
+      return numberCompare(a.clanRank, b.clanRank, ascending)
     case 'townHallLevel':
       return numberCompare(a.townHallLevel, b.townHallLevel, ascending)
     case 'trophies':
       return numberCompare(a.trophies, b.trophies, ascending)
+    case 'donations':
+      return numberCompare(a.donations, b.donations, ascending)
+    case 'donationsReceived':
+      return numberCompare(a.donationsReceived, b.donationsReceived, ascending)
   }
 }
 
-export function sortEntries(
-  entries: SavedPlayer[],
-  key: SortKey,
+export function sortRosterRows(
+  rows: RosterRow[],
+  key: RosterSortKey,
   ascending: boolean,
-): SavedPlayer[] {
-  return [...entries].sort((a, b) => {
-    const primary = compareEntries(a, b, key, ascending)
+): RosterRow[] {
+  return [...rows].sort((a, b) => {
+    const primary = compareRosterRows(a, b, key, ascending)
     // Stable, predictable tie-break so equal values never shuffle between renders.
     return primary !== 0 ? primary : a.name.localeCompare(b.name)
   })
@@ -175,6 +201,13 @@ export function parseRowLimit(stored: string | null, fallback: RowLimit): RowLim
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
+/** The minimum a row needs to take part in a bulk owner change. */
+export interface OwnableRow {
+  tag: string
+  name: string
+  owner?: string
+}
+
 /** A selected row whose existing owner would be replaced. */
 export interface OwnerConflict {
   tag: string
@@ -183,13 +216,13 @@ export interface OwnerConflict {
   nextOwner: string
 }
 
-export interface OwnerChangePlan {
+export interface OwnerChangePlan<T extends OwnableRow> {
   /** Rows with no owner yet — safe to write without asking. */
-  toApply: SavedPlayer[]
+  toApply: T[]
   /** Rows that already carry a different owner — each needs explicit approval. */
   conflicts: OwnerConflict[]
   /** Already matches, or blank and being cleared: nothing to do. */
-  unchanged: SavedPlayer[]
+  unchanged: T[]
 }
 
 /**
@@ -199,9 +232,12 @@ export interface OwnerChangePlan {
  * Clearing the owner (an empty `nextOwner`) counts as destructive for any row
  * that currently has one, so it goes through the same approval path.
  */
-export function planOwnerChange(selected: SavedPlayer[], nextOwner: string): OwnerChangePlan {
+export function planOwnerChange<T extends OwnableRow>(
+  selected: T[],
+  nextOwner: string,
+): OwnerChangePlan<T> {
   const trimmed = nextOwner.trim()
-  const plan: OwnerChangePlan = { toApply: [], conflicts: [], unchanged: [] }
+  const plan: OwnerChangePlan<T> = { toApply: [], conflicts: [], unchanged: [] }
 
   for (const entry of selected) {
     const current = entry.owner?.trim() ?? ''
