@@ -9,8 +9,10 @@ WorkingDirectory=/home/jcc/coc
 ExecStart=/usr/bin/npm start
 Restart=on-failure
 # The app reads ~/coc/.env itself (via tsx --env-file-if-exists), so no
-# EnvironmentFile is needed here. Keep NODE_ENV unset for IP-only HTTP so the
-# session cookie is not marked Secure (a Secure cookie is never sent over http).
+# EnvironmentFile is needed here. NODE_ENV=production belongs in that .env, and
+# marks the session cookie Secure — correct, since Nginx serves HTTPS only and
+# redirects port 80. The API listens on 127.0.0.1:8787 behind Nginx and is never
+# exposed directly.
 
 [Install]
 WantedBy=multi-user.target

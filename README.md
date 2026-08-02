@@ -333,12 +333,18 @@ What the host actually has to provide:
   create it, so the app's *outbound* address must be fixed. Most PaaS hosts rotate outbound
   IPs, which is why this wants a small VPS or a fixed-address proxy. Symptom of getting it
   wrong: every upstream call returns 403 `accessDenied`.
-- **HTTPS termination in front of the app.** The session cookie is sent with `Secure` in
-  production, and a browser will not return a `Secure` cookie over plain http — so on http the
-  app appears to accept your login and then immediately forget it. It is also the only thing
-  stopping the session token being readable on the wire.
-- **`NODE_ENV=production`**, which is what turns that flag on (or `COOKIE_SECURE=true` if you
-  terminate TLS but do not set `NODE_ENV`).
+- **HTTPS, and only HTTPS.** This is not optional. The app has real accounts, so on plain http
+  the password and the session cookie both cross the network in clear text. `deploy/` is
+  configured for TLS on 443 with port 80 doing nothing but redirecting and answering ACME
+  challenges.
+- **A hostname.** A browser-trusted certificate cannot be issued for a bare IP, so a name has
+  to point at the host — a domain you own, or a free dynamic-DNS subdomain, both of which work
+  with Let's Encrypt. The alternative, a self-signed certificate, means every user clicks
+  through a TLS warning, which is a worse outcome than no TLS because it teaches them to.
+- **`NODE_ENV=production`**, which marks the session cookie `Secure` (or `COOKIE_SECURE=true` if
+  you terminate TLS but do not set `NODE_ENV`). Set it **after** the certificate works, never
+  before: a browser will not return a `Secure` cookie over plain http, so the app appears to
+  accept your login and then immediately forgets it, with nothing useful in the logs.
 - **`ADMIN_EMAIL` / `ADMIN_PASSWORD` for exactly one boot**, then remove `ADMIN_PASSWORD`
   from the environment. Everything after that is created from the admin panel. Upgrading an
   existing deployment past the username→email change needs `ADMIN_EMAIL` set for one boot too,
