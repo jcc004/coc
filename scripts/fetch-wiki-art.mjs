@@ -54,8 +54,23 @@ const DELAY_MS = 300
 /** Hard ceiling on what lands in web/public/coc/wiki. Reported against, not guessed at. */
 const BUDGET_BYTES = 3 * 1024 * 1024
 
-/** Longest side, in px. Slots render at ~20px, so this clears 2x on retina. */
-const THUMB = { unit: 48, townHall: 56 }
+/**
+ * Longest side, in px. Slots render at 32px (`.art-icon`), so these clear 2x on
+ * a retina display. Raising the rendered size means raising these too, or the
+ * art goes soft — the whole point of asking MediaWiki for the thumbnail is that
+ * the file matches the slot.
+ */
+const THUMB = { unit: 64, townHall: 72 }
+
+/**
+ * Fandom's thumbnailer answers WebP even for a `File:…png`, so the extension is
+ * taken from the response rather than assumed. Naming a WebP `.png` works in dev
+ * but is a real hazard in production: Nginx types the file by extension, and the
+ * deployed config sends `X-Content-Type-Options: nosniff`, so the bytes and the
+ * declared type have to agree.
+ */
+const EXTENSIONS = { 'image/webp': 'webp', 'image/png': 'png', 'image/jpeg': 'jpg' }
+const CANDIDATE_EXTENSIONS = ['webp', 'png', 'jpg']
 
 const TOWN_HALL_MIN = 1
 const TOWN_HALL_MAX = 18
@@ -253,9 +268,20 @@ for (const entry of demand) {
 
   const info = resolved.get(hit)
   const { dir } = KINDS[entry.kind]
-  const file = `${slug(entry.kind === 'townHall' ? `th-${entry.name}` : entry.name)}.png`
-  const dest = join(OUT, dir, file)
-  const size = await stat(dest).then((s) => s.size, () => null)
+  const base = slug(entry.kind === 'townHall' ? `th-${entry.name}` : entry.name)
+
+  // The extension is not known until the response arrives, so the cache probe
+  // has to consider every format this script can write.
+  let file
+  let size = null
+  for (const ext of CANDIDATE_EXTENSIONS) {
+    const found = await stat(join(OUT, dir, `${base}.${ext}`)).then((s) => s.size, () => null)
+    if (found !== null) {
+      file = `${base}.${ext}`
+      size = found
+      break
+    }
+  }
 
   if (size === null) {
     if (bytes >= BUDGET_BYTES) {
@@ -268,8 +294,15 @@ for (const entry of demand) {
       misses.push({ ...entry, why: `thumbnail HTTP ${res.status}` })
       continue
     }
+    const contentType = (res.headers.get('content-type') ?? '').split(';')[0].trim()
+    const ext = EXTENSIONS[contentType]
+    if (!ext) {
+      misses.push({ ...entry, why: `unexpected content-type ${contentType || 'none'}` })
+      continue
+    }
+    file = `${base}.${ext}`
     const body = Buffer.from(await res.arrayBuffer())
-    await writeFile(dest, body)
+    await writeFile(join(OUT, dir, file), body)
     bytes += body.byteLength
     downloaded++
     await sleep(DELAY_MS)

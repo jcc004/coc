@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { WIKI_ART } from './wiki-art.generated.ts'
 import { artFor, normaliseArtName, townHallArt } from './wiki-art.ts'
 
 /*
@@ -64,7 +65,21 @@ describe('artFor', () => {
     ] as const) {
       const src = artFor(kind, name)
       assert.ok(src, `${kind}/${name} should resolve`)
-      assert.match(src, /^\/coc\/wiki\/[a-z]+\/[a-z0-9-]+\.png$/)
+      // The extension follows whatever the wiki's thumbnailer returned — it
+      // answers WebP even for a `File:….png` — so this must not pin one format.
+      assert.match(src, /^\/coc\/wiki\/[a-z]+\/[a-z0-9-]+\.(webp|png|jpg)$/)
+    }
+  })
+
+  it('names every vendored file by a format a browser can decode', () => {
+    /*
+     * Guards what made these wrong before: the script assumed `.png` and wrote
+     * WebP bytes under it. That renders in dev, but production types static
+     * files by extension and the deployed Nginx sends
+     * X-Content-Type-Options: nosniff, so bytes and declared type must agree.
+     */
+    for (const src of Object.values(WIKI_ART)) {
+      assert.match(src, /\.(webp|png|jpg)$/, `${src} has no usable image extension`)
     }
   })
 

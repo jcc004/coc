@@ -663,8 +663,8 @@ td.select-cell {
   text-align: right;
 }
 .war-side img {
-  width: 56px;
-  height: 56px;
+  width: 72px;
+  height: 72px;
 }
 .war-side__name {
   font-size: 16px;
@@ -763,8 +763,8 @@ a.chip {
   gap: 6px;
 }
 .chip img {
-  width: 14px;
-  height: 14px;
+  width: 20px;
+  height: 20px;
 }
 
 /* ---------- profile header ---------- */
@@ -777,8 +777,8 @@ a.chip {
 }
 
 .profile__badge {
-  width: 72px;
-  height: 72px;
+  width: 88px;
+  height: 88px;
   flex: none;
 }
 
@@ -856,8 +856,8 @@ a.chip {
   color: var(--ink-2);
 }
 .hero-figure__league img {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
 }
 
 /* ---------- stat tiles ---------- */
@@ -981,14 +981,21 @@ details.group > .group__body {
 
 /*
  * Wiki-sourced troop, spell, hero, equipment and Town Hall art. One size
- * everywhere: 20px is within a pixel of the line box it sits in, so adding it
- * neither bloats a meter row nor grows a table row enough to reflow a roster.
- * `contain` matters because the source art is not square — a 33x48 Super Bowler
+ * everywhere: 32px, which the vendored files are fetched at 2x for (64px units,
+ * 72px Town Halls — see THUMB in scripts/fetch-wiki-art.mjs). Raising this again
+ * means raising those, or the art goes soft.
+ *
+ * This is deliberately taller than the 14px text beside it, so it does set the
+ * line height of a meter row and a roster row. That is the trade for legible
+ * art; the earlier 20px was chosen to avoid exactly that, and was too small to
+ * make the icons worth having.
+ *
+ * `contain` matters because the source art is not square — a 42x64 Super Bowler
  * must letterbox, not stretch.
  */
 .art-icon {
-  width: 20px;
-  height: 20px;
+  width: 32px;
+  height: 32px;
   object-fit: contain;
   /* `flex` for the meter row, `vertical-align` for the inline Town Hall badge;
      each is inert in the other's context. */
@@ -1004,7 +1011,7 @@ details.group > .group__body {
  * baseline as its own. Measured in a browser, not reasoned about.
  */
 .th-badge .art-icon {
-  margin-right: 5px;
+  margin-right: 6px;
 }
 
 /* ---------- tables ---------- */
@@ -1141,8 +1148,8 @@ table.roster th button:hover {
   border-top: none;
 }
 .result-list img {
-  width: 40px;
-  height: 40px;
+  width: 52px;
+  height: 52px;
   flex: none;
 }
 .result-list__meta {
