@@ -3,7 +3,12 @@ import { describe, it } from 'node:test'
 import type { SavedClan } from './saved-clans.ts'
 import {
   clanColumnLabel,
+  CLAN_ASCENDING_BY_DEFAULT,
   CLAN_COLUMNS,
+  CLAN_DESCENDING_BY_DEFAULT,
+  nextSortState,
+  ROSTER_ASCENDING_BY_DEFAULT,
+  sortOptionLabel,
   filterRosterRows,
   hasRosterFilters,
   NO_ROSTER_FILTERS,
@@ -463,6 +468,79 @@ describe('rosterColumnLabel / clanColumnLabel', () => {
     }
     for (const column of CLAN_COLUMNS) {
       assert.equal(clanColumnLabel(column.key), column.label)
+    }
+  })
+})
+
+describe('nextSortState', () => {
+  it('reverses the column that is already sorted, whichever way it was running', () => {
+    assert.deepEqual(nextSortState({ key: 'name', ascending: true }, 'name', ['name']), {
+      key: 'name',
+      ascending: false,
+    })
+    assert.deepEqual(nextSortState({ key: 'name', ascending: false }, 'name', ['name']), {
+      key: 'name',
+      ascending: true,
+    })
+  })
+
+  /* The direction a fresh column starts in is the whole reason this is shared:
+     picking one must not inherit the direction of the column you left. */
+  it('gives a fresh column its own natural direction, not the previous one', () => {
+    assert.deepEqual(
+      nextSortState({ key: 'trophies', ascending: false }, 'name', ROSTER_ASCENDING_BY_DEFAULT),
+      { key: 'name', ascending: true },
+    )
+    assert.deepEqual(
+      nextSortState({ key: 'name', ascending: true }, 'trophies', ROSTER_ASCENDING_BY_DEFAULT),
+      { key: 'trophies', ascending: false },
+    )
+  })
+
+  it('leaves the roster ordered as it was before the two tables shared this', () => {
+    // clanRank / name / owner ascend; every stat opens highest-first.
+    for (const column of ROSTER_COLUMNS) {
+      const { ascending } = nextSortState(
+        { key: 'expLevel' as never, ascending: true },
+        column.key,
+        ROSTER_ASCENDING_BY_DEFAULT,
+      )
+      assert.equal(ascending, ROSTER_ASCENDING_BY_DEFAULT.includes(column.key), column.key)
+    }
+  })
+
+  it('keeps the saved-clans defaults the inverse of the descending list', () => {
+    for (const column of CLAN_COLUMNS) {
+      const { ascending } = nextSortState(
+        { key: 'tag' as const, ascending: false },
+        column.key,
+        CLAN_ASCENDING_BY_DEFAULT,
+      )
+      assert.equal(ascending, !CLAN_DESCENDING_BY_DEFAULT.includes(column.key), column.key)
+    }
+  })
+
+  it('derives the ascending list so it cannot disagree with the descending one', () => {
+    assert.deepEqual(
+      [...CLAN_ASCENDING_BY_DEFAULT].sort(),
+      ['name', 'tag', 'warLeague'],
+      'every clan column is in exactly one of the two lists',
+    )
+  })
+})
+
+describe('sortOptionLabel', () => {
+  it('spells out the abbreviated headings, which have no column to explain them', () => {
+    assert.equal(sortOptionLabel({ key: 'clanRank', label: '#', numeric: true, long: 'Clan rank' }), 'Clan rank')
+    assert.equal(sortOptionLabel({ key: 'trophies', label: 'Trophies', numeric: true }), 'Trophies')
+  })
+
+  it('never returns a label too short to read on its own', () => {
+    for (const column of [...ROSTER_COLUMNS, ...CLAN_COLUMNS]) {
+      assert.ok(
+        sortOptionLabel(column).length >= 3,
+        `${column.key} reads as "${sortOptionLabel(column)}" in the Sort menu`,
+      )
     }
   })
 })

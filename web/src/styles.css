@@ -396,6 +396,46 @@ select {
   color: var(--ink-2);
 }
 
+/*
+ * Sorting, for a table that has stacked into cards. Only rendered at stack width
+ * — `useStackedTables` decides, not a media query — so this needs no breakpoint
+ * of its own and never appears on a desktop.
+ *
+ * Sits directly above the cards it reorders, and reads as one unit rather than a
+ * loose select beside a loose button: the field takes the space going, the
+ * direction button keeps its natural width beside it.
+ */
+.sort-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--grid);
+}
+
+.sort-control__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.sort-control__field select {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  color: var(--ink);
+}
+
 /* Roster filter row. Sits above the table and wraps rather than scrolling, so a
    narrow screen stacks the controls instead of hiding them past the right edge. */
 .roster-filters {
@@ -1843,10 +1883,17 @@ table.roster--pairs td {
     text-align: inherit;
   }
 
+  /*
+   * 26px, not 20px. The `.select-hit` label around each of these is a full 44x44
+   * and always was, so the target was never the problem — but a 20px box inside
+   * an invisible 44px one means people aim at something less than half the size
+   * of what actually responds, and undershoot. The drawn control now fills most
+   * of its target.
+   */
   .select-cell input[type='checkbox'],
   .conflict-list input[type='checkbox'] {
-    width: 20px;
-    height: 20px;
+    width: 26px;
+    height: 26px;
   }
 
   .select-hit {
