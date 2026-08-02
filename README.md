@@ -438,19 +438,25 @@ a focused control is smaller than that.
 
 Otherwise it will scroll sideways on a phone. The recipe:
 
-1. Put `roster--stack` on the table, plus `roster--sortable` if its header row holds sort
-   buttons — that keeps the header on screen as a wrapped bar of buttons instead of hiding it.
+1. Put `roster--stack` on the table.
 2. Give every cell a `data-label`; that is what the stacked card prints in place of the column
    head. The row's identity cell takes `class="stack-title"` and **no** label, so it reads as
-   the card's heading instead. For the two sortable tables the label comes from
-   `rosterColumnLabel()` / `clanColumnLabel()` in `saved-table.ts`, so a stacked label cannot
-   drift from the column header it stands in for.
+   the card's heading instead — and if it holds a link, that link gets a 44px box. For the two
+   sortable tables the label comes from `rosterColumnLabel()` / `clanColumnLabel()` in
+   `saved-table.ts`, so a stacked label cannot drift from the column header it stands in for.
 3. Add the ARIA. Changing `display` on a table strips its semantics from the accessibility tree
    in Chrome and Safari alike, so every element carries the role it would otherwise have had:
    `role="table"` / `rowgroup` / `row` / `columnheader` / `rowheader` / `cell`. The header row
-   is never `display: none` either — a table with nothing to sort hides it with the
-   `.visually-hidden` recipe, so a screen reader still reads real column headers against real
-   cells.
+   is hidden with the `.visually-hidden` recipe, never `display: none`, so a screen reader still
+   reads real column headers — and its `aria-sort` — against real cells.
+4. **If the table sorts, it needs a `SortControl`.** Stacked, there are no visible column heads
+   to hang seven sort buttons off. Reflowing them into a strip above the cards was tried and
+   read as a run of unexplained gold words, so instead `useStackedTables()` decides and the
+   table renders *different DOM*: plain text in the `th`s plus one "Sort by" select and a
+   direction button. Rendering both and hiding one in CSS would leave the hidden set in the
+   accessibility tree as invisible duplicate tab stops. A column whose heading is an
+   abbreviation (`#`, `TH`) needs a `long` label in its `TableColumn`, because the Sort menu has
+   no column of numbers underneath to explain it.
 
 A cell the row had nothing to put in is dropped (`td:empty`), so a blank line never appears.
 The label is a **float**, not a flex or grid column, because a cell's value is arbitrary inline
@@ -840,18 +846,33 @@ tags the group already tracks — so there is no second list of bases to curate 
 **owner is shown beside every base** because the owner is who would do the trading. A base that
 somehow has counts but no owner assignment is still listed, so its rows are never orphaned.
 
-- **The grid** shows all 60, split by category. A card the base holds renders in colour; one it
-  lacks renders the same file under `grayscale(1)`. That is **never the only cue** — the tile
-  also says `Have 3` or `None` in words and dims its name, so the distinction survives with no
-  colour vision at all.
+- **The base list is member names, not tags.** A tag is not who you go and talk to. The names come
+  from the saved clans' rosters — one request per saved clan covers every base in it — and any base
+  no visible roster names is asked for directly, one request each. A tag the API will not resolve
+  keeps showing as a tag. Where two bases share a name the tag is appended (`darek (#2GCJ2QPU)`),
+  and only then; the list is ordered by name, unnamed bases last. All of that is
+  `baseOptions()` in `base-names.ts`, pure and tested. **Tags remain the identity** — the select's
+  values, the inventory keys and the trade suggestions are all still tags, and the selected base
+  shows its tag beside the timestamp.
+- **The grid** is one continuous grid of all 60 in deck order — no per-deck headings and no break
+  between one deck and the next, so a deck that runs out mid-row does not leave a ragged line.
+  Tiles are **picture only**: no card name. A card the base holds renders in colour; one it lacks
+  renders the same file under `grayscale(1)`. That is **never the only cue** — the tile still says
+  `Have 3` or `None` in words underneath and its box reads 0, so held-vs-not survives with no
+  colour vision at all. The name is on the tile's `title` and opens the number box's accessible
+  name, so nothing that reads the page aloud has lost it. The cost is real and worth knowing: the
+  card art is gitignored, so on a checkout with no art a tile is an empty frame over a count.
 - **The count badge** sits in the art's lower right and appears **only past one copy**: `×1` on
   fifty tiles would be noise, where a spare is the fact worth spotting.
 - **The tile border carries the deck**, in the event's own frame colours —
   `--deck-elixir`, `--deck-dark-elixir`, `--deck-builder-base`, `--deck-super-troop`, declared
   in all three theme scopes and lightened for dark mode, where the deep purple would otherwise
-  vanish. Categorical colour on a border only, never on text and never the sole cue: each deck
-  is already under its own heading. It also settles the one case where two cards share a
-  picture, since the home and Builder Base Baby Dragons sit in different decks. The nominal
+  vanish. Categorical colour on a border only, never on text. With the headings and the names
+  gone it is the only *visible* cue to deck, which is a real narrowing — the fallbacks are that
+  the cards stay in deck order so each colour arrives as one unbroken run, and that every tile's
+  `title` and its box's accessible name spell the deck out in words. It also settles the one case
+  where two cards share a picture, since the home and Builder Base Baby Dragons sit in different
+  decks; with the names gone, that pair is otherwise indistinguishable. The nominal
   values are recorded in `CARD_CATEGORY_BORDER` in `shared/src/card-types.ts`; what the page
   paints is the CSS token, because a colour that must work on parchment *and* dark wood is a
   theme decision.

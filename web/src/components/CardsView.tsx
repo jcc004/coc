@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CARD_SEASON, MAX_CARD_COUNT, type BaseInventory } from '@coc/shared'
+import { api } from '../api.ts'
+import { baseOptions } from '../base-names.ts'
 import { inventoryFor, saveBaseCounts, useCardInventoryState } from '../card-inventory.ts'
 import {
   groupTradesByPair,
@@ -23,6 +25,7 @@ import { requestChatDraft } from '../chat-draft.ts'
 import { formatDateTime } from '../format.ts'
 import { hrefFor } from '../hooks.ts'
 import { useOwners } from '../owners.ts'
+import { useSavedClans } from '../saved-clans.ts'
 import { ErrorPanel, GameIcon, Loading } from './primitives.tsx'
 
 /**
@@ -55,16 +58,24 @@ function Attribution({ base }: { base: BaseInventory | undefined }) {
 }
 
 /**
- * One card. The art carries the held/not distinction as colour, and the count
- * carries it again as text — never colour alone. The badge appears only past one
- * copy, which is exactly when the number is news; `--locked` desaturates the art
- * for a card the base does not hold.
+ * One card: the picture, and the count.
+ *
+ * The tile shows no card name — the art is the identity, which is how the event
+ * itself presents these. The name has not gone anywhere it cannot be recovered
+ * from: it is on the tile's `title` for a hover or a long press, and it opens the
+ * input's accessible name, so nothing that reads this page aloud has lost it.
+ *
+ * Held-vs-not is still not carried by colour alone. `--locked` desaturates the
+ * art, and the words underneath say "None" or "Have n" independently of it, with
+ * the number box repeating it a third time.
  *
  * `GameIcon` is used without a `fallback` on purpose. The card art is gitignored,
  * so a fresh clone has none of it; the element removes itself on error rather
  * than showing a broken-image glyph, and the fixed-height art box keeps the tile
- * the same size either way, so the grid cannot collapse. The name is always
- * rendered, which is what keeps the card identifiable with no picture at all.
+ * the same size either way, so the grid cannot collapse. Without the name label a
+ * checkout with no art shows an empty frame over its count — the `title` and the
+ * input's label are then the only way to tell the sixty tiles apart, which is the
+ * cost of a picture-only grid.
  */
 function CardTile({
   card,
@@ -78,7 +89,6 @@ function CardTile({
   disabled: boolean
 }) {
   const held = count > 0
-  const inputId = `card-count-${card.id}`
 
   return (
     <div
@@ -86,6 +96,10 @@ function CardTile({
       // The deck's frame colour is picked in CSS off this, so the palette stays
       // in styles.css with the rest of the theme rather than inline here.
       data-deck={deckSlug(card.category)}
+      // Names the tile now that no text does. The category rides along because
+      // the decks lost their headings too, leaving the frame colour as the only
+      // visible grouping.
+      title={`${card.name} · ${card.category}`}
     >
       <div className="card-tile__frame">
         <GameIcon src={card.image} className="card-tile__art" />
@@ -96,14 +110,10 @@ function CardTile({
         ) : null}
       </div>
 
-      <label className="card-tile__name" htmlFor={inputId}>
-        {card.name}
-      </label>
       {/* The text half of the encoding: readable with no colour vision at all. */}
       <span className="card-tile__state">{held ? `Have ${count}` : 'None'}</span>
 
       <input
-        id={inputId}
         className="card-tile__input"
         type="number"
         inputMode="numeric"
@@ -112,7 +122,8 @@ function CardTile({
         value={String(count)}
         disabled={disabled}
         onChange={(event) => onCount(clampCardCount(event.target.value))}
-        aria-label={`${card.name} copies held, 0 to ${MAX_CARD_COUNT}`}
+        /* Carries the name and the deck, since the tile no longer prints either. */
+        aria-label={`${card.name}, ${card.category} — copies held, 0 to ${MAX_CARD_COUNT}`}
       />
     </div>
   )
@@ -127,7 +138,16 @@ function CardTile({
  * never while there are unsaved edits, because silently replacing what somebody
  * is typing is worse than showing them a stale number they are about to overwrite.
  */
-function BaseEditor({ tag, base }: { tag: string; base: BaseInventory | undefined }) {
+function BaseEditor({
+  tag,
+  label,
+  base,
+}: {
+  tag: string
+  /** The base's member name, or its tag when no roster we can see names it. */
+  label: string
+  base: BaseInventory | undefined
+}) {
   const stored = useMemo(() => countMap(base), [base])
   const [draft, setDraft] = useState<Map<number, number>>(stored)
   const [busy, setBusy] = useState(false)
@@ -182,7 +202,7 @@ function BaseEditor({ tag, base }: { tag: string; base: BaseInventory | undefine
     <>
       <div className="card-header">
         <h2 className="section-title" style={{ margin: 0 }}>
-          {tag}
+          {label}
         </h2>
         <div className="card-header__tools">
           <span className="card-meta">
@@ -196,6 +216,9 @@ function BaseEditor({ tag, base }: { tag: string; base: BaseInventory | undefine
       </div>
 
       <p className="card-meta" style={{ margin: '0 0 12px' }}>
+        {/* The tag is still the identity a trade is arranged against, so it stays
+            on screen even though the heading now reads as a name. */}
+        {label === tag ? null : <>{tag} · </>}
         <Attribution base={base} />
       </p>
 
@@ -212,22 +235,26 @@ function BaseEditor({ tag, base }: { tag: string; base: BaseInventory | undefine
 
       {saved && !dirty ? <p className="card-meta">Counts saved for everyone.</p> : null}
 
-      {cardCategoriesInOrder().map((category) => (
-        <section key={category} className="card-deck">
-          <h3 className="card-deck__title">{category}</h3>
-          <div className="card-grid">
-            {cardsInCategory(category).map((card) => (
-              <CardTile
-                key={card.id}
-                card={card}
-                count={draft.get(card.id) ?? 0}
-                onCount={(next) => setCount(card.id, next)}
-                disabled={busy}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+      {/*
+       * One grid for all sixty, not one per deck. Still in deck order, so each
+       * type arrives as an unbroken run of tiles wearing its own frame colour —
+       * which is now the only visible thing separating them, the headings and the
+       * gaps between them having gone. A single grid is the point: per-deck grids
+       * broke the row wherever a deck ran out mid-line.
+       */}
+      <div className="card-grid">
+        {cardCategoriesInOrder()
+          .flatMap((category) => cardsInCategory(category))
+          .map((card) => (
+            <CardTile
+              key={card.id}
+              card={card}
+              count={draft.get(card.id) ?? 0}
+              onCount={(next) => setCount(card.id, next)}
+              disabled={busy}
+            />
+          ))}
+      </div>
     </>
   )
 }
@@ -399,6 +426,69 @@ function BaseLabel({ tag, owner }: { tag: string; owner: string | undefined }) {
   )
 }
 
+/**
+ * Member names for every base, keyed by player tag.
+ *
+ * A base *is* a clan member, so the name to show is the one the roster shows. The
+ * saved clans are where the owner assignments came from in the first place, so
+ * their rosters are where the names are: one request per saved clan covers every
+ * base in it, rather than one request per base.
+ *
+ * Sequential, like the saved-clans refresh, to keep the upstream rate limit
+ * comfortable. A clan that will not load simply leaves its members unnamed — the
+ * base falls back to its tag and the page carries on, because a name is a
+ * convenience and the tag is the identity.
+ */
+function useMemberNames(baseTags: string[]): Map<string, string> {
+  const clans = useSavedClans()
+  /* Joined into strings so the effect re-runs on a change of *which* clans or
+     bases, not on every re-render of the stores' arrays. */
+  const clanKey = useMemo(() => clans.map((clan) => clan.tag).sort().join(','), [clans])
+  const baseKey = useMemo(() => [...baseTags].sort().join(','), [baseTags])
+  const [names, setNames] = useState<Map<string, string>>(new Map())
+
+  useEffect(() => {
+    if (!baseKey) return
+    const controller = new AbortController()
+
+    void (async () => {
+      const found = new Map<string, string>()
+
+      for (const clanTag of clanKey ? clanKey.split(',') : []) {
+        try {
+          const { items } = await api.clanMembers(clanTag, controller.signal)
+          for (const member of items) found.set(member.tag, member.name)
+        } catch {
+          // Unnamed is a fine outcome; failing the whole page is not.
+        }
+      }
+
+      /*
+       * Anything the rosters did not cover, asked for directly. A base only has
+       * to be in a *saved* clan for the sweep above to name it, and an owner can
+       * be set on a base whose clan nobody saved — or who has since left. One
+       * request each, and only for the leftovers, so the common case still costs
+       * one request per clan rather than one per base.
+       */
+      for (const tag of baseKey.split(',')) {
+        if (found.has(tag) || controller.signal.aborted) continue
+        try {
+          const player = await api.player(tag, controller.signal)
+          found.set(tag, player.name)
+        } catch {
+          // A tag the API will not resolve keeps showing as a tag.
+        }
+      }
+
+      if (!controller.signal.aborted) setNames(found)
+    })()
+
+    return () => controller.abort()
+  }, [clanKey, baseKey])
+
+  return names
+}
+
 export function CardsView() {
   const state = useCardInventoryState()
   const bases = state.entries
@@ -422,10 +512,25 @@ export function CardsView() {
     return (tag: string) => byTag.get(tag)
   }, [owners])
 
+  /* The list the Base select offers: member names, ordered by name, with a tag
+     appended only where two bases would otherwise read identically. */
+  const memberNames = useMemberNames(tags)
+  const options = useMemo(
+    () => baseOptions(tags.map((tag) => ({ tag, name: memberNames.get(tag) }))),
+    [tags, memberNames],
+  )
+  const labelOf = useMemo(() => {
+    const byTag = new Map(options.map((option) => [option.tag, option.label]))
+    return (tag: string) => byTag.get(tag) ?? tag
+  }, [options])
+
   const [selected, setSelected] = useState<string | null>(null)
-  // Default to the first base once the lists arrive, without pinning the choice
-  // if the user has already made one.
-  const active = selected !== null && tags.includes(selected) ? selected : (tags[0] ?? null)
+  /* Default to the first base once the lists arrive, without pinning the choice
+     if the user has already made one. `options[0]`, not `tags[0]`: the list is
+     ordered by member name, and defaulting by tag would leave the select showing
+     its second or third entry as the chosen one. */
+  const active =
+    selected !== null && tags.includes(selected) ? selected : (options[0]?.tag ?? null)
 
   return (
     <>
@@ -443,14 +548,11 @@ export function CardsView() {
                   value={active ?? ''}
                   onChange={(event) => setSelected(event.target.value)}
                 >
-                  {tags.map((tag) => {
-                    const owner = ownerOf(tag)
-                    return (
-                      <option key={tag} value={tag}>
-                        {owner ? `${tag} — ${owner}` : tag}
-                      </option>
-                    )
-                  })}
+                  {options.map((option) => (
+                    <option key={option.tag} value={option.tag}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </label>
             ) : null}
@@ -477,7 +579,12 @@ export function CardsView() {
 
       {active !== null ? (
         <section className="card">
-          <BaseEditor key={active} tag={active} base={inventoryFor(bases, active)} />
+          <BaseEditor
+            key={active}
+            tag={active}
+            label={labelOf(active)}
+            base={inventoryFor(bases, active)}
+          />
         </section>
       ) : null}
 

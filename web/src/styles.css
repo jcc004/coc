@@ -1105,28 +1105,14 @@ details.group > .group__body {
 }
 
 /*
- * Greyscale is the *secondary* cue and never the only one: a locked tile also
- * reads "None" in words, dims its name, and carries no count badge. The rule
- * above must stay decorative for that reason.
+ * Greyscale stays the *secondary* cue and never the only one: a locked tile reads
+ * "None" in words underneath, and its number box shows 0. The rule above must
+ * stay decorative for that reason. (It used to dim the card's name as well; the
+ * tiles carry no name now, so the words and the box are the whole non-colour
+ * half.)
  */
-.card-tile--locked .card-tile__name {
+.card-tile--locked .card-tile__state {
   color: var(--ink-muted);
-}
-
-.card-deck {
-  margin-top: 18px;
-}
-.card-deck:first-of-type {
-  margin-top: 8px;
-}
-.card-deck__title {
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink-muted);
-  margin: 0 0 10px;
 }
 
 .card-grid {
@@ -1140,7 +1126,8 @@ details.group > .group__body {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 8px 6px;
+  /* Tighter than it was: the name line it used to sit under has gone. */
+  padding: 6px;
   /* 2px so the deck frame below is actually legible as a frame. */
   border: 2px solid var(--border);
   border-radius: var(--radius);
@@ -1149,10 +1136,18 @@ details.group > .group__body {
 }
 
 /*
- * The deck frame. Categorical colour on a border only — never text, never the
- * sole cue: each deck is under its own heading and every tile names its card.
- * It also settles the one case where two cards share a picture, the home and
- * Builder Base Baby Dragons, which sit in different decks.
+ * The deck frame: categorical colour, on a border only, never on text.
+ *
+ * It is now the only *visible* cue to which deck a card belongs — the headings
+ * are gone and the tiles carry no names, by request. That is a real narrowing of
+ * this encoding, so the fallbacks matter: the cards are still laid out in deck
+ * order, so each colour arrives as one unbroken run, and every tile's `title` and
+ * its number box's accessible name both spell the deck out in words. Deck is
+ * grouping, not magnitude — it never stands in for a value.
+ *
+ * The border also settles the one case where two cards share a picture, the home
+ * and Builder Base Baby Dragons, which sit in different decks. With the names
+ * gone that pair is otherwise indistinguishable.
  */
 .card-tile[data-deck='elixir'] {
   border-color: var(--deck-elixir);
@@ -1203,21 +1198,6 @@ details.group > .group__body {
   font-variant-numeric: tabular-nums;
 }
 
-.card-tile__name {
-  font-size: 12px;
-  line-height: 1.25;
-  text-align: center;
-  /* A long name wraps rather than widening the column and reflowing the grid. */
-  overflow-wrap: anywhere;
-  /*
-   * Two lines' worth, always. Without it a name that wraps ("Baby Dragon
-   * (Builder)", "Apprentice Warden", "Super Wall Breaker") makes its tile taller
-   * than its neighbours, the grid row stretches to match, and the count boxes
-   * stop lining up across the row — which is the line the eye follows when
-   * entering sixty numbers. Seen in a screenshot, not reasoned about.
-   */
-  min-height: 2.5em;
-}
 .card-tile__state {
   font-size: 11px;
   color: var(--ink-muted);
@@ -1910,6 +1890,18 @@ table.roster--pairs td {
     width: 100%;
     padding: 6px 4px;
   }
+
+  /*
+   * The three links in the Supercell notice stay at their text size. They are
+   * links inside a sentence, which both WCAG 2.5.5 and 2.5.8 exempt from the
+   * target-size minimum, and padding them into 44px boxes would comb the
+   * paragraph's line spacing apart. Loosening the leading is the honest half of
+   * the fix: it buys separation between wrapped lines, so a thumb aiming at one
+   * link is less likely to land on the line above.
+   */
+  .site-footer {
+    line-height: 1.8;
+  }
 }
 
 /* ---------- tablet, and every table on it ---------- */
@@ -2071,6 +2063,9 @@ table.roster--pairs td {
        back the side padding so the name still starts at the card's edge. */
     padding: 13px 4px;
     margin-left: -4px;
+    /* A four-letter name ("Zack") is only 43px of text, so the box would come up
+       a pixel short across its narrow axis. */
+    min-width: 44px;
   }
 }
 
