@@ -247,6 +247,9 @@ schema changes) because v2 has to drop and re-create `users`.
   `ADD COLUMN` has no `IF NOT EXISTS`, so a second run would *throw* rather than no-op — which
   is precisely why `user_version` is the thing guarding it, and there is a test that boots the
   same file twice and checks a flag set on the first boot still reads back on the second.
+- **v4** — `card_inventory`, the hand-entered card counts. See
+  [The card-collecting event](#the-card-collecting-event). A plain `CREATE TABLE`, which would
+  also throw on a second run — same guard, same two-boot test.
 
 Backfill, per row:
 
@@ -276,8 +279,9 @@ log into.
 
 One SQLite file, `DATABASE_PATH` (default `./data/coc.db`, resolved against the server
 workspace's working directory, so `npm run dev` puts it at `server/data/coc.db` — gitignored).
-The directory is created if missing. Five tables — `users`, `sessions`, `chat_messages`,
-`saved_clans`, `owner_assignments` — created and migrated on boot by `user_version`.
+The directory is created if missing. Six tables — `users`, `sessions`, `chat_messages`,
+`saved_clans`, `owner_assignments`, `card_inventory` — created and migrated on boot by
+`user_version`.
 
 `node:sqlite` is used rather than `better-sqlite3` because it is in the runtime from Node 22.5
 on: no native module, nothing to compile on the host, nothing to rebuild when Node is
@@ -298,28 +302,6 @@ All optional except the bootstrap pair on a fresh database. Full comments in `.e
 | `ADMIN_PASSWORD` | — | First admin's password, minimum 12 characters. Remove after the first boot. Ignored by the escape-hatch path |
 | `COOKIE_SECURE` | off | Forces `Secure` on the session cookie when you terminate TLS but do not set `NODE_ENV` |
 | `NODE_ENV` | — | `production` implies `COOKIE_SECURE` |
-
-### Where image upload will attach
-
-Upload is **not built**. The seam for it is `requireAuth`, exported from
-`server/src/auth/middleware.ts`, which reads only context state and so mounts anywhere:
-
-```ts
-app.post('/api/uploads', requireAuth, handler)   // already denied to anonymous callers anyway
-```
-
-Three things that must be decided when it is built, none of which this layer does for you:
-
-1. **A body-size limit before accepting any body** — Hono's `bodyLimit` middleware, mounted on
-   the upload route *ahead* of the handler. Without it, an authenticated user can exhaust the
-   host's disk or memory with one request.
-2. **Per-user scoping.** Files belong to `users.id`, both in the path on disk and in whatever
-   table indexes them, and a read must check ownership rather than trusting an id in the URL.
-   `users.id` is a plain integer primary key precisely so this can FK to it
-   (`user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE`, as `sessions` already
-   does).
-3. **Storage location on the host** — the same persistent volume as the database, or object
-   storage; the container filesystem is not it.
 
 ## Deployment
 
@@ -369,6 +351,13 @@ Order matters — `vite build` copies `web/public` into `dist`, so anything fetc
 not in the bundle you shipped. Skip them entirely and the app still works: every icon is
 optional and the UI falls back to the text-and-meter layout it had before the art existed.
 
+**The card grid's pictures come from `assets:wiki` too** — card art is drawn from the vendored
+wiki thumbnails, so that one script supplies it. What it does *not* supply is
+`web/public/coc/cards/manifest.json`, which no committed script produces; that is why
+`web/src/cards.generated.ts` is committed, and why the card *list* is always correct on a host
+even before any art arrives. A host with no art shows sixty named, correctly sized, pictureless
+tiles.
+
 `assets:wiki` needs `COC_API_TOKEN` as well, because it asks the CoC API which units exist
 before it goes looking for their pictures. It takes about a minute on a cold run (requests are
 serialised and paced) and a few seconds when the files are already on disk.
@@ -377,9 +366,10 @@ serialised and paced) and a few seconds when the files are already on disk.
 
 ```
 shared/   types for the CoC API, the auth payloads and the shared data, + tag
-          parsing and email normalisation
+          parsing, email normalisation and CARD_SEASON
 server/   Hono API, upstream client, TTL cache, auth (src/auth/), the shared
-          saved clans and owners (src/shared-data/), migrations (src/db.ts)
+          saved clans and owners (src/shared-data/), the card inventory
+          (src/cards/), migrations (src/db.ts)
 web/      Vite + React UI
 ```
 
@@ -391,16 +381,20 @@ and `routes.ts`. `server/src/shared-data/` is the same split for the shared rows
 only code touching `saved_clans` and `owner_assignments`, `routes.ts` mounts them. Migrations
 live in `server/src/db.ts`.
 
-`createApp({ coc, cache, auth, chat, sharedData })` stays dependency-injected, which is what
-lets the test suite drive the whole app over an in-memory database and a stub upstream.
+`server/src/cards/` is the same split again: `store.ts` is the only code touching
+`card_inventory`, `routes.ts` mounts `/api/cards/*`, and `cards.test.ts` drives both through the
+whole app.
+
+`createApp({ coc, cache, auth, chat, sharedData, cards })` stays dependency-injected, which is
+what lets the test suite drive the whole app over an in-memory database and a stub upstream.
 
 `shared` is consumed as TypeScript source through an npm workspace link — no build step,
 so a type change is visible on both sides immediately.
 
-Two asset-mapping modules in `web/src/` are machine-written and must not be hand-edited:
-`coc-assets.ts` (which league and label ids are vendored) and `wiki-art.generated.ts` (which
-unit names have wiki art). The hand-written half of the second one is `wiki-art.ts` — the
-normalisation and lookup — which is where the tests point.
+Three modules in `web/src/` are machine-written and must not be hand-edited: `coc-assets.ts`
+(which league and label ids are vendored), `wiki-art.generated.ts` (which unit names have wiki
+art) and `cards.generated.ts` (the sixty event cards). Each has a hand-written half where the
+tests point — `wiki-art.ts` for the second, `cards.ts` for the third.
 
 ## API
 
@@ -635,6 +629,167 @@ Comparators, ordering, paging, and the approval partitioning all live in
 `planOwnerChange` takes the minimal `{ tag, name, owner? }` shape, which is why a live clan
 member satisfies it directly.
 
+## The card-collecting event
+
+Each base collects cards during August. `#/cards` is the page: a grid of all 60 cards per base,
+manual entry of the counts, and the trades those counts make possible.
+
+**There is no API for any of this.** Supercell exposes nothing about the event, so every number
+is typed in by hand. That single fact shapes the rest of the design — there is nothing to
+refresh from, so what is stored is whatever a person last entered, and the only defence against
+a wrong number is that everyone can see it and see who entered it.
+
+### The card list is generated and committed
+
+`web/public/coc/cards/manifest.json` is the source of truth for which sixty cards exist —
+**not** the spreadsheet at the repo root, which is the author's working notes. The manifest also
+carries `collected` and `confidence`; both are notes about how each *picture* was sourced and
+have nothing to do with inventory, so neither is carried across.
+
+`npm run cards:generate` (`scripts/generate-cards.mjs`) reads it and writes
+`web/src/cards.generated.ts` — id, category, name, image path — the same way
+`scripts/fetch-wiki-art.mjs` writes `wiki-art.generated.ts`. It validates before it writes:
+contiguous ids from 1, a known category on every card, a name and an image path. A structural
+problem aborts and leaves the committed module alone, because a duplicate id or a bad category
+would otherwise surface as a wrong picture weeks later.
+
+**The generated module is tracked; the art it points at is not.** `web/public/coc/` is
+gitignored, so a fresh clone has the sixty cards' ids, names and categories but none of their
+pictures — and the manifest is inside that directory too, so a fresh clone cannot even re-run
+the generator. That is exactly why the module is committed rather than generated at build time.
+
+A missing picture is the **normal** case, not an error. Card art is drawn from the vendored wiki
+thumbnails, so `npm run assets:wiki` is what supplies it; without that, `GameIcon` removes the
+`<img>` on error and the tile shows its name over an empty, correctly sized art box.
+`.card-tile__frame` reserves the height rather than shrinking to its content, so the grid
+neither collapses nor reflows. Never a broken-image glyph.
+
+Two cards can share one picture — "Baby Dragon" and "Baby Dragon (Builder)" are one wiki file —
+so the **id** is the identity and the **name** is what the user reads. Image paths are not
+unique and must not be treated as a key.
+
+### The data model, and why inventory is shared
+
+Migration **v4** adds one table, shared across every account for exactly the reason
+`owner_assignments` is: how many Barbarian cards a base holds is a *fact about the base*, not a
+private opinion, and trade suggestions only mean anything if everybody is reading the same
+numbers. Ten private copies would produce ten disagreeing sets of suggestions.
+
+```
+card_inventory  (season, player_tag, card_id) PK, count,
+                updated_at, updated_by_user_id → users(id) ON DELETE SET NULL
+                CHECK (card_id BETWEEN 1 AND 60), CHECK (count BETWEEN 0 AND 10)
+```
+
+- **Rows are sparse: absent means zero.** A base holding nine cards has nine rows, not sixty. A
+  count of 0 deletes the row rather than storing a zero, so "does not hold it" has exactly one
+  representation.
+- **Both CHECKs restate what the route already validates**, on purpose. The route can be
+  bypassed by a future caller; the database cannot. There are tests that insert past the route
+  and assert the schema refuses. `count` still permits 0 because 0 is legal on the wire, even
+  though no row ever stores one.
+- **`updated_by_user_id` is nullable, `ON DELETE SET NULL`** — the counts outlive the account
+  that typed them, and **disabling an account touches no row here**, which is covered by a test.
+  Attribution is joined on read, so a rename never leaves old edits credited to a stale name.
+- **A base's stamp is derived from its newest row.** All of a base's rows are written in one
+  transaction with one timestamp, so they agree. The consequence to know: a base whose every
+  count is set back to zero keeps no rows, and so loses its stamp along with them — it reads as
+  "nothing recorded", the same as a base nobody ever entered.
+
+### The season constant
+
+Every row is scoped to a season string, and there is exactly one:
+`CARD_SEASON` in `shared/src/card-types.ts`, currently `'2026-08'`.
+
+**One line to change next August.** Without it, next year's counts would merge silently into
+this year's and the suggestions would be drawn from a mix of two events. There is deliberately
+**no season-switching UI** — the constant is the switch, and the routes never take a season from
+the request, so a client cannot write into a season nobody is looking at.
+
+### Routes
+
+All authenticated; `/api/*` is deny-by-default, so they were protected before they were written,
+and a test asserts each one 401s anonymously. None is admin-only — anyone signed in can enter
+counts.
+
+| Route | |
+|---|---|
+| `GET /api/cards/inventory` | every base with cards recorded, each with `updatedAt` and the display name in `updatedBy` |
+| `GET /api/cards/inventory/:tag` | one base; a base nobody has entered answers `{ counts: [] }`, not a 404 |
+| `PUT /api/cards/inventory/:tag` | replaces that base's whole season in one request |
+
+The write is **one request per base, never sixty per card** — the entry screen edits a base at a
+time, and sixty requests to save one screen would be sixty chances to half-apply. Every id must
+be 1–60 and every count 0–10; **one bad entry rejects the whole request** with a 400 and writes
+nothing, because a partially applied save would leave a base holding a mixture of what was typed
+and what was there before, with nothing on screen saying which took. A repeated `cardId` is
+refused too, rather than letting the last one quietly win.
+
+**Concurrency is last-write-wins per base**, deliberately unlike the owner flow's
+expected-value handshake. A card count is a number somebody read off a screen a moment ago, not
+a decision another person made, so the cost of a clobber is re-typing one base — where the cost
+of clobbering an owner is losing somebody's decision. What makes that acceptable is that
+`updated_at` and `updated_by` are recorded and shown on every base, so a surprise is at least
+explainable: you can see the count changed, when, and who changed it.
+
+### The trade rules
+
+`web/src/card-trades.ts`, pure and with no knowledge of React, the server, or the generated card
+list — categories arrive through a resolver, which is what lets the tests run the rules against
+three made-up cards instead of sixty real ones. `web/src/card-trades.test.ts` covers it.
+
+A trade pairs base A giving card X to base B, and B giving card Y to A, where **all** of:
+
+1. **A holds 2 or more of X, and B holds 2 or more of Y.** A base never trades away its last
+   copy, so a count of exactly 1 is *not* tradeable. This is the rule people get wrong by hand.
+2. **B holds zero of X, and A holds zero of Y.** You may only receive a card you do not already
+   own — a second copy of something you hold once is worth nothing to you.
+3. **X and Y are in the same category.** The game only swaps within a deck.
+4. **A and B are different bases**, including when one tag appears twice in the input.
+
+Rules 1 and 2 together make `X === Y` unreachable without a special case, and there is a test
+that says so rather than only a comment.
+
+**Mirrors are reported once.** A↔B and B↔A are one trade seen from two sides, so each unordered
+pair is considered once and the result is always oriented with the lexicographically smaller tag
+as `baseA` — which makes the output independent of the order the bases were passed in, and that
+is asserted directly. Output is sorted by base then card, so it never shuffles between renders.
+
+One pair can yield several suggestions and one spare can appear against several partners. That
+is intended: these are options to choose between, not a plan.
+
+### The UI
+
+`#/cards`, linked from the topbar. The bases are the **owner assignments** — the set of player
+tags the group already tracks — so there is no second list of bases to curate and drift, and the
+**owner is shown beside every base** because the owner is who would do the trading. A base that
+somehow has counts but no owner assignment is still listed, so its rows are never orphaned.
+
+- **The grid** shows all 60, split by category. A card the base holds renders in colour; one it
+  lacks renders the same file under `grayscale(1)`. That is **never the only cue** — the tile
+  also says `Have 3` or `None` in words and dims its name, so the distinction survives with no
+  colour vision at all.
+- **The count badge** sits in the art's lower right and appears **only past one copy**: `×1` on
+  fifty tiles would be noise, where a spare is the fact worth spotting.
+- **The tile border carries the deck**, in the event's own frame colours —
+  `--deck-elixir`, `--deck-dark-elixir`, `--deck-builder-base`, `--deck-super-troop`, declared
+  in all three theme scopes and lightened for dark mode, where the deep purple would otherwise
+  vanish. Categorical colour on a border only, never on text and never the sole cue: each deck
+  is already under its own heading. It also settles the one case where two cards share a
+  picture, since the home and Builder Base Baby Dragons sit in different decks. The nominal
+  values are recorded in `CARD_CATEGORY_BORDER` in `shared/src/card-types.ts`; what the page
+  paints is the CSS token, because a colour that must work on parchment *and* dark wood is a
+  theme decision.
+- **Entry** is a capped 0–10 number box on each tile, kept in a local draft so typing sixty
+  boxes is one write, not sixty. The draft re-seeds when the base changes or when somebody
+  else's save lands — but never while there are unsaved edits, because silently replacing what
+  someone is typing is worse than showing a stale number they are about to overwrite.
+- **Last updated and who** is shown above the grid for the selected base.
+- **A failed write is reported at the Save button**, with the typed counts left exactly as they
+  are so nothing has to be re-entered. `Saved` never appears unless the request succeeded.
+- **Trade suggestions** are a third panel, driven entirely by the pure module and grouped by the
+  pair of bases involved, with both owners named.
+
 ## War view
 
 `#/war/<clanTag>` shows the current war and the war log together, fetched independently so
@@ -770,15 +925,23 @@ no pictures.
 | Spells | 18 | `File:<Name> info.png` |
 | Town Halls 1–18 | 18 | `File:Town Hall<n>.png`, or `File:Town Hall <n> info.png` for TH17 |
 
-166 files, ~358 KiB on disk, against a 3 MiB cap the script enforces and reports
-against. It stays small because `iiurlwidth`/`iiurlheight` make MediaWiki render the
-thumbnail server-side: the app asks for 48px art for a 20px slot instead of pulling
-a 4000×4000 original and needing an image library to shrink it. There is no `sharp`
+166 files, ~3.2 MiB on disk, against a 3 MiB cap the script reports against. It stays
+manageable because `iiurlwidth`/`iiurlheight` make MediaWiki render the thumbnail
+server-side, so the app asks for art at the size it displays instead of pulling a
+4000×4000 original and needing an image library to shrink it. There is no `sharp`
 here and there should not be.
 
+`THUMB` is **256px**, sized for the biggest consumer — the card grid, whose tiles
+render at 88px and so want 2x on a retina display. The little 32px `.art-icon` slots
+simply downscale the same file. Raising a rendered size past what `THUMB` supplies
+makes the art soft; raise `THUMB` to match, and re-run with **`REFETCH=1`**, because
+the ordinary run skips anything already on disk and would otherwise keep the old,
+smaller files.
+
 It is polite by construction: existence checks batch 50 titles per request,
-downloads run serially with a 300ms delay, anything already on disk is skipped, and
-the `User-Agent` names the tool (override the contact via `WIKI_CONTACT`).
+downloads run serially with a 300ms delay, anything already on disk is skipped
+(unless `REFETCH=1`), and the `User-Agent` names the tool (override the contact via
+`WIKI_CONTACT`).
 
 **Names are resolved by convention, never by fuzzy matching.** The script derives
 candidate file titles from the API's own `name` string and takes the first that
@@ -848,11 +1011,12 @@ available — the art is Supercell's, used under their fan policy or not at all.
 | Command | Does |
 |---|---|
 | `npm run dev` | API + UI with reload |
-| `npm test` | server auth suite (`app.request` against `createApp`, in-memory SQLite) + web unit tests for table sort, paging, owner-overwrite, `coc:saved` migration and wiki-art name lookup |
+| `npm test` | server auth, card and chat suites (`app.request` against `createApp`, in-memory SQLite) + web unit tests for table sort, paging, owner-overwrite, `coc:saved` migration, wiki-art name lookup, the card list and the trade rules |
 | `npm run typecheck` | `tsc --noEmit` across all three workspaces |
 | `npm run build` | production bundle for the UI — run the two asset scripts *first* |
 | `npm run assets:coc` | re-download the vendored league and label icons from the CoC API |
 | `npm run assets:wiki` | re-download troop / spell / hero / equipment / Town Hall art from the wiki, and print a coverage report |
+| `npm run cards:generate` | regenerate `web/src/cards.generated.ts` from the card manifest. Needs `web/public/coc/cards/manifest.json`, which is gitignored — so this only runs where the art tree exists, and the generated module is committed for everywhere else |
 | `npm start` | API only, no watcher |
 
 The server runs through `tsx` in both dev and production — there is no server build step.

@@ -2,7 +2,10 @@ import {
   normalizeTag,
   type AdminUser,
   type ApiErrorResponse,
+  type BaseInventoryResponse,
   type CapitalRaidSeasonsResponse,
+  type CardCount,
+  type CardInventoryResponse,
   type ChatMessage,
   type ChatResponse,
   type Clan,
@@ -75,7 +78,7 @@ interface RequestOptions {
 }
 
 async function request<T>(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   { signal, body, expectsAuthFailure }: RequestOptions = {},
 ): Promise<T> {
@@ -244,4 +247,23 @@ export const api = {
   /** The one-time upload of whatever this browser still holds. Fills gaps only. */
   importBrowserData: (payload: ImportRequest) =>
     request<ImportResponse>('POST', '/api/import', { body: payload }),
+
+  /* ---------- shared data: the card inventory ---------- */
+
+  /** Every base with cards recorded this season. The season is the server's. */
+  cardInventory: (signal?: AbortSignal) =>
+    get<CardInventoryResponse>('/api/cards/inventory', signal),
+
+  cardInventoryFor: (tag: string, signal?: AbortSignal) =>
+    get<BaseInventoryResponse>(`/api/cards/inventory/${tagPath(tag)}`, signal),
+
+  /**
+   * One base's whole set of counts in one request — never one request per card.
+   * The body replaces everything stored for that base, and a count of 0 deletes
+   * the row, so the sparse storage needs no separate delete endpoint.
+   */
+  saveCardInventory: (tag: string, counts: CardCount[]) =>
+    request<BaseInventoryResponse>('PUT', `/api/cards/inventory/${tagPath(tag)}`, {
+      body: { counts },
+    }),
 }

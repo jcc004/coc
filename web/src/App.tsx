@@ -1,4 +1,5 @@
 import { AccountView } from './components/AccountView.tsx'
+import { CardsView } from './components/CardsView.tsx'
 import { ClanSearchView } from './components/ClanSearchView.tsx'
 import { ClanView } from './components/ClanView.tsx'
 import { ForcedPasswordChange } from './components/ForcedPasswordChange.tsx'
@@ -77,6 +78,12 @@ export function App() {
             ← Saved clans
           </a>
         ) : null}
+        {/* Present everywhere but the card page itself, like the Saved clans link. */}
+        {route.view !== 'cards' ? (
+          <a className="icon-button" href={hrefFor({ view: 'cards' })} title="Card collection">
+            Cards
+          </a>
+        ) : null}
         <button
           type="button"
           className="icon-button"
@@ -115,6 +122,8 @@ export function App() {
         {route.view === 'home' ? <SavedClansView /> : null}
 
         {route.view === 'account' ? <AccountView user={user} /> : null}
+
+        {route.view === 'cards' ? <CardsView /> : null}
 
         {route.view === 'player' ? (
           <PlayerView key={route.tag} tag={route.tag} onLoaded={remember} />

@@ -4,6 +4,7 @@ import { bootstrapAdmin } from './auth/bootstrap.ts'
 import { cookieSecureFromEnv } from './auth/middleware.ts'
 import { createAuthStore } from './auth/store.ts'
 import { TtlCache } from './cache.ts'
+import { createCardInventoryStore } from './cards/store.ts'
 import { createChatStore } from './chat/store.ts'
 import { createCocClient } from './coc-client.ts'
 import { databasePathFromEnv, openDatabase, SCHEMA_VERSION } from './db.ts'
@@ -25,6 +26,7 @@ const db = openDatabase(databasePath)
 const auth = createAuthStore(db)
 const chat = createChatStore(db)
 const sharedData = createSharedDataStore(db)
+const cards = createCardInventoryStore(db)
 
 const bootstrap = bootstrapAdmin(auth, process.env)
 /*
@@ -49,6 +51,7 @@ const app = createApp({
   auth,
   chat,
   sharedData,
+  cards,
   cookieSecure: cookieSecureFromEnv(process.env),
 })
 

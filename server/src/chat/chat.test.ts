@@ -6,6 +6,7 @@ import { bootstrapAdmin } from '../auth/bootstrap.ts'
 import { createLoginLimiter } from '../auth/rate-limit.ts'
 import { createAuthStore } from '../auth/store.ts'
 import { TtlCache } from '../cache.ts'
+import { createCardInventoryStore } from '../cards/store.ts'
 import type { CocClient } from '../coc-client.ts'
 import { openDatabase } from '../db.ts'
 import { createSharedDataStore } from '../shared-data/store.ts'
@@ -38,6 +39,7 @@ function createHarness() {
     auth: store,
     chat,
     sharedData: createSharedDataStore(db),
+    cards: createCardInventoryStore(db),
     loginLimiter: createLoginLimiter(),
   })
 

@@ -105,6 +105,6 @@ npm run build && sudo systemctl restart coc
 
 The asset scripts are cheap on a re-run — anything already on disk is skipped.
 
-> `nginx-coc.conf` sets `client_max_body_size 10M` for the image-upload feature.
-> If you raise it, raise the server-side limit to match rather than relying on
-> Nginx alone.
+> `nginx-coc.conf` sets `client_max_body_size 10M` as a plain ceiling on request
+> bodies — nothing the app serves comes close. If a route ever needs more, raise
+> the server-side limit to match rather than relying on Nginx alone.

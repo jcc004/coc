@@ -38,7 +38,7 @@ export function withSession(store: AuthStore): MiddlewareHandler<AuthEnv> {
 
 /**
  * Refuses anonymous callers. Exported so any future route can be mounted behind
- * it — `app.post('/api/uploads', requireAuth, handler)` — without repeating the
+ * it — `app.post('/api/whatever', requireAuth, handler)` — without repeating the
  * check. It only reads context state, so it composes anywhere `withSession` has
  * already run.
  */

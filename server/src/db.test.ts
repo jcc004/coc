@@ -245,7 +245,7 @@ describe('migration bookkeeping', () => {
     // Mark it as already at v1 — which it effectively is — so v2 onwards run.
     const marked = new DatabaseSync(path)
     marked.exec('PRAGMA user_version = 1')
-    assert.deepEqual(migrate(marked), [2, 3])
+    assert.deepEqual(migrate(marked), [2, 3, 4])
     marked.close()
   })
 })
@@ -304,6 +304,95 @@ describe('migration v3 — must_change_password', () => {
     )
     second.close()
     assert.equal(userVersion(path), SCHEMA_VERSION)
+  })
+})
+
+describe('migration v4 — card_inventory', () => {
+  it('creates the table with the shape the card routes rely on', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const db = openDatabase(path)
+    assert.deepEqual(columnsOf(path, 'card_inventory'), [
+      'season',
+      'player_tag',
+      'card_id',
+      'count',
+      'updated_at',
+      'updated_by_user_id',
+    ])
+
+    // (season, player_tag, card_id) is the primary key, in that order.
+    const keyColumns = db
+      .prepare('PRAGMA table_info(card_inventory)')
+      .all()
+      .filter((row) => Number(row['pk']) > 0)
+      .sort((a, b) => Number(a['pk']) - Number(b['pk']))
+      .map((row) => String(row['name']))
+    assert.deepEqual(keyColumns, ['season', 'player_tag', 'card_id'])
+    db.close()
+  })
+
+  it('leaves the accounts and the other shared rows untouched', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const db = openDatabase(path)
+    const store = createAuthStore(db)
+    assert.equal(store.countUsers(), 1)
+    assert.ok(store.authenticate('jcc@example.com', LEGACY_PASSWORD))
+    // v4 adds a table; it must not have disturbed the ones v2 made.
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM owner_assignments').get()?.['n'], 0)
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM saved_clans').get()?.['n'], 0)
+    db.close()
+  })
+
+  it('is idempotent across two boots, rows and all', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const first = openDatabase(path)
+    const userId = createAuthStore(first).listUsers()[0]?.id
+    assert.ok(userId)
+    first
+      .prepare(
+        `INSERT INTO card_inventory (season, player_tag, card_id, count, updated_at, updated_by_user_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run('2026-08', '#AAABBB', 4, 3, new Date().toISOString(), userId)
+    first.close()
+
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+
+    // A plain CREATE TABLE run twice would throw, so opening at all is half the
+    // assertion; the row still being there is the other half.
+    const second = openDatabase(path)
+    assert.deepEqual(migrate(second), [], 'nothing left to apply')
+    const row = second.prepare('SELECT player_tag, card_id, count FROM card_inventory').get()
+    assert.equal(row?.['player_tag'], '#AAABBB')
+    assert.equal(Number(row?.['count']), 3)
+    second.close()
+  })
+
+  it('keeps a base’s counts when the account that entered them is deleted', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const db = openDatabase(path)
+    const userId = createAuthStore(db).listUsers()[0]?.id
+    assert.ok(userId)
+    db.prepare(
+      `INSERT INTO card_inventory (season, player_tag, card_id, count, updated_at, updated_by_user_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run('2026-08', '#AAABBB', 4, 3, new Date().toISOString(), userId)
+
+    // ON DELETE SET NULL, not CASCADE: the counts outlive the account. (Accounts
+    // are disabled rather than deleted in practice, which touches nothing here.)
+    db.exec(`DELETE FROM users WHERE id = ${userId}`)
+    const row = db.prepare('SELECT count, updated_by_user_id FROM card_inventory').get()
+    assert.equal(Number(row?.['count']), 3, 'the count must survive')
+    assert.equal(row?.['updated_by_user_id'], null, 'only the attribution is lost')
+    db.close()
   })
 })
 

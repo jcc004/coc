@@ -55,12 +55,26 @@ const DELAY_MS = 300
 const BUDGET_BYTES = 3 * 1024 * 1024
 
 /**
- * Longest side, in px. Slots render at 32px (`.art-icon`), so these clear 2x on
- * a retina display. Raising the rendered size means raising these too, or the
- * art goes soft — the whole point of asking MediaWiki for the thumbnail is that
- * the file matches the slot.
+ * `REFETCH=1` re-downloads every resolved name, overwriting whatever is on disk.
+ * The default run skips a name whose art is already present, which is what makes
+ * a re-run cheap — but it also means bumping THUMB does nothing on a folder that
+ * already has the old, smaller files. Set this to pull the new size over them.
  */
-const THUMB = { unit: 64, townHall: 72 }
+const IGNORE_CACHE = process.env.REFETCH === '1'
+
+/**
+ * Longest side, in px. The small `.art-icon` slots render at 32px, but the same
+ * unit art now also backs the card-collecting grid, whose tiles are far larger —
+ * so these are sized for the biggest consumer (the card grid) rather than the
+ * 32px slot. Asking MediaWiki for a thumbnail this size means the card art is
+ * sharp and the little slots simply downscale it.
+ *
+ * Raising a tile's rendered size beyond this makes the art soft again; raise
+ * these to match. A re-run at a larger size does not overwrite art already on
+ * disk unless `REFETCH=1` is set (see IGNORE_CACHE) — otherwise the old, smaller
+ * files are kept and reported as cached.
+ */
+const THUMB = { unit: 256, townHall: 256 }
 
 /**
  * Fandom's thumbnailer answers WebP even for a `File:…png`, so the extension is
@@ -271,15 +285,18 @@ for (const entry of demand) {
   const base = slug(entry.kind === 'townHall' ? `th-${entry.name}` : entry.name)
 
   // The extension is not known until the response arrives, so the cache probe
-  // has to consider every format this script can write.
+  // has to consider every format this script can write. Skipped under REFETCH,
+  // so a re-run at a larger THUMB overwrites the smaller art instead of keeping it.
   let file
   let size = null
-  for (const ext of CANDIDATE_EXTENSIONS) {
-    const found = await stat(join(OUT, dir, `${base}.${ext}`)).then((s) => s.size, () => null)
-    if (found !== null) {
-      file = `${base}.${ext}`
-      size = found
-      break
+  if (!IGNORE_CACHE) {
+    for (const ext of CANDIDATE_EXTENSIONS) {
+      const found = await stat(join(OUT, dir, `${base}.${ext}`)).then((s) => s.size, () => null)
+      if (found !== null) {
+        file = `${base}.${ext}`
+        size = found
+        break
+      }
     }
   }
 

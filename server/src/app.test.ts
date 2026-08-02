@@ -10,6 +10,7 @@ import { SESSION_COOKIE } from './auth/middleware.ts'
 import { createLoginLimiter, type LimiterOptions } from './auth/rate-limit.ts'
 import { createAuthStore, SESSION_TTL_MS, type AuthStore } from './auth/store.ts'
 import { TtlCache } from './cache.ts'
+import { createCardInventoryStore } from './cards/store.ts'
 import { createChatStore, type ChatStore } from './chat/store.ts'
 import type { CocClient } from './coc-client.ts'
 import { openDatabase } from './db.ts'
@@ -76,6 +77,7 @@ function createHarness(
     auth: store,
     chat,
     sharedData: shared,
+    cards: createCardInventoryStore(db),
     loginLimiter: createLoginLimiter(options.limiter),
   })
 
@@ -227,6 +229,7 @@ describe('login and session', () => {
       auth: harness.store,
       chat: harness.chat,
       sharedData: createSharedDataStore(harness.db),
+      cards: createCardInventoryStore(harness.db),
       cookieSecure: true,
     })
     const response = await secureApp.request(...postJson('/api/auth/login', ADMIN))

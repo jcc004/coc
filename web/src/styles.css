@@ -47,6 +47,21 @@
   --display: #8a5a08;
   --on-gold: #33240f;
 
+  /*
+   * Card-deck frames. A categorical role, not a magnitude one, so it is its own
+   * small set rather than a step on the sequential ramp — and it is used for a
+   * tile *border* only, never for text and never as the sole cue: each deck also
+   * has a heading, and every tile carries its card's name.
+   *
+   * Nominal values are the event's own frame colours, recorded in
+   * `CARD_CATEGORY_BORDER` in shared/src/card-types.ts. Dark mode lightens them
+   * because the deep purple in particular disappears against dark wood.
+   */
+  --deck-elixir: #eb56f1;
+  --deck-dark-elixir: #6d1e92;
+  --deck-builder-base: #4ca7f1;
+  --deck-super-troop: #f07951;
+
   /* bevel: top highlight and bottom shade that give panels their pressed depth */
   --bevel-light: rgba(255, 255, 255, 0.7);
   --bevel-dark: rgba(51, 36, 15, 0.16);
@@ -83,6 +98,11 @@
     /* Bright gold clears 9:1 on dark wood, so the display numerals can sing. */
     --display: #f5c04a;
     --on-gold: #241d14;
+    /* Lightened for dark wood — #6d1e92 in particular vanishes against it. */
+    --deck-elixir: #f385f6;
+    --deck-dark-elixir: #a855d0;
+    --deck-builder-base: #7cc2f7;
+    --deck-super-troop: #f79b79;
     --bevel-light: rgba(244, 233, 208, 0.14);
     --bevel-dark: rgba(0, 0, 0, 0.45);
     --drop: rgba(0, 0, 0, 0.5);
@@ -112,6 +132,10 @@
   --gold-edge: #6b4708;
   --display: #f5c04a;
   --on-gold: #241d14;
+  --deck-elixir: #f385f6;
+  --deck-dark-elixir: #a855d0;
+  --deck-builder-base: #7cc2f7;
+  --deck-super-troop: #f79b79;
   --bevel-light: rgba(244, 233, 208, 0.14);
   --bevel-dark: rgba(0, 0, 0, 0.45);
   --drop: rgba(0, 0, 0, 0.5);
@@ -1012,6 +1036,168 @@ details.group > .group__body {
  */
 .th-badge .art-icon {
   margin-right: 6px;
+}
+
+/* ---------- card-collecting grid ---------- */
+
+/*
+ * Each event card has one picture (see cards.generated.ts). A card the base
+ * holds shows it in colour; a card it lacks shows the same file desaturated,
+ * rather than shipping a second greyscale image. `grayscale(1)` plus a slight
+ * dim reads as "not collected" while keeping the art legible; drop the opacity
+ * line if you want the lock state to lean only on colour.
+ */
+.card-tile__art {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.card-tile--locked .card-tile__art {
+  filter: grayscale(1);
+  opacity: 0.65;
+}
+
+/*
+ * Greyscale is the *secondary* cue and never the only one: a locked tile also
+ * reads "None" in words, dims its name, and carries no count badge. The rule
+ * above must stay decorative for that reason.
+ */
+.card-tile--locked .card-tile__name {
+  color: var(--ink-muted);
+}
+
+.card-deck {
+  margin-top: 18px;
+}
+.card-deck:first-of-type {
+  margin-top: 8px;
+}
+.card-deck__title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  margin: 0 0 10px;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 10px;
+}
+
+.card-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  /* 2px so the deck frame below is actually legible as a frame. */
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 var(--bevel-light);
+}
+
+/*
+ * The deck frame. Categorical colour on a border only — never text, never the
+ * sole cue: each deck is under its own heading and every tile names its card.
+ * It also settles the one case where two cards share a picture, the home and
+ * Builder Base Baby Dragons, which sit in different decks.
+ */
+.card-tile[data-deck='elixir'] {
+  border-color: var(--deck-elixir);
+}
+.card-tile[data-deck='dark-elixir'] {
+  border-color: var(--deck-dark-elixir);
+}
+.card-tile[data-deck='builder-base'] {
+  border-color: var(--deck-builder-base);
+}
+.card-tile[data-deck='super-troop'] {
+  border-color: var(--deck-super-troop);
+}
+
+/*
+ * The art box is a *reserved* height, not a box that shrinks to its content. The
+ * card art is gitignored, so a fresh clone has none of it and `GameIcon` removes
+ * the <img> on error — with the height here rather than on the image, every tile
+ * stays the same size and the grid neither collapses nor reflows. Relative, so
+ * the count badge can sit in its lower-right corner.
+ *
+ * 88px against a 256px source (THUMB.unit in scripts/fetch-wiki-art.mjs), which
+ * clears 2x on a retina display — the art was raised to 256 precisely so this
+ * grid could be this size. Going bigger here means raising that, or it goes soft.
+ */
+.card-tile__frame {
+  position: relative;
+  width: 100%;
+  height: 88px;
+}
+
+/* Quantity, over the art, and only past one copy: "×1" on fifty tiles would be
+   noise, where a spare is the fact worth spotting. */
+.card-tile__badge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  min-width: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--gold-edge);
+  border-radius: 9px;
+  background: linear-gradient(180deg, var(--gold) 0%, var(--gold-deep) 100%);
+  color: var(--on-gold);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-tile__name {
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: center;
+  /* A long name wraps rather than widening the column and reflowing the grid. */
+  overflow-wrap: anywhere;
+}
+.card-tile__state {
+  font-size: 11px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.card-tile__input {
+  width: 56px;
+  margin-top: 4px;
+  padding: 3px 4px;
+  text-align: center;
+  background: var(--plane);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Timestamps, attribution and totals: supporting text, never an encoding. */
+.card-meta {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+/* One side of a suggested swap, in the trade table. */
+.trade-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.trade-card__img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex: none;
 }
 
 /* ---------- tables ---------- */

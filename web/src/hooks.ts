@@ -65,12 +65,16 @@ export type Route =
   | { view: 'war'; tag: string }
   | { view: 'search'; name: string }
   | { view: 'account' }
+  | { view: 'cards' }
 
 export function parseHash(hash: string): Route {
   const [view, param] = hash.replace(/^#\/?/, '').split('/')
   const decoded = param ? decodeURIComponent(param) : ''
 
   if (view === 'account') return { view: 'account' }
+  // No tag in the route: the card page picks its base from the shared list, so a
+  // deep link to one base would be a link into somebody else's editing session.
+  if (view === 'cards') return { view: 'cards' }
   if (view === 'player' && decoded) return { view: 'player', tag: decoded }
   if (view === 'clan' && decoded) return { view: 'clan', tag: decoded }
   if (view === 'war' && decoded) return { view: 'war', tag: decoded }
@@ -90,6 +94,8 @@ export function hrefFor(route: Route): string {
       return `#/search/${encodeURIComponent(route.name)}`
     case 'account':
       return '#/account'
+    case 'cards':
+      return '#/cards'
     case 'home':
       return '#/'
   }

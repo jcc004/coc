@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --import tsx --test src/owners.test.ts src/import.test.ts src/saved-table.test.ts src/sidebar.test.ts src/wiki-art.test.ts",
+    "test": "node --import tsx --test src/owners.test.ts src/import.test.ts src/saved-table.test.ts src/sidebar.test.ts src/wiki-art.test.ts src/cards.test.ts src/card-trades.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

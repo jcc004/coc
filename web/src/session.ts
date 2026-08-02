@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { SessionUser } from '@coc/shared'
 import { api, setPasswordChangeRequiredHandler, setUnauthorizedHandler } from './api.ts'
+import { resetCardInventory } from './card-inventory.ts'
 import { resetOwners } from './owners.ts'
 import { resetSavedClans } from './saved-clans.ts'
 
@@ -78,6 +79,7 @@ export function useSession(): Session {
     // own first fetch lands.
     resetOwners()
     resetSavedClans()
+    resetCardInventory()
     setState({ status: 'anonymous' })
   }, [])
 

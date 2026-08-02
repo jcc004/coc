@@ -21,6 +21,7 @@
     "test": "npm --workspace server run test && npm --workspace web run test",
     "assets:coc": "node scripts/fetch-coc-assets.mjs",
     "assets:wiki": "node scripts/fetch-wiki-art.mjs",
+    "cards:generate": "node scripts/generate-cards.mjs",
     "typecheck": "npm --workspace shared run typecheck && npm --workspace server run typecheck && npm --workspace web run typecheck"
   },
   "devDependencies": {

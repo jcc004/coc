@@ -199,7 +199,49 @@ const v3: Migration = (db) => {
   db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0')
 }
 
-const MIGRATIONS: Migration[] = [v1, v2, v3]
+/**
+ * v4 — `card_inventory`, the hand-entered card counts for the August event.
+ *
+ * Shared across every account, exactly like `owner_assignments`: a base's card
+ * counts are a fact about that base, not a private opinion, and trade
+ * suggestions only mean anything if everybody reads the same numbers.
+ * `updated_by_user_id` is nullable with ON DELETE SET NULL for the same reason
+ * it is there — the counts outlive the account that typed them, and disabling an
+ * account is a timestamp on `users`, so it touches nothing here at all.
+ *
+ * Rows are **sparse**: absent means zero, which the store enforces by deleting
+ * rather than storing a 0. Sixty rows per base would be sixty times the writes
+ * to say almost nothing.
+ *
+ * Both CHECKs restate limits the route already validates, on purpose — the
+ * database is the last line, and the only one a future caller cannot forget.
+ * `card_id` is bounded by the 60-card manifest (`CARD_ID_MAX` in
+ * `shared/src/card-types.ts`); a 61st card needs a migration as well as a
+ * regenerated card module, and that friction is intended. `count` still allows
+ * 0 because 0 is a legal value on the wire, even though no row ever stores one.
+ *
+ * `season` leads the primary key because every read is scoped to one season, so
+ * the PK index alone serves them and a separate index would be dead weight.
+ *
+ * Idempotence is the version pragma's job, as for every other step: a plain
+ * CREATE throws on a second run, and `user_version` is what guarantees there is
+ * never a second run.
+ */
+const v4: Migration = (db) => {
+  db.exec(`
+CREATE TABLE card_inventory (
+  season             TEXT NOT NULL,
+  player_tag         TEXT NOT NULL,
+  card_id            INTEGER NOT NULL CHECK (card_id BETWEEN 1 AND 60),
+  count              INTEGER NOT NULL CHECK (count BETWEEN 0 AND 10),
+  updated_at         TEXT NOT NULL,
+  updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  PRIMARY KEY (season, player_tag, card_id)
+);
+`)
+}
+
+const MIGRATIONS: Migration[] = [v1, v2, v3, v4]
 
 /** The version a fully migrated database reports. */
 export const SCHEMA_VERSION = MIGRATIONS.length

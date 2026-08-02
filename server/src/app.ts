@@ -11,6 +11,8 @@ import { mountAuthRoutes } from './auth/routes.ts'
 import { createLoginLimiter, type LoginLimiter } from './auth/rate-limit.ts'
 import type { AuthStore } from './auth/store.ts'
 import { TtlCache } from './cache.ts'
+import { mountCardRoutes } from './cards/routes.ts'
+import type { CardInventoryStore } from './cards/store.ts'
 import { mountChatRoutes } from './chat/routes.ts'
 import type { ChatStore } from './chat/store.ts'
 import { CocApiError, type CocClient } from './coc-client.ts'
@@ -25,6 +27,8 @@ export interface AppDeps {
   chat: ChatStore
   /** Saved clans and owner assignments — shared across every account. */
   sharedData: SharedDataStore
+  /** Hand-entered card counts for the event season — shared, like the above. */
+  cards: CardInventoryStore
   /** Injectable so tests can trip the lockout in a few requests. */
   loginLimiter?: LoginLimiter
   /** `Secure` on the session cookie. Derive it with `cookieSecureFromEnv`. */
@@ -52,6 +56,7 @@ export function createApp({
   auth,
   chat,
   sharedData,
+  cards,
   loginLimiter,
   cookieSecure = false,
 }: AppDeps) {
@@ -76,6 +81,8 @@ export function createApp({
   mountChatRoutes(app, chat)
 
   mountSharedDataRoutes(app, sharedData)
+
+  mountCardRoutes(app, cards)
 
   // Public so a host's liveness probe can reach it, but the cache size is an
   // internal detail an anonymous caller has no business seeing.
