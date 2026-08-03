@@ -134,12 +134,55 @@ Check both with `sudo certbot renew --dry-run`.
 ## Updating
 
 ```bash
-cd /srv/coc && git pull && npm install
+cd /srv/coc && git pull && npm install     # npm as the owning user, never with sudo
 set -a && . ./.env && set +a && npm run assets:coc && npm run assets:wiki
 npm run build && sudo systemctl restart coc
 ```
 
 The asset scripts are cheap on a re-run — anything already on disk is skipped.
+
+Then **verify you are serving what you just built**, because three things can leave the
+site on an older version even when every command above succeeds:
+
+```bash
+curl -s https://coc.jcciv.com/ | grep -oE 'assets/index-[^"]+'   # what the browser gets
+ls web/dist/assets/                                              # what you just built
+git log --oneline -1                                             # what you built it from
+```
+
+Those two filenames must match. Vite names bundles by content hash, so a given commit
+always produces the same filename — which makes the pair a reliable fingerprint.
+
+The three traps, in the order they are likely:
+
+1. **A stale Nginx config.** `git pull` updates `deploy/nginx-coc.conf` in the repo and
+   nothing in `/etc/nginx/`. If that file has changed since you installed it — the
+   served `root` moved from a home directory to `/srv/coc`, for instance — Nginx keeps
+   serving the old path, and an old checkout there keeps working perfectly. Check with
+   `grep -n root /etc/nginx/sites-enabled/coc`, and if it is wrong:
+
+   ```bash
+   sudo cp deploy/nginx-coc.conf /etc/nginx/sites-available/coc
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+
+   `nginx -t` first, always: it refuses a broken config instead of dropping the site.
+
+2. **A pull that did not land.** `git status -sb` shows a detached HEAD, another branch,
+   or local edits blocking the merge. The build then succeeds against old sources.
+
+3. **A build with no art.** `web/public/coc/` is gitignored, so a fresh clone has none of
+   it and `npm run build` copies nothing into `dist`. The card portraits in particular
+   come from neither the API nor the wiki — they are copied to the host by hand — so
+   `ls web/public/coc/cards/*.png | wc -l` should read 60 before you build.
+
+Restarting the service is also what applies any pending schema migration, so there is no
+separate migrate step. Back the database up first — all three files, since copying only
+the `.db` leaves whatever is still in the WAL behind:
+
+```bash
+cp server/data/coc.db* ~/backup-$(date +%F)/
+```
 
 > `nginx-coc.conf` sets `client_max_body_size 10M` as a plain ceiling on request
 > bodies — nothing the app serves comes close. If a route ever needs more, raise
