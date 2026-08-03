@@ -1,0 +1,55 @@
+# Typecheck, test and build on every push and pull request.
+#
+# **This does not deploy.** Deployment is the droplet's own `coc-update.timer`, which
+# runs `deploy/update.sh` — see deploy/README.md. This workflow exists for the one
+# thing the timer cannot do: tell you a commit is broken before you have to notice it
+# in production.
+#
+# It previously had a second job that SSHed in and deployed. That was a mistake in
+# this setup: the deploy secrets were never configured, so the job failed within five
+# seconds of every push and emailed a failure notice each time — noise that trains you
+# to ignore the one signal this workflow is for. The timer is the deploy path; a
+# dormant second one earns nothing and costs attention.
+#
+# If you ever do want push-triggered deployment, the recipe is in deploy/README.md
+# under "Trigger on push", and the job that did it is in this file's git history at
+# commit 9a2b550. It needs four repository secrets and a sudoers rule before it will
+# do anything but fail.
+
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Supersede an in-flight run when a newer commit lands: only the tip matters, and a
+# queue of runs on superseded commits is more noise.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # ci, not install: exactly the lockfile, and it never rewrites it.
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      # Catches a build that only fails in a clean checkout — a missing tracked file,
+      # say. The artwork is absent here, which is fine: this proves the bundle
+      # compiles. The host checks the art is present before it builds for real.
+      - run: npm run build

@@ -281,15 +281,24 @@ the gitignored artwork and the `.env`), and it never installs the Nginx config. 
 drift is *reported* with the command to apply it, because a deploy that can rewrite
 the TLS config has a larger blast radius than the problem it solves.
 
-### Trigger on push — GitHub Actions
+### What CI does, and does not, do
 
-`.github/workflows/deploy.yml` runs typecheck, tests and a build on every push, and
-only if all three pass does it SSH in and run the script. Setup — a dedicated key,
-four repository secrets including a pinned `known_hosts`, and the sudoers rule below —
-is in the comment block at the top of that file.
+`.github/workflows/verify.yml` typechecks, tests and builds every push and pull
+request. **It does not deploy.** It exists for the one thing the timer cannot do: tell
+you a commit is broken before you notice it in production.
 
-The trade: port 22 has to be reachable from GitHub's runners, which use a wide and
-changing set of addresses.
+It briefly had a second job that SSHed in and deployed, and that was a mistake here.
+The deploy secrets were never set, so the job failed within five seconds of every push
+and emailed a failure notice each time — noise that trains you to ignore the signal the
+workflow is for. A dormant second deploy path earns nothing and costs attention.
+
+If you do want push-triggered deployment later, it is a job that writes a private key
+from a secret, pins `known_hosts`, and runs `ssh user@host 'cd /srv/coc &&
+./deploy/update.sh'` — gated on the verify job. It needs a dedicated key, four
+repository secrets, and the sudoers rule below. The version that did this is in git
+history at `9a2b550`. The trade is that port 22 must be reachable from GitHub's
+runners, which use a wide and changing set of addresses, and a key for your server then
+lives in a third-party service.
 
 ### Or trigger on a timer — no secrets, nothing exposed
 
@@ -305,10 +314,11 @@ The droplet checks every five minutes and pulls when there is something to pull.
 private key leaves your machine, nothing is held by a CI provider, and SSH need not be
 reachable from the internet at all. The cost is up to five minutes of latency.
 
-**For ten users the timer is the better trade** — immediacy is worth less than not
-having a deploy key for your server sitting in a third-party service. Actions earns
-its keep only for the test gate, which is a real advantage: the timer will happily
-deploy a commit whose tests fail.
+**The timer is the deploy path.** For ten users, immediacy is worth less than not
+having a deploy key for your server sitting in a third-party service. Note what that
+costs: the timer will happily deploy a commit whose tests fail. CI tells you the commit
+was broken, but it does not stop the timer — so if the verify workflow goes red, push
+the fix rather than assuming production is protected.
 
 ### Either way, one sudoers rule
 
