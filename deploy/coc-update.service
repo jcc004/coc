@@ -27,5 +27,29 @@ ExecStart=/srv/coc/deploy/update.sh
 # normal case and leaves one line in the journal.
 TimeoutStartSec=900
 
+# ------------------------------------------------------------------ sandboxing
+#
+# Deliberately much lighter than coc.service's, and the gaps are the point rather
+# than an oversight. This unit runs git, npm and `sudo systemctl restart coc`, so
+# three of the strongest settings are unavailable to it:
+#
+# - **NoNewPrivileges** would break `sudo`, which is the whole restart step. That
+#   single line is why this unit cannot be locked down like the app's.
+# - **ProtectHome** would hide $HOME/coc-backups, where the database backup goes.
+# - **ProtectSystem=strict** would make /srv/coc read-only, and this unit exists to
+#   write it (git merge, npm ci, vite build). `full` is the strongest that fits: /usr
+#   and /boot become read-only, which this never needs to touch.
+#
+# What is left still narrows a script that pulls code off the internet and runs it.
+ProtectSystem=full
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictRealtime=true
+LockPersonality=true
+
 [Install]
 WantedBy=multi-user.target

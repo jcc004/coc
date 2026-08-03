@@ -5,6 +5,8 @@
 #
 #   ./deploy/update.sh            # deploy if origin/main has moved
 #   ./deploy/update.sh --force    # rebuild and restart even if it has not
+#   ./deploy/update.sh --rollback # put back the last commit that deployed cleanly
+#   ./deploy/update.sh --resume   # clear the hold a rollback left, and deploy again
 #
 # Run as the user that owns the tree (crighjc), never with sudo: npm run as root
 # leaves root-owned files in node_modules that every later run then trips over.
@@ -32,7 +34,15 @@ set -euo pipefail
 shopt -s nullglob
 
 FORCE=0
-[[ "${1:-}" == "--force" ]] && FORCE=1
+ROLLBACK=0
+RESUME=0
+case "${1:-}" in
+  --force)    FORCE=1 ;;
+  --rollback) ROLLBACK=1 ;;
+  --resume)   RESUME=1 ;;
+  '')         ;;
+  *)          printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
+esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -43,9 +53,44 @@ SITE="${DEPLOY_SITE_URL:-https://coc.jcciv.com}"
 CARD_COUNT_EXPECTED=60
 BACKUP_DIR="$HOME/coc-backups"
 
+# Written after every deploy that passes its own health and bundle checks, and read
+# by --rollback. Gitignored: it describes this host, not the code.
+LAST_GOOD="$ROOT/.deploy-last-good-sha"
+
+# A rollback leaves this behind, and a normal run refuses to proceed while it
+# exists. Without it the timer would fast-forward straight back onto the commit that
+# was just rolled back, five minutes later — which is the failure mode that makes a
+# rollback feel like it did not work.
+HOLD="$ROOT/.deploy-hold"
+
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
 die()  { printf '\n\033[31m!!! %s\033[0m\n' "$*" >&2; exit 1; }
+
+# ------------------------------------------------------------------------- hold
+
+# --resume is only ever "clear the hold, then behave normally", so it is handled
+# before the hold is checked and needs nothing else of its own.
+if [[ "$RESUME" == 1 ]]; then
+  if [[ -f "$HOLD" ]]; then
+    say "Clearing the deploy hold"
+    info "was: $(cat "$HOLD")"
+    rm -f "$HOLD"
+  else
+    info "no hold in place — nothing to clear"
+  fi
+fi
+
+# The hold is checked before anything else so a held host does no work at all: no
+# fetch, no backup, no build. A timer firing every five minutes against a held
+# deploy should be almost free, and should say the same thing every time.
+if [[ -f "$HOLD" && "$ROLLBACK" == 0 ]]; then
+  say "Deploy is on hold — doing nothing"
+  info "$(cat "$HOLD")"
+  info "This host was rolled back, so it will not follow origin/$BRANCH again until"
+  info "you clear the hold. Push the fix first, then: ./deploy/update.sh --resume"
+  exit 0
+fi
 
 # ---------------------------------------------------------------- preconditions
 
@@ -100,19 +145,47 @@ for dir in leagues labels wiki; do
 done
 info "badge, label and wiki art present"
 
-# ------------------------------------------------------------------------ fetch
+# ---------------------------------------------------------- what are we deploying
+#
+# Two ways in. A rollback names a commit from this host's own history and refuses to
+# look at the remote at all; everything else follows origin/main as it always has.
+# Both converge on the same build, restart and verify path below, because a rollback
+# that took a different route to production would be a second deploy mechanism
+# tested even less than the first.
 
-say "Fetching origin/$BRANCH"
-git fetch --quiet origin "$BRANCH"
+TARGET_SHA=""
 
-local_sha="$(git rev-parse HEAD)"
-remote_sha="$(git rev-parse "origin/$BRANCH")"
-info "local  $(git log --oneline -1 HEAD)"
-info "remote $(git log --oneline -1 "origin/$BRANCH")"
+if [[ "$ROLLBACK" == 1 ]]; then
+  say "Rolling back"
 
-if [[ "$local_sha" == "$remote_sha" && "$FORCE" == 0 ]]; then
-  say "Already up to date — nothing to do"
-  exit 0
+  [[ -f "$LAST_GOOD" ]] || die "No record of a good deploy in $LAST_GOOD, so there is
+nothing to roll back to. That file is written by this script after a deploy passes
+its health and bundle checks, so a host that has only ever deployed by hand has none.
+Pick a commit yourself:  git reset --hard <sha> && ./deploy/update.sh --force"
+
+  TARGET_SHA="$(cat "$LAST_GOOD")"
+  git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null || die "$LAST_GOOD names $TARGET_SHA, which is not a commit in this checkout."
+
+  if [[ "$(git rev-parse HEAD)" == "$TARGET_SHA" ]]; then
+    say "Already on the last good commit — nothing to roll back"
+    exit 0
+  fi
+
+  info "from $(git log --oneline -1 HEAD)"
+  info "to   $(git log --oneline -1 "$TARGET_SHA")"
+else
+  say "Fetching origin/$BRANCH"
+  git fetch --quiet origin "$BRANCH"
+
+  local_sha="$(git rev-parse HEAD)"
+  remote_sha="$(git rev-parse "origin/$BRANCH")"
+  info "local  $(git log --oneline -1 HEAD)"
+  info "remote $(git log --oneline -1 "origin/$BRANCH")"
+
+  if [[ "$local_sha" == "$remote_sha" && "$FORCE" == 0 ]]; then
+    say "Already up to date — nothing to do"
+    exit 0
+  fi
 fi
 
 # ----------------------------------------------------------------------- backup
@@ -137,16 +210,52 @@ if [[ -f server/data/coc.db ]]; then
     # Newest first, drop everything past the twentieth.
     printf '%s\n' "${old_backups[@]}" | xargs -r ls -1t | tail -n +21 | xargs -r rm -f
   fi
+
+  # Offsite copy, if one is configured.
+  #
+  # Twenty backups on the same droplet protect against a bad migration and against
+  # nothing else: losing the droplet loses the accounts and the whole card season
+  # with it. BACKUP_REMOTE is any rsync destination — `user@host:path/` or a local
+  # mount — and lives in /srv/coc/.env beside the rest of the host's configuration.
+  #
+  # A failure here **warns and carries on**. An unreachable backup host is not a
+  # reason to stop deploying, and dying at this point would leave the tree pulled
+  # and the service un-restarted, which is the one state this script works hardest
+  # to avoid. The warning is the signal; silence would be the bug.
+  if [[ -n "${BACKUP_REMOTE:-}" ]]; then
+    if command -v rsync >/dev/null 2>&1; then
+      if rsync -q --timeout=30 "$BACKUP_DIR/coc-$stamp.db" "$BACKUP_REMOTE" 2>/dev/null; then
+        info "copied offsite to $BACKUP_REMOTE"
+      else
+        info "WARNING: offsite copy to $BACKUP_REMOTE failed. The local backup is fine."
+      fi
+    else
+      info "WARNING: BACKUP_REMOTE is set but rsync is not installed. No offsite copy."
+    fi
+  fi
 else
   info "no database yet — skipping"
 fi
 
 # ------------------------------------------------------------------ pull, build
 
-say "Updating the working tree"
-# --ff-only refuses on divergence instead of writing a merge commit on the server.
-git merge --ff-only "origin/$BRANCH" || die "Cannot fast-forward: '$BRANCH' has diverged from origin. Resolve by hand."
-info "now at $(git log --oneline -1 HEAD)"
+if [[ "$ROLLBACK" == 1 ]]; then
+  say "Moving the working tree back"
+  # --hard is safe here only because the precondition above proved the tree is clean
+  # apart from gitignored files, which a reset does not touch.
+  git reset --hard --quiet "$TARGET_SHA"
+  info "now at $(git log --oneline -1 HEAD)"
+
+  # Written before the build, not after: the hold has to survive a rollback whose
+  # rebuild then fails, or the timer would helpfully restore the broken commit.
+  printf 'Rolled back to %s on %s\n' "$(git log --oneline -1 HEAD)" "$(date -Is)" > "$HOLD"
+  info "deploy held — the timer will not follow origin/$BRANCH until --resume"
+else
+  say "Updating the working tree"
+  # --ff-only refuses on divergence instead of writing a merge commit on the server.
+  git merge --ff-only "origin/$BRANCH" || die "Cannot fast-forward: '$BRANCH' has diverged from origin. Resolve by hand."
+  info "now at $(git log --oneline -1 HEAD)"
+fi
 
 say "Installing dependencies"
 # ci, not install: it installs exactly the lockfile and never rewrites it, so the
@@ -243,5 +352,32 @@ if [[ -f /etc/nginx/sites-available/coc ]] && ! diff -q deploy/nginx-coc.conf /e
   info "                    sudo nginx -t && sudo systemctl reload nginx"
 fi
 
+# The same trap, for the same reason, one directory over. A `git pull` updates
+# deploy/coc.service in the repo and nothing in /etc/systemd/system, so the
+# sandboxing and the ExecStart the repo believes are in force may not be. Reported
+# rather than applied, exactly as above — installing a unit and restarting into it
+# unattended is how you find out a directive was wrong with the site already down.
+for unit in coc.service coc-update.service coc-update.timer; do
+  if [[ -f "/etc/systemd/system/$unit" ]] && ! diff -q "deploy/$unit" "/etc/systemd/system/$unit" >/dev/null 2>&1; then
+    info "NOTE: deploy/$unit differs from the installed unit."
+    info "      Review, then: sudo cp deploy/$unit /etc/systemd/system/$unit"
+    info "                    sudo systemctl daemon-reload"
+  fi
+done
+
 rm -rf "$PREV_DIST"
-say "Deployed $(git log --oneline -1 HEAD)"
+
+if [[ "$ROLLBACK" == 1 ]]; then
+  say "Rolled back to $(git log --oneline -1 HEAD)"
+  info "The deploy is held. Push the fix, then: ./deploy/update.sh --resume"
+else
+  # Recorded only here, so it names a commit that reached production and answered a
+  # health check — which is the only definition of "good" this script can actually
+  # observe. Deliberately not written after a rollback: leaving it pointing at the
+  # same commit makes a second --rollback a no-op rather than walking backwards
+  # through history one commit at a time, which is not a thing a script should do
+  # unattended.
+  git rev-parse HEAD > "$LAST_GOOD"
+  say "Deployed $(git log --oneline -1 HEAD)"
+  info "recorded as the last good deploy; ./deploy/update.sh --rollback returns here"
+fi

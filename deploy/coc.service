@@ -1,18 +1,113 @@
 [Unit]
 Description=CoC API server
 After=network.target
+# Restart tuning lives here rather than in [Service] because that is where systemd
+# reads the rate limit from. Five failures inside a minute stops the retries: a
+# crash loop that never gives up looks identical in the journal to a service that is
+# merely slow to start, and it buries the actual fault under thousands of lines.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
 User=crighjc
-WorkingDirectory=/srv/coc
-ExecStart=/usr/bin/npm start
+# Still the human user. Moving to a dedicated `coc` account is a real improvement
+# and is written up in deploy/README.md under "A dedicated service user" — it needs
+# a chown of the database directory in the same step, which is why it is not simply
+# switched here: copying this file with a User= that does not own the data directory
+# would start a server unable to write.
+#
+# What ProtectHome=true below already closes is the concrete risk of running as a
+# person: this process can no longer read that user's home directory, so an
+# exploited app cannot reach ~/.ssh.
+
+# The server workspace, because DATABASE_PATH defaults to ./data/coc.db and that has
+# always resolved to /srv/coc/server/data/coc.db — npm ran the start script with the
+# workspace as its cwd. Keeping the same cwd keeps the same database file.
+WorkingDirectory=/srv/coc/server
+
+# tsx directly, not `npm start`.
+#
+# It used to be `npm start`, which shelled out through npm to exactly this command.
+# The indirection cost two things worth having: npm wants a writable home for its
+# cache and log directory, which is incompatible with ProtectHome=true below, and it
+# puts a package manager in the runtime path of a service that needs to run one
+# file. Verified to start the server and answer /api/health on its own.
+#
+# The by-hand equivalent, if this ever needs debugging: cd /srv/coc && npm start
+ExecStart=/srv/coc/node_modules/.bin/tsx --env-file-if-exists=/srv/coc/.env /srv/coc/server/src/index.ts
+
 Restart=on-failure
-# The app reads /srv/coc/.env itself (via tsx --env-file-if-exists), so no
-# EnvironmentFile is needed here. NODE_ENV=production belongs in that .env, and
-# marks the session cookie Secure — correct, since Nginx serves HTTPS only and
-# redirects port 80. The API listens on 127.0.0.1:8787 behind Nginx and is never
-# exposed directly.
+RestartSec=2
+
+# The app reads /srv/coc/.env itself (via the --env-file flag above), so no
+# EnvironmentFile is needed here. Three things in that file matter to this unit:
+#
+# - NODE_ENV=production marks the session cookie Secure — correct, since Nginx
+#   serves HTTPS only and redirects port 80.
+# - TRUST_PROXY=true tells the app that X-Real-IP and the last hop of
+#   X-Forwarded-For come from Nginx and may be believed. Without it the app falls
+#   back to the socket address, which behind a proxy is always the proxy — and the
+#   login rate limiter would then file every caller under one shared key.
+# - HOST is not normally set: the app binds 127.0.0.1 by default, so it really is
+#   unreachable except through Nginx. It used to bind every interface while the
+#   comment here claimed otherwise, and the firewall was the only thing making that
+#   claim true.
+
+# ------------------------------------------------------------------ sandboxing
+#
+# None of this was here before. It is the cheapest hardening available to a service
+# that needs one directory, one loopback port and outbound HTTPS. Inspect it with:
+#   systemd-analyze security coc.service
+
+# No setuid binary can gain privilege from this process. Also the reason the
+# *update* unit cannot have this line: that one has to run `sudo systemctl restart`.
+NoNewPrivileges=true
+
+# The whole filesystem is read-only except what is named below — /srv/coc included,
+# so the code this service runs cannot be rewritten by the service.
+ProtectSystem=strict
+# The SQLite database, its WAL and its shared-memory file: the only thing the app
+# writes anywhere.
+ReadWritePaths=/srv/coc/server/data
+
+# Home directories become empty, which is what stops this process reading the
+# operating user's ~/.ssh. The app has never needed a home directory.
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+
+# Outbound HTTPS to the Clash of Clans API and a loopback listener. Nothing else —
+# no raw sockets, no netlink.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# New files — the database and its WAL — readable by their owner alone. The database
+# holds password hashes, and the default 0022 would have made it world-readable.
+UMask=0077
+
+# MemoryDenyWriteExecute is deliberately NOT set. It is the usual next line in a
+# list like this one, and it would stop the server booting: V8 writes and then
+# executes its own JIT output, so every Node process needs W+X memory. Setting it
+# gives a crash loop whose message points nowhere near this file.
 
 [Install]
 WantedBy=multi-user.target

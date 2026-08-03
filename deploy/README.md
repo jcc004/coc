@@ -50,11 +50,34 @@ session cookies cross the network in clear text.
 
 ## Files
 
-- `coc.service` — systemd unit for the Node/Hono API (runs `npm start`, which
-  launches the server workspace via `tsx`).
+- `coc.service` — systemd unit for the Node/Hono API. Runs `tsx` directly (it used
+  to go through `npm start`; npm wants a writable home directory, which the
+  sandboxing below forbids) and is sandboxed with `ProtectSystem=strict`,
+  `ProtectHome=true` and the rest.
+- `coc-update.service` / `coc-update.timer` — the pull-based deploy: every five
+  minutes the droplet checks `origin/main` and runs `update.sh` if it has moved.
+  Sandboxed much more lightly, and the unit says why.
 - `nginx-coc.conf` — Nginx site: HTTPS on 443 serving the built SPA from
   `web/dist`, proxying `/api` to `127.0.0.1:8787`, with an HTTP server block
-  that only redirects and serves ACME challenges.
+  that only redirects and serves ACME challenges. Also carries the security
+  headers and the two request-rate zones.
+- `update.sh` — **is** the deploy. Also `--rollback`, `--resume` and `--force`.
+- `update-test.sh` — tests for `update.sh`, against a throwaway tree with `sudo`,
+  `npm`, `curl` and `rsync` stubbed. Run it before changing the deploy script:
+
+  ```bash
+  ./deploy/update-test.sh      # 35 checks, touches nothing real
+  ```
+
+- `nginx-test.sh` — serves `nginx-coc.conf` for real in a container and checks what
+  it *does*: that the login throttle fires, that an ordinary page render is not
+  throttled, and that the security headers reach API responses as well as the SPA.
+  Needs Docker, skips cleanly without it.
+
+  ```bash
+  ./deploy/nginx-test.sh       # 12 checks; `nginx -t` on the droplet is still the gate
+  ```
+
 - `.env.production.example` — template for `/srv/coc/.env` on the server.
 
 ## Sequence (on the droplet, as `crighjc`)
@@ -64,7 +87,9 @@ session cookies cross the network in clear text.
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs git nginx certbot python3-certbot-nginx
 
-# Firewall: 443 for the app, 80 for redirects and certificate renewal
+# Firewall: 443 for the app, 80 for redirects and certificate renewal.
+# The API's own port is deliberately absent: it binds 127.0.0.1, so it is not
+# reachable from outside regardless — the firewall is the second lock, not the first.
 sudo ufw allow 80,443/tcp && sudo ufw allow OpenSSH && sudo ufw enable
 
 # Code — lives in /srv/coc (world-traversable, so no chmod on the app dir)
@@ -74,9 +99,11 @@ npm install          # includes tsx (a runtime dep) — do NOT use --omit=dev
 
 # Environment
 cp deploy/.env.production.example .env
+chmod 600 .env       # NOT optional — see "The .env is a credential" below
 # edit .env: paste the CoC token minted for the droplet's OUTBOUND IP — see the
 # two-addresses note above; it is NOT the reserved IP — then set ADMIN_PASSWORD
-# (fresh install only), and for now COMMENT OUT NODE_ENV=production (TLS note below)
+# (fresh install only), set TRUST_PROXY=true (Nginx is in front), and for now
+# COMMENT OUT NODE_ENV=production (TLS note below)
 
 # Build — imageless for now; the art is fetched AFTER launch (see below)
 npm run build        # -> web/dist (no art yet)
@@ -118,6 +145,48 @@ Then open `https://coc.jcciv.com` and log in.
 It marks the session cookie `Secure`, and a `Secure` cookie is never sent back
 over plain http. Set it before the certificate is working and login fails
 silently with nothing useful in the logs. Certificate first, then this.
+
+### `TRUST_PROXY=true` is not cosmetic
+
+Set it whenever Nginx is in front, and never when it is not.
+
+The login rate limiter counts failures per client address, and it is the only real
+bound on a request that costs the server ~40 ms of password hashing *whether or not
+the account exists* — the equal cost is deliberate, and it is what stops a caller
+telling a real account from a fake one by timing the answer. Behind a proxy the
+socket address is the proxy's, so the client's address has to come from a header,
+and the app has to be told the header is trustworthy:
+
+| | behind Nginx | exposed directly |
+| --- | --- | --- |
+| `TRUST_PROXY=true` | correct — real client address, per-caller limits | broken — the caller sends the header, so it picks its own bucket and the limit never fires |
+| unset | degraded — every caller looks like the proxy, shares one bucket, so one person's failures lock out everybody | correct — the socket address is the real one |
+
+The app defaults to off, which fails in the safe direction. Nginx sets `X-Real-IP`
+and appends the real peer to `X-Forwarded-For`; the app prefers the former and reads
+the **last** hop of the latter. It used to read the first hop — the part a client
+supplies — which meant the per-address limit could be sidestepped by sending a
+header, and that is the finding this setting exists to close.
+
+### The `.env` is a credential
+
+`chmod 600 /srv/coc/.env`. It holds the CoC API token, and on a fresh install the
+first admin password. It was mode `644` — readable by every account on the box —
+and the app directory being world-traversable by design is exactly why the file
+itself has to be closed:
+
+```bash
+chmod 600 /srv/coc/.env
+ls -l /srv/coc/.env          # -rw------- 1 crighjc crighjc
+```
+
+The systemd unit also sets `UMask=0077`, so the SQLite database and its WAL are
+created owner-only from now on. Files created before that keep their old mode:
+
+```bash
+chmod 600 /srv/coc/server/data/coc.db*
+chmod 700 ~/coc-backups          # password hashes, and until recently live session tokens
+```
 
 ## Renewal
 
@@ -233,8 +302,203 @@ cp server/data/coc.db* ~/backup-$(date +%F)/
 ```
 
 > `nginx-coc.conf` sets `client_max_body_size 10M` as a plain ceiling on request
-> bodies — nothing the app serves comes close. If a route ever needs more, raise
-> the server-side limit to match rather than relying on Nginx alone.
+> bodies — nothing the app serves comes close. The app now enforces its own,
+> smaller limit as well (a request-size check on `/api/*` in `server/src/app.ts`),
+> which is what the older version of this note asked for and could not point at.
+> The inner limit is the tighter of the two, so raising the Nginx one alone changes
+> nothing.
+
+## Hardening
+
+Everything in this section is applied by copying files this repo already contains.
+None of it is optional-but-nice; each item closes something a review found.
+
+### Read this before the first restart: three migrations run, and one signs everyone out
+
+Restarting the service is what applies pending migrations, and this change carries
+three. Production is at **v7**; the head is **v10**.
+
+| | What it does | What you will notice |
+| --- | --- | --- |
+| **v8** | Re-keys `sessions` on `sha256(token)` instead of the token itself, and **deletes every existing session row** | **Everybody signs in again, once.** |
+| **v9** | Drops the unused `chat_messages` table | Nothing. It had no reader anywhere in the app. |
+| **v10** | Adds the append-only `auth_events` table | Nothing yet; it starts recording from that boot. |
+
+**The sign-out is the point of v8, not a side effect.** The old rows *are* bearer
+tokens: anyone who could read `coc.db` — or any of the twenty unencrypted copies in
+`~/coc-backups` — held working 30-day sessions for every account. Rehashing them in
+place would have kept exactly those tokens valid, so they go. Tell people, or ten
+users hit a login screen with no explanation.
+
+Back up first, as always, and note that the backup is also your only way back: a
+migration only moves forward, so `./deploy/update.sh --rollback` restores the *code*
+and leaves the schema at v10.
+
+```bash
+sqlite3 /srv/coc/server/data/coc.db "PRAGMA user_version;"   # 7 before, 10 after
+sudo systemctl restart coc
+journalctl -u coc -n 20 --no-pager    # the startup line names the schema version
+```
+
+The startup line now also reports the bound address and whether forwarded headers
+are trusted, e.g. `API listening on http://127.0.0.1:8787 (cache TTL 60s, db
+/srv/coc/server/data/coc.db at schema v10, trusting forwarded headers)`. If it says
+*ignoring* forwarded headers on the droplet, `TRUST_PROXY=true` is missing from
+`/srv/coc/.env` — see below for why that matters.
+
+One thing v8 does **not** fix: those backups still contain password hashes and every
+row of shared data. `chmod 700 ~/coc-backups` is the floor; encrypting them is a
+separate job.
+
+### The service is sandboxed now
+
+`coc.service` gained `ProtectSystem=strict`, `ProtectHome=true`, `NoNewPrivileges`,
+an empty capability set, a syscall filter and `UMask=0077`. Two consequences worth
+knowing before you install it:
+
+- **`ExecStart` no longer goes through npm.** It calls `tsx` directly, because npm
+  wants a writable home directory for its cache and log files and `ProtectHome=true`
+  denies that. It is the same command npm was running.
+- **`ProtectHome=true` is the point of the exercise.** The service runs as
+  `crighjc`, a human account with an `~/.ssh` in it. The app never needed a home
+  directory, and now it cannot read one.
+
+`MemoryDenyWriteExecute` is deliberately absent, and the unit says so in place: V8
+writes and then executes its own JIT output, so setting it gives a crash loop whose
+message points nowhere near systemd.
+
+```bash
+sudo cp deploy/coc.service /etc/systemd/system/coc.service
+sudo cp deploy/coc-update.service /etc/systemd/system/coc-update.service
+sudo systemctl daemon-reload
+sudo systemctl restart coc
+
+# Prove it came back before you walk away
+systemctl is-active coc
+curl -fsS http://127.0.0.1:8787/api/health && echo
+
+# And that the database is still writable through the sandbox — a read-only
+# ReadWritePaths mistake looks fine until somebody tries to save a card count
+journalctl -u coc -n 30 --no-pager
+
+# What the sandbox is actually worth
+systemd-analyze security coc.service | head -20
+```
+
+If the service fails to start, the sandbox is the first suspect and
+`ReadWritePaths` is the first line to check: it names `/srv/coc/server/data`, which
+is where `DATABASE_PATH` resolves to given `WorkingDirectory=/srv/coc/server`. Move
+the database and that line has to move with it.
+
+The update unit is sandboxed far more lightly, on purpose. It runs `git`, `npm` and
+`sudo systemctl restart` — and `NoNewPrivileges=true` would break the `sudo`, which
+is the whole restart step. The unit lists which settings it cannot have and why.
+
+### A dedicated service user
+
+The stronger version of the above, and the one thing here that is not just a file
+copy: run the app as an account that owns nothing but the app.
+
+```bash
+sudo useradd --system --home-dir /srv/coc --shell /usr/sbin/nologin coc
+sudo chown -R coc:coc /srv/coc/server/data
+sudo chown coc:coc /srv/coc/.env          # it is read by the service, not by you
+sudo sed -i 's/^User=crighjc$/User=coc/' /etc/systemd/system/coc.service
+sudo systemctl daemon-reload && sudo systemctl restart coc
+curl -fsS http://127.0.0.1:8787/api/health && echo
+```
+
+Two things this does **not** move, deliberately: the deploy still runs as `crighjc`
+(it needs to write the checkout and hold the git credentials), and `~/coc-backups`
+stays that user's. So `coc` gets the database and the token and nothing else.
+
+`User=` is left as `crighjc` in the committed unit rather than pre-switched, because
+copying a unit whose `User=` does not own the data directory starts a server that
+cannot write — a failure that looks like a code bug.
+
+### Nginx: headers and rate limits
+
+`nginx-coc.conf` gained a Content-Security-Policy, `server_tokens off`, a year-long
+HSTS (it was a day, as a deliberate starting point), and **two request-rate zones**.
+The login one is the important one: unthrottled login attempts are a denial of
+service, because each costs the single-threaded server ~40 ms of scrypt and the
+app's own per-email limiter is bypassed by rotating throwaway addresses. The file
+explains the arithmetic where the zones are declared.
+
+```bash
+sudo cp deploy/nginx-coc.conf /etc/nginx/sites-available/coc
+sudo nginx -t                     # ALWAYS first: it refuses a broken config
+sudo systemctl reload nginx       # only if -t passed
+```
+
+`nginx -t` is not a formality here. The `limit_req_zone` directives sit at file
+scope because they are only valid in the `http` context, and this file is included
+from inside it — a detail that is either right or the whole config is rejected.
+
+That much has been checked: `./deploy/nginx-test.sh` serves this config unedited
+against nginx 1.30.4 and asserts the behaviour, not just the syntax. It measured one
+thing worth knowing — `burst=5` admits **six** attempts back to back, not five,
+because nginx allows the burst plus the one the rate itself permits. `nginx -t` on
+the droplet is still the gate, because the droplet's nginx version and the real
+certificate paths are the two things a container cannot stand in for.
+
+Then confirm the headers are actually being sent, and that a real login still works:
+
+```bash
+curl -sI https://coc.jcciv.com/ | grep -iE 'content-security-policy|strict-transport|x-frame|x-content|referrer'
+
+# The login throttle: the 6th request inside a minute should be 429, not 401
+for i in $(seq 1 7); do
+  curl -s -o /dev/null -w "$i:%{http_code} " -X POST https://coc.jcciv.com/api/auth/login \
+    -H 'Content-Type: application/json' -d '{"email":"nobody@example.com","password":"wrong-on-purpose"}'
+done; echo
+```
+
+Expect `1:401 … 6:401 7:429` — six attempts through, then the zone. (Six, not five:
+see the note above.) **Then wait a minute before signing in yourself**, or the
+throttle you just proved works will meet you at the door.
+
+If the CSP breaks an image or a style, the browser console names the directive and
+the blocked URL. The likely candidate is `img-src`: clan badges come from
+API-supplied CDN URLs, and any league or label icon newer than the last
+`npm run assets:coc` falls back to the same host.
+
+### Offsite backups
+
+`update.sh` keeps twenty database backups in `~/coc-backups`, which protects against
+a bad migration and against nothing else — losing the droplet loses the accounts and
+the whole card season. Set `BACKUP_REMOTE` in `/srv/coc/.env` to any rsync
+destination and each backup is copied there too:
+
+```bash
+# in /srv/coc/.env
+BACKUP_REMOTE=backup@example.com:/srv/coc-backups/
+```
+
+A failure warns and lets the deploy continue: an unreachable backup host is not a
+reason to stop shipping, and dying at that point would leave the tree pulled and the
+service un-restarted. The backup contains password hashes, so send it somewhere you
+would be comfortable storing those, and `chmod 700` the destination.
+
+### Monitoring is still the open gap
+
+Nothing here notices that the site is down. The timer logs to the journal, and a
+crash-looping service or a failed deploy surfaces when somebody opens the app.
+`Restart=on-failure` with `StartLimitBurst=5` at least stops a crash loop burying
+the real error under thousands of journal lines.
+
+This is the one item on the list that cannot be fixed from inside the droplet: a
+box cannot credibly monitor itself. The proportionate answer for a ten-person app is
+an external check on `https://coc.jcciv.com/api/health` — a free uptime service, or
+a cron job on any other machine you own:
+
+```bash
+*/5 * * * * curl -fsS --max-time 10 https://coc.jcciv.com/api/health >/dev/null || \
+  echo "coc is down at $(date -Is)" | mail -s 'coc down' you@example.com
+```
+
+`/api/health` is public precisely so a probe can reach it, and it answers `{"ok":
+true}` without a session — the cache size is only added for a signed-in caller.
 
 ## Automating it
 
@@ -243,12 +507,58 @@ behaves identically, because all the judgement lives in the script rather than i
 whatever triggered it.
 
 ```bash
-cd /srv/coc && ./deploy/update.sh          # deploy if origin/main has moved
-cd /srv/coc && ./deploy/update.sh --force  # rebuild and restart regardless
+cd /srv/coc && ./deploy/update.sh            # deploy if origin/main has moved
+cd /srv/coc && ./deploy/update.sh --force    # rebuild and restart regardless
+cd /srv/coc && ./deploy/update.sh --rollback # back to the last commit that deployed cleanly
+cd /srv/coc && ./deploy/update.sh --resume   # clear the hold a rollback left
 ```
 
 Safe to run repeatedly: with nothing new upstream it prints one line and exits 0,
 which is what makes it usable on a timer.
+
+### Rolling back
+
+Until recently there was no rollback, and recovery from a bad commit was another
+commit. With a timer that deploys `origin/main` unreviewed within five minutes, that
+is a thin plan.
+
+Each successful deploy now records its commit in `.deploy-last-good-sha` — recorded
+only after the service came back and answered a health check, which is the only
+definition of "good" the script can actually observe. `--rollback` returns to it:
+
+```bash
+cd /srv/coc && ./deploy/update.sh --rollback
+```
+
+It backs the database up first, resets the tree to that commit, rebuilds, restarts
+and re-verifies the served bundle — the same path a forward deploy takes, because a
+rollback that went a different way to production would be a second deploy mechanism,
+tested even less than the first.
+
+**Then it writes `.deploy-hold`, and this is the part that makes it work.** Without
+it the timer would fast-forward straight back onto the commit you just rolled back,
+five minutes later — which is exactly how a rollback comes to feel like it did
+nothing. While the hold is in place every timer run prints one line and exits
+without so much as fetching.
+
+So the full recovery is:
+
+```bash
+./deploy/update.sh --rollback   # site is good again, host is held
+# ...fix the bug, push it to main...
+./deploy/update.sh --resume     # clears the hold and deploys what is now on main
+```
+
+Two limits worth stating plainly. `--rollback` goes back exactly one good release,
+not two — a second run reports "already on the last good commit" rather than walking
+backwards through history unattended; go further by hand with
+`git reset --hard <sha> && ./deploy/update.sh --force`. And it rolls back **code, not
+data**: a migration that already ran stays applied, because migrations only move
+forward. If the bad commit migrated the schema, the rollback target is the backup
+in `~/coc-backups` taken moments before it, not the git history.
+
+All of this is covered by `./deploy/update-test.sh`, including that a held host
+really does nothing and that `--resume` picks the fix up.
 
 ### What it refuses to do
 

@@ -14,3 +14,15 @@ data/
 *.log
 .DS_Store
 .vite/
+
+# Deploy state, written by deploy/update.sh on the host it runs on. Both describe
+# one machine's history rather than the code, so committing either would mean one
+# host's rollback target following the repo onto another.
+#   .deploy-last-good-sha — the last commit that deployed and answered a health check
+#   .deploy-hold          — present while a rollback is holding this host back
+.deploy-last-good-sha
+.deploy-hold
+
+# The snapshot update.sh takes of web/dist before a build, so a failed build or a
+# failed health check has something known-good to put back. Removed on success.
+web/dist.prev-*/
