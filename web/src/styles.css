@@ -328,22 +328,25 @@ select {
   position: relative;
 }
 
-/* Square, so a head-and-shoulders glyph is not stretched, and 40px on a side — above
-   the 44px target the rest of the app holds to once its padding is counted. */
+/*
+ * Square, so a head-and-shoulders glyph is not stretched, and 40px on a side.
+ *
+ * **Geometry only. The colours are in the gold-banner block below**, with the other
+ * controls that sit on the plate. This rule first carried `--surface` and `--hover`,
+ * which are the stone-panel roles: `--hover` is a translucent wash meant to sit *over*
+ * a solid surface, so using it as the whole background dropped the fill and let the
+ * banner through. In light mode that still happened to contrast; in dark mode, where
+ * the wash is `rgba(244, 233, 208, 0.07)`, the button disappeared into the gold on
+ * hover. A control on the banner needs the banner's treatment.
+ */
 .user-menu__button {
   display: grid;
   place-items: center;
   width: 40px;
   height: 40px;
   padding: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
   border-radius: 999px;
-  color: var(--ink-2);
   cursor: pointer;
-}
-.user-menu__button:hover {
-  background: var(--hover);
 }
 
 .user-menu__glyph {
@@ -1933,15 +1936,25 @@ table.roster th button:hover {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
-/* On gold, the chrome buttons need their own treatment — the stone one below
-   would disappear into the banner. */
-.topbar .icon-button {
+/*
+ * On gold, the chrome buttons need their own treatment — the stone one below would
+ * disappear into the banner.
+ *
+ * The wash is **white over gold**, not a theme token, and that is the point: it lifts
+ * against the plate identically in light and dark, because the plate is the same gold
+ * in both. The account silhouette is on this list rather than styled separately — it
+ * is a sibling of Clan and Cards on the same plate, and it should lift the same way
+ * when the cursor is over it.
+ */
+.topbar .icon-button,
+.user-menu__button {
   color: var(--on-gold);
   background: rgba(255, 255, 255, 0.28);
-  border-color: var(--gold-edge);
+  border: 1px solid var(--gold-edge);
   font-weight: 600;
 }
-.topbar .icon-button:hover {
+.topbar .icon-button:hover,
+.user-menu__button:hover {
   background: rgba(255, 255, 255, 0.45);
 }
 
