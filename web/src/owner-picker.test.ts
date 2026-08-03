@@ -36,6 +36,73 @@ const linked = (tag: string, owner: string, ownerUserId: number): OwnerRecord =>
 
 const legacy = (tag: string, owner: string): OwnerRecord => ({ tag, owner, ownerUserId: null })
 
+/*
+ * The claim these pin down, because it was asked directly and because the bulk
+ * control used to break it: **every name a picker offers belongs to an account on
+ * this server.** Legacy free text is displayable and filterable but never
+ * selectable, since assigning one would create a base whose owner names a person and
+ * grants nobody anything — not even the right to edit that base's card counts.
+ */
+describe('ownerOptions offers accounts and nothing else', () => {
+  const accounts = [account(1, 'Anna'), account(2, 'Bert'), account(3, 'Carl')]
+
+  it('offers exactly the accounts it is given', () => {
+    assert.deepEqual(
+      ownerOptions(accounts).map((option) => option.label),
+      ['Anna', 'Bert', 'Carl'],
+    )
+  })
+
+  it('offers nothing at all when there are no accounts', () => {
+    // A member never fetches the account list, so this is the non-admin case too:
+    // an empty list, never a fallback to free text.
+    assert.deepEqual(ownerOptions([]), [])
+  })
+
+  it('never invents an option from a legacy label', () => {
+    // The label 'Turtle' exists in the data and matches no account. It must not
+    // appear among the options however the cell renders it.
+    const cell = ownerCellFor(legacy('#A', 'Turtle'), accounts)
+    assert.equal(cell.kind, 'legacy')
+    assert.equal(
+      ownerOptions(accounts).some((option) => option.label === 'Turtle'),
+      false,
+    )
+  })
+
+  it('carries a userId on every option, so a choice is an account and not a name', () => {
+    // This is what makes the write `PUT /api/owners/:tag {userId}` rather than text.
+    for (const option of ownerOptions(accounts)) {
+      assert.equal(typeof option.userId, 'number')
+      assert.ok(option.userId > 0, `${option.label} needs a real account id`)
+    }
+  })
+
+  it('leaves out a disabled account, which could not sign in to use the base', () => {
+    const withDisabled = [...accounts, account(4, 'Dana', '2026-08-01T00:00:00.000Z')]
+    assert.equal(
+      ownerOptions(withDisabled).some((option) => option.label === 'Dana'),
+      false,
+    )
+  })
+
+  it('keeps a disabled account when it is the row’s current owner', () => {
+    // Otherwise the list could not represent what the cell already shows, and the
+    // row would silently redraw as somebody else.
+    const withDisabled = [...accounts, account(4, 'Dana', '2026-08-01T00:00:00.000Z')]
+    const options = ownerOptions(withDisabled, { userId: 4, label: 'Dana' })
+    assert.equal(options.some((option) => option.userId === 4), true)
+  })
+
+  it('represents a current owner whose account has since been deleted', () => {
+    const options = ownerOptions(accounts, { userId: 99, label: 'Gone' })
+    assert.deepEqual(
+      options.find((option) => option.userId === 99),
+      { userId: 99, label: 'Gone' },
+    )
+  })
+})
+
 describe('foldOwnerName', () => {
   it('folds case, spacing and punctuation to one form', () => {
     for (const written of ['lisa sweatt', 'Lisa Sweatt', 'lisa_sweatt', 'Lisa-Sweatt', '  LISA   sweatt  ']) {

@@ -54,7 +54,6 @@ import {
 import { TagButton } from './TagButton.tsx'
 
 /** The bulk bar's suggestions: **account** display names, not labels in use. */
-const ACCOUNT_LIST_ID = 'owner-accounts'
 
 /**
  * The value the picker shows for a row whose owner is a pre-accounts label. It is
@@ -508,14 +507,34 @@ function RosterTable({ members, user }: { members: ClanMember[]; user: SessionUs
             {selected.length} selected
             {offPage > 0 ? ` · ${offPage} not shown` : ''}
           </span>
-          <input
+          {/*
+             A select over accounts, not a text box.
+
+             It used to be free text with a `datalist` of names already in use — which
+             constrained nothing (a datalist only suggests) and *offered* the legacy
+             labels, so the quickest way to create a brand-new unlinked owner was to
+             accept one of its own suggestions. The server stores unmatched text with
+             no `ownerUserId`, so that produced a base whose owner names a person and
+             grants nobody anything, including the right to edit its card counts.
+
+             Same options as the per-row picker, from the same `ownerOptions` call, so
+             the two controls cannot disagree about who may own a base. The value is
+             still the display name because `POST /api/owners/bulk` takes text — but it
+             is now always an exact account name, which is what makes the server's
+             lookup resolve instead of falling back to a label.
+          */}
+          <select
             value={bulkOwner}
             onChange={(event) => setBulkOwner(event.target.value)}
-            placeholder="Set owner (blank to clear)"
             aria-label="Owner to apply to selected members"
-            list={ACCOUNT_LIST_ID}
-            autoComplete="off"
-          />
+          >
+            <option value="">No owner (clear)</option>
+            {ownerOptions(accounts).map((option) => (
+              <option key={option.userId} value={option.label}>
+                {option.label}
+              </option>
+            ))}
+          </select>
           <button type="button" onClick={() => void applyOwnerToSelected()} disabled={busy}>
             {busy ? 'Applying…' : 'Apply to selected'}
           </button>
@@ -780,8 +799,31 @@ function RosterTable({ members, user }: { members: ClanMember[]; user: SessionUs
                   <a href={hrefFor({ view: 'player', tag: row.tag })}>{row.name}</a>{' '}
                   <span className="role-pill">{ROLE_LABELS[row.role]}</span>
                 </td>
+                {/*
+                 * An admin gets the picker, everybody else the label.
+                 *
+                 * This cell used to print `row.owner` — the raw stored text — for
+                 * everyone, which is how two people came to disagree about who owns a
+                 * base: an account-linked owner and a pre-accounts label look identical
+                 * as bare text, and only the first grants its owner the right to edit
+                 * that base's card counts. `ownerCellFor` draws the distinction, and
+                 * both components below render it rather than restating it.
+                 *
+                 * `accounts` is empty for a non-admin, which `ownerCellFor` handles: the
+                 * label comes from the assignment and is readable by anyone, so an empty
+                 * list costs only the "did you mean this account" suggestion.
+                 */}
                 <td role="cell" data-label={rosterColumnLabel('owner')}>
-                  {row.owner ?? <span className="role-pill">—</span>}
+                  {isAdmin ? (
+                    <OwnerPicker
+                      tag={row.tag}
+                      name={row.name}
+                      cell={ownerCellFor(ownerByTag.get(row.tag), accounts)}
+                      accounts={accounts}
+                    />
+                  ) : (
+                    <OwnerText cell={ownerCellFor(ownerByTag.get(row.tag), accounts)} />
+                  )}
                 </td>
                 {/* Badge only — sorting still reads `row.townHallLevel`, untouched. */}
                 <td className="num" role="cell" data-label={rosterColumnLabel('townHallLevel')}>
@@ -830,12 +872,6 @@ function RosterTable({ members, user }: { members: ClanMember[]; user: SessionUs
         />
         <Pager view={view} noun="members" onPage={setPage} />
       </div>
-
-      <datalist id={ACCOUNT_LIST_ID}>
-        {ownerNames.map((name) => (
-          <option key={name} value={name} />
-        ))}
-      </datalist>
     </>
   )
 }

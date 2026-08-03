@@ -1005,6 +1005,38 @@ a.chip {
   color: var(--ink-2);
 }
 
+/*
+ * Whose base this is, under the member name.
+ *
+ * Set apart from `.profile__meta` below it on purpose: that line is game facts and
+ * this is a fact about who plays the base, which is a different kind of claim and the
+ * one people were getting wrong.
+ *
+ * Three states, and none of them relies on colour alone — each carries words. The
+ * legacy case takes `--warning` because it is the one that needs acting on: a name
+ * with no account behind it grants nobody the write. `--critical` would overstate it;
+ * nothing is broken, it is just unfinished.
+ */
+.profile__owner {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.profile__owner strong {
+  color: var(--ink);
+}
+.profile__owner--none {
+  color: var(--ink-muted);
+}
+.profile__owner--legacy {
+  border-left: 2px solid var(--warning);
+  padding-left: 8px;
+}
+.profile__owner-note {
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
 .profile__meta {
   color: var(--ink-2);
   font-size: 13px;

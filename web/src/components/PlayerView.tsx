@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { ROLE_LABELS, type Player, type PlayerItemLevel, type SessionUser } from '@coc/shared'
 import { api } from '../api.ts'
+import { ownerCellFor } from '../owner-picker.ts'
+import { ownerRecordFor, useOwners } from '../owners.ts'
 import { labelIcon, leagueIcon } from '../coc-assets.ts'
 import { formatFull, formatStat, ratio } from '../format.ts'
 import { hrefFor, useAsync, type Recent } from '../hooks.ts'
@@ -17,6 +19,58 @@ import {
   TownHallBadge,
 } from './primitives.tsx'
 import { TagButton } from './TagButton.tsx'
+
+/**
+ * Whose base this is, beside the member name.
+ *
+ * The owner was only discoverable here by opening the card panel and reading a
+ * refusal message — which is how two people came to disagree about who plays a base.
+ * It belongs next to the name, because "who is this?" and "whose is it?" are the same
+ * question asked of the same row.
+ *
+ * The three states come from `ownerCellFor`, the same tested rule the roster's picker
+ * uses, so the player page and the clan page cannot disagree about what a cell means.
+ * The distinction that matters is the third one: a **legacy label** is free text
+ * somebody typed before accounts existed. It names a person but grants nobody
+ * anything — not even the right to edit that base's card counts — so it is marked
+ * rather than shown as though it were an assignment. That is precisely the confusion
+ * this badge exists to end, so blurring it here would defeat the point.
+ *
+ * `accounts` is deliberately empty: `GET /api/admin/users` is admin-only, and the
+ * label comes from the assignment, which everybody may read. An empty list only costs
+ * the "did you mean this account" suggestion, which belongs on the admin's picker
+ * rather than here.
+ */
+function OwnerBadge({ tag }: { tag: string }) {
+  const cell = ownerCellFor(ownerRecordFor(useOwners(), tag), [])
+
+  if (cell.kind === 'unassigned') {
+    return (
+      <p className="profile__owner profile__owner--none">
+        No owner set — ask an admin to assign this base
+      </p>
+    )
+  }
+
+  if (cell.kind === 'legacy') {
+    return (
+      <p className="profile__owner profile__owner--legacy">
+        Owner <strong>{cell.label}</strong>
+        <span className="profile__owner-note">
+          {' '}
+          · a name typed before accounts existed, so it is not linked to one. Only an admin can
+          edit this base's cards until it is.
+        </span>
+      </p>
+    )
+  }
+
+  return (
+    <p className="profile__owner">
+      Owner <strong>{cell.label}</strong>
+    </p>
+  )
+}
 
 function homeVillage(items: PlayerItemLevel[] | undefined): PlayerItemLevel[] {
   return (items ?? []).filter((item) => item.village === 'home')
@@ -89,6 +143,10 @@ export function PlayerView({
           <div className="profile__main">
             <h1 className="profile__name">{player.name}</h1>
             <TagButton tag={player.tag} />
+            {/* Under the name rather than inside the meta line below: that line is
+                game facts — Town Hall, level, clan — and ownership is a fact about
+                this install, not about the player. */}
+            <OwnerBadge tag={player.tag} />
             <div className="profile__meta">
               <TownHallBadge
                 level={player.townHallLevel}
