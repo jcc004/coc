@@ -26,7 +26,7 @@ session cookies cross the network in clear text.
 - `nginx-coc.conf` — Nginx site: HTTPS on 443 serving the built SPA from
   `web/dist`, proxying `/api` to `127.0.0.1:8787`, with an HTTP server block
   that only redirects and serves ACME challenges.
-- `.env.production.example` — template for `~/coc/.env` on the server.
+- `.env.production.example` — template for `/srv/coc/.env` on the server.
 
 ## Sequence (on the droplet, as `jcc`)
 
@@ -38,8 +38,9 @@ sudo apt-get install -y nodejs git nginx certbot python3-certbot-nginx
 # Firewall: 443 for the app, 80 for redirects and certificate renewal
 sudo ufw allow 80,443/tcp && sudo ufw allow OpenSSH && sudo ufw enable
 
-# Code
-cd ~ && git clone <your-repo-url> coc && cd coc
+# Code — lives in /srv/coc (world-traversable, so no chmod on the app dir)
+sudo mkdir -p /srv/coc && sudo chown jcc:jcc /srv/coc
+git clone <your-repo-url> /srv/coc && cd /srv/coc
 npm install          # includes tsx (a runtime dep) — do NOT use --omit=dev
 
 # Game art. Both are required BEFORE the build: the art is gitignored, and
@@ -66,7 +67,6 @@ sudo mkdir -p /var/www/certbot
 sudo cp deploy/nginx-coc.conf /etc/nginx/sites-available/coc
 sudo ln -sf /etc/nginx/sites-available/coc /etc/nginx/sites-enabled/coc
 sudo rm -f /etc/nginx/sites-enabled/default
-chmod o+x /home/jcc
 sudo certbot certonly --webroot -w /var/www/certbot -d coc.jcciv.com
 sudo nginx -t && sudo systemctl reload nginx
 
@@ -98,7 +98,7 @@ Check both with `sudo certbot renew --dry-run`.
 ## Updating
 
 ```bash
-cd ~/coc && git pull && npm install
+cd /srv/coc && git pull && npm install
 set -a && . ./.env && set +a && npm run assets:coc && npm run assets:wiki
 npm run build && sudo systemctl restart coc
 ```

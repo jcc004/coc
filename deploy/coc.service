@@ -5,10 +5,10 @@ After=network.target
 [Service]
 Type=simple
 User=jcc
-WorkingDirectory=/home/jcc/coc
+WorkingDirectory=/srv/coc
 ExecStart=/usr/bin/npm start
 Restart=on-failure
-# The app reads ~/coc/.env itself (via tsx --env-file-if-exists), so no
+# The app reads /srv/coc/.env itself (via tsx --env-file-if-exists), so no
 # EnvironmentFile is needed here. NODE_ENV=production belongs in that .env, and
 # marks the session cookie Secure — correct, since Nginx serves HTTPS only and
 # redirects port 80. The API listens on 127.0.0.1:8787 behind Nginx and is never
