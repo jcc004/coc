@@ -2,7 +2,7 @@
  * Recently viewed players and clans.
  *
  * The cap is applied *per kind* rather than to one shared list, because the
- * sidebar shows the two separately: a run of player lookups must not be able to
+ * homepage shows the two separately: a run of player lookups must not be able to
  * evict every clan and leave that panel empty.
  */
 
@@ -14,7 +14,7 @@ export interface Recent {
 
 export const RECENTS_KEY = 'coc:recents'
 
-/** How many of each kind the sidebar shows, and therefore how many are kept. */
+/** How many of each kind a lookup card shows, and therefore how many are kept. */
 export const MAX_RECENTS_PER_KIND = 3
 
 const KINDS = ['player', 'clan'] as const

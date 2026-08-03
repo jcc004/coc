@@ -980,7 +980,7 @@ a.chip {
   font-size: 13px;
   color: var(--ink-muted);
 }
-/* In the sidebar the heading already provides the spacing and the label. */
+/* Inside a lookup card the heading above already provides the spacing and label. */
 .recents--stacked {
   margin-top: 0;
 }
@@ -2652,7 +2652,7 @@ table.roster--pairs td {
 
   /* Two 200px-floor inputs side by side overflow at 360px, so every lookup and
      entry form becomes one control per line — which is what `--stacked`
-     already does in the sidebar. */
+     already does for the lookup forms. */
   .search {
     flex-direction: column;
     align-items: stretch;
