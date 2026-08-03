@@ -126,7 +126,16 @@ export interface ImportCounts {
   applied: number
   /** Rows the server already had — left exactly as they were. */
   skipped: number
-  /** Rows that were not a usable tag at all. */
+  /**
+   * Rows the server could make no use of: no usable tag, a missing owner or name,
+   * or a name past the length limit.
+   *
+   * The point of this count is that `applied + skipped + invalid + refused` equals
+   * what the client sent, so the summary the user is shown accounts for every row.
+   * It briefly did not: rows rejected by the route's own parsing were dropped
+   * before the store ever saw them and were counted nowhere, so importing 40 clans
+   * could report 39 and look like arithmetic nobody could check.
+   */
   invalid: number
   /**
    * Rows the caller was not allowed to write, and so were not even examined.

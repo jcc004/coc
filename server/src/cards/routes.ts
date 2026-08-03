@@ -47,6 +47,14 @@ async function readJson(c: AuthContext): Promise<Record<string, unknown>> {
  * a mixture of what the user typed and what was there before, with nothing on
  * screen saying which cards took. Rejecting the request keeps the stored state
  * the one the user last saw.
+ *
+ * There is deliberately **no explicit length cap** on `value`, unlike the bulk
+ * endpoints in `shared-data/routes.ts`. The two rules below already bound the loop:
+ * ids must fall in 1–60 and no id may repeat, so by the pigeonhole principle the
+ * 61st entry is guaranteed to be a duplicate or out of range and returns. A
+ * hundred-thousand-entry array therefore costs sixty-one iterations, not a hundred
+ * thousand, and adding a `counts.length` check would only restate a bound the
+ * validation already enforces.
  */
 function parseCounts(value: unknown): { counts: CardCount[] } | { problem: string } {
   if (!Array.isArray(value)) {

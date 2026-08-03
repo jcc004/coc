@@ -28,6 +28,30 @@ import type { SharedDataStore } from './store.ts'
 const ADMIN_ASSIGNS_OWNERSHIP =
   'An admin assigns ownership of a base. Ask one to point this tag at the right account.'
 
+/**
+ * The most rows one bulk owner apply or one import may carry.
+ *
+ * Sized against the install, not against the transport. This is a ten-account app
+ * with one clan roster of about fifty members, so a genuine bulk apply is tens of
+ * rows and a browser's whole `localStorage` is the same order. Without a cap the
+ * only limit is nginx's 10 MB body, which is a few hundred thousand rows of JSON
+ * parsing and per-row SQL for one authenticated request — cheap to send, not cheap
+ * to serve.
+ *
+ * 200 rather than 60 because a roster turns over and a long-lived browser holds
+ * tags for bases nobody plays any more. The point is a bound with obvious
+ * headroom, not a tight fit; a real request will never come close.
+ */
+export const MAX_BULK_ROWS = 200
+
+/**
+ * A saved clan's label, capped at the same 64 as `DISPLAY_NAME_MAX` in
+ * `auth/store.ts` — both end up in the same kind of table cell, and the in-game
+ * clan name is far shorter than either. It had no maximum at all, which made it the
+ * one free-text field in the app that a caller could stuff.
+ */
+export const SAVED_CLAN_NAME_MAX = 64
+
 const ownerWritesAreAdminOnly = requireAdminFor(
   ADMIN_ASSIGNS_OWNERSHIP,
   'Everyone can read every owner; only an admin can change one.',
@@ -46,14 +70,33 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
+/**
+ * A whole number greater than zero, or `undefined` for anything else.
+ *
+ * Same semantics as `positiveInt` in `app.ts`, deliberately: malformed input is
+ * *ignored* rather than rejected, because every field this guards is a cached stat
+ * (`members`, `clanLevel`, `clanPoints`) that the clan list renders as a dash when
+ * absent. Refusing the whole save over a bad stat would lose the tag and the name
+ * the user actually asked to keep.
+ *
+ * It used to accept any finite number, so `members: -5` and `clanLevel: 0.5` both
+ * stored and both rendered. The bug was less the stored value than the name: code
+ * downstream trusts a guarantee the body did not make.
+ */
 function asPositiveIntOrUndefined(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined
 }
 
+/**
+ * `undefined` for a body that could not be a saved clan. The name length is checked
+ * here rather than at the route so the import path gets the same rule for free: an
+ * over-long name is dropped from the upload exactly as a missing one already was,
+ * which costs the user that row and not the other 199.
+ */
 function asSavedClanInput(raw: Record<string, unknown>): SavedClanInput | undefined {
   const tag = asString(raw['tag'])
   const name = asString(raw['name']).trim()
-  if (!tag || !name) return undefined
+  if (!tag || !name || name.length > SAVED_CLAN_NAME_MAX) return undefined
 
   const input: SavedClanInput = { tag, name }
   if (raw['custom'] === true) input.custom = true
@@ -77,6 +120,20 @@ function asRecordArray(value: unknown): Record<string, unknown>[] {
   )
 }
 
+/**
+ * `undefined` when the field is within {@link MAX_BULK_ROWS}, otherwise the message
+ * to refuse it with.
+ *
+ * Counted on the **raw** array, before `asRecordArray` drops the entries that are
+ * not objects. What is being bounded is parsing and iteration, and a million nulls
+ * cost that as surely as a million rows — filtering first would let a caller hide
+ * the size of what they sent.
+ */
+function tooManyRows(value: unknown, field: string): string | undefined {
+  if (!Array.isArray(value) || value.length <= MAX_BULK_ROWS) return undefined
+  return `${field} carries ${value.length} rows; the most this endpoint accepts is ${MAX_BULK_ROWS}.`
+}
+
 export function mountSharedDataRoutes(app: Hono<AuthEnv>, store: SharedDataStore): void {
   /* ---------- saved clans ---------- */
 
@@ -85,7 +142,15 @@ export function mountSharedDataRoutes(app: Hono<AuthEnv>, store: SharedDataStore
   app.post('/api/saved/clans', async (c) => {
     const input = asSavedClanInput(await readJson(c))
     if (!input) {
-      return c.json(errorBody(400, 'badRequest', 'A saved clan needs a tag and a name.'), 400)
+      return c.json(
+        errorBody(
+          400,
+          'badRequest',
+          'A saved clan needs a tag and a name.',
+          `A name is 1–${SAVED_CLAN_NAME_MAX} characters.`,
+        ),
+        400,
+      )
     }
     return c.json({ clan: store.saveClan(input, currentUser(c).id) })
   })
@@ -95,6 +160,16 @@ export function mountSharedDataRoutes(app: Hono<AuthEnv>, store: SharedDataStore
     const name = asString(body['name']).trim()
     if (!name) {
       return c.json(errorBody(400, 'badRequest', 'A display name cannot be blank.'), 400)
+    }
+    if (name.length > SAVED_CLAN_NAME_MAX) {
+      return c.json(
+        errorBody(
+          400,
+          'badRequest',
+          `A display name is at most ${SAVED_CLAN_NAME_MAX} characters; that one is ${name.length}.`,
+        ),
+        400,
+      )
     }
 
     const clan = store.renameClan(c.req.param('tag'), name, currentUser(c).id)
@@ -164,6 +239,15 @@ export function mountSharedDataRoutes(app: Hono<AuthEnv>, store: SharedDataStore
    */
   app.post('/api/owners/bulk', ownerWritesAreAdminOnly, async (c) => {
     const body = await readJson(c)
+
+    const oversized = tooManyRows(body['rows'], 'rows')
+    if (oversized) {
+      return c.json(
+        errorBody(400, 'badRequest', oversized, 'Send it in batches. Nothing was written.'),
+        400,
+      )
+    }
+
     const raw = asRecordArray(body['rows'])
 
     const rows: OwnerBulkRow[] = []
@@ -201,20 +285,56 @@ export function mountSharedDataRoutes(app: Hono<AuthEnv>, store: SharedDataStore
     const body = await readJson(c)
     const user = currentUser(c)
 
-    const owners = asRecordArray(body['owners'])
+    // Both halves are capped, and either one being oversized refuses the whole
+    // request: an import is one atomic "bring my browser across" from the user's
+    // point of view, and applying half of it would leave them unable to tell what
+    // arrived.
+    for (const field of ['owners', 'clans'] as const) {
+      const oversized = tooManyRows(body[field], field)
+      if (oversized) {
+        return c.json(errorBody(400, 'badRequest', oversized, 'Nothing was imported.'), 400)
+      }
+    }
+
+    /*
+     * The rows this route drops have to be *counted*, not merely filtered.
+     *
+     * They are the ones the store never sees — no tag, no name, a name past the
+     * length cap — and until now they were counted nowhere at all. These numbers are
+     * shown to the user as an account of what became of their data, so an import of
+     * 40 clans reporting 39 is a summary that cannot be checked, and it quietly
+     * loses the one row actually worth asking about. The store counts its own
+     * rejects into `invalid`, so this is that same meaning applied one stage earlier.
+     */
+    const rawOwners = asRecordArray(body['owners'])
+    const owners = rawOwners
       .map((entry) => ({ tag: asString(entry['tag']), owner: asString(entry['owner']) }))
       .filter((entry) => entry.tag !== '')
+    const droppedOwners = rawOwners.length - owners.length
 
-    const clans = asRecordArray(body['clans'])
+    const rawClans = asRecordArray(body['clans'])
+    const clans = rawClans
       .map(asSavedClanInput)
       .filter((entry): entry is SavedClanInput => entry !== undefined)
+    const droppedClans = rawClans.length - clans.length
 
     const mayWriteOwners = user.role === 'admin'
     const result = store.importFromBrowser(
       { owners: mayWriteOwners ? owners : [], clans },
       user.id,
     )
-    if (!mayWriteOwners && owners.length > 0) result.owners.refused = owners.length
+    result.clans.invalid += droppedClans
+
+    /*
+     * A refused owner half counts every row as refused, dropped ones included, and
+     * adds nothing to `invalid`: those rows were never examined, so calling one both
+     * refused and invalid would make the total overshoot what the client sent.
+     */
+    if (mayWriteOwners) {
+      result.owners.invalid += droppedOwners
+    } else if (rawOwners.length > 0) {
+      result.owners.refused = rawOwners.length
+    }
 
     return c.json(result)
   })
