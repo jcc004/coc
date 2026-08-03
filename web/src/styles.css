@@ -43,6 +43,20 @@
   --gold: #f2b431;
   --gold-deep: #d1900f;
   --gold-edge: #8a5a08;
+
+  /*
+   * The dev banner: the same plate in steel instead of gold.
+   *
+   * A separate role rather than a filter on the gold, because it has to stay legible
+   * on its own terms — `--on-dev` is checked against the gradient's midpoint the way
+   * `--on-gold` is, not inherited and hoped for. Desaturated on purpose: it should
+   * read as "not the real thing" at a glance, from the corner of your eye, without
+   * being alarming. Nothing has gone wrong on a dev box.
+   */
+  --dev: #8f9ba8;
+  --dev-deep: #67737f;
+  --dev-edge: #3d4650;
+  --on-dev: #161a1f;
   /* Display numerals only. Deep gold here — bright gold on parchment is ~1.9:1. */
   --display: #8a5a08;
   --on-gold: #33240f;
@@ -101,6 +115,11 @@
     --gold: #f5c04a;
     --gold-deep: #c9930f;
     --gold-edge: #6b4708;
+    /* Lifted like the gold is, so the steel reads as a plate rather than a hole. */
+    --dev: #9aa7b4;
+    --dev-deep: #6c7885;
+    --dev-edge: #2b323a;
+    --on-dev: #14181d;
     /* Bright gold clears 9:1 on dark wood, so the display numerals can sing. */
     --display: #f5c04a;
     --on-gold: #241d14;
@@ -136,6 +155,10 @@
   --gold: #f5c04a;
   --gold-deep: #c9930f;
   --gold-edge: #6b4708;
+  --dev: #9aa7b4;
+  --dev-deep: #6c7885;
+  --dev-edge: #2b323a;
+  --on-dev: #14181d;
   --display: #f5c04a;
   --on-gold: #241d14;
   --deck-elixir: #f385f6;
@@ -1978,6 +2001,54 @@ table.roster th button:hover {
  * is a sibling of Clan and Cards on the same plate, and it should lift the same way
  * when the cursor is over it.
  */
+/*
+ * The same plate in steel, for any install that is not the live host.
+ *
+ * Only the four colour roles change — the geometry, bevels and shadow are the gold
+ * rule's, so it reads as the same object in a different material rather than as a
+ * different component. The white wash on the buttons is untouched: it lifts against
+ * steel exactly as it does against gold, which is the whole reason it is white and
+ * not a theme token.
+ */
+.topbar--dev {
+  border-color: var(--dev-edge);
+  color: var(--on-dev);
+  background: linear-gradient(180deg, var(--dev) 0%, var(--dev-deep) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 6px rgba(0, 0, 0, 0.28),
+    0 2px 0 var(--dev-edge),
+    0 5px 14px var(--drop);
+}
+.topbar--dev .topbar__title,
+.topbar--dev .topbar__home {
+  color: var(--on-dev);
+}
+/*
+ * The marker beside the title. Uppercase and letter-spaced so it reads as a label
+ * rather than as part of the app's name, and `nowrap` so "DEV SERVER" never breaks
+ * across two lines on a phone — a lone "SERVER" under the title would look like a
+ * rendering fault.
+ */
+.topbar__env {
+  margin-left: 8px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  /*
+   * Full plate ink, no opacity.
+   *
+   * This began at `opacity: 0.75` to read as secondary to the title. Measured, that
+   * put it at 3.4:1 in light and 3.8:1 in dark against the plate — below 4.5:1, and
+   * 13px bold is not large text by WCAG's definition, so the exemption does not
+   * apply. A label whose entire purpose is to stop you mistaking this for production
+   * is the last thing to render faintly. The uppercase and the letter-spacing already
+   * separate it from the title without spending legibility to do it.
+   */
+}
+
 .topbar .icon-button,
 .user-menu__button {
   color: var(--on-gold);
@@ -1988,6 +2059,22 @@ table.roster th button:hover {
 .topbar .icon-button:hover,
 .user-menu__button:hover {
   background: rgba(255, 255, 255, 0.45);
+}
+
+/*
+ * The same buttons on the steel plate.
+ *
+ * **After** the gold rules above, deliberately: `.topbar--dev .icon-button` and
+ * `.topbar .icon-button` have identical specificity, so whichever comes last wins.
+ * Declared first, this lost, and the Cards button kept a gold edge on a steel banner —
+ * which reads as a bug, not as a decision. The white hover wash is inherited
+ * untouched; it lifts against steel as well as it does against gold, which is why it
+ * is white rather than a theme token.
+ */
+.topbar--dev .icon-button,
+.topbar--dev .user-menu__button {
+  color: var(--on-dev);
+  border-color: var(--dev-edge);
 }
 
 /* ---------- buttons ---------- */

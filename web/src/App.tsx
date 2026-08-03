@@ -1,3 +1,4 @@
+import { currentEnvironment } from './environment.ts'
 import { AccountView } from './components/AccountView.tsx'
 import { AdminView } from './components/AdminView.tsx'
 import { CardsView } from './components/CardsView.tsx'
@@ -145,9 +146,20 @@ export function App() {
    */
   const clanTarget: Route = lastClan !== null ? { view: 'clan', tag: lastClan } : { view: 'home' }
 
+  /* Which install this is. Read from `location`, so it needs no build-time flag and
+     is right for a production build served from a laptop. */
+  const environment = currentEnvironment()
+
   return (
     <div className="shell">
-      <header className="topbar">
+      {/*
+       * Steel banner with a DEV SERVER marker on anything that is not the live host.
+       * Production and a local copy are otherwise identical — same app, same
+       * shared-looking data, same controls that remove a saved clan "for everyone" —
+       * and the only cue was the address bar. See `environment.ts` for why the test is
+       * the hostname rather than the build mode.
+       */}
+      <header className={environment.kind === 'production' ? 'topbar' : 'topbar topbar--dev'}>
         <h1 className="topbar__title">
           {/* One link over the rosette and the words, so the icon navigates home
               without becoming a second tab stop with its own name. */}
@@ -155,6 +167,16 @@ export function App() {
             <CompassRosette />
             Clash of Clans Explorer
           </a>
+          {/*
+           * Outside the link, so it is not read as part of the destination's name —
+           * the link stays "Clash of Clans Explorer" — but inside the heading, so a
+           * screen reader announces which install this is when it reads the title.
+           * `role="status"` would be wrong: this never changes, so there is nothing
+           * to announce politely; it is simply part of what the page is called.
+           */}
+          {environment.label ? (
+            <span className="topbar__env">— {environment.label}</span>
+          ) : null}
         </h1>
         {/*
          * Absent where it would point at the page you are already on, like the
