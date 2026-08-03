@@ -514,11 +514,19 @@ export function CardsView({ user }: { user: SessionUser }) {
           Collection leaderboard <HelpLink section="leaderboard" topic="how the leaderboard scores" />
         </h2>
         {/*
-         * This line said "by distinct cards out of 60", which stopped being true when
-         * the measure became points: a base holding 9 copies of one card outranks a
-         * base holding 8 single cards, and the old sentence said the opposite. The
-         * curve itself is in the disclosure below — where it can be read without
-         * turning the intro into a paragraph — and in the help page, from one source.
+         * This line said "by distinct cards out of 60. Level on that, more copies goes
+         * first", which stopped being true when the measure became points in 1b917a1.
+         * Distinct cards is now only the *tie-break*; points is the measure.
+         *
+         * The direction the old sentence implied was right, though, and it is worth
+         * recording which way round it goes, because it is easy to state backwards:
+         * breadth wins, decisively. Six cards held once scores 60, which already beats
+         * the 55 that ten copies of a single card scores — and ten is the cap, so no
+         * one card can ever contribute more. Eight singles (80) beat nine copies of one
+         * (54) comfortably.
+         *
+         * The curve itself is in the disclosure below, where it can be read without
+         * turning this intro into a paragraph, and on the help page — one source.
          */}
         <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
           Every tracked base, by <strong>points</strong>: {cardPoints(1)} for the first copy of a
