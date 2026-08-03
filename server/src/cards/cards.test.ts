@@ -13,14 +13,18 @@ import { TtlCache } from '../cache.ts'
 import { createChatStore } from '../chat/store.ts'
 import type { CocClient } from '../coc-client.ts'
 import { openDatabase } from '../db.ts'
-import { createSharedDataStore } from '../shared-data/store.ts'
+import { createSharedDataStore, type SharedDataStore } from '../shared-data/store.ts'
 import { createCardInventoryStore, type CardInventoryStore } from './store.ts'
 
 /*
  * The card routes over the whole app, driven through `app.request` against an
  * in-memory database — the same shape as the auth and chat suites. Two accounts
- * throughout, because "shared, not per-user" is the property that matters and it
- * cannot be shown with one.
+ * throughout, because the two properties that matter cannot be shown with one:
+ * counts are **read** by everybody, and **written** only by whoever owns the base.
+ *
+ * The admin does most of the writing below because an admin may write any base.
+ * Where a plain member writes, the base is assigned to them first, through the
+ * same route an admin would really use.
  */
 
 const ADMIN = { email: 'admin@example.test', password: 'first-admin-password' }
@@ -35,6 +39,9 @@ const BASE_C = '#CCCDDD'
 interface Harness {
   app: ReturnType<typeof createApp>
   cards: CardInventoryStore
+  /** Exposed so a test can look up account ids and assert the owner column. */
+  auth: ReturnType<typeof createAuthStore>
+  shared: SharedDataStore
   db: ReturnType<typeof openDatabase>
 }
 
@@ -60,17 +67,43 @@ function createHarness(databasePath = ':memory:'): Harness {
   }
 
   const cards = createCardInventoryStore(db)
+  const shared = createSharedDataStore(db)
   const app = createApp({
     coc: {} as unknown as CocClient,
     cache: new TtlCache(60_000),
     auth,
     chat: createChatStore(db),
-    sharedData: createSharedDataStore(db),
+    sharedData: shared,
     cards,
     loginLimiter: createLoginLimiter(),
   })
 
-  return { app, cards, db }
+  return { app, cards, auth, shared, db }
+}
+
+/** The id of an account, by the email it was created with. */
+function idOf(harness: Harness, email: string): number {
+  const user = harness.auth.listUsers().find((row) => row.email === email)
+  assert.ok(user, `${email} should exist`)
+  return user.id
+}
+
+/**
+ * Hands a base to an account the way an admin really does — through the route, so
+ * these tests cannot pass on ownership the API would not have granted.
+ */
+async function assignBase(
+  harness: Harness,
+  adminCookie: string,
+  tag: string,
+  userId: number,
+): Promise<void> {
+  const response = await harness.app.request(`/api/owners/${encodeURIComponent(tag)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie: adminCookie },
+    body: JSON.stringify({ userId }),
+  })
+  assert.equal(response.status, 200, `assigning ${tag} should succeed`)
 }
 
 function sessionCookie(response: Response): string | undefined {
@@ -164,6 +197,8 @@ describe('the card inventory is shared, not per-user', () => {
     const harness = createHarness()
     const a = await signIn(harness, ADMIN)
     const b = await signIn(harness, SECOND)
+    // B owns the base; the admin writes it anyway, which admins may.
+    await assignBase(harness, a, BASE_A, idOf(harness, SECOND.email))
 
     await save(harness, a, BASE_A, [{ cardId: 1, count: 2 }])
     await save(harness, b, BASE_A, [{ cardId: 1, count: 3 }])
@@ -211,7 +246,8 @@ describe('the card inventory is shared, not per-user', () => {
     const harness = createHarness()
     const admin = await signIn(harness, ADMIN)
     const member = await signIn(harness, SECOND)
-    await save(harness, member, BASE_A, [{ cardId: 4, count: 2 }])
+    await assignBase(harness, admin, BASE_A, idOf(harness, SECOND.email))
+    assert.equal((await save(harness, member, BASE_A, [{ cardId: 4, count: 2 }])).status, 200)
 
     const users = (await (
       await harness.app.request('/api/admin/users', { headers: { cookie: admin } })
@@ -230,6 +266,147 @@ describe('the card inventory is shared, not per-user', () => {
     const base = await readOne(harness, admin, BASE_A)
     assert.deepEqual(base.counts, [{ cardId: 4, count: 2 }])
     assert.equal(base.updatedBy, SECOND_NAME)
+    harness.db.close()
+  })
+})
+
+describe('only the base’s owner writes its counts', () => {
+  /** A 403 that changed nothing, and said something useful about why. */
+  async function assertRefused(
+    harness: Harness,
+    cookie: string,
+    tag: string,
+    expectations: RegExp[],
+  ): Promise<void> {
+    const before = harness.cards.getInventory(CARD_SEASON, tag)
+    const response = await save(harness, cookie, tag, [{ cardId: 1, count: 5 }])
+    assert.equal(response.status, 403, `${tag} must not be writable by this caller`)
+
+    const body = (await response.json()) as { error: { reason: string; message: string } }
+    assert.equal(body.error.reason, 'forbidden')
+    for (const pattern of expectations) assert.match(body.error.message, pattern)
+
+    assert.deepEqual(
+      harness.cards.getInventory(CARD_SEASON, tag).counts,
+      before.counts,
+      'a refused write must leave the base exactly as it was',
+    )
+  }
+
+  it('lets the owner write the base assigned to them', async () => {
+    const harness = createHarness()
+    const admin = await signIn(harness, ADMIN)
+    const member = await signIn(harness, SECOND)
+    await assignBase(harness, admin, BASE_A, idOf(harness, SECOND.email))
+
+    assert.equal((await save(harness, member, BASE_A, [{ cardId: 1, count: 2 }])).status, 200)
+    assert.deepEqual((await readOne(harness, member, BASE_A)).counts, [{ cardId: 1, count: 2 }])
+    harness.db.close()
+  })
+
+  it('refuses a member on somebody else’s base, and names the owner', async () => {
+    const harness = createHarness()
+    const admin = await signIn(harness, ADMIN)
+    const member = await signIn(harness, SECOND)
+    // The admin owns A; the member tries to write it.
+    await assignBase(harness, admin, BASE_A, idOf(harness, ADMIN.email))
+    await save(harness, admin, BASE_A, [{ cardId: 1, count: 2 }])
+
+    // Naming the owner is what makes the refusal actionable rather than a wall.
+    await assertRefused(harness, member, BASE_A, [/Admin One/, /#2GCJ2QPU/])
+    harness.db.close()
+  })
+
+  it('lets an admin write a base somebody else owns', async () => {
+    const harness = createHarness()
+    const admin = await signIn(harness, ADMIN)
+    await signIn(harness, SECOND)
+    await assignBase(harness, admin, BASE_A, idOf(harness, SECOND.email))
+
+    // Deliberate: an admin could reassign the base to themselves in one request,
+    // so refusing this would only remove their way to fix somebody's mistake.
+    const response = await save(harness, admin, BASE_A, [{ cardId: 3, count: 4 }])
+    assert.equal(response.status, 200)
+    assert.equal((await readOne(harness, admin, BASE_A)).updatedBy, ADMIN_NAME)
+    harness.db.close()
+  })
+
+  it('lets an admin write a base nobody owns, and refuses a member the same base', async () => {
+    const harness = createHarness()
+    const admin = await signIn(harness, ADMIN)
+    const member = await signIn(harness, SECOND)
+
+    assert.equal((await save(harness, admin, BASE_C, [{ cardId: 2, count: 1 }])).status, 200)
+    // Nobody else has a claim to an unowned base.
+    await assertRefused(harness, member, BASE_C, [/no owner/, /#CCCDDD/])
+    harness.db.close()
+  })
+
+  it('grants nobody but admins the write when the owner is an unlinked name', async () => {
+    const harness = createHarness()
+    const admin = await signIn(harness, ADMIN)
+    const member = await signIn(harness, SECOND)
+
+    // The state migration v6 leaves most of the live assignments in: a clan
+    // member's name against a base, matching no account at all.
+    await harness.app.request('/api/owners/bulk', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: admin },
+      body: JSON.stringify({ rows: [{ tag: BASE_A, owner: 'Casey', expectedOwner: '' }] }),
+    })
+    assert.equal(harness.shared.getOwner(BASE_A)?.ownerUserId, null)
+
+    await assertRefused(harness, member, BASE_A, [/Casey/, /not linked to an account/])
+    // The admin is the way out of that state, in both senses.
+    assert.equal((await save(harness, admin, BASE_A, [{ cardId: 1, count: 1 }])).status, 200)
+    harness.db.close()
+  })
+
+  it('follows a reassignment: the new owner writes, the old one stops', async () => {
+    const harness = createHarness()
+    const admin = await signIn(harness, ADMIN)
+    const member = await signIn(harness, SECOND)
+    await assignBase(harness, admin, BASE_A, idOf(harness, SECOND.email))
+    assert.equal((await save(harness, member, BASE_A, [{ cardId: 1, count: 2 }])).status, 200)
+
+    // Handed to the admin instead. Nothing is cached, so the next request obeys.
+    await assignBase(harness, admin, BASE_A, idOf(harness, ADMIN.email))
+    await assertRefused(harness, member, BASE_A, [/Admin One/])
+
+    // …and clearing the assignment does not hand it back to them either.
+    await harness.app.request(`/api/owners/${encodeURIComponent(BASE_A)}`, {
+      method: 'DELETE',
+      headers: { cookie: admin },
+    })
+    await assertRefused(harness, member, BASE_A, [/no owner/])
+    harness.db.close()
+  })
+
+  it('refuses before it reads the body, so a bad payload is still a 403', async () => {
+    const harness = createHarness()
+    const admin = await signIn(harness, ADMIN)
+    const member = await signIn(harness, SECOND)
+    await assignBase(harness, admin, BASE_A, idOf(harness, ADMIN.email))
+
+    // Whether a caller may write a base has nothing to do with whether their
+    // payload parses, and a 403 that depended on the body would be a strange
+    // thing to reason about — or to leak validation detail through.
+    const response = await harness.app.request(
+      ...put(inventoryPath(BASE_A), { counts: 'not a list' }, member),
+    )
+    assert.equal(response.status, 403)
+    harness.db.close()
+  })
+
+  it('scopes ownership to the base, not to the member', async () => {
+    const harness = createHarness()
+    const admin = await signIn(harness, ADMIN)
+    const member = await signIn(harness, SECOND)
+    await assignBase(harness, admin, BASE_A, idOf(harness, SECOND.email))
+
+    // Owning one base is not a licence for the next one along.
+    assert.equal((await save(harness, member, BASE_A, [{ cardId: 1, count: 2 }])).status, 200)
+    await assertRefused(harness, member, BASE_B, [/no owner/])
     harness.db.close()
   })
 })
@@ -337,6 +514,7 @@ describe('a whole base is written in one request', () => {
     const harness = createHarness()
     const a = await signIn(harness, ADMIN)
     const b = await signIn(harness, SECOND)
+    await assignBase(harness, a, BASE_A, idOf(harness, SECOND.email))
 
     await save(harness, a, BASE_A, [{ cardId: 1, count: 2 }])
     const first = await readOne(harness, a, BASE_A)
@@ -640,12 +818,16 @@ describe('the card routes need a session', () => {
     harness.db.close()
   })
 
-  it('is not an admin-only area — an ordinary member reads and writes', async () => {
+  it('is not an admin-only area — a member reads everything and writes their own', async () => {
     const harness = createHarness()
+    const admin = await signIn(harness, ADMIN)
     const member = await signIn(harness, SECOND)
+    await assignBase(harness, admin, BASE_A, idOf(harness, SECOND.email))
 
     assert.equal((await save(harness, member, BASE_A, [{ cardId: 1, count: 2 }])).status, 200)
-    assert.equal((await readAll(harness, member)).length, 1)
+    // Somebody else's base, read by the member: still 200, still the shared answer.
+    assert.equal((await save(harness, admin, BASE_B, [{ cardId: 2, count: 1 }])).status, 200)
+    assert.equal((await readAll(harness, member)).length, 2)
     harness.db.close()
   })
 })

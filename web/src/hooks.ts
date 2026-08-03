@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ApiError } from './api.ts'
-import { hashTarget, lastRouteKey, routeToRemember, shouldRestoreRoute } from './last-route.ts'
+import {
+  clanTargetTag,
+  hashTarget,
+  lastClanKey,
+  lastRouteKey,
+  routeToRemember,
+  shouldRestoreRoute,
+} from './last-route.ts'
 import { addRecent, parseRecents, RECENTS_KEY, type Recent } from './recents.ts'
 import { parseRowLimit, type RowLimit } from './saved-table.ts'
 
@@ -209,6 +216,48 @@ export function useRestoredRoute(userId: number | null): void {
     window.addEventListener('hashchange', remember)
     return () => window.removeEventListener('hashchange', remember)
   }, [userId])
+}
+
+/**
+ * The last clan this account opened, recorded as it happens.
+ *
+ * Drives the topbar's **Clan** button, which is why it is a hook returning the
+ * tag rather than a read at click time: the button's destination is on screen (in
+ * its tooltip) and has to re-render when the destination changes.
+ *
+ * Only `#/clan/<tag>` counts as visiting a clan. A war page is *about* a clan but
+ * is not the clan, and treating it as one would send the button somewhere the
+ * user did not choose to be.
+ */
+export function useLastClan(userId: number | null): string | null {
+  const [tag, setTag] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (userId === null) {
+      // Signed out: forget the tag in memory. The stored one stays put, keyed by
+      // the account, so signing back in resumes it and nobody else sees it.
+      setTag(null)
+      return
+    }
+    const key = lastClanKey(userId)
+
+    const remember = () => {
+      const route = parseHash(window.location.hash)
+      if (route.view === 'clan') {
+        // Stored canonical, so the button's href does not depend on how the tag
+        // happened to be typed in the address bar.
+        const canonical = clanTargetTag(route.tag)
+        if (canonical !== null) localStorage.setItem(key, canonical)
+      }
+      setTag(clanTargetTag(localStorage.getItem(key)))
+    }
+
+    remember()
+    window.addEventListener('hashchange', remember)
+    return () => window.removeEventListener('hashchange', remember)
+  }, [userId])
+
+  return tag
 }
 
 /* ---------- recent lookups ---------- */

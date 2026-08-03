@@ -50,8 +50,14 @@
   /*
    * Card-deck frames. A categorical role, not a magnitude one, so it is its own
    * small set rather than a step on the sequential ramp — and it is used for a
-   * tile *border* only, never for text and never as the sole cue: each deck also
-   * has a heading, and every tile carries its card's name.
+   * tile *border* only, never for text.
+   *
+   * It is the only *visible* carrier of deck since the headings and the tile names
+   * came off, which is the narrowest this encoding has been: what keeps it from
+   * being colour-alone is that the tiles stay in deck order so each colour is one
+   * unbroken run, that each run is a `role="group"` named by a `.visually-hidden`
+   * heading, and that every tile's `title` and its number box's accessible name
+   * say the deck in words.
    *
    * Nominal values are the event's own frame colours, recorded in
    * `CARD_CATEGORY_BORDER` in shared/src/card-types.ts. Dark mode lightens them
@@ -257,8 +263,8 @@ select {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  /* The banner carries the title plus up to four controls; wrapping keeps them
-     all reachable on a phone instead of pushing the row off-screen. */
+  /* The banner carries the title, its rosette, and up to five controls; wrapping
+     keeps them all reachable on a phone instead of pushing the row off-screen. */
   flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 20px;
@@ -273,6 +279,29 @@ select {
 }
 .topbar__title a {
   color: inherit;
+}
+
+/*
+ * The rosette and the title are one link, so they lay out as one line box and the
+ * mark can never wrap away from the words it belongs to. `inline-flex` centres it
+ * against the cap height rather than dropping it onto the baseline.
+ */
+.topbar__home {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/*
+ * `flex: none` so the mark keeps its size when the banner wraps at 390px, where
+ * the title shares the row with four controls. It carries no colour of its own:
+ * the SVG paints in `currentColor` and inherits the ink from `.topbar__title a`
+ * above, which is what makes one drawing work in both themes.
+ */
+.topbar__rosette {
+  width: 24px;
+  height: 24px;
+  flex: none;
 }
 
 .icon-button {
@@ -1047,6 +1076,17 @@ details.group > .group__body {
   padding-top: 12px;
 }
 
+/*
+ * A group that is the whole panel rather than one section inside one. The rule
+ * and the space above exist to separate consecutive groups in a shared card;
+ * alone in its own card they draw a line under the card's own top edge.
+ */
+details.group--flush {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
 /* ---------- unit art ---------- */
 
 /*
@@ -1119,6 +1159,22 @@ details.group > .group__body {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
   gap: 10px;
+}
+
+/*
+ * A deck is a named group around a run of tiles, and nothing else. `contents` is
+ * load-bearing: it removes the wrapper's own box, so the tiles it holds stay
+ * direct children of the one grid and every deck flows into the next with the
+ * grid's own gap and no seam. Give this element any other `display` and each deck
+ * becomes a block, the sixty tiles split back into four grids, and both the
+ * continuous flow and the column alignment go with it.
+ *
+ * The heading inside it is `.visually-hidden`, which is absolutely positioned and
+ * so is not a grid item either — checked in a browser: tile positions are
+ * identical with the wrapper and heading present and absent.
+ */
+.card-deck {
+  display: contents;
 }
 
 .card-tile {
@@ -1219,6 +1275,28 @@ details.group > .group__body {
 .card-meta {
   font-size: 12px;
   color: var(--ink-2);
+}
+
+/*
+ * The collapsed card panel on a player page, whose summary line is the whole of
+ * what it shows shut. `summary` is semibold, so the per-deck counts step back to
+ * normal weight and only the label keeps the heading treatment; they then wrap as
+ * ordinary text, which is what a 390px column needs them to do.
+ */
+.card-panel__decks,
+.card-panel__trades {
+  font-weight: 400;
+}
+
+/*
+ * The one part of that line allowed to stand out, because it is the reason to open
+ * the panel. Status green, on the existing token, and **never the only carrier**:
+ * the words read "Trades available" or "No trades available" either way, so the
+ * state survives with no colour vision at all.
+ */
+.card-panel__trades--yes {
+  color: var(--good-text);
+  font-weight: 600;
 }
 
 /*

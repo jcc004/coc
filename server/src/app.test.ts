@@ -103,6 +103,11 @@ function patchJson(path: string, body: unknown, cookie?: string): [string, Reque
   return [path, { ...init, method: 'PATCH' }]
 }
 
+function putJson(path: string, body: unknown, cookie?: string): [string, RequestInit] {
+  const [, init] = postJson(path, body, cookie)
+  return [path, { ...init, method: 'PUT' }]
+}
+
 /** The `name=value` pair from Set-Cookie, ready to send straight back. */
 function sessionCookie(response: Response): string | undefined {
   const header = response.headers.get('set-cookie')
@@ -766,13 +771,21 @@ describe('email as the login credential', () => {
 const PLAYER_A = '%232GCJ2QPU'
 const PLAYER_B = '%23AAABBB'
 
-/** Two signed-in accounts against one database, which is the whole point below. */
-async function twoUsers(harness: Harness): Promise<{ a: string; b: string }> {
+/**
+ * Two signed-in accounts against one database, which is the whole point below.
+ * `a` is the bootstrap admin; `role` is the second account's, because writing the
+ * owner column is admin-only now and several of these tests need B to be able to.
+ */
+async function twoUsers(
+  harness: Harness,
+  role: 'admin' | 'user' = 'user',
+): Promise<{ a: string; b: string }> {
   const a = await loggedIn(harness)
   await addUser(harness, a, {
     email: 'second@example.com',
     displayName: 'Second Person',
     password: 'second-users-password',
+    role,
   })
   const { cookie: b } = await login(harness, {
     email: 'second@example.com',
@@ -891,10 +904,13 @@ describe('saved clans and owners are shared, not per-user', () => {
   it('survives disabling the account that made the rows', async () => {
     const harness = createHarness()
     const adminCookie = await loggedIn(harness)
+    // An admin, because the rows this test is about include an owner assignment
+    // and only an admin can write one.
     const id = await addUser(harness, adminCookie, {
       email: 'leaver@example.com',
       displayName: 'Leaver',
       password: 'leaver-users-password',
+      role: 'admin',
     })
     const { cookie: userCookie } = await login(harness, {
       email: 'leaver@example.com',
@@ -934,7 +950,9 @@ describe('saved clans and owners are shared, not per-user', () => {
 describe('bulk owner apply is optimistically concurrent', () => {
   it('rejects a stale expected value while applying the rows that are not stale', async () => {
     const harness = createHarness()
-    const { a, b } = await twoUsers(harness)
+    // Two admins: the race this endpoint exists for is between two people who are
+    // both entitled to write the column.
+    const { a, b } = await twoUsers(harness, 'admin')
 
     // B assigns an owner that A's tab has never seen.
     await harness.app.request(
@@ -1050,10 +1068,167 @@ describe('bulk owner apply is optimistically concurrent', () => {
   })
 })
 
+describe('the owner column is an admin decision', () => {
+  /** The id of the second, ordinary account — the one a base gets assigned to. */
+  async function memberId(harness: Harness): Promise<number> {
+    const user = harness.store.listUsers().find((row) => row.email === 'second@example.com')
+    assert.ok(user, 'twoUsers should have created the second account')
+    return user.id
+  }
+
+  it('assigns a base to an account, by id, and reports the link', async () => {
+    const harness = createHarness()
+    const { a } = await twoUsers(harness)
+    const id = await memberId(harness)
+
+    const response = await harness.app.request(
+      ...putJson(`/api/owners/${PLAYER_A}`, { userId: id }, a),
+    )
+    assert.equal(response.status, 200)
+    const { owner } = (await response.json()) as {
+      owner: { tag: string; owner: string; ownerUserId: number; updatedBy: string }
+    }
+    // The label is the account's display name, not something re-typed, so a
+    // rename cannot leave the two disagreeing.
+    assert.deepEqual(
+      [owner.tag, owner.owner, owner.ownerUserId, owner.updatedBy],
+      ['#2GCJ2QPU', 'Second Person', id, 'admin'],
+    )
+    harness.db.close()
+  })
+
+  it('refuses a member every way of writing the owner column', async () => {
+    const harness = createHarness()
+    const { a, b } = await twoUsers(harness)
+    const id = await memberId(harness)
+
+    // Something for the clear and the bulk overwrite to try to destroy.
+    assert.equal(
+      (await harness.app.request(...putJson(`/api/owners/${PLAYER_A}`, { userId: id }, a))).status,
+      200,
+    )
+
+    const attempts: [string, RequestInit][] = [
+      putJson(`/api/owners/${PLAYER_A}`, { userId: id }, b),
+      putJson(`/api/owners/${PLAYER_B}`, { userId: id }, b),
+      [`/api/owners/${PLAYER_A}`, { method: 'DELETE', headers: { cookie: b } }],
+      postJson(
+        '/api/owners/bulk',
+        { rows: [{ tag: '#2GCJ2QPU', owner: 'Second Person', expectedOwner: 'Second Person' }] },
+        b,
+      ),
+    ]
+
+    for (const [path, init] of attempts) {
+      const response = await harness.app.request(path, init)
+      assert.equal(response.status, 403, `${init.method ?? 'POST'} ${path} must be refused`)
+      const body = (await response.json()) as { error: { reason: string; message: string } }
+      assert.equal(body.error.reason, 'forbidden')
+      // Not a bare denial: it has to say an admin is the one who assigns ownership.
+      assert.match(body.error.message, /admin assigns ownership/i)
+    }
+
+    // And nothing moved: one assignment, still pointing at the same account.
+    const owners = harness.shared.listOwners()
+    assert.deepEqual(
+      owners.map((row) => [row.tag, row.ownerUserId]),
+      [['#2GCJ2QPU', id]],
+    )
+    harness.db.close()
+  })
+
+  it('lets a member read every owner, which is not what changed', async () => {
+    const harness = createHarness()
+    const { a, b } = await twoUsers(harness)
+    const id = await memberId(harness)
+    await harness.app.request(...putJson(`/api/owners/${PLAYER_A}`, { userId: id }, a))
+
+    const response = await harness.app.request('/api/owners', { headers: { cookie: b } })
+    assert.equal(response.status, 200)
+    const { owners } = (await response.json()) as {
+      owners: { tag: string; owner: string; ownerUserId: number }[]
+    }
+    assert.deepEqual(
+      owners.map((row) => [row.tag, row.owner, row.ownerUserId]),
+      [['#2GCJ2QPU', 'Second Person', id]],
+    )
+    harness.db.close()
+  })
+
+  it('refuses an id that belongs to no account, writing nothing', async () => {
+    const harness = createHarness()
+    const cookie = await loggedIn(harness)
+
+    for (const body of [{ userId: 9999 }, { userId: 'admin' }, { userId: null }, {}]) {
+      const response = await harness.app.request(
+        ...putJson(`/api/owners/${PLAYER_A}`, body, cookie),
+      )
+      assert.ok(
+        response.status === 400 || response.status === 404,
+        `${JSON.stringify(body)} must not be accepted (got ${response.status})`,
+      )
+    }
+    assert.deepEqual(harness.shared.listOwners(), [])
+    harness.db.close()
+  })
+
+  it('links a bulk row whose text matches a display name, however it is typed', async () => {
+    const harness = createHarness()
+    const { a } = await twoUsers(harness)
+    const id = await memberId(harness)
+
+    const response = await harness.app.request(
+      ...postJson(
+        '/api/owners/bulk',
+        {
+          rows: [
+            // Case and padding are noise: this is a name somebody typed.
+            { tag: '#2GCJ2QPU', owner: '  second person  ', expectedOwner: '' },
+            // Nobody by this name has an account, so it stays a label.
+            { tag: '#AAABBB', owner: 'Casey', expectedOwner: '' },
+          ],
+        },
+        a,
+      ),
+    )
+    assert.equal(response.status, 200)
+
+    const owners = harness.shared.listOwners()
+    assert.deepEqual(
+      owners.map((row) => [row.tag, row.owner, row.ownerUserId]),
+      [
+        // Stored as the account's own display name, so the label and the link agree.
+        ['#2GCJ2QPU', 'Second Person', id],
+        ['#AAABBB', 'Casey', null],
+      ],
+    )
+    harness.db.close()
+  })
+
+  it('drops the link when the owner is cleared', async () => {
+    const harness = createHarness()
+    const { a } = await twoUsers(harness)
+    const id = await memberId(harness)
+    await harness.app.request(...putJson(`/api/owners/${PLAYER_A}`, { userId: id }, a))
+
+    const cleared = await harness.app.request(`/api/owners/${PLAYER_A}`, {
+      method: 'DELETE',
+      headers: { cookie: a },
+    })
+    assert.equal(cleared.status, 200)
+    // Removing the row is how "no owner" is represented — there is no assignment
+    // left holding a dangling id.
+    assert.deepEqual(harness.shared.listOwners(), [])
+    harness.db.close()
+  })
+})
+
 describe('one-time import of browser data', () => {
   it('fills gaps, never overwrites, and is idempotent', async () => {
     const harness = createHarness()
-    const { a, b } = await twoUsers(harness)
+    // B is an admin here so the owner half of their upload is examined at all;
+    // a member's owner rows are refused, which the test below covers.
+    const { a, b } = await twoUsers(harness, 'admin')
 
     // Already on the server, set by A.
     await harness.app.request(
@@ -1103,6 +1278,34 @@ describe('one-time import of browser data', () => {
     harness.db.close()
   })
 
+  it("refuses a member's owner rows but still takes their saved clans", async () => {
+    const harness = createHarness()
+    const { b } = await twoUsers(harness)
+
+    // The upload would otherwise be a way straight around the admin gate on
+    // /api/owners — while a member's own clan list grants nobody anything.
+    const response = await harness.app.request(
+      ...postJson(
+        '/api/import',
+        {
+          owners: [{ tag: '#2GCJ2QPU', owner: 'Second Person' }],
+          clans: [{ tag: '#G88CYQP', name: 'Reddit' }],
+        },
+        b,
+      ),
+    )
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), {
+      // Refused unexamined, and counted rather than silently dropped.
+      owners: { applied: 0, skipped: 0, invalid: 0, refused: 1 },
+      clans: { applied: 1, skipped: 0, invalid: 0 },
+    })
+
+    assert.deepEqual(harness.shared.listOwners(), [])
+    assert.equal(harness.shared.listSavedClans().length, 1)
+    harness.db.close()
+  })
+
   it('accepts an empty payload', async () => {
     const harness = createHarness()
     const cookie = await loggedIn(harness)
@@ -1127,6 +1330,9 @@ describe('the shared-data routes need a session', () => {
       ['/api/saved/clans/%23G88CYQP', { method: 'DELETE' }],
       ['/api/owners', {}],
       [`/api/owners/${PLAYER_B}`, { method: 'DELETE' }],
+      // The admin gate must not be the *first* thing an anonymous caller meets:
+      // 401 before 403, so a signed-out request is never told a route is admin-only.
+      [`/api/owners/${PLAYER_B}`, putJson(`/api/owners/${PLAYER_B}`, { userId: 1 })[1]],
       ['/api/owners/bulk', postJson('/api/owners/bulk', { rows: [] })[1]],
       ['/api/import', postJson('/api/import', {})[1]],
     ]

@@ -33,10 +33,20 @@ export interface OwnerRecord {
   /** Canonical `#TAG`. The primary key. */
   tag: string
   /**
-   * Free text, deliberately **not** a FK to `users`: a base owner is a person in
-   * the clan, who need not have an account in this app.
+   * The label to show: the owning account's current display name when
+   * `ownerUserId` is set, otherwise the legacy free text the row still carries.
    */
   owner: string
+  /**
+   * The account the base belongs to, and the only thing authorisation looks at —
+   * it is what makes "only the owner may edit these card counts" answerable.
+   *
+   * `null` for a row whose `owner` text has never been matched to an account
+   * (every pre-account assignment started that way). Such a row is a label and
+   * nothing more: it grants nobody the write, so only an admin can edit that
+   * base until an admin reassigns it.
+   */
+  ownerUserId?: number | null
   updatedAt?: string
   updatedBy?: string | null
 }
@@ -60,10 +70,25 @@ export interface SavedClanInput {
   clanPoints?: number
 }
 
+/** What `PUT /api/owners/:tag` accepts — admin only, like every owner write. */
+export interface OwnerAssignRequest {
+  /** The account to hand the base to. There is no "assign to a name". */
+  userId: number
+}
+
+export interface OwnerAssignResponse {
+  owner: OwnerRecord
+}
+
 /**
  * One row of a bulk owner apply. `expectedOwner` is the value the client
  * *believed* was current (`''` for "nobody owned it"); the server writes only if
  * that still matches, so a stale tab cannot clobber a change it never saw.
+ *
+ * `owner` is still text here because the bulk bar is a typing surface. The server
+ * links it to an account when it matches a display name — trimmed and
+ * case-insensitively, the same rule the migration backfilled with — and stores it
+ * as an unlinked label when it matches nobody.
  */
 export interface OwnerBulkRow {
   tag: string
@@ -103,6 +128,13 @@ export interface ImportCounts {
   skipped: number
   /** Rows that were not a usable tag at all. */
   invalid: number
+  /**
+   * Rows the caller was not allowed to write, and so were not even examined.
+   * Only owner assignments can be refused, and only for a non-admin: the owner
+   * column is an admin decision, while a member's saved clans are their own.
+   * Absent when nothing was refused, which is the ordinary case.
+   */
+  refused?: number
 }
 
 export interface ImportResponse {

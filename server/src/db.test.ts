@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { bootstrapAdmin } from './auth/bootstrap.ts'
 import { hashPassword } from './auth/passwords.ts'
 import { createAuthStore } from './auth/store.ts'
-import { migrate, openDatabase, SCHEMA_VERSION } from './db.ts'
+import { migrate, openDatabase, SCHEMA_VERSION, summarizeOwnerAssignments } from './db.ts'
 
 /*
  * The migration, against a database shaped the way the *previous* build left it:
@@ -163,6 +163,9 @@ describe('migration from a v1 database', () => {
       'owner',
       'updated_at',
       'updated_by_user_id',
+      // v6. The `owner` text stays beside it: a name that matches no account is
+      // still the only record of who a base belongs to in real life.
+      'owner_user_id',
     ])
     assert.deepEqual(columnsOf(path, 'saved_clans'), [
       'clan_tag',
@@ -245,7 +248,7 @@ describe('migration bookkeeping', () => {
     // Mark it as already at v1 — which it effectively is — so v2 onwards run.
     const marked = new DatabaseSync(path)
     marked.exec('PRAGMA user_version = 1')
-    assert.deepEqual(migrate(marked), [2, 3, 4, 5])
+    assert.deepEqual(migrate(marked), [2, 3, 4, 5, 6])
     marked.close()
   })
 })
@@ -428,10 +431,12 @@ describe('migration v5 — card_base_updates', () => {
     const path = join(tempDir(), 'coc.db')
     createV1Database(path, [{ username: 'jcc@example.com' }])
 
-    // Wind back to a realistic v4-shaped database for the backfill to read.
+    // Wind back to a realistic v4-shaped database for the backfill to read: the
+    // stamp table gone, and v6's column with it, so both steps really re-run.
     const staged = new DatabaseSync(path)
     migrate(staged)
     staged.exec('DROP TABLE card_base_updates')
+    staged.exec('ALTER TABLE owner_assignments DROP COLUMN owner_user_id')
     staged.exec('PRAGMA user_version = 4')
 
     const userId = Number(staged.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
@@ -445,7 +450,7 @@ describe('migration v5 — card_base_updates', () => {
     // A second season must get its own stamp, not be folded into the first.
     insert.run('2027-08', '#AAABBB', 9, 4, '2027-08-01T10:00:00.000Z', userId)
 
-    assert.deepEqual(migrate(staged), [5], 'only v5 should be outstanding')
+    assert.deepEqual(migrate(staged), [5, 6], 'v4 leaves exactly v5 and v6 outstanding')
 
     const stamps = staged
       .prepare(
@@ -516,6 +521,188 @@ describe('migration v5 — card_base_updates', () => {
     const row = db.prepare('SELECT updated_at, updated_by_user_id FROM card_base_updates').get()
     assert.equal(row?.['updated_at'], '2026-08-02T10:00:00.000Z', 'the time must survive')
     assert.equal(row?.['updated_by_user_id'], null, 'only the attribution is lost')
+    db.close()
+  })
+})
+
+describe('migration v6 — owner_user_id', () => {
+  const NOW = '2026-08-01T10:00:00.000Z'
+
+  /**
+   * A database shaped the way the shipped build left it: at `user_version = 5`,
+   * `owner_assignments` still free text only. Built by migrating to the head and
+   * dropping v6's column back off, which keeps the rest of the schema honest
+   * rather than re-typing an old copy of it that could drift.
+   *
+   * The owner texts are the three cases that matter, and they are the shapes the
+   * live database actually holds: a name that matches an account but not its
+   * case, one padded with whitespace, and one belonging to a clan member who has
+   * no account at all.
+   */
+  function createV5Database(
+    path: string,
+    owners: { tag: string; owner: string }[],
+    users: { username: string; role?: 'admin' | 'user' }[],
+  ): void {
+    createV1Database(path, users)
+
+    const db = new DatabaseSync(path)
+    migrate(db)
+    db.exec('ALTER TABLE owner_assignments DROP COLUMN owner_user_id')
+    db.exec('PRAGMA user_version = 5')
+
+    const insert = db.prepare(
+      `INSERT INTO owner_assignments (player_tag, owner, updated_at, updated_by_user_id)
+       VALUES (?, ?, ?, ?)`,
+    )
+    for (const row of owners) insert.run(row.tag, row.owner, NOW, 1)
+
+    assert.equal(columnsOf(path, 'owner_assignments').includes('owner_user_id'), false)
+    db.close()
+  }
+
+  function ownerRows(db: DatabaseSync): [string, string, unknown][] {
+    return db
+      .prepare('SELECT player_tag, owner, owner_user_id FROM owner_assignments ORDER BY player_tag')
+      .all()
+      .map((row) => [String(row['player_tag']), String(row['owner']), row['owner_user_id']])
+  }
+
+  it('links the names that match an account and leaves the rest as labels', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV5Database(
+      path,
+      [
+        // Matches 'Jared' but not its case.
+        { tag: '#AAA1', owner: 'jared' },
+        // Matches 'Sam', padded — the sort of thing free text collects.
+        { tag: '#BBB2', owner: '  Sam  ' },
+        // A real clan member with no account. Most of the live rows look like this.
+        { tag: '#CCC3', owner: 'Casey' },
+      ],
+      [{ username: 'Jared' }, { username: 'Sam', role: 'user' }],
+    )
+
+    const db = openDatabase(path)
+    const store = createAuthStore(db)
+    const jared = store.listUsers().find((user) => user.displayName === 'Jared')?.id
+    const sam = store.listUsers().find((user) => user.displayName === 'Sam')?.id
+    assert.ok(jared)
+    assert.ok(sam)
+
+    assert.deepEqual(ownerRows(db), [
+      ['#AAA1', 'jared', jared],
+      ['#BBB2', '  Sam  ', sam],
+      // Nothing resolved it, and nothing deleted it either: the text is the only
+      // record of whose base this is, and it now simply owns nothing.
+      ['#CCC3', 'Casey', null],
+    ])
+
+    // No row was lost, whatever resolved.
+    assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM owner_assignments').get()?.['n']), 3)
+    assert.deepEqual(summarizeOwnerAssignments(db), { total: 3, resolved: 2, unresolved: 1 })
+    db.close()
+  })
+
+  it('reports the split, which is what the boot log says out loud', () => {
+    const path = join(tempDir(), 'coc.db')
+    // The live shape: many assignments, one account, so most do not resolve.
+    createV5Database(
+      path,
+      [
+        { tag: '#AAA1', owner: 'jcc' },
+        { tag: '#BBB2', owner: 'Jared' },
+        { tag: '#CCC3', owner: 'Sam' },
+        { tag: '#DDD4', owner: 'Casey' },
+      ],
+      [{ username: 'jcc' }],
+    )
+
+    const db = openDatabase(path)
+    assert.deepEqual(summarizeOwnerAssignments(db), { total: 4, resolved: 1, unresolved: 3 })
+    db.close()
+  })
+
+  it('resolves a duplicate display name to the lowest id, not at random', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV5Database(
+      path,
+      [{ tag: '#AAA1', owner: 'Sam' }],
+      // display_name has no UNIQUE constraint, so two accounts really can answer
+      // to one name once it is trimmed and case-folded.
+      [{ username: 'Sam' }, { username: 'Sam ', role: 'user' }],
+    )
+
+    const db = openDatabase(path)
+    assert.deepEqual(ownerRows(db), [['#AAA1', 'Sam', 1]])
+    db.close()
+  })
+
+  it('does not re-run the backfill over an assignment an admin has since changed', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV5Database(
+      path,
+      [
+        { tag: '#AAA1', owner: 'Jared' },
+        { tag: '#CCC3', owner: 'Casey' },
+      ],
+      [{ username: 'Jared' }, { username: 'Sam', role: 'user' }],
+    )
+
+    const first = openDatabase(path)
+    const store = createAuthStore(first)
+    const sam = store.listUsers().find((user) => user.displayName === 'Sam')?.id
+    assert.ok(sam)
+    assert.deepEqual(ownerRows(first), [
+      ['#AAA1', 'Jared', 1],
+      ['#CCC3', 'Casey', null],
+    ])
+
+    /*
+     * What an admin does after the upgrade: hand #AAA1 to Sam instead, and resolve
+     * the label on #CCC3 by pointing it at Sam too. A backfill that ran again would
+     * read the stale text on #AAA1 and put Jared back — which is exactly the kind of
+     * silent reversal `user_version` exists to make impossible.
+     */
+    first
+      .prepare('UPDATE owner_assignments SET owner = ?, owner_user_id = ? WHERE player_tag = ?')
+      .run('Sam', sam, '#AAA1')
+    first
+      .prepare('UPDATE owner_assignments SET owner = ?, owner_user_id = ? WHERE player_tag = ?')
+      .run('Sam', sam, '#CCC3')
+    first.close()
+
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+
+    const second = openDatabase(path)
+    assert.deepEqual(migrate(second), [], 'nothing left to apply')
+    assert.deepEqual(ownerRows(second), [
+      ['#AAA1', 'Sam', sam],
+      ['#CCC3', 'Sam', sam],
+    ])
+    assert.deepEqual(summarizeOwnerAssignments(second), { total: 2, resolved: 2, unresolved: 0 })
+    second.close()
+  })
+
+  it('takes a fresh database to a linked owner column with nothing in it', () => {
+    const path = join(tempDir(), 'coc.db')
+    const db = openDatabase(path)
+    assert.deepEqual(summarizeOwnerAssignments(db), { total: 0, resolved: 0, unresolved: 0 })
+    db.close()
+    assert.ok(columnsOf(path, 'owner_assignments').includes('owner_user_id'))
+  })
+
+  it('keeps the assignment when the owning account is deleted', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV5Database(path, [{ tag: '#AAA1', owner: 'Jared' }], [{ username: 'Jared' }])
+
+    const db = openDatabase(path)
+    assert.deepEqual(ownerRows(db), [['#AAA1', 'Jared', 1]])
+
+    // ON DELETE SET NULL, like every other user reference here: the assignment
+    // outlives the account, dropping back to a label rather than vanishing.
+    db.exec('DELETE FROM users WHERE id = 1')
+    assert.deepEqual(ownerRows(db), [['#AAA1', 'Jared', null]])
     db.close()
   })
 })

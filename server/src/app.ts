@@ -82,7 +82,9 @@ export function createApp({
 
   mountSharedDataRoutes(app, sharedData)
 
-  mountCardRoutes(app, cards)
+  // The card routes need the owner column to answer "may this caller write this
+  // base", which is the one place the two shared stores meet.
+  mountCardRoutes(app, cards, sharedData)
 
   // Public so a host's liveness probe can reach it, but the cache size is an
   // internal detail an anonymous caller has no business seeing.

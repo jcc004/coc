@@ -7,7 +7,12 @@ import { TtlCache } from './cache.ts'
 import { createCardInventoryStore } from './cards/store.ts'
 import { createChatStore } from './chat/store.ts'
 import { createCocClient } from './coc-client.ts'
-import { databasePathFromEnv, openDatabase, SCHEMA_VERSION } from './db.ts'
+import {
+  databasePathFromEnv,
+  openDatabase,
+  SCHEMA_VERSION,
+  summarizeOwnerAssignments,
+} from './db.ts'
 import { createSharedDataStore } from './shared-data/store.ts'
 
 const port = Number(process.env.PORT ?? 8787)
@@ -39,6 +44,19 @@ if (bootstrap.status === 'created' || bootstrap.status === 'emailBackfilled') {
 } else if (bootstrap.status !== 'existing') {
   console.error(`\n✗ ${bootstrap.message}\n`)
 }
+
+/*
+ * The owner column's state, every boot. On the boot that applies v6 these are the
+ * backfill's numbers, and most of the existing assignments are expected not to
+ * resolve — they are clan nicknames, not accounts. An unresolved row still shows
+ * its label and simply owns nothing until an admin reassigns it, so this line is
+ * the measure of how much of that work is outstanding rather than a warning.
+ */
+const owners = summarizeOwnerAssignments(db)
+console.log(
+  `→ owner assignments: ${owners.resolved} of ${owners.total} linked to an account, ` +
+    `${owners.unresolved} still a text label (admin-writable only)`,
+)
 
 const cache = new TtlCache(ttlSeconds * 1000)
 setInterval(() => cache.prune(), 60_000).unref()

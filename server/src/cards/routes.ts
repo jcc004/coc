@@ -4,11 +4,14 @@ import {
   CARD_ID_MIN,
   CARD_SEASON,
   MAX_CARD_COUNT,
+  normalizeTag,
   type CardCount,
+  type OwnerRecord,
 } from '@coc/shared'
 import { currentUser, type AuthContext, type AuthEnv } from '../auth/middleware.ts'
 import { errorBody } from '../http.ts'
 import type { CardInventoryStore } from './store.ts'
+import { mayWriteBaseCounts, type BaseOwnership } from './write-access.ts'
 
 /**
  * `/api/cards/*` — reading and writing the shared card inventory.
@@ -17,8 +20,10 @@ import type { CardInventoryStore } from './store.ts'
  * `createApp` and none of these paths is on the public list, so every route is
  * reachable only with a session and `currentUser(c)` cannot be null.
  *
- * There is no per-user filter in any handler, and that is the design: the rows
- * are shared, so every signed-in caller sees and edits the same ones.
+ * **Reads are open to every member** — one canonical set of counts everybody can
+ * see is the reason this data is on the server at all. **Writes belong to the base's
+ * owner**, and the rule is `mayWriteBaseCounts`, one pure function in
+ * `write-access.ts`, so this handler decides nothing on its own.
  *
  * The season is **not** taken from the request. It is `CARD_SEASON`, one
  * constant in `shared/`, so a client cannot write into a season nobody is
@@ -84,7 +89,31 @@ function parseCounts(value: unknown): { counts: CardCount[] } | { problem: strin
   return { counts }
 }
 
-export function mountCardRoutes(app: Hono<AuthEnv>, store: CardInventoryStore): void {
+/**
+ * Just enough of the shared-data store to answer "who owns this base". Narrow on
+ * purpose: the card routes have no business reaching for anything else there, and
+ * a test can hand over one function.
+ */
+export interface BaseOwnerLookup {
+  getOwner(tag: string): OwnerRecord | undefined
+}
+
+/** Flattens what the store knows into what the rule needs, absent row included. */
+function ownershipOf(owners: BaseOwnerLookup, tag: string): BaseOwnership {
+  const canonical = normalizeTag(tag)
+  const record = owners.getOwner(canonical)
+  return {
+    tag: canonical,
+    ownerUserId: record?.ownerUserId ?? null,
+    ownerLabel: record?.owner ?? null,
+  }
+}
+
+export function mountCardRoutes(
+  app: Hono<AuthEnv>,
+  store: CardInventoryStore,
+  owners: BaseOwnerLookup,
+): void {
   app.get('/api/cards/inventory', (c) =>
     c.json({ season: CARD_SEASON, bases: store.listInventory(CARD_SEASON) }),
   )
@@ -94,11 +123,28 @@ export function mountCardRoutes(app: Hono<AuthEnv>, store: CardInventoryStore): 
   )
 
   /**
-   * One base, one request. Last-write-wins: the body replaces everything stored
-   * for that base this season, and the response carries the new `updatedAt` and
-   * `updatedBy` so the caller can show who it now belongs to.
+   * One base, one request, and only if this caller owns it. Last-write-wins among
+   * those entitled to write: the body replaces everything stored for that base this
+   * season, and the response carries the new `updatedAt` and `updatedBy`.
+   *
+   * Ownership is checked before the body is even parsed — whether a caller may
+   * write a base has nothing to do with whether their payload is well formed, and
+   * a 403 that depended on the body would be a strange thing to reason about.
    */
   app.put('/api/cards/inventory/:tag', async (c) => {
+    const decision = mayWriteBaseCounts(currentUser(c), ownershipOf(owners, c.req.param('tag')))
+    if (!decision.allowed) {
+      return c.json(
+        errorBody(
+          403,
+          'forbidden',
+          decision.message,
+          'Card counts are entered by the member who owns the base. Nothing was written.',
+        ),
+        403,
+      )
+    }
+
     const parsed = parseCounts((await readJson(c))['counts'])
     if ('problem' in parsed) {
       return c.json(

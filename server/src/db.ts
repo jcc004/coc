@@ -157,7 +157,8 @@ CREATE TABLE users_v2 (
    * rather than deleted anyway, and disabling touches no row here.)
    *
    * `owner` is free text rather than a FK to users because the owner of a base is
-   * a person in the clan, who need not have an account in this app.
+   * a person in the clan, who need not have an account in this app. (v6 adds the
+   * account link alongside it, and says why the text stays.)
    */
   db.exec(`
 CREATE TABLE saved_clans (
@@ -283,7 +284,52 @@ SELECT season, player_tag, MAX(updated_at),
 `)
 }
 
-const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5]
+/**
+ * v6 — `owner_user_id` on `owner_assignments`: a base belongs to an **account**
+ * now, not to a name somebody typed.
+ *
+ * That is what makes "only the owner may edit this base's card counts" a question
+ * the server can answer. Free text cannot be compared to a session; a user id can.
+ *
+ * The old `owner` text column is **kept**, deliberately. This install has 39
+ * assignments written before accounts existed, carrying names of clan members who
+ * mostly have no account at all, and the honest thing to do with a name that
+ * matches nobody is to keep showing it. Dropping the column would delete the only
+ * record of who a base belongs to in real life; leaving it makes the row a label
+ * that grants no permissions — an unresolved row is writable by admins only, and
+ * an admin reassigning it is what turns it into a real owner.
+ *
+ * The backfill matches `owner` against `users.display_name`, trimmed and
+ * case-insensitively, because that text was only ever meant for human eyes and
+ * "jared" and "Jared " were the same person to whoever typed them. Notes:
+ *
+ * - `LOWER` here is ASCII-only, which SQLite's built-in is; a display name that
+ *   needs Unicode case folding stays unresolved rather than resolving wrongly.
+ * - `display_name` is not unique, so a tie is broken by lowest id — arbitrary but
+ *   deterministic, which matters more than which one wins.
+ * - **Most rows are expected not to resolve.** That is not a failure: it is what a
+ *   free-text column full of clan nicknames looks like. Nothing is deleted, and
+ *   `summarizeOwnerAssignments` is what reports the split at boot.
+ */
+const v6: Migration = (db) => {
+  db.exec(
+    `ALTER TABLE owner_assignments
+       ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`,
+  )
+
+  db.exec(`
+UPDATE owner_assignments
+   SET owner_user_id = (
+     SELECT u.id
+       FROM users u
+      WHERE LOWER(TRIM(u.display_name)) = LOWER(TRIM(owner_assignments.owner))
+      ORDER BY u.id
+      LIMIT 1
+   )
+`)
+}
+
+const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5, v6]
 
 /** The version a fully migrated database reports. */
 export const SCHEMA_VERSION = MIGRATIONS.length
@@ -345,6 +391,36 @@ export function openDatabase(path: string): DatabaseSync {
   migrate(db)
   db.exec('PRAGMA foreign_keys = ON')
   return db
+}
+
+export interface OwnerAssignmentSummary {
+  total: number
+  /** Assignments tied to an account, i.e. ones that grant that user the write. */
+  resolved: number
+  /** Assignments still carrying only a text label, writable by admins alone. */
+  unresolved: number
+}
+
+/**
+ * The owner column's state, for the one line the server logs at boot.
+ *
+ * Read from the table rather than returned by the migration on purpose: the split
+ * is worth seeing on *every* boot, not only the one that ran v6, and after an
+ * admin has reassigned a few rows the stored numbers are the true ones. On the
+ * boot that applies v6 they are exactly the backfill's result.
+ */
+export function summarizeOwnerAssignments(db: DatabaseSync): OwnerAssignmentSummary {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN owner_user_id IS NULL THEN 0 ELSE 1 END) AS resolved
+         FROM owner_assignments`,
+    )
+    .get()
+
+  const total = Number(row?.['total'] ?? 0)
+  const resolved = Number(row?.['resolved'] ?? 0)
+  return { total, resolved, unresolved: total - resolved }
 }
 
 export function databasePathFromEnv(env: Record<string, string | undefined>): string {

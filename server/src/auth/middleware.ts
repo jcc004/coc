@@ -91,16 +91,28 @@ export const requirePasswordUpToDate: MiddlewareHandler<AuthEnv> = async (c, nex
   await next()
 }
 
-export const requireAdmin: MiddlewareHandler<AuthEnv> = async (c, next) => {
-  const user = c.get('user')
-  if (!user) {
-    return c.json(errorBody(401, 'unauthenticated', 'Sign in to use this API.'), 401)
+/**
+ * An admin-only gate that says *why* in the caller's terms.
+ *
+ * A bare "admins only" is a wall: it tells someone their request failed without
+ * telling them what to do next. The message is a parameter so each area can name
+ * the thing an admin does — for the owner column, that an admin assigns
+ * ownership — rather than every route sharing one uninformative sentence.
+ */
+export function requireAdminFor(message: string, hint?: string): MiddlewareHandler<AuthEnv> {
+  return async (c, next) => {
+    const user = c.get('user')
+    if (!user) {
+      return c.json(errorBody(401, 'unauthenticated', 'Sign in to use this API.'), 401)
+    }
+    if (user.role !== 'admin') {
+      return c.json(errorBody(403, 'forbidden', message, hint), 403)
+    }
+    await next()
   }
-  if (user.role !== 'admin') {
-    return c.json(errorBody(403, 'forbidden', 'This endpoint is for admins only.'), 403)
-  }
-  await next()
 }
+
+export const requireAdmin = requireAdminFor('This endpoint is for admins only.')
 
 /** Valid only downstream of `requireAuth`, which is what makes the throw unreachable. */
 export function currentUser(c: AuthContext): SessionUser {

@@ -5,6 +5,7 @@ import { labelIcon, leagueIcon } from '../coc-assets.ts'
 import { formatFull, formatStat, ratio } from '../format.ts'
 import { hrefFor, useAsync, type Recent } from '../hooks.ts'
 import { artFor, type ArtKind } from '../wiki-art.ts'
+import { PlayerCardPanel } from './PlayerCardPanel.tsx'
 import {
   Card,
   ErrorPanel,
@@ -133,6 +134,11 @@ export function PlayerView({ tag, onLoaded }: { tag: string; onLoaded: (entry: R
           </div>
         </div>
       </Card>
+
+      {/* Directly under the profile header, above the stats: a player page is a
+          base in the card event, and the tag it is keyed by is this one. Collapsed,
+          so sixty tiles cannot bury the rest of the page. */}
+      <PlayerCardPanel tag={player.tag} name={player.name} />
 
       <TileRow>
         <StatTile label="Best trophies" value={player.bestTrophies} />

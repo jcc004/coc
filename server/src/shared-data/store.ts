@@ -21,8 +21,14 @@ import {
  * that two people can race on the same row, which is what the expected-value check
  * in `applyOwners` exists to handle.
  *
- * The only thing recorded *about* a user is `updated_by_user_id`, for attribution,
- * and it is nullable: the data outlives the account.
+ * Attribution (`updated_by_user_id`) is nullable, because the data outlives the
+ * account that entered it.
+ *
+ * Ownership is different, and is the one thing here that is not free text any
+ * more: `owner_user_id` names the account a base belongs to, which is what lets
+ * the card routes ask "is this caller the owner". The `owner` text survives beside
+ * it as the label for a row that has never been matched to an account — see
+ * migration v6. Writing either is an admin's job; the routes enforce that.
  */
 
 function asText(value: unknown): string {
@@ -62,10 +68,17 @@ function toSavedClan(row: Record<string, unknown>): SavedClanRecord {
   return record
 }
 
+/**
+ * `owner` is the owning account's *current* display name when the row resolves,
+ * and the legacy text otherwise — so a rename shows up everywhere at once, and a
+ * row that matched nobody keeps reading as whatever was typed.
+ */
 function toOwner(row: Record<string, unknown>): OwnerRecord {
+  const linkedName = asTextOrNull(row['owner_display_name'])
   return {
     tag: asText(row['player_tag']),
-    owner: asText(row['owner']),
+    owner: linkedName ?? asText(row['owner']),
+    ownerUserId: asIntOrUndefined(row['owner_user_id']) ?? null,
     updatedAt: asText(row['updated_at']),
     updatedBy: asTextOrNull(row['updated_by']),
   }
@@ -92,12 +105,28 @@ export interface SharedDataStore {
   removeClan(tag: string): boolean
 
   listOwners(): OwnerRecord[]
+  /**
+   * One assignment, or `undefined` for a base nobody has been given. This is what
+   * the card routes read to decide whether a caller may write that base.
+   */
+  getOwner(tag: string): OwnerRecord | undefined
+  /**
+   * Hands a base to an account outright — the single set behind the owner picker.
+   * `undefined` means there is no such account and nothing was written; there is
+   * deliberately no "assign to a name" here, because a name is not something a
+   * session can be compared against.
+   */
+  setOwner(tag: string, ownerUserId: number, userId: number): OwnerRecord | undefined
   removeOwner(tag: string): boolean
   /**
    * Optimistic-concurrency bulk apply: a row is written only if the stored owner
    * still equals the `expectedOwner` the client sent. Mismatches come back as
    * conflicts carrying the *real* current value, and the rows that did match are
    * still applied — one stale row must not block the other nine.
+   *
+   * Text that matches an account's display name (trimmed, case-insensitively —
+   * the migration's rule) is linked to it; text that matches nobody is stored as
+   * a label owning nothing.
    */
   applyOwners(rows: OwnerBulkRow[], userId: number): OwnerBulkResponse
 
@@ -117,9 +146,15 @@ const CLAN_SELECT = `
     FROM saved_clans c LEFT JOIN users u ON u.id = c.updated_by_user_id
 `
 
+/* Two joins on `users` doing two different jobs: `owner` is who the base belongs
+   to, `updated_by` is who last said so. They are usually different people. */
 const OWNER_SELECT = `
-  SELECT o.player_tag, o.owner, o.updated_at, u.display_name AS updated_by
-    FROM owner_assignments o LEFT JOIN users u ON u.id = o.updated_by_user_id
+  SELECT o.player_tag, o.owner, o.owner_user_id, o.updated_at,
+         owner_user.display_name AS owner_display_name,
+         editor.display_name AS updated_by
+    FROM owner_assignments o
+    LEFT JOIN users owner_user ON owner_user.id = o.owner_user_id
+    LEFT JOIN users editor ON editor.id = o.updated_by_user_id
 `
 
 export function createSharedDataStore(db: DatabaseSync): SharedDataStore {
@@ -159,17 +194,28 @@ export function createSharedDataStore(db: DatabaseSync): SharedDataStore {
 
     listOwners: db.prepare(`${OWNER_SELECT} ORDER BY o.player_tag`),
     findOwner: db.prepare(`${OWNER_SELECT} WHERE o.player_tag = ?`),
+    // The same trimmed, case-insensitive match migration v6 backfilled with, so
+    // typing a teammate's name into the bulk bar links the account exactly as the
+    // backfill would have. Lowest id breaks a tie between duplicate names.
+    findUserByDisplayName: db.prepare(
+      `SELECT id, display_name FROM users
+        WHERE LOWER(TRIM(display_name)) = LOWER(TRIM(?)) ORDER BY id LIMIT 1`,
+    ),
+    findUserById: db.prepare('SELECT id, display_name FROM users WHERE id = ?'),
     upsertOwner: db.prepare(
-      `INSERT INTO owner_assignments (player_tag, owner, updated_at, updated_by_user_id)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO owner_assignments
+         (player_tag, owner, owner_user_id, updated_at, updated_by_user_id)
+       VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(player_tag) DO UPDATE SET
          owner = excluded.owner,
+         owner_user_id = excluded.owner_user_id,
          updated_at = excluded.updated_at,
          updated_by_user_id = excluded.updated_by_user_id`,
     ),
     insertOwnerIfAbsent: db.prepare(
-      `INSERT INTO owner_assignments (player_tag, owner, updated_at, updated_by_user_id)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO owner_assignments
+         (player_tag, owner, owner_user_id, updated_at, updated_by_user_id)
+       VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(player_tag) DO NOTHING`,
     ),
     deleteOwner: db.prepare('DELETE FROM owner_assignments WHERE player_tag = ?'),
@@ -183,6 +229,17 @@ export function createSharedDataStore(db: DatabaseSync): SharedDataStore {
   function findOwner(tag: string): OwnerRecord | undefined {
     const row = statements.findOwner.get(tag)
     return row ? toOwner(row) : undefined
+  }
+
+  /**
+   * The account a typed owner name refers to, if any. The stored text becomes the
+   * account's own display name when it resolves, so the label and the link cannot
+   * drift apart on the way in.
+   */
+  function resolveOwnerText(text: string): { owner: string; ownerUserId: number | null } {
+    const row = statements.findUserByDisplayName.get(text)
+    if (!row) return { owner: text, ownerUserId: null }
+    return { owner: asText(row['display_name']), ownerUserId: asIntOrUndefined(row['id']) ?? null }
   }
 
   /** `null` for an absent optional stat, so the column reads as unknown not zero. */
@@ -238,6 +295,27 @@ export function createSharedDataStore(db: DatabaseSync): SharedDataStore {
       return statements.listOwners.all().map(toOwner)
     },
 
+    getOwner(tag) {
+      return findOwner(normalizeTag(tag))
+    },
+
+    setOwner(tag, ownerUserId, userId) {
+      const canonicalTag = normalizeTag(tag)
+      const account = statements.findUserById.get(ownerUserId)
+      if (!account) return undefined
+
+      // The text column tracks the account's display name so an unresolved row and
+      // a resolved one are never both true of the same assignment.
+      statements.upsertOwner.run(
+        canonicalTag,
+        asText(account['display_name']),
+        ownerUserId,
+        new Date().toISOString(),
+        userId,
+      )
+      return findOwner(canonicalTag)
+    },
+
     removeOwner(tag) {
       return Number(statements.deleteOwner.run(normalizeTag(tag)).changes) > 0
     },
@@ -282,7 +360,8 @@ export function createSharedDataStore(db: DatabaseSync): SharedDataStore {
           continue
         }
 
-        statements.upsertOwner.run(tag, next, now, userId)
+        const resolved = resolveOwnerText(next)
+        statements.upsertOwner.run(tag, resolved.owner, resolved.ownerUserId, now, userId)
         const saved = findOwner(tag)
         if (saved) applied.push(saved)
       }
@@ -308,7 +387,14 @@ export function createSharedDataStore(db: DatabaseSync): SharedDataStore {
           continue
         }
 
-        const result = statements.insertOwnerIfAbsent.run(tag, owner, now, userId)
+        const resolved = resolveOwnerText(owner)
+        const result = statements.insertOwnerIfAbsent.run(
+          tag,
+          resolved.owner,
+          resolved.ownerUserId,
+          now,
+          userId,
+        )
         if (Number(result.changes) > 0) owners.applied += 1
         else owners.skipped += 1
       }

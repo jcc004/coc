@@ -1,6 +1,6 @@
 import type { Hono } from 'hono'
 import { normalizeTag, type OwnerBulkRow, type SavedClanInput } from '@coc/shared'
-import { currentUser, type AuthContext, type AuthEnv } from '../auth/middleware.ts'
+import { currentUser, requireAdminFor, type AuthContext, type AuthEnv } from '../auth/middleware.ts'
 import { errorBody } from '../http.ts'
 import type { SharedDataStore } from './store.ts'
 
@@ -11,11 +11,27 @@ import type { SharedDataStore } from './store.ts'
  * `createApp` and none of these paths is on the public list. Every route is
  * therefore reachable only with a session, and `currentUser(c)` cannot be null.
  *
- * There is no per-user filter in any handler, and that is the design: the rows are
- * shared, so every signed-in caller sees and edits the same ones. `InvalidTagError`
- * from `normalizeTag` is left to fall through to the app's error handler, which
- * already turns it into a 400 with the tag rule as a hint.
+ * **Reading** has no per-user filter and that is still the design: the rows are
+ * shared, so every signed-in caller sees every saved clan and every owner. Sharing
+ * this data was the reason it moved to the server.
+ *
+ * **Writing the owner column is an admin decision**, because ownership now decides
+ * who may edit a base's card counts — a member who could reassign a base could
+ * grant themselves that write, which makes it not a permission at all. The three
+ * owner writes (set, bulk apply, clear) sit behind `ownerWritesAreAdminOnly`; the
+ * saved-clan routes are untouched, because a clan list is nobody's permission.
+ *
+ * `InvalidTagError` from `normalizeTag` is left to fall through to the app's error
+ * handler, which already turns it into a 400 with the tag rule as a hint.
  */
+
+const ADMIN_ASSIGNS_OWNERSHIP =
+  'An admin assigns ownership of a base. Ask one to point this tag at the right account.'
+
+const ownerWritesAreAdminOnly = requireAdminFor(
+  ADMIN_ASSIGNS_OWNERSHIP,
+  'Everyone can read every owner; only an admin can change one.',
+)
 
 async function readJson(c: AuthContext): Promise<Record<string, unknown>> {
   try {
@@ -103,7 +119,37 @@ export function mountSharedDataRoutes(app: Hono<AuthEnv>, store: SharedDataStore
 
   app.get('/api/owners', (c) => c.json({ owners: store.listOwners() }))
 
-  app.delete('/api/owners/:tag', (c) => {
+  /**
+   * The single set: hand one base to one account. A user id, not a name — a name
+   * cannot be compared to the session of whoever is trying to write that base's
+   * counts, which is the whole reason ownership moved onto `users`.
+   */
+  app.put('/api/owners/:tag', ownerWritesAreAdminOnly, async (c) => {
+    const body = await readJson(c)
+    const userId = body['userId']
+    if (typeof userId !== 'number' || !Number.isInteger(userId)) {
+      return c.json(
+        errorBody(
+          400,
+          'badRequest',
+          'Send { "userId": <account id> } to assign a base.',
+          'Ownership names an account. DELETE this path to clear it instead.',
+        ),
+        400,
+      )
+    }
+
+    const owner = store.setOwner(c.req.param('tag'), userId, currentUser(c).id)
+    if (!owner) {
+      return c.json(
+        errorBody(404, 'notFound', `No account has id ${userId}, so nothing was assigned.`),
+        404,
+      )
+    }
+    return c.json({ owner })
+  })
+
+  app.delete('/api/owners/:tag', ownerWritesAreAdminOnly, (c) => {
     const tag = c.req.param('tag')
     if (!store.removeOwner(tag)) {
       return c.json(errorBody(404, 'notFound', `${normalizeTag(tag)} has no owner assigned.`), 404)
@@ -116,7 +162,7 @@ export function mountSharedDataRoutes(app: Hono<AuthEnv>, store: SharedDataStore
    * row — a missing one would default to `''`, which reads as "I believe nobody
    * owns this" and is exactly the silent clobber this endpoint exists to prevent.
    */
-  app.post('/api/owners/bulk', async (c) => {
+  app.post('/api/owners/bulk', ownerWritesAreAdminOnly, async (c) => {
     const body = await readJson(c)
     const raw = asRecordArray(body['rows'])
 
@@ -143,8 +189,17 @@ export function mountSharedDataRoutes(app: Hono<AuthEnv>, store: SharedDataStore
 
   /* ---------- one-time import ---------- */
 
+  /**
+   * The upload is **not** admin-only: a member's own browser data is theirs to
+   * bring across, and their saved clans grant nobody anything.
+   *
+   * Its owner half is, though — otherwise an import would be a way around the
+   * gate on the routes above. A non-admin's owner rows are refused unexamined and
+   * counted, rather than silently dropped, so the client can say what happened.
+   */
   app.post('/api/import', async (c) => {
     const body = await readJson(c)
+    const user = currentUser(c)
 
     const owners = asRecordArray(body['owners'])
       .map((entry) => ({ tag: asString(entry['tag']), owner: asString(entry['owner']) }))
@@ -154,6 +209,13 @@ export function mountSharedDataRoutes(app: Hono<AuthEnv>, store: SharedDataStore
       .map(asSavedClanInput)
       .filter((entry): entry is SavedClanInput => entry !== undefined)
 
-    return c.json(store.importFromBrowser({ owners, clans }, currentUser(c).id))
+    const mayWriteOwners = user.role === 'admin'
+    const result = store.importFromBrowser(
+      { owners: mayWriteOwners ? owners : [], clans },
+      user.id,
+    )
+    if (!mayWriteOwners && owners.length > 0) result.owners.refused = owners.length
+
+    return c.json(result)
   })
 }

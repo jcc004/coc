@@ -8,12 +8,74 @@ import { PlayerView } from './components/PlayerView.tsx'
 import { SavedClansView } from './components/SavedClansView.tsx'
 import { SearchBar } from './components/SearchBar.tsx'
 import { WarView } from './components/WarView.tsx'
-import { hrefFor, useRecents, useRestoredRoute, useRoute, useTheme, type Theme } from './hooks.ts'
+import {
+  hrefFor,
+  useLastClan,
+  useRecents,
+  useRestoredRoute,
+  useRoute,
+  useTheme,
+  type Route,
+  type Theme,
+} from './hooks.ts'
 import { useOneTimeImport } from './import.ts'
 import { useSession } from './session.ts'
 
 const NEXT_THEME: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' }
 const THEME_LABEL: Record<Theme, string> = { system: '◐ System', light: '☀ Light', dark: '☾ Dark' }
+
+/**
+ * The compass rosette beside the title, drawn by hand.
+ *
+ * Inline SVG and nothing else: every mark in this app is either game art from the
+ * API and the wiki or it is CSS, and an icon font or an icon package for one
+ * 24-pixel glyph would be the first dependency added for decoration.
+ *
+ * Two four-point stars — long on the cardinals, short and paler on the diagonals —
+ * inside a ring. Both are painted in `currentColor`, so the mark takes the
+ * topbar's ink in either theme and needs no colour of its own in `styles.css`;
+ * `opacity` rather than a second colour is what separates the two stars, for the
+ * same reason.
+ *
+ * `aria-hidden`, and it sits **inside** the title's existing link rather than
+ * beside it as a second one. Two adjacent links to the same place would be two
+ * tab stops reading as two destinations, and giving the icon its own name ("Home")
+ * would invent a second one. So: one link, one accessible name, and it is the
+ * title's own words — see the topbar below.
+ */
+function CompassRosette() {
+  return (
+    <svg
+      className="topbar__rosette"
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="10.75"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        opacity="0.5"
+      />
+      {/* NE, SE, SW, NW, with the notches between them on the cardinals. */}
+      <path
+        d="M17.3 6.7 14.2 12 17.3 17.3 12 14.2 6.7 17.3 9.8 12 6.7 6.7 12 9.8Z"
+        fill="currentColor"
+        opacity="0.45"
+      />
+      {/* N, E, S, W: longer, solid, and drawn last so they read as the needle. */}
+      <path
+        d="M12 1.7 14.3 9.7 22.3 12 14.3 14.3 12 22.3 9.7 14.3 1.7 12 9.7 9.7Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
 
 export function App() {
   const route = useRoute()
@@ -26,6 +88,10 @@ export function App() {
      there is a signed-in user to key the history by. */
   const signedInUser = session.state.status === 'signedIn' ? session.state.user : null
   useRestoredRoute(signedInUser?.id ?? null)
+
+  /* Feeds the topbar's Clan button. Also per account, and also declared up here
+     because it is a hook; it returns null until a clan has been opened. */
+  const lastClan = useLastClan(signedInUser?.id ?? null)
 
   /* Saved clans and owners moved to the server. Anything this browser still holds
      in localStorage is handed over once, on the first sign-in after that change.
@@ -66,19 +132,44 @@ export function App() {
     )
   }
 
+  /*
+   * Where the Clan button goes: the last clan this account opened, or — before any
+   * has been opened — the saved-clans list, which is where you go to pick one. It
+   * is never a dead control and never navigates nowhere.
+   */
+  const clanTarget: Route = lastClan !== null ? { view: 'clan', tag: lastClan } : { view: 'home' }
+
   return (
     <div className="shell">
       <header className="topbar">
         <h1 className="topbar__title">
-          <a href={hrefFor({ view: 'home' })}>Clash of Clans Explorer</a>
+          {/* One link over the rosette and the words, so the icon navigates home
+              without becoming a second tab stop with its own name. */}
+          <a className="topbar__home" href={hrefFor({ view: 'home' })}>
+            <CompassRosette />
+            Clash of Clans Explorer
+          </a>
         </h1>
-        {/* Present on every sub page, absent on the list it points at. */}
-        {route.view !== 'home' ? (
-          <a className="icon-button" href={hrefFor({ view: 'home' })}>
-            ← Saved clans
+        {/*
+         * Absent where it would point at the page you are already on, like the
+         * Cards link below. Comparing the view is enough for the clan case: being
+         * on a clan page is what makes it the last clan, so the target is this
+         * page. The saved-clans list stays reachable from the title.
+         */}
+        {route.view !== clanTarget.view ? (
+          <a
+            className="icon-button"
+            href={hrefFor(clanTarget)}
+            title={
+              lastClan !== null
+                ? `Back to ${lastClan}, the last clan you opened`
+                : 'No clan opened yet — this opens the saved clans'
+            }
+          >
+            Clan
           </a>
         ) : null}
-        {/* Present everywhere but the card page itself, like the Saved clans link. */}
+        {/* Present everywhere but the card page itself, like the Clan link above. */}
         {route.view !== 'cards' ? (
           <a className="icon-button" href={hrefFor({ view: 'cards' })} title="Card collection">
             Cards

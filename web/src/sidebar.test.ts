@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { hashTarget, lastRouteKey, routeToRemember, shouldRestoreRoute } from './last-route.ts'
+import {
+  clanTargetTag,
+  hashTarget,
+  lastClanKey,
+  lastRouteKey,
+  routeToRemember,
+  shouldRestoreRoute,
+} from './last-route.ts'
 import {
   addRecent,
   MAX_RECENTS_PER_KIND,
@@ -105,6 +112,34 @@ describe('lastRouteKey', () => {
   it('is scoped per account, so a shared browser does not cross wires', () => {
     assert.notEqual(lastRouteKey(1), lastRouteKey(2))
     assert.match(lastRouteKey(7), /7$/)
+  })
+})
+
+describe('lastClanKey', () => {
+  it('is scoped per account, and is not the last-route key', () => {
+    assert.notEqual(lastClanKey(1), lastClanKey(2))
+    // Two different things: the last route is usually not a clan at all.
+    assert.notEqual(lastClanKey(1), lastRouteKey(1))
+  })
+})
+
+describe('clanTargetTag', () => {
+  it('gives back the stored clan, canonicalised', () => {
+    assert.equal(clanTargetTag('#G88CYQP'), '#G88CYQP')
+    assert.equal(clanTargetTag('g88cyqp'), '#G88CYQP')
+    assert.equal(clanTargetTag('%23G88CYQP'), '#G88CYQP')
+  })
+
+  it('answers null before any clan has been visited', () => {
+    // The caller's cue to fall back to the saved-clans list, so the Clan button
+    // in the topbar always goes somewhere.
+    assert.equal(clanTargetTag(null), null)
+  })
+
+  it('answers null for junk left in storage rather than navigating to it', () => {
+    for (const stored of ['', '!!', '#', 'a'.repeat(40)]) {
+      assert.equal(clanTargetTag(stored), null, `for ${JSON.stringify(stored)}`)
+    }
   })
 })
 

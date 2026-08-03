@@ -255,6 +255,12 @@ schema changes) because v2 has to drop and re-create `users`.
   stamp derived from sparse count rows disappears when a base is cleared to zero; see the same
   section. The backfill is inside the versioned step, so a second boot cannot re-run it over a
   stamp that has since moved on — there is a test for exactly that.
+- **v6** — `owner_user_id` on `owner_assignments`, so a base belongs to an *account* rather than
+  to a name somebody typed, plus a backfill matching the existing `owner` text against
+  `display_name` (trimmed, case-insensitively). The text column is **kept**: an unmatched name
+  is still the only record of whose base it is, and it now grants nothing. Most rows are
+  expected not to resolve, which is not a failure. See
+  [Migration v6, and what the backfill did](#migration-v6-and-what-the-backfill-did).
 
 Backfill, per row:
 
@@ -284,9 +290,9 @@ log into.
 
 One SQLite file, `DATABASE_PATH` (default `./data/coc.db`, resolved against the server
 workspace's working directory, so `npm run dev` puts it at `server/data/coc.db` — gitignored).
-The directory is created if missing. Six tables — `users`, `sessions`, `chat_messages`,
-`saved_clans`, `owner_assignments`, `card_inventory` — created and migrated on boot by
-`user_version`.
+The directory is created if missing. Seven tables — `users`, `sessions`, `chat_messages`,
+`saved_clans`, `owner_assignments`, `card_inventory`, `card_base_updates` — created and migrated
+on boot by `user_version`, currently at **v6**.
 
 `node:sqlite` is used rather than `better-sqlite3` because it is in the runtime from Node 22.5
 on: no native module, nothing to compile on the host, nothing to rebuild when Node is
@@ -401,6 +407,13 @@ Three modules in `web/src/` are machine-written and must not be hand-edited: `co
 art) and `cards.generated.ts` (the sixty event cards). Each has a hand-written half where the
 tests point — `wiki-art.ts` for the second, `cards.ts` for the third.
 
+Anything with rules in it is a pure module in `web/src/` with its own tests, never inline in a
+component: `saved-table.ts` (sorting, paging), `base-names.ts` (how a base is written),
+`card-trades.ts` (the four swap rules), `card-summary.ts` (per-deck counts and "is a trade
+waiting"), `last-route.ts` (what to restore, and which clan the topbar's Clan button opens).
+Components that are shown in more than one place are shared rather than copied — `BaseCardEditor`
+is the one 60-tile card grid, rendered by both the card page and a player page.
+
 ## Phones and tablets first
 
 This app is read mostly on a phone, so small screens are the design rather than a fallback.
@@ -496,6 +509,52 @@ identical concurrent requests are coalesced into one upstream call. Both exist t
 under Supercell's per-token rate limit while clicking around a roster. The cache is
 per-process and disappears on restart — that is deliberate for a personal tool.
 
+## The topbar
+
+A gold plate spanning both columns, carrying the title and up to five controls. It wraps at
+390px rather than scrolling sideways, so everything on it stays reachable on a phone (measured:
+two rows, 128px tall, no horizontal overflow).
+
+### The compass rosette
+
+Left of the words **Clash of Clans Explorer** is a compass rosette: a ring around two four-point
+stars, long and solid on the cardinals, shorter and at 45% opacity on the diagonals.
+
+It is **inline SVG written by hand** in `web/src/App.tsx` — no dependency, no external file, no
+icon font. Everything else drawn in this app is either game art from the API and the wiki or it
+is CSS, and one 24-pixel glyph is not a reason to add a package. Both stars paint in
+`currentColor`, so the mark takes whatever ink the plate uses (`--on-gold`, which differs between
+the themes) and needs no colour of its own; `opacity` rather than a second colour is what
+separates the two stars, for the same reason.
+
+**It is inside the title's existing link, not beside it.** Two adjacent links to the same place
+would be two tab stops reading as two destinations, and naming the icon "Home" would invent a
+second one. So the icon takes `aria-hidden="true"` and the single link keeps the accessible name
+**"Clash of Clans Explorer"** — verified from the computed accessibility tree, not from the
+markup: `link` / `Clash of Clans Explorer`, with the `<svg>` itself `ignored` and `role: none`.
+It navigates to the homepage, which is the saved-clans list.
+
+### The Clan button
+
+Labelled **Clan**, and it goes to **the last clan this account opened** — not to the saved-clans
+list. Coming back to a clan is the common move, and it used to cost a trip through the list.
+
+The tag is persisted per account under `coc:lastClan:<id>`, exactly as `coc:lastRoute:<id>`
+already is, because a browser can be shared and handing one person another person's clan would be
+worse than having no shortcut at all. It is written by `useLastClan` in `web/src/hooks.ts` on
+every hash change, canonicalised on the way in, and only `#/clan/<tag>` counts — a war page is
+*about* a clan but is not the clan.
+
+**Before any clan has been opened it goes to the saved-clans list**, which is where you pick one.
+That is the one thing it must never be: a dead control, or a link to nowhere. Its tooltip says
+which of the two it is doing (`Back to #G88CYQP, the last clan you opened` /
+`No clan opened yet — this opens the saved clans`). The decision is `clanTargetTag()` in
+`web/src/last-route.ts`, pure and tested including the junk-in-storage case.
+
+Like the Cards link, it is **absent where it would point at the page you are on** — on any clan
+page (the last clan is the one you are looking at) and, with no clan yet, on the list itself. The
+saved-clans list stays one click away on the title.
+
 ## The lookup sidebar
 
 Lookup lives in a right-hand sidebar, sticky near the top so it stays put while the main
@@ -540,19 +599,27 @@ Saved clans and owner assignments used to be `localStorage`, under `coc:savedCla
 That is the whole point of the exercise. Ten people looking at the same clan need *one*
 canonical answer to "who owns this base"; per-user copies give ten answers and no way to
 reconcile them, and the same person sees a different list on their phone. So there is one row
-per clan tag and one per player tag for the install, and every signed-in caller reads and
-writes the same ones. There is no per-user filter in any handler.
+per clan tag and one per player tag for the install, and **every signed-in caller reads all of
+them**. Reading is not filtered per user, and shared visibility is not what changed when
+ownership became a permission — see
+[Who may assign an owner, and who may write a base](#who-may-assign-an-owner-and-who-may-write-a-base).
 
 ```
 saved_clans        clan_tag PK, name, custom, clan_level, members, clan_points,
                    war_league, updated_at, updated_by_user_id → users(id)
-owner_assignments  player_tag PK, owner, updated_at, updated_by_user_id → users(id)
+owner_assignments  player_tag PK, owner, owner_user_id → users(id) ON DELETE SET NULL,
+                   updated_at, updated_by_user_id → users(id)
 ```
 
-- **`owner` is free text, deliberately not a FK to `users`.** The owner of a base is a person
-  in the clan, who need not have an account in this app. *Future option:* if that stops being
-  true, the column could become a nullable `owner_user_id` alongside the text, so a linked
-  owner renders as an account and an unlinked one still renders as a name.
+- **A base belongs to an account: `owner_user_id`** (migration **v6**). That is what makes "only
+  the owner may edit this base's card counts" a question the server can answer at all — free
+  text cannot be compared to a session, a user id can.
+- **The `owner` text column stays beside it, and is not going away.** It is the label for a row
+  that has never been matched to an account, which is most of them: these assignments predate
+  accounts and name clan members who mostly have none. An unmatched name is still the only
+  record of whose base it is in real life, so it is kept and shown — but it grants **nothing**.
+  When a row does resolve, the stored text tracks that account's display name and the label the
+  API returns comes from `users`, joined on read, so a rename cannot leave the two disagreeing.
 - **`updated_by_user_id` is nullable, `ON DELETE SET NULL`.** The data outlives the account
   that entered it. Losing an attribution is acceptable; losing the assignment because somebody
   left the clan is not. **Disabling an account touches no row here at all** — disable is a
@@ -570,10 +637,74 @@ were written, and a test asserts each one 401s anonymously.
 | `POST /api/saved/clans` | insert or refresh; an existing `custom` label survives |
 | `PATCH /api/saved/clans/:tag` | rename, which marks the row `custom` |
 | `DELETE /api/saved/clans/:tag` | remove, for everyone |
-| `GET /api/owners` | every assignment |
-| `DELETE /api/owners/:tag` | remove one |
-| `POST /api/owners/bulk` | the conditional bulk apply, below |
-| `POST /api/import` | the one-time browser hand-off, below |
+| `GET /api/owners` | every assignment, with `ownerUserId` — **everyone** |
+| `PUT /api/owners/:tag` | assign one base to one account, `{ "userId": n }` — **admin only** |
+| `DELETE /api/owners/:tag` | remove one — **admin only** |
+| `POST /api/owners/bulk` | the conditional bulk apply, below — **admin only** |
+| `POST /api/import` | the one-time browser hand-off, below; its owner half is admin only |
+
+### Who may assign an owner, and who may write a base
+
+Three rules, and they are the whole authorisation model:
+
+1. **Everyone signed in reads everything.** Every base, every owner, every card count. That was
+   the reason this data moved to the server and it has not changed.
+2. **Only an admin writes the owner column** — the single set, the bulk apply, and the clear.
+   Ownership decides who may edit a base's card counts, so a member who could reassign a base
+   could grant themselves that write, which would make it not a permission at all. A member
+   attempting one gets a 403 saying *an admin assigns ownership of a base*, not a bare denial.
+3. **Only the owning account writes that base's card counts** —
+   `PUT /api/cards/inventory/:tag`. A non-owner gets a 403 that **names the owner**
+   ("`#2GCJ2QPU` belongs to Jared…"), because being told who to ask is the difference between a
+   usable message and a wall.
+
+Two decisions inside rule 3, both deliberate:
+
+- **An admin may also write any base's counts.** An admin can reassign ownership to themselves
+  in one request, so refusing them the direct write would stop nothing and would remove their
+  only way to fix somebody else's mistake.
+- **A base nobody's account owns is writable by admins only.** Nobody else has a claim to it.
+  That covers a base with no assignment *and* a base whose assignment is an unresolved text
+  label — the label is a note about a person, not a grant to a session. On this install that is
+  22 of the 39 live assignments, so a member who finds a base refused should expect the fix to
+  be an admin assigning it rather than anything they can do themselves.
+
+The rule is **one pure function**, `mayWriteBaseCounts` in `server/src/cards/write-access.ts`,
+with its own tests in `write-access.test.ts` — no database, no session, no HTTP. It is one
+function rather than a check in each handler because spread out it would drift: one place would
+forget the admin case, another would treat an unowned base as fair game, and nobody could state
+the rule without reading three files. The route consults it *before* parsing the body, so a
+refusal never depends on whether the payload happened to be well formed.
+
+The owner routes are gated by middleware rather than by a check inside each handler, so a route
+added later cannot become a hole by omission — the same reasoning as `/api/*` being
+deny-by-default. `requireAdminFor(message)` in `server/src/auth/middleware.ts` takes the message
+so each area can say what an admin actually does there.
+
+### Migration v6, and what the backfill did
+
+v6 adds `owner_user_id` and backfills it by matching the existing `owner` text against
+`users.display_name`, **trimmed and case-insensitively** — that text was only ever meant for
+human eyes, and `jared`, `Jared ` and `Jared` were the same person to whoever typed it. Notes:
+
+- **Most rows do not resolve, and that is not a failure.** On this install the backfill linked
+  **17 of 39** assignments and left **22** as text labels (`lisa_sweatt` ×9, `william` ×13 —
+  neither matches an account's display name; note `lisa_sweatt` is *not* `lisa sweatt`). Nothing
+  is deleted, nothing fails, and an unresolved row simply owns nothing until an admin reassigns
+  it with `PUT /api/owners/:tag`.
+- **The server says the split out loud at boot**, e.g.
+  `→ owner assignments: 17 of 39 linked to an account, 22 still a text label (admin-writable only)`.
+  It is read from the table on every boot rather than reported by the migration, so it stays true
+  after an admin has reassigned a few.
+- **It runs exactly once**, like every other step, because `PRAGMA user_version` is the marker.
+  That matters more here than elsewhere: a backfill that ran again would read the stale text on a
+  row an admin has since pointed somewhere else and silently put the old owner back. There is a
+  test for precisely that.
+- `LOWER` in SQLite is ASCII-only, so a display name needing Unicode case folding stays
+  unresolved rather than resolving wrongly. Two accounts answering to one name resolve to the
+  lowest id — arbitrary, but deterministic.
+- Typing a name into the **bulk bar** goes through the same matching rule, so an admin typing a
+  teammate's display name links the account rather than creating another label.
 
 ### Optimistic concurrency on the bulk owner apply
 
@@ -611,6 +742,12 @@ saying what became of it is not on, least of all when some of it was skipped.
 The `localStorage` keys are **read and never cleared**, so if the import turns out to have been
 wrong the original data is still sitting there.
 
+**The upload itself is not admin-only, but its owner half is.** A member's saved clans are
+theirs to bring across and grant nobody anything; their owner rows would be a way straight
+around the admin gate on `/api/owners`, so for a non-admin they are refused unexamined and
+reported as `owners.refused` rather than silently dropped. The clans in the same request are
+still applied.
+
 ### The client stores
 
 `web/src/owners.ts` and `web/src/saved-clans.ts` keep the shape they had — `useOwners()`,
@@ -647,10 +784,19 @@ with a display name, Town Hall, trophies, clan, and an **owner**. The clan page 
 all of that for every member, so the table was redundant and is gone. The one thing worth
 keeping is the owner, because it is the only field the API cannot supply.
 
-Owner is now a bare annotation keyed by player tag, stored on the server and **shared with
-everyone** (see [The shared data model](#the-shared-data-model)), through `web/src/owners.ts`.
-The clan roster joins it in as a sortable **Owner** column, so the place you assign an owner
-is the place you can already see the Town Hall, trophies and rank you are deciding from.
+Owner is keyed by player tag, stored on the server and **readable by everyone** (see
+[The shared data model](#the-shared-data-model)), through `web/src/owners.ts`. The clan roster
+joins it in as a sortable **Owner** column, so the place you assign an owner is the place you
+can already see the Town Hall, trophies and rank you are deciding from.
+
+It is no longer a bare annotation: an owner is an **account**, and **only an admin can set one**
+(see [Who may assign an owner, and who may write a base](#who-may-assign-an-owner-and-who-may-write-a-base)).
+The server enforces that on every owner-writing route. **The web UI has not caught up yet**: the
+Owner column and the bulk bar still type a free-text name, which the server matches to an
+account by display name where it can, and a member pressing them gets a 403 rather than a
+disabled control. The outstanding UI work is the Owner cell becoming a picker over accounts,
+the bulk bar being hidden from non-admins, and card entry being disabled for a base you do not
+own.
 
 Removing the bases table also removed the **Save** button from player profiles. Player pages
 themselves stay, and the sidebar still looks players up.
@@ -731,7 +877,9 @@ the generator. That is exactly why the module is committed rather than generated
 
 A missing picture is the **normal** case, not an error. Card art is drawn from the vendored wiki
 thumbnails, so `npm run assets:wiki` is what supplies it; without that, `GameIcon` removes the
-`<img>` on error and the tile shows its name over an empty, correctly sized art box.
+`<img>` on error and the tile is an empty, correctly sized art box over its count — the tiles carry
+no name of their own, so on such a checkout the number box's accessible name and the tile's `title`
+are the only things that still say which card is which.
 `.card-tile__frame` reserves the height rather than shrinking to its content, so the grid
 neither collapses nor reflows. Never a broken-image glyph.
 
@@ -790,14 +938,19 @@ the request, so a client cannot write into a season nobody is looking at.
 ### Routes
 
 All authenticated; `/api/*` is deny-by-default, so they were protected before they were written,
-and a test asserts each one 401s anonymously. None is admin-only — anyone signed in can enter
-counts.
+and a test asserts each one 401s anonymously. **Reading is open to every member; writing a base
+belongs to that base's owner** (and to admins) — see
+[Who may assign an owner, and who may write a base](#who-may-assign-an-owner-and-who-may-write-a-base).
 
 | Route | |
 |---|---|
-| `GET /api/cards/inventory` | every base with cards recorded, each with `updatedAt` and the display name in `updatedBy` |
-| `GET /api/cards/inventory/:tag` | one base; a base nobody has entered answers `{ counts: [] }`, not a 404 |
-| `PUT /api/cards/inventory/:tag` | replaces that base's whole season in one request |
+| `GET /api/cards/inventory` | every base with cards recorded, each with `updatedAt` and the display name in `updatedBy` — **everyone** |
+| `GET /api/cards/inventory/:tag` | one base; a base nobody has entered answers `{ counts: [] }`, not a 404 — **everyone** |
+| `PUT /api/cards/inventory/:tag` | replaces that base's whole season in one request — **the owning account, or an admin** |
+
+A caller who does not own the base gets a **403 naming the owner**, and an unowned base is
+writable by admins alone. The decision is `mayWriteBaseCounts` in
+`server/src/cards/write-access.ts`, checked before the body is parsed.
 
 The write is **one request per base, never sixty per card** — the entry screen edits a base at a
 time, and sixty requests to save one screen would be sixty chances to half-apply. Every id must
@@ -842,9 +995,11 @@ is intended: these are options to choose between, not a plan.
 ### The UI
 
 `#/cards`, linked from the topbar. The bases are the **owner assignments** — the set of player
-tags the group already tracks — so there is no second list of bases to curate and drift, and the
-**owner is shown beside every base** because the owner is who would do the trading. A base that
-somehow has counts but no owner assignment is still listed, so its rows are never orphaned.
+tags the group already tracks — so there is no second list of bases to curate and drift. A base
+that somehow has counts but no owner assignment is still listed, so its rows are never orphaned.
+The **owner is named on every trade suggestion**, because the owner is who would do the trading.
+The picker itself lists in-game names and not owners: a name and an owner side by side in one
+option are two people's names in one label, and the reader cannot tell which is which.
 
 - **The base list is member names, not tags.** A tag is not who you go and talk to. The names come
   from the saved clans' rosters — one request per saved clan covers every base in it — and any base
@@ -854,8 +1009,13 @@ somehow has counts but no owner assignment is still listed, so its rows are neve
   `baseOptions()` in `base-names.ts`, pure and tested. **Tags remain the identity** — the select's
   values, the inventory keys and the trade suggestions are all still tags, and the selected base
   shows its tag beside the timestamp.
-- **The grid** is one continuous grid of all 60 in deck order — no per-deck headings and no break
-  between one deck and the next, so a deck that runs out mid-row does not leave a ragged line.
+- **The grid** is one continuous grid of all 60 in deck order — nothing drawn between one deck and
+  the next, so a deck that runs out mid-row does not leave a ragged line. Each deck is still a
+  **named group** in the markup: a `.card-deck` wrapper carrying `role="group"` and a
+  `.visually-hidden` `<h3>` it is labelled by. The wrapper is `display: contents`, which is what
+  keeps it out of the layout — the tiles stay direct grid items of the one grid, so the grouping
+  costs no box, no gap and no change to the column alignment. Anything other than `contents` there
+  splits the sixty tiles back into four grids and the seams reappear.
   Tiles are **picture only**: no card name. A card the base holds renders in colour; one it lacks
   renders the same file under `grayscale(1)`. That is **never the only cue** — the tile still says
   `Have 3` or `None` in words underneath and its box reads 0, so held-vs-not survives with no
@@ -867,10 +1027,12 @@ somehow has counts but no owner assignment is still listed, so its rows are neve
 - **The tile border carries the deck**, in the event's own frame colours —
   `--deck-elixir`, `--deck-dark-elixir`, `--deck-builder-base`, `--deck-super-troop`, declared
   in all three theme scopes and lightened for dark mode, where the deep purple would otherwise
-  vanish. Categorical colour on a border only, never on text. With the headings and the names
+  vanish. Categorical colour on a border only, never on text. With the drawn headings and the names
   gone it is the only *visible* cue to deck, which is a real narrowing — the fallbacks are that
-  the cards stay in deck order so each colour arrives as one unbroken run, and that every tile's
-  `title` and its box's accessible name spell the deck out in words. It also settles the one case
+  the cards stay in deck order so each colour arrives as one unbroken run, that each run is a
+  named group with a hidden heading, and that every tile's `title` and its box's accessible name
+  spell the deck out in words. **Colour is never the only carrier**, which is the rule this page
+  would otherwise have been the first to break. It also settles the one case
   where two cards share a picture, since the home and Builder Base Baby Dragons sit in different
   decks; with the names gone, that pair is otherwise indistinguishable. The nominal
   values are recorded in `CARD_CATEGORY_BORDER` in `shared/src/card-types.ts`; what the page
@@ -885,6 +1047,50 @@ somehow has counts but no owner assignment is still listed, so its rows are neve
   are so nothing has to be re-entered. `Saved` never appears unless the request succeeded.
 - **Trade suggestions** are a third panel, driven entirely by the pure module and grouped by the
   pair of bases involved, with both owners named.
+
+### The same grid on a player page
+
+A player page **is** a base, so it carries the card panel too — directly under the profile header
+that holds the name and trophies, above the stat tiles. It is a `<details>`, **collapsed** by
+default, because sixty tiles unfurled there would bury the rest of the page.
+
+**Collapsed** it is one line, and it is the two things worth knowing without opening:
+
+```
+▸ Event cards · 2026-08 · Elixir 6/19 · Dark Elixir 1/13 · Builder Base 0/11 · Super Troop 2/17 · Trades available with 2 bases
+```
+
+- **cards held per deck**, `held/deck size`, with copies and spares on the hover title;
+- **whether a swap is waiting**, in words, with the status green as a second carrier and never
+  the only one — `No trades available` reads the same with no colour vision at all.
+
+A base nobody has entered reads **`Nothing recorded yet — open to enter counts`**, not sixty
+zeroes dressed as data. That is the same distinction the card page's attribution line draws, and
+it is why the summary keys off whether a base has a record at all rather than off its totals: a
+base saved and then cleared back to zero keeps its stamp and reads as recorded-and-empty.
+
+**Opened it is the card page's grid, with no base selector** — the base is the player whose page
+it is. Same tiles, same greyscale, same deck-coloured frames, same `×n` badges, same 0–10 boxes,
+same one-request save, same 4 named deck groups. That is not a claim about two similar
+components: `BaseCardEditor` in `web/src/components/BaseCardEditor.tsx` **is** the grid, and
+`CardsView` and the player page are its two callers. Measured side by side at 1280px, both render
+`123.141px ×7` columns, a 10px gap and 123×159 tiles; three columns at 390px. Duplicating sixty
+tiles and their draft-and-save logic was the thing to avoid — the greyscale, the badges and the
+clamping would have drifted apart the first time either copy was touched. Choosing the base is
+deliberately not the shared component's job; each page keeps its own idea of which base it is
+about.
+
+**The trade hint needs the other bases**, because a trade is a pair. It comes from the same
+module-level `card-inventory.ts` store the card page uses, so the player page costs **one**
+`GET /api/cards/inventory` for every base — never one per base and never one per card — and it is
+already warm if you arrived from the card page.
+
+The counting and the predicate are one pure, tested function, `summariseBase()` in
+`web/src/card-summary.ts`. It does not re-implement the trade rules: it **calls `suggestTrades`**,
+one pair at a time (the whole-list call is quadratic and computes every pair the panel will never
+mention), so the hint cannot drift from the list on the card page. Its tests cover no cards, cards
+in one deck only, a base holding spares with no counterpart, and a base with a genuine swap
+available.
 
 ### Proposing a trade over chat
 

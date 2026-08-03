@@ -6,8 +6,42 @@
  * location on them would be worse than defaulting to home.
  */
 
+import { normalizeTag } from '@coc/shared'
+
 export function lastRouteKey(userId: number): string {
   return `coc:lastRoute:${userId}`
+}
+
+/**
+ * Where the last clan this account opened is kept, for the topbar's **Clan**
+ * button.
+ *
+ * Per account for the same reason the route above is: a shared browser must not
+ * hand one person another person's clan. It is a separate key rather than being
+ * derived from `coc:lastRoute:<id>`, because the last *route* is usually not a
+ * clan — it is a player, or the card page — and the button has to keep working
+ * from anywhere.
+ */
+export function lastClanKey(userId: number): string {
+  return `coc:lastClan:${userId}`
+}
+
+/**
+ * The clan tag the button should open, or `null` when there is not one to open.
+ *
+ * `null` is the "no clan visited yet" answer, and the caller's job is then to
+ * fall back to the saved-clans list rather than leave a dead control. It is also
+ * the answer for anything in storage that cannot be a tag: `localStorage` is
+ * editable by hand and survives across versions, so a value that could never be
+ * looked up is treated as absent instead of being navigated to.
+ */
+export function clanTargetTag(stored: string | null): string | null {
+  if (stored === null) return null
+  try {
+    return normalizeTag(stored)
+  } catch {
+    return null
+  }
 }
 
 /** Hashes that mean "no particular page", and so are not worth restoring to. */
