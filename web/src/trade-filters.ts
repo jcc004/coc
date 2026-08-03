@@ -1,0 +1,110 @@
+import type { TradePair } from './card-trades.ts'
+
+/**
+ * Narrowing the trade suggestions to the people involved.
+ *
+ * **The two selections are matched as a set, not one per column, and that is the design
+ * decision here.** The obvious reading of "filter each member column" is one filter per
+ * column, but the columns are not stable by anything a reader can see: `suggestTrades`
+ * orients every pair with the lexicographically smaller *tag* on the left, so whether
+ * Anna appears first or second depends on her base's tag against her partner's. Filtering
+ * the left column to Anna would return the subset of her trades where her tag happens to
+ * sort first, with nothing on screen to explain the rest being gone — and asking for Anna
+ * on the left with Bert on the right could return nothing at all while Anna-Bert trades
+ * sit one column-swap away.
+ *
+ * So one selection means "every trade involving this person", two means "trades between
+ * these two" whichever side each lands on, and the same person twice means "trades
+ * between two of their own bases". That last one is a real query rather than a
+ * degenerate case: one account can own several bases, and a swap between two of your own
+ * is the only trade you can complete without waiting for anybody.
+ */
+
+/** The value standing for a base nobody owns. Leading space, so no display name collides. */
+export const UNOWNED = ' unowned'
+
+/** How that reads in the picker and in the summary line. */
+export const UNOWNED_LABEL = 'No owner'
+
+/** A base's owner folded to the value the filter matches on. */
+function ownerKey(tag: string, ownerOf: (tag: string) => string | undefined): string {
+  const owner = ownerOf(tag)?.trim()
+  return owner ? owner : UNOWNED
+}
+
+/**
+ * The owners worth offering, in display order, with {@link UNOWNED} last when some base
+ * in these pairs has none.
+ *
+ * Drawn from the pairs on screen rather than from the whole account list: an option that
+ * matches nothing is a dead end, and this control exists to narrow what is already here.
+ * Unowned goes last because it is a residual category rather than a person, and sorting
+ * it among the names by its sentinel would put it in an arbitrary place.
+ */
+export function ownersInPairs(
+  pairs: readonly TradePair[],
+  ownerOf: (tag: string) => string | undefined,
+): string[] {
+  const found = new Set<string>()
+  for (const pair of pairs) {
+    found.add(ownerKey(pair.baseA, ownerOf))
+    found.add(ownerKey(pair.baseB, ownerOf))
+  }
+
+  const named = [...found].filter((owner) => owner !== UNOWNED)
+  named.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()) || a.localeCompare(b))
+  return found.has(UNOWNED) ? [...named, UNOWNED] : named
+}
+
+/**
+ * The pairs matching the two selections. `null` means anybody.
+ *
+ * Order between the selections never matters. Each is **consumed** against one side, so
+ * picking the same owner twice needs two sides owned by that person rather than being
+ * satisfied twice over by one of them.
+ */
+export function filterPairsByOwners(
+  pairs: readonly TradePair[],
+  ownerOf: (tag: string) => string | undefined,
+  first: string | null,
+  second: string | null,
+): TradePair[] {
+  const wanted = [first, second].filter((owner): owner is string => owner !== null)
+  if (wanted.length === 0) return [...pairs]
+
+  return pairs.filter((pair) => {
+    const sides = [ownerKey(pair.baseA, ownerOf), ownerKey(pair.baseB, ownerOf)]
+    return wanted.every((owner) => {
+      const at = sides.indexOf(owner)
+      if (at === -1) return false
+      sides.splice(at, 1)
+      return true
+    })
+  })
+}
+
+/**
+ * What the filter did, in words, or `null` when nothing is filtered.
+ *
+ * Said out loud because a shorter list with no explanation reads as missing data — the
+ * same failure the blank member cells were.
+ */
+export function tradeFilterSummary(
+  shown: number,
+  total: number,
+  first: string | null,
+  second: string | null,
+): string | null {
+  if (first === null && second === null) return null
+  const name = (owner: string) => (owner === UNOWNED ? UNOWNED_LABEL : owner)
+
+  const who =
+    first !== null && second !== null
+      ? first === second
+        ? `between two bases owned by ${name(first)}`
+        : `between ${name(first)} and ${name(second)}`
+      : `involving ${name(first ?? second ?? '')}`
+
+  if (shown === 0) return `No suggested trades ${who}.`
+  return `Showing ${shown} of ${total} pair${total === 1 ? '' : 's'}, ${who}.`
+}

@@ -17,6 +17,13 @@ import { cardById, categoryOfCard } from '../cards.ts'
 import { hrefFor, useRowLimit } from '../hooks.ts'
 import { useOwners } from '../owners.ts'
 import { paginate, type PagedRows, type RowLimit } from '../saved-table.ts'
+import {
+  UNOWNED,
+  UNOWNED_LABEL,
+  filterPairsByOwners,
+  ownersInPairs,
+  tradeFilterSummary,
+} from '../trade-filters.ts'
 import { findPendingSwap, sidesOfTrade, tradeProposeAccess } from '../trade-tracker.ts'
 import { proposeTrade, useTrades } from '../trades.ts'
 import { SwapRules } from './help-copy.tsx'
@@ -265,12 +272,30 @@ export function TradeSuggestions({
   const owners = useOwners()
   const tracked = useTrades()
 
+  /*
+   * Two owner selections, matched as a set rather than one per column — see
+   * `trade-filters.ts` for why the columns cannot be filtered independently. Transient,
+   * like the card search: a filter that survived navigating away would leave somebody
+   * returning to a list with most of it missing and no memory of why.
+   */
+  const [firstOwner, setFirstOwner] = useState<string | null>(null)
+  const [secondOwner, setSecondOwner] = useState<string | null>(null)
+
+  /* Offered from the unfiltered pairs, so choosing one owner never empties the other
+     picker of the very options you would want next. */
+  const ownerChoices = useMemo(() => ownersInPairs(pairs, ownerOf), [pairs, ownerOf])
+  const shown = useMemo(
+    () => filterPairsByOwners(pairs, ownerOf, firstOwner, secondOwner),
+    [pairs, ownerOf, firstOwner, secondOwner],
+  )
+  const filterNote = tradeFilterSummary(shown.length, pairs.length, firstOwner, secondOwner)
+
   const [limit, setLimit] = useRowLimit('coc:tradePairLimit', 5)
   const [page, setPage] = useState(1)
-  const view = useMemo(() => paginate(pairs, limit, page), [pairs, limit, page])
+  const view = useMemo(() => paginate(shown, limit, page), [shown, limit, page])
 
-  /* Re-entered counts can shrink the list under a page number that is now past the
-     end; `paginate` clamps, and this puts the control back in step with it. */
+  /* Re-entered counts — or a filter — can shrink the list under a page number that is
+     now past the end; `paginate` clamps, and this puts the control back in step. */
   useEffect(() => {
     if (view.page !== page) setPage(view.page)
   }, [view.page, page])
@@ -287,11 +312,85 @@ export function TradeSuggestions({
    */
   return (
     <>
+      {/*
+       * Two owner pickers, offered only when there is more than one owner to choose
+       * between — with a single owner in the whole list they could only ever narrow it to
+       * everything or nothing.
+       *
+       * Labelled "Involving" and "and" rather than by column, because that is what they
+       * do: the pair of selections is matched as a set against the pair of owners, in
+       * either order. Naming them for the columns would promise something the table
+       * cannot deliver, since which side an owner lands on is decided by their base's tag.
+       */}
+      {pairs.length > 0 && ownerChoices.length > 1 ? (
+        <div className="roster-filters">
+          <label htmlFor="trade-owner-a">
+            Involving
+            <select
+              id="trade-owner-a"
+              value={firstOwner ?? ''}
+              onChange={(event) => {
+                setFirstOwner(event.target.value === '' ? null : event.target.value)
+                setPage(1)
+              }}
+            >
+              <option value="">Anyone</option>
+              {ownerChoices.map((owner) => (
+                <option key={owner} value={owner}>
+                  {owner === UNOWNED ? UNOWNED_LABEL : owner}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label htmlFor="trade-owner-b">
+            and
+            <select
+              id="trade-owner-b"
+              value={secondOwner ?? ''}
+              onChange={(event) => {
+                setSecondOwner(event.target.value === '' ? null : event.target.value)
+                setPage(1)
+              }}
+            >
+              <option value="">anyone</option>
+              {ownerChoices.map((owner) => (
+                <option key={owner} value={owner}>
+                  {owner === UNOWNED ? UNOWNED_LABEL : owner}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {firstOwner !== null || secondOwner !== null ? (
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => {
+                setFirstOwner(null)
+                setSecondOwner(null)
+                setPage(1)
+              }}
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* What the filter did. A shorter list with nothing to explain it reads as missing
+          data — the same failure the blank member cells were. */}
+      {filterNote !== null ? <p className="empty-hint">{filterNote}</p> : null}
+
       {pairs.length === 0 ? (
         <p className="empty-hint">
           {focus === null ? 'No trades available yet.' : 'No trades available for this base yet.'}{' '}
           Nobody holds a spare the other side is missing, in the same deck, both ways round.
         </p>
+      ) : shown.length === 0 ? (
+        /* Filtered to nothing. The note above already says which filter did it, so this
+           only has to keep the table from rendering an empty body. */
+        null
       ) : (
         <SuggestionTable
           view={view}
