@@ -15,8 +15,6 @@ import { mountCardRoutes } from './cards/routes.ts'
 import type { CardInventoryStore } from './cards/store.ts'
 import { mountTradeRoutes } from './cards/trade-routes.ts'
 import type { TradeStore } from './cards/trades-store.ts'
-import { mountChatRoutes } from './chat/routes.ts'
-import type { ChatStore } from './chat/store.ts'
 import { CocApiError, type CocClient } from './coc-client.ts'
 import { errorBody } from './http.ts'
 import { mountSharedDataRoutes } from './shared-data/routes.ts'
@@ -26,7 +24,6 @@ export interface AppDeps {
   coc: CocClient
   cache: TtlCache
   auth: AuthStore
-  chat: ChatStore
   /** Saved clans and owner assignments — shared across every account. */
   sharedData: SharedDataStore
   /** Hand-entered card counts for the event season — shared, like the above. */
@@ -62,7 +59,6 @@ export function createApp({
   coc,
   cache,
   auth,
-  chat,
   sharedData,
   cards,
   trades,
@@ -86,8 +82,6 @@ export function createApp({
     limiter: loginLimiter ?? createLoginLimiter(),
     cookieSecure,
   })
-
-  mountChatRoutes(app, chat)
 
   mountSharedDataRoutes(app, sharedData)
 

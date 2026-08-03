@@ -1,16 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
-import { normalizeTag, type BaseInventory } from '@coc/shared'
+import {
+  normalizeTag,
+  type BaseInventory,
+  type OwnerRecord,
+  type SessionUser,
+  type TradeRecord,
+} from '@coc/shared'
+import { ApiError } from '../api.ts'
 import {
   groupTradesByPair,
   suggestTrades,
-  tradeProposalMessage,
   type TradePair,
   type TradeSuggestion,
 } from '../card-trades.ts'
 import { cardById, categoryOfCard } from '../cards.ts'
-import { requestChatDraft } from '../chat-draft.ts'
 import { hrefFor, useRowLimit } from '../hooks.ts'
+import { useOwners } from '../owners.ts'
 import { paginate, type RowLimit } from '../saved-table.ts'
+import { findPendingSwap, sidesOfTrade, tradeProposeAccess } from '../trade-tracker.ts'
+import { proposeTrade, useTrades } from '../trades.ts'
 import { GameIcon, Pager, RowLimitSelect } from './primitives.tsx'
 
 /**
@@ -41,50 +49,89 @@ function TradeCard({ cardId }: { cardId: number }) {
 }
 
 /**
- * Loads a proposal into the chat composer in the sidebar.
+ * Puts a suggested swap onto the Trade Tracker, in the panel below this table.
  *
- * It fills the box; it does **not** post. A suggestion is a draft by definition —
- * the owners may want to change the wording, or say when — and a button that
- * silently posted to the group channel would be a nasty surprise. The label says
- * "Propose", the composer's own Send button is what sends, and the confirmation
- * below is about the composer, never about a message having gone out.
+ * **It records; it does not execute.** A proposal is one side saying "let's do this"
+ * — the cards do not move until the *other* member (or an admin) marks it complete
+ * on the tracker, which is where the confirmation and the audit stamp live. So this
+ * button is safe to press, and its label says only what it does: `Propose`.
  *
- * It works identically on a player page: `requestChatDraft` writes to a
- * module-level store and the chat panel is in the sidebar on every route, so
- * nothing here depends on which page the button was pressed from.
+ * Who may press it is `tradeProposeAccess`, the same rule the server applies: you
+ * must own one of the two bases, or be an admin. Somebody who owns neither is told
+ * who can instead of being given a button that would 403 — proposing a swap between
+ * two other people's bases is putting words in their mouths.
+ *
+ * A swap already pending on the tracker says so rather than offering a second
+ * proposal. Pressing it again would be harmless — the server answers 409 with the
+ * existing row and `proposeTrade` treats that as success — but a control that does
+ * nothing new should not look like one that does.
  */
 function ProposeButton({
   trade,
   labelOf,
+  user,
+  owners,
+  tracked,
 }: {
   trade: TradeSuggestion
   /**
    * The same member-name resolver the picker and the table use — `baseOptions` in
-   * `base-names.ts`, fetched by `useBaseLabels` — so the message says the names that
-   * are on screen. The owner is deliberately *not* passed: the requested sentence
-   * names members, and what that costs is written out on `tradeProposalMessage`.
+   * `base-names.ts`, fetched by `useBaseLabels` — so a refusal names the members who
+   * are on screen rather than their tags.
    */
   labelOf: (tag: string) => string
+  user: Pick<SessionUser, 'id' | 'role'>
+  owners: OwnerRecord[]
+  /** The tracker's rows, for the already-proposed check. */
+  tracked: TradeRecord[]
 }) {
-  const [offered, setOffered] = useState(false)
+  const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle')
+  const [problem, setProblem] = useState<string | null>(null)
+
+  const access = tradeProposeAccess(user, sidesOfTrade(trade, owners))
+  const already = findPendingSwap(tracked, trade) !== undefined
+
+  if (!access.allowed) {
+    return (
+      <span className="card-meta" title={access.message}>
+        {labelOf(trade.baseA)} or {labelOf(trade.baseB)} can propose this
+      </span>
+    )
+  }
+
+  /* `sent` and `already` are the same fact one render apart — the store refresh that
+     follows a proposal is what turns the first into the second — so both read the
+     same way and the label cannot flicker between them. */
+  if (already || state === 'sent') return <span className="card-meta">On the tracker ↓</span>
 
   return (
-    <button
-      type="button"
-      className="chip"
-      onClick={() => {
-        requestChatDraft(
-          tradeProposalMessage(trade, {
-            cardName: (id) => cardById(id)?.name,
-            member: labelOf,
-          }),
-        )
-        setOffered(true)
-      }}
-      title="Put this proposal in the chat box — you still press Send"
-    >
-      {offered ? 'In chat box ↗' : 'Propose in chat'}
-    </button>
+    <>
+      <button
+        type="button"
+        className="chip"
+        disabled={state === 'sending'}
+        onClick={() => {
+          setState('sending')
+          setProblem(null)
+          proposeTrade({
+            baseA: trade.baseA,
+            baseB: trade.baseB,
+            cardFromA: trade.cardFromA,
+            cardFromB: trade.cardFromB,
+            category: trade.category,
+          })
+            .then(() => setState('sent'))
+            .catch((cause: unknown) => {
+              setProblem(cause instanceof ApiError ? cause.message : 'Could not reach the server.')
+              setState('idle')
+            })
+        }}
+        title="Adds it to the trade tracker below — no cards move until it is completed"
+      >
+        {state === 'sending' ? 'Proposing…' : 'Propose'}
+      </button>
+      {problem ? <p className="notice__hint">{problem}</p> : null}
+    </>
   )
 }
 
@@ -167,6 +214,7 @@ export function TradeSuggestions({
   bases,
   labelOf,
   ownerOf,
+  user,
   focusTag,
 }: {
   /**
@@ -177,6 +225,13 @@ export function TradeSuggestions({
   bases: BaseInventory[]
   labelOf: (tag: string) => string
   ownerOf: (tag: string) => string | undefined
+  /**
+   * Who is signed in, for the Propose button's rule. Passed down rather than read
+   * from `useSession` here, the same way `BaseCardEditor` is handed it: both pages
+   * already hold it and a second subscription would refetch `/api/auth/me` per
+   * mount.
+   */
+  user: Pick<SessionUser, 'id' | 'role'>
   /**
    * One base to narrow to: only the pairs it is a side of. For a player page, where
    * the panel is about that base and its summary line counts that base's partners —
@@ -201,6 +256,13 @@ export function TradeSuggestions({
     const all = groupTradesByPair(suggestTrades(bases, categoryOfCard))
     return focus === null ? all : pairsInvolving(all, focus)
   }, [bases, focus])
+
+  /* Both feed the Propose button in each row: who owns the two bases decides whether
+     it is offered, and what is already on the tracker decides whether it says so
+     instead. Subscribed once here rather than per row — sixty rows would be sixty
+     subscriptions to the same two module-level stores. */
+  const owners = useOwners()
+  const tracked = useTrades()
 
   const [limit, setLimit] = useRowLimit('coc:tradePairLimit', 5)
   const [page, setPage] = useState(1)
@@ -310,8 +372,14 @@ export function TradeSuggestions({
                   <td className="card-meta" role="cell" data-label="Category">
                     {trade.category}
                   </td>
-                  <td className="row-actions" role="cell">
-                    <ProposeButton trade={trade} labelOf={labelOf} />
+                  <td className="row-actions" role="cell" data-label="Propose">
+                    <ProposeButton
+                      trade={trade}
+                      labelOf={labelOf}
+                      user={user}
+                      owners={owners}
+                      tracked={tracked}
+                    />
                   </td>
                 </tr>
               )),
@@ -348,9 +416,9 @@ export function TradeSuggestions({
           </>
         ) : null}
         . Each row is one option, not a commitment — one spare can appear against several partners,
-        so pick one per card and re-enter the counts afterwards.{' '}
-        <strong>Propose in chat</strong> writes the swap into the chat box in the sidebar for you to
-        edit; nothing is posted until you press Send.
+        so pick one per card. <strong>Propose</strong> puts a swap on the{' '}
+        <strong>trade tracker</strong> below for the other member to approve; no cards move, and no
+        counts need re-entering, until somebody completes it there.
       </p>
     </>
   )

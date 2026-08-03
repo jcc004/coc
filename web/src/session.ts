@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import type { SessionUser } from '@coc/shared'
 import { api, setPasswordChangeRequiredHandler, setUnauthorizedHandler } from './api.ts'
 import { resetCardInventory } from './card-inventory.ts'
-import { resetChatDraft } from './chat-draft.ts'
 import { resetOwners } from './owners.ts'
 import { resetSavedClans } from './saved-clans.ts'
+import { resetTrades } from './trades.ts'
 
 /**
  * Who is signed in, for the whole app.
@@ -81,7 +81,7 @@ export function useSession(): Session {
     resetOwners()
     resetSavedClans()
     resetCardInventory()
-    resetChatDraft()
+    resetTrades()
     setState({ status: 'anonymous' })
   }, [])
 

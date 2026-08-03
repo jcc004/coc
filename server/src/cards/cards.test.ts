@@ -10,7 +10,6 @@ import { SESSION_COOKIE } from '../auth/middleware.ts'
 import { createLoginLimiter } from '../auth/rate-limit.ts'
 import { createAuthStore } from '../auth/store.ts'
 import { TtlCache } from '../cache.ts'
-import { createChatStore } from '../chat/store.ts'
 import type { CocClient } from '../coc-client.ts'
 import { openDatabase } from '../db.ts'
 import { createSharedDataStore, type SharedDataStore } from '../shared-data/store.ts'
@@ -19,7 +18,7 @@ import { createTradeStore } from './trades-store.ts'
 
 /*
  * The card routes over the whole app, driven through `app.request` against an
- * in-memory database — the same shape as the auth and chat suites. Two accounts
+ * in-memory database — the same shape as the auth suite. Two accounts
  * throughout, because the two properties that matter cannot be shown with one:
  * counts are **read** by everybody, and **written** only by whoever owns the base.
  *
@@ -73,7 +72,6 @@ function createHarness(databasePath = ':memory:'): Harness {
     coc: {} as unknown as CocClient,
     cache: new TtlCache(60_000),
     auth,
-    chat: createChatStore(db),
     sharedData: shared,
     cards,
     trades: createTradeStore(db, cards),

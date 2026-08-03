@@ -233,7 +233,10 @@ schema changes) because v2 has to drop and re-create `users`.
 - **v1** — the original `users` / `sessions` / `chat_messages` tables, written `IF NOT EXISTS`
   because a database created before `user_version` was used already has them and still reports
   version 0. So v1 is a no-op for an old file and a create for a fresh one, and both then take
-  the same path.
+  the same path. `chat_messages` is **vestigial**: group chat was replaced by the Trade Tracker
+  and no code reads or writes that table any more. It is deliberately not dropped — a migration
+  that deletes somebody's messages to tidy up a schema is a bad trade, and an unused table costs
+  nothing but a line in this list.
 - **v2** — rebuilds `users` with the three new columns and creates the two shared tables. A
   rebuild rather than `ALTER TABLE` because SQLite cannot add a `UNIQUE` or `NOT NULL` column
   to a populated table, and all three are wanted; the rows are copied in JS rather than with
@@ -261,6 +264,15 @@ schema changes) because v2 has to drop and re-create `users`.
   is still the only record of whose base it is, and it now grants nothing. Most rows are
   expected not to resolve, which is not a failure. See
   [Migration v6, and what the backfill did](#migration-v6-and-what-the-backfill-did).
+- **v7** — `trades`, the Trade Tracker's one table: a swap two bases have agreed to, which
+  either party can then mark complete or declined. `base_a < base_b` with its card, the same
+  orientation `suggestTrades` produces, so one agreement is one row however the two sides
+  named themselves; `CHECK`s repeat the card-id range and forbid a base trading with itself or
+  a card for itself; both user columns are `ON DELETE SET NULL`, because a resolved trade is the
+  record of something that really happened and must outlive the account that resolved it. A
+  **partial unique index** on the four swap columns `WHERE status = 'pending'` makes a duplicate
+  live proposal impossible while leaving history alone. See
+  [The Trade Tracker](#the-trade-tracker).
 
 Backfill, per row:
 
@@ -290,9 +302,10 @@ log into.
 
 One SQLite file, `DATABASE_PATH` (default `./data/coc.db`, resolved against the server
 workspace's working directory, so `npm run dev` puts it at `server/data/coc.db` — gitignored).
-The directory is created if missing. Seven tables — `users`, `sessions`, `chat_messages`,
-`saved_clans`, `owner_assignments`, `card_inventory`, `card_base_updates` — created and migrated
-on boot by `user_version`, currently at **v6**.
+The directory is created if missing. Eight tables — `users`, `sessions`, `chat_messages`,
+`saved_clans`, `owner_assignments`, `card_inventory`, `card_base_updates`, `trades` — created and
+migrated on boot by `user_version`, currently at **v7**. Seven of the eight are live;
+`chat_messages` is kept but unused, as above.
 
 `node:sqlite` is used rather than `better-sqlite3` because it is in the runtime from Node 22.5
 on: no native module, nothing to compile on the host, nothing to rebuild when Node is
@@ -398,7 +411,7 @@ live in `server/src/db.ts`.
 `card_inventory`, `routes.ts` mounts `/api/cards/*`, and `cards.test.ts` drives both through the
 whole app.
 
-`createApp({ coc, cache, auth, chat, sharedData, cards })` stays dependency-injected, which is
+`createApp({ coc, cache, auth, sharedData, cards, trades })` stays dependency-injected, which is
 what lets the test suite drive the whole app over an in-memory database and a stub upstream.
 
 `shared` is consumed as TypeScript source through an npm workspace link — no build step,
@@ -565,13 +578,23 @@ Like the Cards link, it is **absent where it would point at the page you are on*
 page (the last clan is the one you are looking at) and, with no clan yet, on the list itself. The
 saved-clans list stays one click away on the title.
 
-## The lookup sidebar
+## Looking a player or clan up
 
-Lookup lives in a right-hand sidebar, sticky near the top so it stays put while the main
-column scrolls. The sidebar is **15% of the viewport with a 260px floor** — a bare 15% is
-only ~192px at 1280px wide, which is too narrow for the controls. Below 900px the layout
-collapses to one column and the sidebar stacks *above* the content, so lookup is still the
-first thing in reach on a phone. The topbar spans the full width above both columns.
+The two lookup forms sit **on the homepage, beneath the saved clans**, side by side in one row
+that becomes one column on a phone. The layout is a **single column at every width**.
+
+They used to live in a sticky 260px right-hand sidebar spanning every route. That was right when
+they were the only thing on screen and wrong everywhere else: on a clan, player or card page they
+were a permanent column of chrome beside the thing you had already found. The **Recent** chips came
+with them, because they live *inside* the two lookup cards — each list under the box that produced
+it — and because "where have I been" is the same question as "where do I go", asked on the same
+page. The title navigates home from anywhere, so both are one click away from every route.
+
+With the chat panel gone too (replaced by the Trade Tracker on the card pages) the sidebar had
+nothing left to hold, and a second grid track would have been a dead gutter. Each card still stacks
+its controls one per line, as it did at 260px: two narrow forms read better than two sprawling
+ones, and it means the phone layout is the same shape as the desktop one rather than a second
+arrangement to keep working.
 
 There are two forms rather than one form with a mode select:
 
@@ -823,7 +846,7 @@ the bulk bar being hidden from non-admins, and card entry being disabled for a b
 own.
 
 Removing the bases table also removed the **Save** button from player profiles. Player pages
-themselves stay, and the sidebar still looks players up.
+themselves stay, and the homepage still looks players up.
 
 ### Migrating `coc:saved` → `coc:owners` → the server
 
@@ -1447,7 +1470,7 @@ to find.
 is a side of. A clan-wide list under a heading counting *this* base's partners would contradict its
 own summary line; filtered, the two are the same number. Read back off the DOM on a seeded base
 with two partners: summary `Trades available with 2 bases`, table `2` pair blocks over `10` option
-rows, one `Propose in chat` per row. Seeded up to six partners: summary `Trades available with
+rows, one `Propose` per row. Seeded up to six partners: summary `Trades available with
 6 bases`, `6` pairs, and the pager appears — `Showing 1–5 of 6 pairs`, `Page 1 of 2`, 19 options on
 page 1 and 3 on page 2. Below five it hides itself, so a base with a couple of partners shows no
 control at all.
@@ -1462,10 +1485,10 @@ cannot drift into disagreeing about what a trade is or which one comes first.
 
 Paging is the card page's, unchanged: **pairs, not rows**, five by default, remembered under one
 `coc:tradePairLimit` for both pages, because it is a reading preference about this table and not
-about a route. **Propose in chat** works here untouched — `requestChatDraft` writes to a
-module-level store and the chat panel is in the sidebar on every route. Checked from a player page:
-the composer went from empty to `Turtle gives Archer <-> darek gives Barbarian` and the button
-relabelled to `In chat box ↗`, with nothing posted.
+about a route. **Propose** works here for the same reason — it posts to
+`/api/cards/trades` and the tracker directly below reads the same module-level store — so a swap
+proposed from a player page appears on the card page's tracker and the other way round. See
+[The Trade Tracker](#the-trade-tracker).
 
 The table carries `aria-label="Trade suggestions"` and **never** `aria-labelledby` the heading above
 it. Both headings that sit over it are `.section-title`, which is `text-transform: uppercase`, and
@@ -1479,57 +1502,109 @@ make the deck the unit of progress — so "which deck does this swap move" is th
 whether an option is worth taking. It costs nothing at 390px either, where the table stacks into one
 labelled card per swap and the deck becomes a line rather than a column competing for width.
 
-### Proposing a trade over chat
+### The Trade Tracker
 
-Every suggestion carries a **Propose in chat** button. It writes the swap into the chat composer
-in the sidebar — which is on screen already, since the sidebar spans every route — focuses it,
-and stops there.
+A *suggestion* is arithmetic: recomputed from the shared counts on every render, thrown away, and
+true only for as long as the counts behind it are. It answers "what **could** we swap". Nothing in
+it recorded that two people had agreed to one, so "did we actually do that swap?" had no answer
+anywhere but in a chat scrollback — which is what the tracker replaces.
 
-**It never posts.** A suggestion is a draft by definition: the two owners may want to change the
-wording or say when, and a button that silently posted to the group channel would be a nasty
-surprise. The label says "Propose", the composer's own **Send** is what sends, and the button's
-confirmation (`In chat box ↗`) is about the composer, never about a message having gone out.
+A **trade** is a stored row: one swap, two bases, visible to everybody, that either party can mark
+complete or declined. Completing it is what moves the cards.
 
-The message is built by `tradeProposalMessage` in `web/src/card-trades.ts` — pure and tested,
-because it has rules. It is exactly four things and nothing else:
+#### Where it is
 
-```
-<member> gives <card> <-> <member> gives <card>
-```
+Directly **below** the trade suggestions, in both places the suggestions appear — the card page and
+each player page's card panel, inside the same disclosure as that base's grid. That order is the
+order the work happens in, read downwards: what could be swapped, then what has been agreed and is
+waiting on somebody. It is its own panel rather than a second table inside the suggestions, because
+a row here is a record with consequences and a row above it is a calculation.
 
-Read back out of the composer's DOM in a browser:
+One component, `web/src/components/TradeTracker.tsx`, for both — the fourth thing the two pages
+share, after `CardTile`, `BaseCardEditor` and `TradeSuggestions`. The only difference is
+`focusTag`: the player page passes its base and gets the trades that base is a side of, the card
+page passes nothing and gets the clan's.
 
-```
-darek gives Archer <-> Zack gives Goblin
-```
+#### Proposing
 
-No category prefix, no tags, no full stop. The category is not in the text because the sentence
-already names two cards a reader can see are in the same deck, and the shorter it is the less there
-is to tidy before pressing Send.
+Every suggestion row carries a **Propose** button. It writes a row and stops: **no cards move.**
+The proposal is one side saying "let's do this", and the *other* side (or an admin) is who
+completes it — so the button is safe to press and its label promises only what it does.
 
-**It names members, not owners, and that is a real loss.** The message now says which two *bases*
-should swap rather than which two *people* to contact, so an owner playing a base under a different
-name is no longer identified. What it buys is a line that reads as a sentence about two players,
-which is what actually gets pasted into a clan chat — and the owner is still on screen in the
-suggestion table right next to the button, so the person is one glance away.
+You must own one of the two bases, or be an admin. A member who owns neither is told who can
+(`darek or Turtle can propose this`) rather than being handed a button that would 403: proposing a
+swap between two other people's bases is putting words in their mouths, and the other party would
+have to decline something they never discussed. The rule is `tradeProposeAccess` in
+`web/src/trade-tracker.ts`, mirroring the server's `mayProposeTrade`; the server is the
+enforcement and the client rule only stops the UI offering what would be refused.
 
-The names come from the same resolver as everything else on the page (`baseOptions()` in
-`base-names.ts`), not a second one. **A base no visible roster names falls back to its tag** rather
-than leaving a gap: verified in a browser, a base with no resolvable name yields
-`darek gives Archer <-> #8QQ9YVLL gives Wizard`.
+A swap already pending reads `On the tracker ↓` instead of offering a second proposal. Pressing it
+again would in fact be harmless — the server answers **409 `alreadyProposed` with the existing row**
+and `proposeTrade` treats that as success, because what the button promises ("this swap is on the
+tracker") is true either way — but a control that does nothing new should not look like one that
+does. The check is `findPendingSwap`, the same four columns as the partial unique index in
+migration v7, so "already proposed" means the same thing on both sides of the wire.
 
-Member names are unbounded free text off a live roster, so the message can overrun
-`MAX_CHAT_LENGTH` and be refused by the chat route. It therefore degrades in a deliberate order:
-**fall back to the tags first**, which are bounded (`#` plus 3–12 characters) and are the identity
-everything is keyed on anyway, and only then **truncate with an ellipsis** so what is left is
-visibly incomplete rather than a shorter claim about a different trade. That ordering, the tag
-fallback and "never longer than the limit it was given" are all pinned by tests.
+#### Resolving, and who may
 
-The plumbing is `web/src/chat-draft.ts`, a module-level external store over
-`useSyncExternalStore` — the same mechanism as the shared lists, because the card page and the
-chat panel sit in different columns with no component between them to thread a prop through. It
-carries a `serial` as well as the text, so proposing the same trade twice re-fills a box the user
-has since cleared, which a bare string comparison would swallow. It is dropped on sign-out.
+**Either party, or an admin.** A trade belongs to *both* bases, which makes its rule different from
+the per-base card write: card counts belong to one owner, an agreement does not. The consequence
+worth saying out loud is that **completing a trade writes to two bases, one of which the person
+clicking very likely does not own** — so the authorisation for those two writes is the *trade
+record*, not the owner rule, and `server/src/cards/trade-access.ts` is where that is decided once.
+
+A base carrying only a legacy text label grants nobody anything, exactly as for card entry: the
+label is a note about a person, not a permission held by a session, so such a trade is an admin's
+to resolve until an admin links the base to an account.
+
+**Completing asks first**, and the question says what it does to whom: it is the only control in the
+app that changes somebody else's card counts, and it cannot be undone from here. **Declining does
+not ask**, because nothing moves. Both are recorded.
+
+A trade is resolved **once**. Re-completing would move the same two cards a second time — silent,
+wrong, and exactly the accident the refusal exists to prevent — and re-declining would rewrite the
+audit stamp of a decision somebody else already made. The store refuses, the route answers 409
+`alreadyResolved`, and the client hides the buttons; three layers, because the cost of missing it
+is a wrong count nobody can trace.
+
+The invariant the whole feature protects is checked **at completion, against the counts as they are
+at that moment** — not against the ones the proposal was drawn from. A base must hold at least
+`MIN_TRADEABLE_COUNT` (two) of a card to give one away, because a base that trades away its last
+copy has lost a card rather than swapped one. Counts are hand-entered and routinely lag the game, so
+a proposal is deliberately *not* re-validated when it is made: somebody who has just looked at their
+cards knows more than the table does, and refusing them would push the disagreement into a
+conversation nobody can see. If the spare has gone by the time it is completed, the route answers
+409 `countsChanged` and the tracker shows that message verbatim.
+
+#### The audit record
+
+Every row names **both** events: who proposed it and when, and — once resolved — who completed or
+declined it and when. Not just the latest one: "Bert completed it" without "Anna proposed it" loses
+which direction the agreement came from, which is the first thing somebody checks when a swap turns
+out to be wrong. Relative on screen, absolute in the `title`, as everywhere else in the app.
+
+A `null` name means that account has since been deleted, and it is said in words rather than left
+blank. Both user columns are `ON DELETE SET NULL` on purpose: the trade is the record of something
+that really happened, so deleting an account costs the attribution, not the record.
+
+#### Order
+
+Pending first, however old — it is the only status anybody has to act on. Within pending, **oldest
+first**, because a swap that has been waiting three days is the one being forgotten. Resolved rows
+read newest-first, which is the order you want when checking whether something just went through.
+The id breaks every remaining tie, so two trades proposed in the same second cannot swap places
+between polls. `sortTrades`, tested.
+
+#### What the counts do afterwards
+
+Completing writes both bases in one transaction in `trades-store.ts`, and the response carries the
+trade in its new state **plus both bases' current counts** — so one request is enough for a client
+to refresh two bases. `web/src/trades.ts` nonetheless reloads the inventory store rather than
+patching it from that payload: it is the same refresh every other write does, and patching would
+add a second path by which counts enter the cache — one no other write uses, and one that would be
+wrong in exactly the case that matters, a count that fell to zero and is therefore *absent* from
+the response rather than present as a zero.
+
 
 ## War view
 
@@ -1752,7 +1827,7 @@ available — the art is Supercell's, used under their fan policy or not at all.
 | Command | Does |
 |---|---|
 | `npm run dev` | API + UI with reload |
-| `npm test` | server auth, card and chat suites (`app.request` against `createApp`, in-memory SQLite) + web unit tests for table sort, paging, owner-overwrite, `coc:saved` migration, wiki-art name lookup, the card list and the trade rules |
+| `npm test` | server auth, card and trade suites (`app.request` against `createApp`, in-memory SQLite) + web unit tests for table sort, paging, owner-overwrite, `coc:saved` migration, wiki-art name lookup, the card list, the trade rules and the tracker's access and ordering rules. Both workspaces glob `src/**/*.test.ts`, so a new test file runs without being added to a list |
 | `npm run typecheck` | `tsc --noEmit` across all three workspaces |
 | `npm run build` | production bundle for the UI — run the two asset scripts *first* |
 | `npm run assets:coc` | re-download the vendored league and label icons from the CoC API |

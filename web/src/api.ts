@@ -6,8 +6,6 @@ import {
   type CapitalRaidSeasonsResponse,
   type CardCount,
   type CardInventoryResponse,
-  type ChatMessage,
-  type ChatResponse,
   type Clan,
   type ClanMembersResponse,
   type ClanSearchResponse,
@@ -24,8 +22,12 @@ import {
   type SavedClanInput,
   type SavedClanRecord,
   type SavedClansResponse,
+  type ProposeTradeRequest,
+  type ResolveTradeResponse,
   type SessionUser,
   type TempPasswordResponse,
+  type TradeResponse,
+  type TradesResponse,
   type UserRole,
   type UsersResponse,
   type WarLogResponse,
@@ -144,15 +146,6 @@ export const api = {
 
   searchClans: (name: string, signal?: AbortSignal) =>
     get<ClanSearchResponse>(`/api/clans?name=${encodeURIComponent(name)}`, signal),
-
-  /* ---------- chat ---------- */
-
-  /** Omit `after` for the most recent page; pass the newest known id to poll. */
-  chat: (after?: number, signal?: AbortSignal) =>
-    get<ChatResponse>(after === undefined ? '/api/chat' : `/api/chat?after=${after}`, signal),
-
-  sendChat: (body: string) =>
-    request<{ message: ChatMessage }>('POST', '/api/chat', { body: { body } }),
 
   /* ---------- auth ---------- */
 
@@ -279,4 +272,35 @@ export const api = {
     request<BaseInventoryResponse>('PUT', `/api/cards/inventory/${tagPath(tag)}`, {
       body: { counts },
     }),
+
+  /* ---------- shared data: the Trade Tracker ---------- */
+
+  /**
+   * Every trade this season, pending and resolved, for everybody. Shared like the
+   * inventory it moves: two people looking at one agreed swap have to see the same
+   * thing, or "did you do that trade?" has two answers.
+   */
+  trades: (signal?: AbortSignal) => get<TradesResponse>('/api/cards/trades', signal),
+
+  /**
+   * Record an agreed swap. The tags may be sent in either order — the server
+   * orients them — and the season is the server's, never ours.
+   *
+   * A duplicate proposal answers 409 `alreadyProposed` **with the existing trade in
+   * the body**, which is why `proposeTrade` in `trades.ts` treats that status as a
+   * success rather than an error.
+   */
+  proposeTrade: (proposal: ProposeTradeRequest) =>
+    request<TradeResponse>('POST', '/api/cards/trades', { body: proposal }),
+
+  /**
+   * Complete or decline. Both answer with the trade in its new state *and* both
+   * bases' current counts, so one response is enough to refresh two bases rather
+   * than re-reading the whole inventory.
+   */
+  completeTrade: (id: number) =>
+    request<ResolveTradeResponse>('POST', `/api/cards/trades/${id}/complete`, { body: {} }),
+
+  declineTrade: (id: number) =>
+    request<ResolveTradeResponse>('POST', `/api/cards/trades/${id}/decline`, { body: {} }),
 }

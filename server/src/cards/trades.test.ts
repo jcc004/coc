@@ -16,7 +16,6 @@ import { SESSION_COOKIE } from '../auth/middleware.ts'
 import { createLoginLimiter } from '../auth/rate-limit.ts'
 import { createAuthStore } from '../auth/store.ts'
 import { TtlCache } from '../cache.ts'
-import { createChatStore } from '../chat/store.ts'
 import type { CocClient } from '../coc-client.ts'
 import { openDatabase } from '../db.ts'
 import { createSharedDataStore, type SharedDataStore } from '../shared-data/store.ts'
@@ -96,7 +95,6 @@ function createHarness(databasePath = ':memory:'): Harness {
     coc: {} as unknown as CocClient,
     cache: new TtlCache(60_000),
     auth,
-    chat: createChatStore(db),
     sharedData: shared,
     cards,
     trades,

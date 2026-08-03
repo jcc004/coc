@@ -1,7 +1,5 @@
-import type { ReactNode } from 'react'
 import { AccountView } from './components/AccountView.tsx'
 import { CardsView } from './components/CardsView.tsx'
-import { ChatPanel } from './components/ChatPanel.tsx'
 import { ClanSearchView } from './components/ClanSearchView.tsx'
 import { ClanView } from './components/ClanView.tsx'
 import { ForcedPasswordChange } from './components/ForcedPasswordChange.tsx'
@@ -149,31 +147,8 @@ export function App() {
    */
   const clanTarget: Route = lastClan !== null ? { view: 'clan', tag: lastClan } : { view: 'home' }
 
-  /*
-   * What the sidebar has to show on this route — and, by being a list, whether
-   * there is a sidebar at all.
-   *
-   * **Lookup is the homepage's, not every page's.** Two forms for finding a base or
-   * a clan are what you want when you arrive with nothing on screen; on a clan,
-   * player or card page they were a permanent 260px of chrome beside the thing you
-   * had already found. The Recent chips come with them, because they live *inside*
-   * the two lookup cards — each list sits under the box that produced it — and
-   * because "where I was" is the same question as "where do I go", asked on the
-   * same page. The title navigates home from anywhere, so they are one click away.
-   *
-   * The column is decided by **counting what is left**, not by naming the routes
-   * that keep a sidebar. The chat panel is the only other panel and it is on its way
-   * out of here entirely (it becomes a trade tracker on the card pages), so the day
-   * this list comes back empty must not need a second edit: no panels, no `<aside>`,
-   * and `.shell--single` gives the width back to the content instead of leaving a
-   * dead gutter. See the collapse rule in styles.css.
-   */
-  const sidePanels: ReactNode[] = []
-  if (route.view === 'home') sidePanels.push(<SearchBar key="lookup" recents={recents} />)
-  sidePanels.push(<ChatPanel key="chat" currentUserId={user.id} />)
-
   return (
-    <div className={sidePanels.length > 0 ? 'shell' : 'shell shell--single'}>
+    <div className="shell">
       <header className="topbar">
         <h1 className="topbar__title">
           {/* One link over the rosette and the words, so the icon navigates home
@@ -243,7 +218,20 @@ export function App() {
           </div>
         ) : null}
 
-        {route.view === 'home' ? <SavedClansView /> : null}
+        {/*
+         * Homepage only, and under the saved clans rather than beside them: two forms
+         * for finding a base or a clan are what you want when you arrive with nothing
+         * on screen, but on a clan or player page they were 260px of permanent chrome
+         * beside the thing you had already found. The Recent chips travel with them —
+         * they sit inside the lookup cards, because "where have I been" is the same
+         * question as "where do I go", asked in the same place.
+         */}
+        {route.view === 'home' ? (
+          <>
+            <SavedClansView user={user} />
+            <SearchBar recents={recents} />
+          </>
+        ) : null}
 
         {route.view === 'account' ? <AccountView user={user} /> : null}
 
@@ -264,10 +252,6 @@ export function App() {
 
         {route.view === 'search' ? <ClanSearchView key={route.name} name={route.name} /> : null}
       </main>
-
-      {/* Sticky, so what is in it stays put while the main column scrolls — and
-          absent altogether when this route has nothing to put in it. */}
-      {sidePanels.length > 0 ? <aside className="shell__side">{sidePanels}</aside> : null}
 
       {/*
        * Required by Supercell's Fan Content Policy, near-verbatim: this app shows

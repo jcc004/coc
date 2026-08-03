@@ -6,7 +6,6 @@ import { createAuthStore } from './auth/store.ts'
 import { TtlCache } from './cache.ts'
 import { createCardInventoryStore } from './cards/store.ts'
 import { createTradeStore } from './cards/trades-store.ts'
-import { createChatStore } from './chat/store.ts'
 import { createCocClient } from './coc-client.ts'
 import {
   databasePathFromEnv,
@@ -30,7 +29,6 @@ try {
 const databasePath = databasePathFromEnv(process.env)
 const db = openDatabase(databasePath)
 const auth = createAuthStore(db)
-const chat = createChatStore(db)
 const sharedData = createSharedDataStore(db)
 const cards = createCardInventoryStore(db)
 // Handed the inventory store because completing a trade moves cards: the status
@@ -71,7 +69,6 @@ const app = createApp({
   coc,
   cache,
   auth,
-  chat,
   sharedData,
   cards,
   trades,

@@ -72,7 +72,7 @@ function PlayerLookup({ recents }: { recents: Recent[] }) {
   return (
     <section className="card">
       <h2 className="section-title">Find player</h2>
-      <form className="search search--stacked" onSubmit={submit}>
+      <form className="search" onSubmit={submit}>
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -127,7 +127,7 @@ function ClanLookup({ recents }: { recents: Recent[] }) {
   return (
     <section className="card">
       <h2 className="section-title">Find clan</h2>
-      <form className="search search--stacked" onSubmit={submit}>
+      <form className="search" onSubmit={submit}>
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -148,16 +148,22 @@ function ClanLookup({ recents }: { recents: Recent[] }) {
 /**
  * The two lookup cards, each carrying its own Recent list.
  *
- * **Homepage only** — `App` decides that, and it is the whole component now: the
- * chat panel used to be bundled in here, which made "show the lookups" and "show
- * the chat" one decision that could not be taken separately. `App` composes the
- * sidebar from panels instead, so either can move or go without touching the other.
+ * **Homepage only, under the saved clans**, side by side in one row that becomes one
+ * column on a phone.
+ *
+ * They used to live in a 260px sidebar on every route, and each form carried
+ * `search--stacked` because that column had no room for an input and a button on one
+ * line. Both of those are now wrong: the column is half the page, and a stacked form
+ * there puts a 570px gold slab of a submit button under a 570px input — seen in a
+ * screenshot at 1280px. So they use the ordinary `.search` row, where the input
+ * flexes and the button takes the width of its own label, and the 600px rule that
+ * already stacks every other form in the app is what handles a phone.
  */
 export function SearchBar({ recents }: { recents: Recent[] }) {
   return (
-    <>
+    <div className="lookup-row">
       <PlayerLookup recents={recents} />
       <ClanLookup recents={recents} />
-    </>
+    </div>
   )
 }

@@ -20,6 +20,7 @@ import { BaseCardEditor } from './BaseCardEditor.tsx'
 import { CardTile } from './CardTile.tsx'
 import { ErrorPanel, Loading, Meter, Pager, RowLimitSelect } from './primitives.tsx'
 import { TradeSuggestions } from './TradeSuggestions.tsx'
+import { TradeTracker } from './TradeTracker.tsx'
 
 /**
  * The card-collecting event: who holds what, and who should trade with whom.
@@ -474,7 +475,20 @@ export function CardsView({ user }: { user: SessionUser }) {
           you to do something. */}
       <section className="card">
         <h2 className="section-title">Trade suggestions</h2>
-        <TradeSuggestions bases={bases} labelOf={labelOf} ownerOf={ownerOf} />
+        <TradeSuggestions bases={bases} labelOf={labelOf} ownerOf={ownerOf} user={user} />
+      </section>
+
+      {/*
+       * Directly below the suggestions, which is the order the work happens in: the
+       * table above says what *could* be swapped, this says what has been agreed and
+       * is waiting on somebody. Its own panel rather than a second table inside that
+       * one, because a row here is a stored record with consequences — completing it
+       * moves cards on two bases — and that is a different kind of thing from a row
+       * of arithmetic.
+       */}
+      <section className="card">
+        <h2 className="section-title">Trade tracker</h2>
+        <TradeTracker user={user} labelOf={labelOf} />
       </section>
 
       <section className="card">

@@ -1,5 +1,10 @@
 import { useMemo, useState, type FormEvent, type MouseEvent } from 'react'
-import { isValidTag, normalizeTag, usesCanonicalAlphabet } from '@coc/shared'
+import {
+  isValidTag,
+  normalizeTag,
+  usesCanonicalAlphabet,
+  type SessionUser,
+} from '@coc/shared'
 import { ApiError, api } from '../api.ts'
 import { formatFull } from '../format.ts'
 import { hrefFor, navigate, useRowLimit, useStackedTables } from '../hooks.ts'
@@ -235,7 +240,18 @@ function SavedClanRow({
   )
 }
 
-export function SavedClansView() {
+export function SavedClansView({ user }: { user: Pick<SessionUser, 'role'> }) {
+  /*
+   * The saved-clans list is shared, and so is the act of adding to it: one tag typed
+   * here appears on everybody's homepage. So the form is an admin's, by request.
+   *
+   * **Hidden, not disabled** — an entry form nobody here can submit is worse than no
+   * form. What a member loses is only the shortcut: opening any clan and pressing
+   * Save on its page adds it just the same, which is what the empty-state and the
+   * footnote below point at. This is presentation; the server's own rule on
+   * `POST /api/saved/clans` is what actually decides.
+   */
+  const isAdmin = user.role === 'admin'
   const state = useSavedClansState()
   const clans = state.entries
   const [rowProblem, setRowProblem] = useState<string | null>(null)
@@ -329,7 +345,16 @@ export function SavedClansView() {
           <Loading what="saved clans" />
         ) : clans.length === 0 && state.status === 'idle' ? null : clans.length === 0 ? (
           <p className="empty-hint">
-            No clans saved yet. Add a tag below, or open any clan and press <strong>Save</strong>.
+            No clans saved yet.{' '}
+            {isAdmin ? (
+              <>
+                Add a tag below, or open any clan and press <strong>Save</strong>.
+              </>
+            ) : (
+              <>
+                Open any clan and press <strong>Save</strong> to add it, or ask an admin.
+              </>
+            )}
           </p>
         ) : (
           <>
@@ -397,13 +422,15 @@ export function SavedClansView() {
         )}
       </section>
 
-      <section className="card">
-        <h2 className="section-title">Add a saved clan</h2>
-        <AddForm />
-        <p className="empty-hint" style={{ marginTop: 8, fontSize: 13 }}>
-          Blank display name uses the in-game clan name.
-        </p>
-      </section>
+      {isAdmin ? (
+        <section className="card">
+          <h2 className="section-title">Add a saved clan</h2>
+          <AddForm />
+          <p className="empty-hint" style={{ marginTop: 8, fontSize: 13 }}>
+            Blank display name uses the in-game clan name.
+          </p>
+        </section>
+      ) : null}
     </>
   )
 }

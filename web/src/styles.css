@@ -198,54 +198,41 @@ select {
 
 /* ---------- layout ---------- */
 
+/*
+ * One column, at every width.
+ *
+ * There used to be a 260px sidebar holding the two lookups, their Recent lists and
+ * the chat panel. The lookups and their Recent lists now sit on the homepage under
+ * the saved clans — where "where do I go" is asked on the same page as "where have I
+ * been" — and chat is gone, replaced by the trade tracker on the card pages. With
+ * nothing left to hold, a second track would only be a dead gutter, so the grid is
+ * a single column and the content takes the width.
+ */
 .shell {
   max-width: 1280px;
   margin: 0 auto;
   padding: 24px 20px 64px;
   display: grid;
-  /*
-   * 15% of the viewport with a 260px floor. The floor is the point: a bare 15vw
-   * is only ~192px at 1280px wide, which is too narrow for the lookup controls.
-   */
-  grid-template-columns: minmax(0, 1fr) max(260px, 15vw);
-  column-gap: var(--gap);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
 
-/* Without this the widest table in the main column can push the grid wider than
-   the viewport instead of scrolling inside .table-wrap. */
+/* Without this the widest table can push the grid wider than the viewport instead
+   of scrolling inside .table-wrap. */
 .shell__main {
   min-width: 0;
 }
 
-.shell__side {
-  position: sticky;
-  top: 24px;
-  align-self: start;
-}
-
-/* Single column on narrow screens, with the lookup stacked above the content so
-   it stays the first thing in reach. */
-@media (max-width: 900px) {
-  .shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .topbar {
-    order: 0;
-  }
-  .shell__side {
-    position: static;
-    order: 1;
-  }
-  .shell__main {
-    order: 2;
-  }
-  /* Without this the footer keeps the default `order: 0` and sorts alongside the
-     banner — which put the Supercell notice between the banner and the lookup on
-     every narrow screen, above the content it belongs under. */
-  .site-footer {
-    order: 3;
-  }
+/*
+ * The two lookup cards, side by side under the saved clans. `auto-fit` rather than
+ * two fixed tracks so they fall to one column on a phone without a second rule, and
+ * the 260px floor is the width the forms inside them were built for.
+ */
+.lookup-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--gap);
+  align-items: start;
 }
 
 /*
@@ -375,7 +362,9 @@ select {
   cursor: default;
 }
 
-/* The sidebar column is too narrow for a label + input + button on one line. */
+/* For a column too narrow to hold a label + input + button on one line. The lookup
+   forms no longer need it — they sit in the main column — but the password forms,
+   which pair a field with a reveal toggle, still do. */
 .search--stacked {
   flex-direction: column;
   flex-wrap: nowrap;
@@ -1550,6 +1539,17 @@ table.roster tbody tr[data-pair-start='true']:not(:first-child) > td {
   border-top: 2px solid var(--baseline);
 }
 
+/*
+ * The same divider, for a table where **every** row is a whole record rather than
+ * one option in a group — the trade tracker. Its own class instead of borrowing
+ * `data-pair-start`: that attribute means "a new pair begins here", which is a claim
+ * about grouping that the tracker's rows do not make. Same weight, so the two trade
+ * tables read alike stacked one above the other.
+ */
+table.roster--divided tbody tr:not(:first-child) > td {
+  border-top: 2px solid var(--baseline);
+}
+
 /* One side of a suggested swap, in the trade table. */
 .trade-card {
   display: inline-flex;
@@ -1561,6 +1561,48 @@ table.roster tbody tr[data-pair-start='true']:not(:first-child) > td {
   height: 28px;
   object-fit: contain;
   flex: none;
+}
+
+/*
+ * A tracked trade's state.
+ *
+ * On the **fixed status palette**, not the sequential ramp: pending / complete /
+ * declined is a category rather than a magnitude, so the roles already declared for
+ * status carry it — `--warning`, `--good-text`, `--ink-muted`, each defined in all
+ * three theme scopes — and no new colour is introduced here.
+ *
+ * Declined takes the muted ink, not `--critical`: it is a legitimate outcome somebody
+ * chose, not a failure, and painting it red would make the ordinary answer "no
+ * thanks" read as a broken row.
+ *
+ * **Colour is never the only carrier.** The word is in the badge, so the state reads
+ * the same in greyscale, and the audit line beside it says it again in a sentence.
+ */
+.trade-status {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--radius);
+  border: 1px solid currentColor;
+}
+.trade-status--pending {
+  color: var(--warning);
+}
+.trade-status--complete {
+  color: var(--good-text);
+}
+.trade-status--declined {
+  color: var(--ink-muted);
+}
+
+/* Sits under the badge in the same cell, so it needs the gap a bare <br /> lacks. */
+.trade-audit {
+  display: inline-block;
+  margin-top: 3px;
+  line-height: 1.4;
 }
 
 /* ---------- tables ---------- */
@@ -1958,102 +2000,6 @@ table.roster th {
   margin: 0 0 8px;
 }
 
-/* ---------- chat ---------- */
-
-.chat__log {
-  list-style: none;
-  margin: 0 0 12px;
-  padding: 0 2px 0 0;
-  /* Tall enough to hold a conversation, capped so the composer stays in view. */
-  max-height: 320px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.chat__msg {
-  padding: 7px 0;
-  border-top: 1px solid var(--grid);
-}
-.chat__msg:first-child {
-  border-top: none;
-}
-
-/* Own messages are marked by an edge rule and indent, not by colour alone. */
-.chat__msg--mine {
-  border-left: 2px solid var(--accent);
-  padding-left: 8px;
-}
-
-.chat__meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 11px;
-  color: var(--ink-muted);
-}
-
-.chat__author {
-  font-weight: 600;
-  color: var(--ink-2);
-}
-
-.chat__body {
-  margin: 2px 0 0;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--ink);
-  /* A pasted URL or an unbroken run of characters must not widen the sidebar. */
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.chat__form textarea {
-  width: 100%;
-  background: var(--surface);
-  color: var(--ink);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px 10px;
-  font: inherit;
-  font-size: 13px;
-  resize: vertical;
-}
-.chat__form textarea::placeholder {
-  color: var(--ink-muted);
-}
-
-.chat__actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.chat__count {
-  font-size: 11px;
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.chat__actions button {
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius);
-  padding: 7px 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.chat__actions button:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-.chat__actions button:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
 /* Label kept for screen readers where the placeholder carries the visible cue. */
 .visually-hidden {
   position: absolute;
@@ -2423,8 +2369,7 @@ table.roster--pairs td {
   .search select,
   .roster-filters input,
   .roster-filters select,
-  .row-limit select,
-  .chat__form textarea {
+  .row-limit select {
     font-size: 16px;
   }
 

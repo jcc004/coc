@@ -1,12 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { MAX_CHAT_LENGTH, type BaseInventory, type CardCategory } from '@coc/shared'
-import {
-  groupTradesByPair,
-  suggestTrades,
-  tradeProposalMessage,
-  type TradeSuggestion,
-} from './card-trades.ts'
+import type { BaseInventory, CardCategory } from '@coc/shared'
+import { groupTradesByPair, suggestTrades, type TradeSuggestion } from './card-trades.ts'
 
 /*
  * A five-card toy deck, so every rule can be exercised on its own instead of
@@ -277,105 +272,6 @@ describe('suggestTrades — several bases and several options', () => {
       '#BBB:2 <-> #CCC:1 (Elixir)',
       '#BBB:4 <-> #CCC:3 (Dark Elixir)',
     ])
-  })
-})
-
-describe('tradeProposalMessage', () => {
-  const trade: TradeSuggestion = {
-    baseA: '#AAA',
-    baseB: '#BBB',
-    cardFromA: 1,
-    cardFromB: 2,
-    category: 'Elixir',
-  }
-  const NAMES: Record<number, string> = { 1: 'Barbarian', 2: 'Archer' }
-  const cardName = (id: number) => NAMES[id]
-  const MEMBERS: Record<string, string> = { '#AAA': 'darek', '#BBB': 'Zack' }
-  const member = (tag: string) => MEMBERS[tag]
-
-  it('names both members and both cards, and nothing else', () => {
-    // The requested format, literally: no category prefix and no full stop.
-    assert.equal(
-      tradeProposalMessage(trade, { cardName, member }),
-      'darek gives Barbarian <-> Zack gives Archer',
-    )
-  })
-
-  it('names the category nowhere, whatever deck the swap is in', () => {
-    const message = tradeProposalMessage(
-      { ...trade, category: 'Dark Elixir' },
-      { cardName, member },
-    )
-    assert.ok(!message.includes('Dark Elixir'))
-    assert.ok(!message.includes('Card trade'))
-    assert.ok(!message.endsWith('.'))
-  })
-
-  it('falls back to the tag when no roster names a base', () => {
-    // Never an empty name: a tag is unfriendly, a gap is unusable.
-    assert.equal(
-      tradeProposalMessage(trade, { cardName, member: (tag) => (tag === '#AAA' ? 'darek' : '') }),
-      'darek gives Barbarian <-> #BBB gives Archer',
-    )
-  })
-
-  it('works with no member resolver at all', () => {
-    assert.equal(
-      tradeProposalMessage(trade, { cardName }),
-      '#AAA gives Barbarian <-> #BBB gives Archer',
-    )
-  })
-
-  it('names an unknown card by its id rather than leaving a gap', () => {
-    assert.equal(
-      tradeProposalMessage({ ...trade, cardFromB: 99 }, { cardName }),
-      '#AAA gives Barbarian <-> #BBB gives card 99',
-    )
-  })
-
-  it('falls back to the tags before it truncates, when the names will not fit', () => {
-    // Member names come off a live roster and are unbounded, so this is a real
-    // case and not a theoretical one — an over-long body is a 400 from the chat
-    // route. The tags are bounded, so the sentence has somewhere to land before
-    // anything has to be cut.
-    const long = (tag: string) => (tag === '#AAA' ? 'J'.repeat(200) : 'S'.repeat(200))
-    const message = tradeProposalMessage(trade, { cardName, member: long, maxLength: 60 })
-
-    assert.ok(message.length <= 60)
-    assert.equal(message, '#AAA gives Barbarian <-> #BBB gives Archer')
-    assert.ok(!message.includes('JJJ'), 'the giant member name must be gone')
-  })
-
-  it('keeps the member names when they do fit', () => {
-    const message = tradeProposalMessage(trade, { cardName, member, maxLength: 60 })
-    assert.ok(message.includes('darek') && message.includes('Zack'))
-  })
-
-  it('truncates only as a last resort, still naming the first base', () => {
-    const message = tradeProposalMessage(trade, { cardName, member, maxLength: 30 })
-    assert.ok(message.length <= 30, `got ${message.length}`)
-    assert.ok(message.endsWith('…'), 'a clipped message has to look clipped')
-    assert.ok(message.startsWith('#AAA gives'))
-  })
-
-  it('never exceeds the limit it was given', () => {
-    for (const maxLength of [1, 5, 20, 30, 64, 120, 500]) {
-      const message = tradeProposalMessage(
-        { ...trade, category: 'Dark Elixir' },
-        { cardName, member, maxLength },
-      )
-      assert.ok(message.length <= maxLength, `${maxLength}: got ${message.length}`)
-    }
-  })
-
-  it('fits the chat limit by default, with the longest realistic names', () => {
-    const message = tradeProposalMessage(trade, {
-      cardName: () => 'Super Wall Breaker',
-      member: () => 'Somebody With A Fairly Long Name',
-    })
-    assert.ok(message.length <= MAX_CHAT_LENGTH)
-    assert.ok(message.includes('Super Wall Breaker'))
-    assert.ok(message.includes('Somebody With A Fairly Long Name'))
   })
 })
 

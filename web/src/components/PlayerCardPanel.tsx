@@ -11,6 +11,7 @@ import { BaseCardEditor } from './BaseCardEditor.tsx'
 import { DeckPlaques } from './DeckPlaques.tsx'
 import { ErrorPanel } from './primitives.tsx'
 import { TradeSuggestions } from './TradeSuggestions.tsx'
+import { TradeTracker } from './TradeTracker.tsx'
 
 /**
  * This player's event cards: four progress plaques, over a grid and its trades,
@@ -169,9 +170,21 @@ export function PlayerCardPanel({
             bases={state.entries}
             labelOf={labelOf}
             ownerOf={ownerOf}
+            user={user}
             /* This base only — the pair count then matches the summary above. */
             focusTag={tag}
           />
+
+          {/*
+           * Below the suggestions, exactly as on the card page — the same two panels
+           * in the same order, so the workflow reads the same wherever you meet it.
+           * Inside the same disclosure, because it is about this base's cards and
+           * shares their heading treatment.
+           */}
+          <h3 className="section-title" style={{ marginTop: 20 }}>
+            Trade tracker
+          </h3>
+          <TradeTracker user={user} labelOf={labelOf} focusTag={tag} />
         </div>
       </details>
     </section>

@@ -12,7 +12,6 @@ import { createAuthStore, SESSION_TTL_MS, type AuthStore } from './auth/store.ts
 import { TtlCache } from './cache.ts'
 import { createCardInventoryStore } from './cards/store.ts'
 import { createTradeStore } from './cards/trades-store.ts'
-import { createChatStore, type ChatStore } from './chat/store.ts'
 import type { CocClient } from './coc-client.ts'
 import { openDatabase } from './db.ts'
 import { createSharedDataStore, type SharedDataStore } from './shared-data/store.ts'
@@ -31,7 +30,6 @@ const CLAN_TAG = '%23G88CYQP'
 interface Harness {
   app: ReturnType<typeof createApp>
   store: AuthStore
-  chat: ChatStore
   shared: SharedDataStore
   db: DatabaseSync
   calls: string[]
@@ -69,7 +67,6 @@ function createHarness(
     ADMIN_PASSWORD: ADMIN.password,
   })
 
-  const chat = createChatStore(db)
   const shared = createSharedDataStore(db)
   const cards = createCardInventoryStore(db)
 
@@ -77,14 +74,13 @@ function createHarness(
     coc,
     cache: new TtlCache(60_000),
     auth: store,
-    chat,
     sharedData: shared,
     cards,
     trades: createTradeStore(db, cards),
     loginLimiter: createLoginLimiter(options.limiter),
   })
 
-  return { app, store, chat, shared, db, calls, bootstrap }
+  return { app, store, shared, db, calls, bootstrap }
 }
 
 function postJson(path: string, body: unknown, cookie?: string): [string, RequestInit] {
@@ -236,7 +232,6 @@ describe('login and session', () => {
       coc: {} as unknown as CocClient,
       cache: new TtlCache(60_000),
       auth: harness.store,
-      chat: harness.chat,
       sharedData: createSharedDataStore(harness.db),
       cards: secureCards,
       trades: createTradeStore(harness.db, secureCards),
@@ -1693,7 +1688,8 @@ describe('the forced password change is a server gate, not a screen', () => {
       ['/api/players/%232GCJ2QPU', {}],
       ['/api/owners', {}],
       ['/api/saved/clans', {}],
-      ['/api/chat', {}],
+      ['/api/cards/inventory', {}],
+      ['/api/cards/trades', {}],
       ['/api/owners/bulk', postJson('/api/owners/bulk', { rows: [] }, cookie)[1]],
       ['/api/admin/users', {}],
     ]
