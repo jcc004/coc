@@ -2897,3 +2897,24 @@ table.roster--pairs td {
     border-width: 1px;
   }
 }
+
+/*
+ * The build stamp, at the foot of every page.
+ *
+ * Quieter than the licence notice above it — that text is a requirement, this is a
+ * convenience — so it takes the muted ink and a smaller size, and it is separated by a
+ * rule rather than by size alone so the grouping survives if the text scales.
+ */
+.site-footer__build {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--grid);
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+/* A hash: monospaced, because its shape is part of reading it and proportional digits
+   make two similar hashes look alike. */
+.site-footer__commit {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}

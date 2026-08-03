@@ -1,3 +1,4 @@
+import { buildInfo, buildLine } from './build-info.ts'
 import { currentEnvironment } from './environment.ts'
 import { AccountView } from './components/AccountView.tsx'
 import { AdminView } from './components/AdminView.tsx'
@@ -82,6 +83,48 @@ function CompassRosette() {
       {/* N, E, S, W: longer, solid, and drawn last so they read as the needle. */}
       <path d={ROSETTE_CARDINAL_PATH} fill="currentColor" />
     </svg>
+  )
+}
+
+/**
+ * How old the code you are looking at is, at the foot of every page.
+ *
+ * Everybody sees when it was last changed, because "am I on the current version" is a
+ * fair question for anyone — and after a deploy that silently served a day-old build,
+ * it is a question worth being able to answer without asking anybody. Admins also get
+ * the commit, which is only useful to somebody with a repository to look it up in.
+ *
+ * The values are baked in at build time by `vite.config.ts`; the rules about what to
+ * print when some of them are missing are in `build-info.ts`, tested, because the
+ * failure mode is a footer reading "Updated Invalid Date".
+ *
+ * Rendered as `null` when the build knew nothing at all, rather than as a placeholder:
+ * a line that says something vacuous where a real date goes is how people learn to stop
+ * reading it.
+ */
+function BuildStamp({ isAdmin }: { isAdmin: boolean }) {
+  const line = buildLine(
+    buildInfo(),
+    isAdmin,
+    (date) => date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }),
+    (date) => date.toLocaleString(),
+  )
+  if (line === null) return null
+
+  return (
+    <p className="site-footer__build">
+      {/* `title` carries the exact timestamp, which is a convenience for a pointer and
+          never the only place anything is stated — the readable date is on screen. */}
+      <span title={line.exact ?? undefined}>{line.updated}</span>
+      {line.detail === null ? null : (
+        <>
+          {' · '}
+          {/* Monospaced because it is a hash: the shape is part of reading it, and
+              proportional digits make two similar hashes look alike. */}
+          <span className="site-footer__commit">{line.detail}</span>
+        </>
+      )}
+    </p>
   )
 }
 
@@ -314,6 +357,9 @@ export function App() {
           . All game artwork remains the property of Supercell. This is a non-commercial fan
           project and does not use Supercell's assets as its own branding.
         </p>
+        {/* Last, and quieter than the notice above it: the licence text is a
+            requirement, this is a convenience. */}
+        <BuildStamp isAdmin={user.role === 'admin'} />
       </footer>
     </div>
   )
