@@ -1169,28 +1169,47 @@ gives 15 blocks and 19 rows with no pager at all.
 
 Every tracked base, ranked by how far it has got, directly under the trade suggestions — because
 "who should trade with whom" and "who is furthest ahead" are the same question asked two ways, and
-the base near the top with spares is the one worth messaging. Member name, tag, owner, cards and
-copies; the `17/60` is printed and a `.meter` bar on the sequential blue ramp is a second telling
-of it, never the only one.
+the base near the top with spares is the one worth messaging. Member name, tag, owner, points, cards
+and copies; the `17/60` is printed and a `.meter` bar on the sequential blue ramp is a second
+telling of it, never the only one.
 
 **A Rows select at the bottom of the table**, defaulting to **5** (5 / 10 / 20 / **50**), persisted
 at `coc:cardStandingLimit`. No `All`: 50 already covers every tracked base with room to spare, so
 it would be a second name for the option next to it. Same helpers as every other paged table.
 
-**The measure is distinct cards out of 60**, because the event rewards collecting the sixty rather
-than hoarding copies. The order, in `baseStandings()` in `card-standings.ts`:
+**The measure is points**, awarded per card by how many copies a base holds — `cardPoints()` in
+`card-standings.ts`:
 
-> **distinct descending, then total copies descending, then member name, then tag.**
+| Copy | 1st | 2nd | 3rd | … | 10th | 11th and beyond |
+|---|---|---|---|---|---|---|
+| Worth | 10 | 9 | 8 | … | 1 | 1 each |
 
-The last two are not merit. They are there to make the order **total**: early in an event nearly
-everybody holds a handful, so ties on distinct are the *normal* case, and a comparator that
-stopped at the first key would leave the tied rows in whatever order the array happened to arrive
-in — a list that reshuffles itself between renders. There is a test that runs the same bases in
-reversed input order and asserts an identical result.
+So a card held once is 10 points, twice 19, three times 27, ten times 55. Summed over the sixty,
+a complete set at the cap is **3,300**. The curve means the first copy of a card you lack is worth
+ten times the eleventh copy of one you have, so breadth outweighs hoarding — while spares still
+count, because spares are what make a trade possible at all.
+
+The beyond-ten arm is **deliberately unreachable today**: `MAX_CARD_COUNT` caps entry at ten, so
+nothing can score it through the interface. It is implemented so that raising the cap cannot
+silently change what a base scores, and a test pins it.
+
+The order, in `baseStandings()`:
+
+> **points descending, then distinct descending, then member name, then tag.**
+
+Distinct breaks a points tie because reaching the same score across more of the sixty is the
+better position — and points ties are real, not hypothetical: 54 is reachable both as one card
+held nine times and as two cards held three times each. The name and tag are not merit at all.
+They are there to make the order **total**, so two level bases render in the same sequence every
+time rather than swapping places between renders; a test runs the same bases in reversed input
+order and asserts an identical result.
 
 The **rank number** is shared on a genuine tie and then skips (1, 2, 2, 4). Tied means level on
-*distinct and copies*, not on the whole sort key: two bases separated by nothing but their names
-have not out-collected one another and must not print as 4th and 5th.
+**points**: two bases separated by nothing but their names, or by which cards made up the same
+score, have not out-scored one another and must not print as 4th and 5th.
+
+The row prints the score *and* `17/60`. Either alone misleads — a bare score does not say how far
+through the sixty a base is, and the fraction no longer explains why one row outranks another.
 
 **Paging never renumbers.** The rank comes from `baseStandings()`, computed once over the whole
 board, so page 2 opens at rank 6 and reads 6 — numbering the visible rows instead would restart at

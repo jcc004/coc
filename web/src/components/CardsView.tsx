@@ -12,6 +12,7 @@ import {
   type CardTotal,
 } from '../card-standings.ts'
 import { deckSlug } from '../cards.ts'
+import { formatFull } from '../format.ts'
 import { hrefFor, useBaseScope, useRowLimit } from '../hooks.ts'
 import { ownerRecordFor, useOwners, useOwnersState } from '../owners.ts'
 import { paginate, type RowLimit } from '../saved-table.ts'
@@ -112,6 +113,10 @@ function Leaderboard({ rows }: { rows: BaseStanding[] }) {
               </th>
               <th role="columnheader">Member</th>
               <th role="columnheader">Owner</th>
+              {/* First of the numbers because it is what the ranking is on. */}
+              <th className="num" role="columnheader">
+                Points
+              </th>
               <th className="num" role="columnheader">
                 Cards
               </th>
@@ -138,6 +143,20 @@ function Leaderboard({ rows }: { rows: BaseStanding[] }) {
                 </td>
                 <td role="cell" data-label="Owner">
                   {row.owner ?? <span className="role-pill">no owner set</span>}
+                </td>
+                <td className="num" role="cell" data-label="Points">
+                  {/*
+                   * Kept beside `17/60` rather than replacing it: a bare score does
+                   * not say how far through the sixty a base is, and the fraction
+                   * alone no longer explains why one row outranks another.
+                   */}
+                  {row.recorded ? (
+                    <span title={`${formatFull(row.points)} of ${formatFull(row.size * 55)} possible`}>
+                      {formatFull(row.points)}
+                    </span>
+                  ) : (
+                    <span className="card-meta">—</span>
+                  )}
                 </td>
                 <td className="num" role="cell" data-label="Cards">
                   {/*

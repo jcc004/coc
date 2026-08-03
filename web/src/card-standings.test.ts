@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { BaseInventory } from '@coc/shared'
-import { baseStandings, cardsInGridOrder, cardTotals, type StandingBase } from './card-standings.ts'
+import {
+  baseStandings,
+  cardPoints,
+  cardsInGridOrder,
+  cardTotals,
+  type StandingBase,
+} from './card-standings.ts'
 import { ALL_CARDS, cardCategoriesInOrder, cardsInCategory } from './cards.ts'
 
 /*
@@ -22,21 +28,102 @@ function named(tag: string, label: string, owner: string | null = null): Standin
   return { tag, label, owner }
 }
 
+/*
+ * The curve itself. `cardPoints` uses a closed-form arithmetic sum, which is easy to
+ * get off by one — so it is checked against a naive loop over the same rule rather
+ * than against more of my own arithmetic.
+ */
+function naiveCardPoints(copies: number): number {
+  let points = 0
+  for (let copy = 1; copy <= copies; copy += 1) points += copy <= 10 ? 11 - copy : 1
+  return points
+}
+
+describe('cardPoints', () => {
+  it('pays 10 for the first copy and one less for each after it', () => {
+    assert.equal(cardPoints(1), 10)
+    assert.equal(cardPoints(2), 19)
+    assert.equal(cardPoints(3), 27)
+  })
+
+  it('bottoms out at 1 for the tenth copy', () => {
+    assert.equal(cardPoints(10), 55)
+  })
+
+  it('pays a flat 1 for every copy past the tenth', () => {
+    // Unreachable through the UI — MAX_CARD_COUNT caps entry at 10 — but implemented
+    // so raising that cap cannot silently change what a base scores.
+    assert.equal(cardPoints(11), 56)
+    assert.equal(cardPoints(15), 60)
+  })
+
+  it('scores nothing for a card not held, or for nonsense', () => {
+    assert.equal(cardPoints(0), 0)
+    assert.equal(cardPoints(-3), 0)
+    assert.equal(cardPoints(Number.NaN), 0)
+    assert.equal(cardPoints(Number.POSITIVE_INFINITY), 0)
+  })
+
+  it('agrees with a naive loop across the whole range, cap and beyond', () => {
+    for (let copies = 0; copies <= 20; copies += 1) {
+      assert.equal(cardPoints(copies), naiveCardPoints(copies), `copies=${copies}`)
+    }
+  })
+
+  it('tops out at 3,300 for a complete set at the cap', () => {
+    assert.equal(cardPoints(10) * ALL_CARDS.length, 3300)
+  })
+})
+
 describe('baseStandings — the measure', () => {
-  it('ranks by distinct cards, not by copies', () => {
+  /*
+   * The same fixture the old distinct-only rule used, kept deliberately: it is the
+   * case where the two measures disagree. Anna holds three cards once each (3 x 10 =
+   * 30); Bert holds one card nine times (10+9+...+2 = 54). Under the old rule Anna
+   * led; under points Bert does, because a deep stack of spares is worth more to a
+   * group that trades than three cards nobody can trade for.
+   */
+  it('ranks by points, which can put copies above breadth', () => {
     const rows = baseStandings(
       [named('#A', 'Anna'), named('#B', 'Bert')],
-      // Bert holds nine copies of one card; Anna holds three different cards.
       [base('#A', [[1, 1], [2, 1], [3, 1]]), base('#B', [[1, 9]])],
     )
     assert.deepEqual(
       rows.map((row) => row.label),
-      ['Anna', 'Bert'],
+      ['Bert', 'Anna'],
     )
-    assert.equal(rows[0]?.distinct, 3)
-    assert.equal(rows[0]?.total, 3)
+    assert.equal(rows[0]?.points, 54)
+    assert.equal(rows[0]?.distinct, 1)
+    assert.equal(rows[1]?.points, 30)
+    assert.equal(rows[1]?.distinct, 3)
+  })
+
+  /*
+   * A genuine points tie, which takes finding: 54 is reachable both as one card held
+   * nine times (10+9+...+2) and as two cards held three times each (27+27). So the
+   * two bases score identically while holding a different number of distinct cards —
+   * which is exactly the case the tiebreak exists for.
+   */
+  it('orders a points tie by distinct, and still shares the rank', () => {
+    const rows = baseStandings(
+      [named('#A', 'Anna'), named('#B', 'Bert')],
+      [base('#A', [[1, 9]]), base('#B', [[1, 3], [2, 3]])],
+    )
+
+    assert.equal(rows[0]?.points, 54)
+    assert.equal(rows[1]?.points, 54)
+
+    // Bert first: same score across more of the sixty is the better position.
+    assert.deepEqual(
+      rows.map((row) => row.label),
+      ['Bert', 'Anna'],
+    )
+    assert.equal(rows[0]?.distinct, 2)
     assert.equal(rows[1]?.distinct, 1)
-    assert.equal(rows[1]?.total, 9)
+
+    // But neither out-scored the other, so the rank is shared rather than 1 and 2.
+    assert.equal(rows[0]?.rank, 1)
+    assert.equal(rows[1]?.rank, 1)
   })
 
   it('prints the fraction out of the sixty the event ships', () => {

@@ -27,6 +27,37 @@ import type { GeneratedCard } from './cards.ts'
 
 /* ---------- the leaderboard ---------- */
 
+/** What the first copy of a card is worth, and how many copies score above 1. */
+const FIRST_COPY_POINTS = 10
+
+/**
+ * What one card is worth to a base holding `copies` of it.
+ *
+ * The first copy scores 10, the second 9, and so on down to the tenth at 1;
+ * every copy past the tenth scores 1. So a card held once is 10 points, twice 19,
+ * three times 27, ten times 55 — and sixty cards at ten copies each is 3,300.
+ *
+ * The point of the curve is that the first copy of a card you lack is worth ten
+ * times the eleventh copy of one you already have, so the ranking rewards
+ * breadth while still crediting the spares that make trading possible at all.
+ *
+ * The past-ten arm is **deliberately unreachable today**: `MAX_CARD_COUNT` caps
+ * entry at ten, so `copies` never exceeds it through the UI. It is implemented
+ * anyway so that raising the cap cannot silently change what a base scores.
+ */
+export function cardPoints(copies: number): number {
+  if (!Number.isFinite(copies) || copies <= 0) return 0
+
+  const whole = Math.floor(copies)
+  const scored = Math.min(whole, FIRST_COPY_POINTS)
+  // Sum of 10, 9, … down to (11 - scored): an arithmetic series, so closed form.
+  // The test checks this against a naive loop rather than against itself.
+  const descending = (scored * (2 * FIRST_COPY_POINTS - scored + 1)) / 2
+  const beyond = Math.max(0, whole - FIRST_COPY_POINTS)
+
+  return descending + beyond
+}
+
 /** A tracked base, named, as the page already knows how to name one. */
 export interface StandingBase {
   /** Canonical `#TAG` — still the identity, as everywhere else. */
@@ -38,9 +69,11 @@ export interface StandingBase {
 }
 
 export interface BaseStanding extends StandingBase {
-  /** Distinct cards held — the measure the ranking is on. */
+  /** The measure the ranking is on — see {@link cardPoints}. */
+  points: number
+  /** Distinct cards held. No longer the measure, but still what `17/60` counts. */
   distinct: number
-  /** Copies, spares included. The first tiebreak. */
+  /** Copies, spares included. */
   total: number
   /** The deck size the fraction is out of, so the row prints `17/60`. */
   size: number
@@ -53,11 +86,11 @@ export interface BaseStanding extends StandingBase {
   /**
    * Standing, sharing a number on a genuine tie.
    *
-   * Tied on **distinct and total**, not on the whole sort key: the member name is
-   * only in the comparator to stop the list flickering, so two bases separated by
-   * nothing but their names have not out-collected one another and must not be
-   * printed as 4th and 5th. Ties skip the numbers they consume (1, 2, 2, 4), so a
-   * rank still says how many bases are ahead.
+   * Tied on **points**, not on the whole sort key: the name and tag are only in the
+   * comparator to stop the list flickering, so two bases separated by nothing but
+   * their names have not out-scored one another and must not be printed as 4th and
+   * 5th. Ties skip the numbers they consume (1, 2, 2, 4), so a rank still says how
+   * many bases are ahead.
    */
   rank: number
 }
@@ -65,12 +98,14 @@ export interface BaseStanding extends StandingBase {
 /**
  * The tracked bases, best first.
  *
- * **The order is: distinct descending, then total copies descending, then member
- * name, then tag.** Distinct is the measure — the event rewards collecting the
- * sixty, not hoarding — and copies break the tie because a base with more spares
- * is further along the same road. The name and then the tag are not merit at all;
- * they are there to make the order *total*, so two bases that are level render in
- * the same sequence every time rather than swapping places on each re-render.
+ * **The order is: points descending, then distinct descending, then member name,
+ * then tag.** Points are the measure — see `cardPoints` for the curve, which pays
+ * ten for a card you did not have and one for a spare past the tenth, so breadth
+ * outweighs hoarding without spares counting for nothing. Distinct breaks a tie
+ * because reaching the same score across more of the sixty is the better position.
+ * The name and then the tag are not merit at all; they are there to make the order
+ * *total*, so two level bases render in the same sequence every time rather than
+ * swapping places on each re-render.
  *
  * Takes the whole inventory rather than one base's counts, so the caller does not
  * have to pre-join: a base with no entry in it is a real base with nothing
@@ -87,9 +122,14 @@ export function baseStandings(
     const held = byTag.get(base.tag)
     const counts = countMap(held)
     let total = 0
-    for (const count of counts.values()) total += count
+    let points = 0
+    for (const count of counts.values()) {
+      total += count
+      points += cardPoints(count)
+    }
     return {
       ...base,
+      points,
       distinct: counts.size,
       total,
       size,
@@ -102,8 +142,8 @@ export function baseStandings(
 
   rows.sort(
     (a, b) =>
+      b.points - a.points ||
       b.distinct - a.distinct ||
-      b.total - a.total ||
       a.label.localeCompare(b.label) ||
       a.tag.localeCompare(b.tag),
   )
@@ -111,7 +151,9 @@ export function baseStandings(
   let rank = 0
   rows.forEach((row, index) => {
     const previous = rows[index - 1]
-    if (!previous || previous.distinct !== row.distinct || previous.total !== row.total) {
+    /* Points alone decide a tie. Two bases on the same score have not out-collected
+       one another, whatever their names sort like. */
+    if (!previous || previous.points !== row.points) {
       rank = index + 1
     }
     row.rank = rank
