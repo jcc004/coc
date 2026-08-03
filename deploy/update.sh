@@ -62,6 +62,25 @@ upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev
 [[ "$upstream" == "origin/$BRANCH" ]] || die "'$current' tracks '${upstream:-nothing}', not origin/$BRANCH."
 
 dirty="$(git status --porcelain --untracked-files=no)"
+
+# One exception, and only one: package-lock.json.
+#
+# `npm ci` never writes it, so a modified lockfile on a deploy host can only have come
+# from somebody running `npm install` by hand — and the committed lockfile is the
+# authoritative one either way. Left to fail, a single stray `npm install` would stop
+# every unattended deploy from then on, and the timer would go quietly dead until
+# somebody thought to read its journal. That is a worse failure than restoring a file
+# whose local edits are npm's rather than anyone's.
+#
+# It matters that this happens *before* `npm ci`: that command installs from the
+# lockfile as it exists on disk, so a modified one would be silently honoured.
+if [[ "$dirty" == " M package-lock.json" ]]; then
+  info "package-lock.json was modified locally — restoring the committed version"
+  info "(npm ci never writes it, so this came from a manual npm install)"
+  git checkout -- package-lock.json
+  dirty="$(git status --porcelain --untracked-files=no)"
+fi
+
 [[ -z "$dirty" ]] || die "Uncommitted changes in the deploy tree:
 $dirty
 Deploys must be reproducible from the commit. Discard or commit them first."

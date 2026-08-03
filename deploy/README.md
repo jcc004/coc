@@ -261,6 +261,14 @@ anything** if:
 - the card art is not exactly 60 images, or an art directory is missing
 - `main` has diverged from the remote (`--ff-only`, so it never writes a merge commit on the server)
 
+**One exception, and only one.** A locally modified `package-lock.json` is restored rather
+than treated as a blocker. `npm ci` never writes that file, so a modified one can only
+have come from someone running `npm install` by hand, and the committed lockfile is
+authoritative regardless. Left to fail, a single stray `npm install` would stop every
+unattended deploy from then on and the timer would go quietly dead. The exception is an
+exact match on that one path: a dirty lockfile *plus* anything else still aborts, and
+lists both.
+
 After building it checks that the bundle **the site is actually serving** is the one
 just built — the only test that catches Nginx pointing at a different directory. It
 also warns above 450 kB, the signature of a development React.
