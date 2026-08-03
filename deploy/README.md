@@ -28,7 +28,7 @@ session cookies cross the network in clear text.
   that only redirects and serves ACME challenges.
 - `.env.production.example` — template for `/srv/coc/.env` on the server.
 
-## Sequence (on the droplet, as `jcc`)
+## Sequence (on the droplet, as `crighjc`)
 
 ```bash
 # One-time prerequisites
@@ -39,21 +39,19 @@ sudo apt-get install -y nodejs git nginx certbot python3-certbot-nginx
 sudo ufw allow 80,443/tcp && sudo ufw allow OpenSSH && sudo ufw enable
 
 # Code — lives in /srv/coc (world-traversable, so no chmod on the app dir)
-sudo mkdir -p /srv/coc && sudo chown jcc:jcc /srv/coc
+sudo mkdir -p /srv/coc && sudo chown crighjc:crighjc /srv/coc
 git clone <your-repo-url> /srv/coc && cd /srv/coc
 npm install          # includes tsx (a runtime dep) — do NOT use --omit=dev
 
-# Game art. Both are required BEFORE the build: the art is gitignored, and
-# Vite copies web/public into dist. Skip these and the app works but is
-# imageless. assets:wiki needs COC_API_TOKEN, so set .env up first.
+# Environment
 cp deploy/.env.production.example .env
-# edit .env: paste the CoC token minted for 146.190.196.236, set ADMIN_PASSWORD,
-# and for now COMMENT OUT NODE_ENV=production (see the TLS note below)
-set -a && . ./.env && set +a
-npm run assets:coc && npm run assets:wiki
-npm run build        # -> web/dist
+# edit .env: paste the CoC token minted for 146.190.196.236, set ADMIN_PASSWORD
+# (fresh install only), and for now COMMENT OUT NODE_ENV=production (TLS note below)
 
-# First admin
+# Build — imageless for now; the art is fetched AFTER launch (see below)
+npm run build        # -> web/dist (no art yet)
+
+# First admin (fresh install only; skip if you migrated an existing DB)
 npm start            # creates the admin on first boot; Ctrl-C when you see it
 # then remove ADMIN_PASSWORD from .env
 
@@ -61,6 +59,14 @@ npm start            # creates the admin on first boot; Ctrl-C when you see it
 sudo cp deploy/coc.service /etc/systemd/system/coc.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now coc
+
+# Game art — MUST run on the droplet, AFTER launch: the CoC token is bound to
+# this droplet's IP, so assets:coc 403s from anywhere else. Rebuild so Vite
+# copies the fetched art (web/public/coc) into web/dist. assets:wiki optionally
+# uses WIKI_CONTACT for a polite User-Agent.
+set -a && . ./.env && set +a
+npm run assets:coc && npm run assets:wiki
+npm run build        # rebuild with art -> web/dist (served statically by Nginx)
 
 # Certificate, then Nginx
 sudo mkdir -p /var/www/certbot
