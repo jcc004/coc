@@ -1364,8 +1364,52 @@ details.group > .group__body {
  */
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  /*
+   * Six unless told otherwise. The count arrives as `--card-columns` from the page's
+   * density control; the fallback here is what makes the grid correct for any caller
+   * that sets nothing — the player page's copy of this grid, and the first paint before
+   * the width has been measured.
+   */
+  grid-template-columns: repeat(var(--card-columns, 6), minmax(0, 1fr));
   gap: 10px;
+}
+
+/*
+ * Search and density, in the card panel's header row beside Show and Base.
+ *
+ * Wraps rather than scrolls, and the search box is allowed to shrink to 120px: at
+ * tablet width all four controls share one line, and a fixed-width input is what would
+ * push the row into a second one — or off the edge.
+ */
+.card-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.card-controls__search {
+  min-width: 0;
+  width: 150px;
+  flex: 0 1 150px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+}
+.card-controls__search::placeholder {
+  color: var(--ink-muted);
+}
+
+/* Says how many of the sixty are on screen. Not a control, so it takes supporting-text
+   ink rather than sitting at the same weight as the pickers beside it. */
+.card-controls__count {
+  font-size: 12px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
 }
 
 /*
@@ -2805,7 +2849,8 @@ table.roster--pairs td {
   .search select,
   .roster-filters input,
   .roster-filters select,
-  .row-limit select {
+  .row-limit select,
+  .card-controls__search {
     font-size: 16px;
   }
 

@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { ApiError } from './api.ts'
 import { baseScopeFor, baseScopeKey, type BaseScope } from './base-scope.ts'
+import { DEFAULT_CARD_COLUMNS, resolveCardColumns } from './card-scale.ts'
 import { helpHref, helpSection, type HelpSectionId } from './help.ts'
 import {
   clanTargetTag,
@@ -359,6 +367,79 @@ export function useRecents(): [Recent[], (entry: Recent) => void] {
  * A table's rows-per-page choice, persisted so it survives a reload. Each table
  * passes its own key; the value is read once on mount and written on change.
  */
+/**
+ * The width an element actually occupies, kept current as it changes.
+ *
+ * Measured rather than modelled. The alternative is deriving the content width from
+ * `window.innerWidth` minus the shell's padding minus the card's padding, which is
+ * three constants duplicated from the stylesheet and silently wrong the first time any
+ * of them is edited. A `ResizeObserver` on the element that is actually laid out
+ * cannot drift.
+ *
+ * Starts at 0, which callers must treat as "not measured yet" rather than as "no
+ * room": a control gated on width would otherwise flash absent on the first paint.
+ *
+ * **A callback ref, not a ref object**, and that is load-bearing. A `useRef` holds the
+ * node but cannot announce that it arrived, so an effect keyed on `[]` runs once — and
+ * for any element that mounts on a *later* render, as this one does once the base list
+ * has loaded, it runs while the ref is still null, returns early, and never observes
+ * anything. The width then stays 0 for good and every control gated on it stays hidden.
+ * Storing the node in state makes attaching it a render, which is what lets the effect
+ * re-run with something to watch.
+ */
+export function useMeasuredWidth<T extends HTMLElement>(): [(node: T | null) => void, number] {
+  const [element, setElement] = useState<T | null>(null)
+  const [width, setWidth] = useState(0)
+
+  useEffect(() => {
+    if (!element) return
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (entry) setWidth(entry.contentRect.width)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [element])
+
+  return [setElement, width]
+}
+
+/**
+ * How many cards across the grid draws, remembered per browser.
+ *
+ * Same mechanism as `useRowLimit`: a reading preference about one panel, so
+ * `localStorage` rather than the server — nobody else's view of the shared data should
+ * change because you wanted denser tiles.
+ *
+ * The stored value is resolved against the width on every read rather than at write
+ * time, because the same browser is a desktop and a phone on different days.
+ * `resolveCardColumns` is where that lands; see `card-scale.ts` for why it clamps to
+ * the nearest offered step instead of falling back to the default.
+ */
+export function useCardColumns(
+  key: string,
+  contentWidth: number,
+  gap: number,
+): [number, (next: number) => void] {
+  const [stored, setStored] = useState<string | null>(() => localStorage.getItem(key))
+
+  const choose = useCallback(
+    (next: number) => {
+      setStored(String(next))
+      localStorage.setItem(key, String(next))
+    },
+    [key],
+  )
+
+  /* Before the first measurement there is nothing to resolve against, so the default
+     stands — which is also what the grid renders without any inline value at all. */
+  const columns =
+    contentWidth <= 0 ? DEFAULT_CARD_COLUMNS : resolveCardColumns(stored, contentWidth, gap)
+
+  return [columns, choose]
+}
+
 export function useRowLimit(key: string, fallback: RowLimit): [RowLimit, (next: RowLimit) => void] {
   const [limit, setLimit] = useState<RowLimit>(() =>
     parseRowLimit(localStorage.getItem(key), fallback),

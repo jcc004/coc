@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { MAX_CARD_COUNT, type SessionUser } from '@coc/shared'
 import { useBaseLabels } from '../base-labels.ts'
 import { activeTag, ownsAnyBase, tagsInScope, type BaseScope } from '../base-scope.ts'
 import { baseOwnerOf } from '../card-entry.ts'
+import { cardColumnOptions } from '../card-scale.ts'
+import { searchCards } from '../card-search.ts'
 import { inventoryFor, useCardInventoryState } from '../card-inventory.ts'
 import {
   baseStandings,
@@ -14,7 +16,13 @@ import {
 } from '../card-standings.ts'
 import { deckSlug } from '../cards.ts'
 import { formatFull } from '../format.ts'
-import { hrefFor, useBaseScope, useRowLimit } from '../hooks.ts'
+import {
+  hrefFor,
+  useBaseScope,
+  useCardColumns,
+  useMeasuredWidth,
+  useRowLimit,
+} from '../hooks.ts'
 import { ownerRecordFor, useOwners, useOwnersState } from '../owners.ts'
 import { paginate, type RowLimit } from '../saved-table.ts'
 import { BaseCardEditor } from './BaseCardEditor.tsx'
@@ -255,7 +263,17 @@ function heldAcrossTheClan(total: number): string {
  * only a text label — most of them are — because their cards are as tradeable as
  * anyone's and leaving them out would undercount the group by more than half.
  */
-function CardTotalsGrid({ totals }: { totals: CardTotal[] }) {
+/*
+ * The stylesheet's own gap values for the two breakpoints, and the width the narrow
+ * one takes over at. Duplicated from styles.css because the density arithmetic needs
+ * a number and CSS cannot hand one back — kept named and adjacent so the pair is
+ * findable if either side moves.
+ */
+const WIDE_GRID_GAP = 10
+const NARROW_GRID_GAP = 4
+const NARROW_GRID_WIDTH = 600
+
+function CardTotalsGrid({ totals, columns }: { totals: CardTotal[]; columns: number }) {
   /* Grouped by deck exactly as the grid is: `display: contents`, so the tiles stay
      direct children of the one grid, named by a hidden heading. Walking `totals` in
      the order it arrives is what guarantees the two grids agree — grouping cannot
@@ -274,7 +292,7 @@ function CardTotalsGrid({ totals }: { totals: CardTotal[] }) {
   }
 
   return (
-    <div className="card-grid">
+    <div className="card-grid" style={{ '--card-columns': columns } as CSSProperties}>
       {decks.map((deck) => {
         const headingId = `card-total-deck-${deck.slug}`
         return (
@@ -376,9 +394,27 @@ export function CardsView({ user }: { user: SessionUser }) {
 
   const emptyMine = scope === 'mine' && options.length === 0 && tags.length > 0
 
+  /*
+   * The grid's own width, and the density it allows.
+   *
+   * Measured off the header this row sits in, which shares the card's content box with
+   * the grid below it — so it is the same width without needing a ref threaded into a
+   * child component. The gap is read from the stylesheet's own value for this
+   * breakpoint rather than duplicated as a constant.
+   */
+  const [rowRef, rowWidth] = useMeasuredWidth<HTMLElement>()
+  const gridGap = rowWidth > 0 && rowWidth <= NARROW_GRID_WIDTH ? NARROW_GRID_GAP : WIDE_GRID_GAP
+  const [columns, setColumns] = useCardColumns('coc:cardColumns', rowWidth, gridGap)
+  const columnOptions = cardColumnOptions(rowWidth, gridGap)
+
+  /* Transient on purpose: a filter that survived navigating away would leave somebody
+     returning to a grid with 57 cards missing and no memory of why. */
+  const [query, setQuery] = useState('')
+  const found = useMemo(() => searchCards(cardsInGridOrder(), query), [query])
+
   return (
     <>
-      <section className="card">
+      <section className="card" ref={rowRef}>
         <div className="card-header">
           <h2 className="section-title" style={{ margin: 0 }}>
             Clash of Cards
@@ -435,10 +471,70 @@ export function CardsView({ user }: { user: SessionUser }) {
                     </select>
                   </label>
                 ) : null}
+
+                {/*
+                 * Search and density, in the same container as Show and Base — they are
+                 * all questions about what this one panel shows, and the container
+                 * already wraps, so "same row if they fit" is decided by the width
+                 * rather than by markup. They come after the two pickers because those
+                 * choose *which base* and these choose *how to look at it*.
+                 */}
+                {active !== null ? (
+                  <>
+                    <label className="row-limit" htmlFor="cards-search">
+                      Find
+                      <input
+                        id="cards-search"
+                        type="search"
+                        className="card-controls__search"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        placeholder="Card name"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                    </label>
+
+                    {/*
+                     * Only where there is a choice. On a phone six across is the only
+                     * density that fits, so `cardColumnOptions` returns one entry and
+                     * this renders nothing rather than a picker that cannot change
+                     * anything — which is what "only useful on larger screens" means in
+                     * practice.
+                     */}
+                    {columnOptions.length > 1 ? (
+                      <label className="row-limit" htmlFor="cards-columns">
+                        Per row
+                        <select
+                          id="cards-columns"
+                          value={String(columns)}
+                          onChange={(event) => setColumns(Number(event.target.value))}
+                        >
+                          {columnOptions.map((option) => (
+                            <option key={option} value={String(option)}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                  </>
+                ) : null}
               </>
             ) : null}
           </div>
         </div>
+
+        {/* Said out loud, because a grid with 57 tiles missing looks like a fault until
+            something explains it. Below the row rather than in it: it is a result, not a
+            control, and it appears and disappears as you type. */}
+        {found.filtering ? (
+          <p className="card-controls__count">
+            {found.cards.length === 0
+              ? `No card matches “${query.trim()}”`
+              : `Showing ${found.cards.length} of ${found.total} cards`}
+          </p>
+        ) : null}
 
         {state.status === 'error' && state.error ? <ErrorPanel error={state.error} /> : null}
 
@@ -476,6 +572,8 @@ export function CardsView({ user }: { user: SessionUser }) {
                guess from the label beside it. */
             owner={baseOwnerOf(ownerRecordFor(owners, active))}
             user={user}
+            columns={columns}
+            query={query}
             /* The four deck plaques, under the count line in the header. Only here:
                the player page draws its own above the panel that holds this grid. */
             showDeckProgress
@@ -573,7 +671,7 @@ export function CardsView({ user }: { user: SessionUser }) {
               tile in <strong>grey with no badge</strong> is a card nobody in the clan holds; it
               cannot be got by trading, only from the game.
             </p>
-            <CardTotalsGrid totals={totals} />
+            <CardTotalsGrid totals={totals} columns={columns} />
           </div>
         </details>
       </section>

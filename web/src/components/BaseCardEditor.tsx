@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   MAX_CARD_COUNT,
   normalizeTag,
   type BaseInventory,
+  type CardCategory,
   type SessionUser,
 } from '@coc/shared'
 import { saveBaseCounts } from '../card-inventory.ts'
@@ -15,11 +16,13 @@ import {
   type CardEntryAccess,
   type SaveFailure,
 } from '../card-entry.ts'
+import { DEFAULT_CARD_COLUMNS } from '../card-scale.ts'
+import { decksPresent, searchCards } from '../card-search.ts'
+import { cardsInGridOrder } from '../card-standings.ts'
 import { summariseBase } from '../card-summary.ts'
 import {
   ALL_CARDS,
   cardCategoriesInOrder,
-  cardsInCategory,
   categoryOfCard,
   clampCardCount,
   countMap,
@@ -30,6 +33,7 @@ import {
 import { deckProgress, deckSizes } from '../deck-progress.ts'
 import { formatDateTime } from '../format.ts'
 import { hrefFor } from '../hooks.ts'
+import type { GeneratedCard } from '../cards.ts'
 import { CardTile } from './CardTile.tsx'
 import { DeckPlaques } from './DeckPlaques.tsx'
 import { HelpLink } from './primitives.tsx'
@@ -209,6 +213,8 @@ export function BaseCardEditor({
   owner,
   user,
   showDeckProgress = false,
+  columns = DEFAULT_CARD_COLUMNS,
+  query = '',
 }: {
   tag: string
   /** The base's member name, or its tag when no roster we can see names it. */
@@ -226,7 +232,43 @@ export function BaseCardEditor({
    * the same four bars twice on one screen.
    */
   showDeckProgress?: boolean
+  /**
+   * How many cards across. Defaults to the six the grid is designed around, which is
+   * what a caller with no scale control of its own should render — see the note on the
+   * grid below.
+   */
+  columns?: number
+  /**
+   * A card-name filter. Empty means no filter, which is the whole grid.
+   *
+   * Passed in rather than owned here because the control lives beside the page's other
+   * pickers, and because a query is transient: it should not survive navigating away,
+   * which a preference inside this component would tempt somebody into making it do.
+   */
+  query?: string
 }) {
+  /*
+   * What the filter leaves. Both memos key off the query alone — the card list is a
+   * generated constant, so nothing else can change the answer.
+   *
+   * `visibleByDeck` is a map rather than a filter per deck inside the render, so the
+   * sixty names are folded once per query instead of once per deck per render.
+   */
+  const found = useMemo(() => searchCards(cardsInGridOrder(), query), [query])
+  const visibleDecks = useMemo(
+    () => decksPresent(found.cards, cardCategoriesInOrder()),
+    [found],
+  )
+  const visibleByDeck = useMemo(() => {
+    const byDeck = new Map<CardCategory, GeneratedCard[]>()
+    for (const card of found.cards) {
+      const list = byDeck.get(card.category)
+      if (list) list.push(card)
+      else byDeck.set(card.category, [card])
+    }
+    return byDeck
+  }, [found])
+
   const stored = useMemo(() => countMap(base), [base])
   const [draft, setDraft] = useState<Map<number, number>>(stored)
   const [saving, setSaving] = useState(false)
@@ -423,9 +465,19 @@ export function BaseCardEditor({
        * which is now the only *visible* thing separating them, the drawn headings
        * and the gaps between them having gone. A single grid is the point: per-deck
        * grids broke the row wherever a deck ran out mid-line.
+       *
+       * The column count arrives as a custom property rather than a class per step:
+       * the stylesheet keeps the geometry and only the one number comes from state,
+       * which is the same division the face-crop framing uses. Six is the fallback in
+       * CSS as well as in the default above, so the grid is right even if this value
+       * never arrives.
+       *
+       * **Filtering removes tiles; it never reorders them.** A filtered grid is the
+       * same layout with rows missing, so a card stays where you last saw it relative
+       * to its neighbours. See `card-search.ts`.
        */}
-      <div className="card-grid">
-        {cardCategoriesInOrder().map((category) => {
+      <div className="card-grid" style={{ '--card-columns': columns } as CSSProperties}>
+        {visibleDecks.map((category) => {
           const headingId = `card-deck-${deckSlug(category)}`
           return (
             /*
@@ -444,7 +496,7 @@ export function BaseCardEditor({
               <h3 id={headingId} className="visually-hidden">
                 {category}
               </h3>
-              {cardsInCategory(category).map((card) => (
+              {visibleByDeck.get(category)?.map((card) => (
                 <CardEntryTile
                   key={card.id}
                   card={card}
