@@ -153,6 +153,27 @@ git log --oneline -1                                             # what you buil
 Those two filenames must match. Vite names bundles by content hash, so a given commit
 always produces the same filename — which makes the pair a reliable fingerprint.
 
+**Check the artwork on disk, never over HTTP.** Nginx falls back to `index.html` for any
+path it cannot find — that is what makes client-side routing work, and it means *every*
+request returns 200, including one for art that is not there. A status check therefore
+proves nothing about the images:
+
+```bash
+# useless — 200 whether the file exists or not
+curl -s -o /dev/null -w '%{http_code}\n' https://coc.jcciv.com/coc/cards/anything.png
+
+# what actually distinguishes them
+curl -s -o /dev/null -w '%{content_type}  %{size_download}\n' \
+  https://coc.jcciv.com/coc/cards/elixir_01_barbarian.png
+#   image/png  85694   -> present
+#   text/html  1150    -> missing; that is index.html, and 1150 bytes is its size
+```
+
+Take filenames from the host rather than guessing: cards are named like
+`dark_elixir_20_minion.png`, and league and label icons are numeric ids like
+`29000000.png`. A guessed name gives exactly the same 200-and-HTML answer as genuinely
+missing art, which reads as a fault that is not there.
+
 The three traps, in the order they are likely:
 
 1. **A stale Nginx config.** `git pull` updates `deploy/nginx-coc.conf` in the repo and
