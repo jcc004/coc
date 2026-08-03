@@ -1364,38 +1364,17 @@ details.group > .group__body {
 }
 
 /*
- * One card's total across the whole clan, in the expandable list under the grid.
+ * The count of cards nobody in the clan holds, on the disclosure line above the
+ * totals grid. `--critical` because it is the one thing on that panel you cannot
+ * fix by trading — those cards have to come from the game.
  *
- * It is a `.meter-row` — name and art on the left, the value right-aligned in its
- * own column — because that row already exists for exactly this shape, and reusing
- * it means the list picks up the same 32px art box, the same rules between rows and
- * the same wrap behaviour as the troop levels on a player page. No bar: the totals
- * have no denominator to draw one against, and the number *is* the value.
- *
- * The left inset is on **every** row, not only the marked ones, so marking a card
- * cannot shift it sideways. That is the whole point of the marker: the list's order
- * is the grid's and must stay scannable card-for-card against it, so a zero is
- * called out where it stands and never promoted to the top.
+ * It is **never** the only carrier: the line reads `41 nobody holds` in words, and
+ * inside the panel each such card is a greyscale tile whose accessible name says
+ * `none held across the clan`. The totals grid itself carries no per-tile rule or
+ * marker colour — it is the same `.card-tile` as the entry grid, so a card nobody
+ * holds is exactly the greyscale-with-no-badge a card the *base* lacks is, and the
+ * words are what tell the two panels apart.
  */
-.card-total {
-  /* Room for the rule, reserved on held rows too — see above. */
-  padding-left: 10px;
-}
-
-/*
- * A card nobody in the clan holds. `--critical` because it is the one entry on the
- * list you cannot fix by trading — it has to come from the game — which makes it
- * the only thing here worth interrupting a scan for. It is **never** the only
- * carrier: the row prints `None held` in words, which is what `.card-total__none`
- * colours, and the rule is a second telling of that.
- *
- * `inset` shadow rather than a border, so a marked row occupies exactly the same box
- * as an unmarked one and the column of names stays straight.
- */
-.card-total--absent {
-  box-shadow: inset 2px 0 0 var(--critical);
-}
-
 .card-total__none {
   color: var(--critical);
   font-weight: 600;

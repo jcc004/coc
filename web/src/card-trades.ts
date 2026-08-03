@@ -154,55 +154,80 @@ export interface TradePair {
 /**
  * The chat message that proposes one swap.
  *
- * Pure, and here rather than in the component, because it has rules: it must
- * name both bases *and* their owners — a tag alone tells nobody who to talk to —
- * and it must fit the chat's length limit whatever a free-text owner name turns
- * out to be. Owner names are unbounded user input, so "it will obviously fit" is
- * not a safe assumption; the server would reject the message and the button
- * would look broken.
+ * Exactly four things, and nothing else:
  *
- * It degrades in a deliberate order: drop the owner names first, since the tags
- * still identify the bases, and only then truncate. Nothing here posts anything —
- * the caller fills the composer and the user presses Send — so even a clipped
- * message is seen before it goes anywhere.
+ * ```
+ * <member> gives <card> <-> <member> gives <card>
+ * ```
+ *
+ * No category prefix and no full stop, by request. The category is not in the
+ * text because the swap already names two cards that a reader can see are in the
+ * same deck, and the sentence is going into a chat box a human will edit before
+ * sending — the shorter it is, the less there is to tidy.
+ *
+ * **It names members, not owners.** That is a deliberate trade: the message now
+ * says which two *bases* should swap rather than which two *people* to contact,
+ * so an owner who plays a base under another name is no longer identified. What
+ * it buys is a line that reads as a sentence about two players, which is what
+ * gets pasted into a clan chat. The owner is still on screen in the suggestion
+ * table next to the button, so the person is one glance away.
+ *
+ * Pure, and here rather than in the component, because it has rules: member names
+ * are unbounded free text — they come off a live roster — so "it will obviously
+ * fit" is not a safe assumption, and an over-long body is a 400 from the chat
+ * route and a button that looks broken.
+ *
+ * It degrades in a deliberate order:
+ *
+ * 1. **fall back to the tags**, which are bounded (`#` plus 3–12 characters) and
+ *    are the identity the counts and the trades are keyed on anyway. The message
+ *    is poorer — you have to look a tag up — but every word of it is still true;
+ * 2. only then **truncate**, with an ellipsis, so what is left is visibly
+ *    incomplete rather than a shorter claim about a different trade.
+ *
+ * Nothing here posts anything — the caller fills the composer and the user presses
+ * Send — so even a clipped message is read by a human before it goes anywhere.
  */
 export interface TradeMessageContext {
   /** Card id → display name. An unknown id falls back to `card <n>`. */
   cardName: (cardId: number) => string | undefined
-  /** Base tag → whoever owns it, when one is assigned. */
-  owner?: (tag: string) => string | undefined
+  /**
+   * Base tag → the member name it answers to, from the same resolver the rest of
+   * the page names bases with (`baseOptions` in `base-names.ts`). A tag no roster
+   * we can see names falls back to the tag, because an empty name in the sentence
+   * would be worse than an unfriendly one.
+   */
+  member?: (tag: string) => string | undefined
   /** Defaults to the chat's own limit. */
   maxLength?: number
 }
 
 export function tradeProposalMessage(
   trade: TradeSuggestion,
-  { cardName, owner, maxLength = MAX_CHAT_LENGTH }: TradeMessageContext,
+  { cardName, member, maxLength = MAX_CHAT_LENGTH }: TradeMessageContext,
 ): string {
   const named = (cardId: number) => cardName(cardId)?.trim() || `card ${cardId}`
   const cardA = named(trade.cardFromA)
   const cardB = named(trade.cardFromB)
 
-  const build = (withOwners: boolean) => {
+  const build = (withNames: boolean) => {
     const side = (tag: string) => {
-      const who = withOwners ? owner?.(tag)?.trim() : ''
-      return who ? `${tag} (${who})` : tag
+      const who = withNames ? member?.(tag)?.trim() : ''
+      return who || tag
     }
-    return (
-      `Card trade (${trade.category}): ` +
-      `${side(trade.baseA)} gives ${cardA} <-> ${side(trade.baseB)} gives ${cardB}.`
-    )
+    return `${side(trade.baseA)} gives ${cardA} <-> ${side(trade.baseB)} gives ${cardB}`
   }
 
   const full = build(true)
   if (full.length <= maxLength) return full
 
-  const withoutOwners = build(false)
-  if (withoutOwners.length <= maxLength) return withoutOwners
+  const withTags = build(false)
+  if (withTags.length <= maxLength) return withTags
 
-  // Both tags are still in the prefix, so a truncated message is a poor one
-  // rather than a misleading one.
-  return `${withoutOwners.slice(0, Math.max(0, maxLength - 1))}…`
+  // The first base and what it gives are still in the prefix, and the ellipsis
+  // says the rest is missing, so a truncated message is a poor one rather than a
+  // misleading one.
+  return `${withTags.slice(0, Math.max(0, maxLength - 1))}…`
 }
 
 export function groupTradesByPair(suggestions: TradeSuggestion[]): TradePair[] {

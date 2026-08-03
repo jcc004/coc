@@ -416,8 +416,9 @@ fixed order), `base-scope.ts` (the card page's Mine/All filter — what "mine" m
 default, and where the selection goes when the filter drops it), `last-route.ts` (what to
 restore, and which clan the topbar's Clan button opens).
 Components that are shown in more than one place are shared rather than copied — `BaseCardEditor`
-is the one 60-tile card grid, rendered by both the card page and a player page, and `DeckPlaques`
-is the one set of deck bars, rendered by both as well.
+is the one 60-tile card grid, rendered by both the card page and a player page; `CardTile` is the
+one card tile, rendered by that grid and by the card page's clan-totals grid; and `DeckPlaques`
+is the one set of deck bars, rendered by both pages as well.
 
 ## Phones and tablets first
 
@@ -782,6 +783,20 @@ returning `{ rows, page, pageCount, from, to, total }` where `'all'` (or `null`)
 paging. The returned `page` is authoritative — that is where clamping happens, so a stale
 page number in a component cannot produce a blank table.
 
+Four lists share that machinery — `paginate()` and `parseRowLimit()` for the logic,
+`RowLimitSelect` and `Pager` for the controls, `useRowLimit()` for the persistence. Their defaults
+differ because the lists do:
+
+| List | Default | Options | Stored at |
+|---|---|---|---|
+| Saved clans | 5 | 5 / 10 / 20 / 50 / All | `coc:savedClans:limit` |
+| Clan roster | 10 | 5 / 10 / 20 / 50 | `coc:rosterLimit` |
+| Trade suggestions | 5 | 5 / 10 / 20 / All | `coc:tradePairLimit` |
+| Collection leaderboard | 5 | 5 / 10 / 20 / 50 | `coc:cardStandingLimit` |
+
+The trade suggestions' select is labelled **Pairs**, not **Rows**, because that list pages by pair —
+see [Row counts on the trade suggestions](#row-counts-on-the-trade-suggestions).
+
 ## Owners live on the clan page
 
 There used to be a second landing-page table of saved *bases*: a curated list of player tags
@@ -1009,9 +1024,16 @@ the three panels under them are the whole clan and are deliberately *not* filter
 
 1. the base picker, with the **Mine / All** filter to its left, and the 60-tile grid for the base
    it chooses;
-2. **Cards across the clan** — an expandable total of every card, in the grid's order;
-3. **Collection leaderboard** — every tracked base, furthest along first;
-4. **Trade suggestions** — who should swap what with whom.
+2. **Trade suggestions** — who should swap what with whom, 5 pairs at a time;
+3. **Collection leaderboard** — every tracked base, furthest along first, 5 rows at a time;
+4. **Cards across the clan** — an expandable copy of the same grid, every tile badged with the
+   clan's total.
+
+**Trades sit directly under the grid** because the spares you have just typed in are what the
+suggestions are made of, and because they are the only panel on the page that asks you to *do*
+something. The leaderboard and the clan totals are both reference; the totals are sixty more tiles,
+so they go last, still collapsed. Only the trades' position was asked for — the rest is a
+consequence of it.
 
 The bases are the **owner assignments** — the set of player
 tags the group already tracks — so there is no second list of bases to curate and drift. A base
@@ -1036,13 +1058,15 @@ option are two people's names in one label, and the reader cannot tell which is 
   costs no box, no gap and no change to the column alignment. Anything other than `contents` there
   splits the sixty tiles back into four grids and the seams reappear.
   Tiles are **picture only**: no card name. A card the base holds renders in colour; one it lacks
-  renders the same file under `grayscale(1)`. That is **never the only cue** — the tile still says
-  `Have 3` or `None` in words underneath and its box reads 0, so held-vs-not survives with no
-  colour vision at all. The name is on the tile's `title` and opens the number box's accessible
-  name, so nothing that reads the page aloud has lost it. The cost is real and worth knowing: the
-  card art is gitignored, so on a checkout with no art a tile is an empty frame over a count.
+  renders the same file under `grayscale(1)`. That is **never the only cue** — the number box under
+  the art reads 0 for a card the base lacks and n for one it holds, at every breakpoint, so
+  held-vs-not survives with no colour vision at all. The name is on the tile's `title` and opens
+  the number box's accessible name, so nothing that reads the page aloud has lost it. The cost is
+  real and worth knowing: the card art is gitignored, so on a checkout with no art a tile is an
+  empty frame over a count.
 - **The count badge** sits in the art's lower right and appears **only past one copy**: `×1` on
-  fifty tiles would be noise, where a spare is the fact worth spotting.
+  fifty tiles would be noise, where a spare is the fact worth spotting. The clan-totals grid makes
+  the opposite call and badges every count — see [Cards across the clan](#cards-across-the-clan).
 - **The tile border carries the deck**, in the event's own frame colours —
   `--deck-elixir`, `--deck-dark-elixir`, `--deck-builder-base`, `--deck-super-troop`, declared
   in all three theme scopes and lightened for dark mode, where the deep purple would otherwise
@@ -1067,22 +1091,44 @@ option are two people's names in one label, and the reader cannot tell which is 
 - **Last updated and who** is shown above the grid for the selected base.
 - **A failed write is reported at the Save button**, with the typed counts left exactly as they
   are so nothing has to be re-entered. `Saved` never appears unless the request succeeded.
-- **Trade suggestions** are the last panel, driven entirely by the pure module and grouped by the
-  pair of bases involved. Its two identity columns are headed **Member** and print the **member
-  name** as the link — a tag is not who you go and talk to — with the **tag and the owner** on a
-  second line beneath it. The tag is not dropped anywhere: it is the identity the counts, the
-  routes and the trades are all keyed on, and it is omitted only where it *is* the name, i.e. for
-  a base no visible roster names. The names come from the same `baseOptions()` the picker uses, so
-  there is one resolver, not two. Stacked on a phone, a pair's later options label themselves
-  `darek gives` / `Zack gives` rather than repeating the tags.
+- **Trade suggestions** are the panel directly under the grid, driven entirely by the pure module
+  and grouped by the pair of bases involved. Its two identity columns are headed **Member** and
+  print the **member name** as the link — a tag is not who you go and talk to — with the **tag and
+  the owner** on a second line beneath it. The tag is not dropped anywhere: it is the identity the
+  counts, the routes and the trades are all keyed on, and it is omitted only where it *is* the
+  name, i.e. for a base no visible roster names. The names come from the same `baseOptions()` the
+  picker uses, so there is one resolver, not two. Stacked on a phone, a pair's later options label
+  themselves `darek gives` / `Zack gives` rather than repeating the tags.
+
+#### Row counts on the trade suggestions
+
+A **Pairs** select at the **bottom** of the section, defaulting to **5** (5 / 10 / 20 / All), with
+the pager beside it. The choice persists at `coc:tradePairLimit`, the same way every other row
+limit in the app does, and the same `paginate()` / `parseRowLimit()` / `RowLimitSelect` / `Pager`
+machinery does the work — see [Row counts and paging](#row-counts-and-paging).
+
+**The limit counts pairs, not rows, and both controls say so.** The two readings genuinely differ
+here: fifteen pairs can be nineteen rows, because a pair with several options is one block with the
+member named once and its options listed beneath. Paging by row would put a row with two empty
+Member cells at the top of page 2 — which reads as missing data rather than as "the same two bases
+as above", the exact failure the wide table's `data-pair-start` rule exists to prevent — and would
+also make "5" mean something other than five decisions to make. So the control is labelled `Pairs`,
+the pager reads `Showing 1–5 of 15 pairs`, and the note underneath adds `7 options on this page`
+whenever there is more than one page. Verified in a browser: at the default, `Showing 1–5 of 15
+pairs` over 5 pair-blocks and 7 rows; `Next` gives `Showing 6–10 of 15 pairs` over 5 and 5; `All`
+gives 15 blocks and 19 rows with no pager at all.
 
 ### The collection leaderboard
 
-Every tracked base, ranked by how far it has got, directly above the trade suggestions — because
-"who is furthest ahead" and "who should trade with whom" are the same question asked two ways, and
+Every tracked base, ranked by how far it has got, directly under the trade suggestions — because
+"who should trade with whom" and "who is furthest ahead" are the same question asked two ways, and
 the base near the top with spares is the one worth messaging. Member name, tag, owner, cards and
 copies; the `17/60` is printed and a `.meter` bar on the sequential blue ramp is a second telling
 of it, never the only one.
+
+**A Rows select at the bottom of the table**, defaulting to **5** (5 / 10 / 20 / **50**), persisted
+at `coc:cardStandingLimit`. No `All`: 50 already covers every tracked base with room to spare, so
+it would be a second name for the option next to it. Same helpers as every other paged table.
 
 **The measure is distinct cards out of 60**, because the event rewards collecting the sixty rather
 than hoarding copies. The order, in `baseStandings()` in `card-standings.ts`:
@@ -1099,6 +1145,11 @@ The **rank number** is shared on a genuine tie and then skips (1, 2, 2, 4). Tied
 *distinct and copies*, not on the whole sort key: two bases separated by nothing but their names
 have not out-collected one another and must not print as 4th and 5th.
 
+**Paging never renumbers.** The rank comes from `baseStandings()`, computed once over the whole
+board, so page 2 opens at rank 6 and reads 6 — numbering the visible rows instead would restart at
+1 and turn the one column that means something into a row counter. Read back off the DOM: page 2 of
+the default 5-row view shows ranks `6, 7` under `Showing 6–7 of 7 bases`.
+
 A base **nobody has ever saved** stays on the board, last, and says `Nothing recorded yet` rather
 than printing `0/60` — the same distinction the grid's attribution line draws. Sixty zeroes
 presented as data would be a claim nobody made.
@@ -1107,34 +1158,58 @@ It is **group-wide and not filtered by Mine/All**. A leaderboard of one base ans
 
 ### Cards across the clan
 
-An expandable panel directly beneath the grid: for each of the 60 cards, the copies held across
-**every** tracked base. Collapsed by default, and its summary line carries the headline —
-`All 60 cards, in grid order · 41 nobody holds`.
+The **last** panel, and an expandable one: the same 60-tile grid as above, every tile carrying the
+copies held across **every** tracked base as a small badge in its lower-right corner — exactly where
+the per-base count badge sits. Collapsed by default, and its summary line carries the headline —
+`All 60 cards, in grid order · 38 nobody holds`.
+
+**It is the grid, not a list.** It was a two-column list of `.meter-row`s; a grid is what makes it
+readable against the tiles above, because "the same picture in the same place" needs no
+translation. That is not a claim about two similar components: `CardTile` in
+`web/src/components/CardTile.tsx` **is** the tile, and `BaseCardEditor`'s entry grid and this one
+are its two callers — same art, same crop geometry, same deck-coloured frame, same greyscale.
+Measured at 1280px, both grids render 7 columns of 123px tiles over a 107×143 frame; three columns
+at 390px. What the two callers vary is only the badge, what sits under the frame (a number box, or
+nothing) and where the accessible name comes from.
 
 **The order is fixed by design and never changes with the counts.** It comes from
 `cardsInGridOrder()`, which is literally the grid's own two calls — `cardCategoriesInOrder()` then
 `cardsInCategory()` — rather than a second ordering that agrees with it today and drifts the next
 time the manifest is regenerated. The whole reason the panel earns its place is that it can be
-scanned card-for-card against the tiles above it, so **nothing here sorts by count, in any mode**.
+scanned tile-for-tile against the grid above it, so **nothing here sorts by count, in any mode**.
 That is asserted directly: a test puts all the copies on the *last* card and none on the first and
-checks the output order still matches the input's.
+checks the output order still matches the input's. And read back off the DOM: the two grids' 60
+tiles, compared by name in document order, match card for card at 390, 600 and 1280px.
+
+**The badge appears on every count, including 1** — the opposite of the entry grid, where `×1` on
+fifty tiles is noise. Here the totals *are* the point, and a card exactly one person in the clan
+holds is one of the more interesting things on the page.
 
 **Every tracked base is counted, linked to an account or not.** Most assignments in this install
 are still free-text labels; their cards are as tradeable as anyone's, and excluding them would
 undercount the group by more than half rather than describe a smaller one.
 
-**The zeroes are the point, and they are marked in place.** A card no base holds cannot be
-obtained by trading at all — it has to come from the game — which makes it the only entry on the
-list worth interrupting a scan for. Such a row prints **`None held`** in words, in `--critical`,
-with a matching rule down its left edge, and it **does not move**: the rule is an `inset` shadow
-over padding that every row reserves, so a marked row occupies exactly the same box as an unmarked
-one and the column of names stays straight. Measured in a browser — the left edge of the name is
-identical across marked and unmarked rows at every breakpoint.
+**A card nobody holds is greyscale with no badge, and the words carry it.** That visual state is a
+colour cue plus a *missing* cue, which is not enough on its own, so every tile has an explicit
+accessible name — the tile is a `role="img"` with an `aria-label`, since there is no control inside
+it to carry one:
 
-Rows are `.meter-row`s inside a `.meter-grid`, the same two-column row a player page uses for
-troop levels, and each deck is a `role="group"` labelled by a `.visually-hidden` heading exactly
-as the grid's `.card-deck` is. No bar: these totals have no denominator to draw one against, and
-the number *is* the value.
+```
+Barbarian, Elixir — none held across the clan
+Archer, Elixir — 3 held across the clan
+```
+
+Both read back off the computed accessibility tree as `image` nodes with exactly those names; the
+same sentence is on each tile's `title`, and the summary line above counts them. The tile **does
+not move**: card 1 is the first tile in grid order and nobody holds it, and it stays first.
+
+Each deck is a `role="group"` labelled by a `.visually-hidden` heading exactly as the entry grid's
+`.card-deck` is, with its own `card-total-deck-*` ids — both grids are mounted on this page at once,
+so the ids cannot be shared.
+
+It stays **collapsed** because sixty more tiles left open would push everything above them off a
+phone. It costs no extra art either way: measured, its sixty image URLs are byte-for-byte the entry
+grid's, so opening it adds no requests, only the drawing.
 
 ### Mine / All on the base picker
 
@@ -1267,12 +1342,13 @@ keeps its stamp and reads as recorded-and-empty.
 it is. Same tiles, same greyscale, same deck-coloured frames, same `×n` badges, same 0–10 boxes,
 same one-request save, same 4 named deck groups. That is not a claim about two similar
 components: `BaseCardEditor` in `web/src/components/BaseCardEditor.tsx` **is** the grid, and
-`CardsView` and the player page are its two callers. Measured side by side at 1280px, both render
-`123.141px ×7` columns, a 10px gap and 123×159 tiles; three columns at 390px. Duplicating sixty
-tiles and their draft-and-save logic was the thing to avoid — the greyscale, the badges and the
-clamping would have drifted apart the first time either copy was touched. Choosing the base is
-deliberately not the shared component's job; each page keeps its own idea of which base it is
-about.
+`CardsView` and the player page are its two callers, and one tile of it is `CardTile`, shared in
+turn with the clan-totals grid. Measured side by side at 1280px, both render `123.141px ×7`
+columns, a 10px gap and 123×195 tiles — 123×159 of frame and padding plus the 0–10 box; three
+columns at 390px. Duplicating sixty tiles and their draft-and-save logic was the thing to avoid —
+the greyscale, the badges and the clamping would have drifted apart the first time either copy was
+touched. Choosing the base is deliberately not the shared component's job; each page keeps its own
+idea of which base it is about.
 
 The **one** thing the two callers differ on is the deck plaques, which `BaseCardEditor` draws only
 when asked (`showDeckProgress`, on for the card page and off here). A player page already has them
@@ -1303,16 +1379,39 @@ surprise. The label says "Propose", the composer's own **Send** is what sends, a
 confirmation (`In chat box ↗`) is about the composer, never about a message having gone out.
 
 The message is built by `tradeProposalMessage` in `web/src/card-trades.ts` — pure and tested,
-because it has rules. It reads:
+because it has rules. It is exactly four things and nothing else:
 
 ```
-Card trade (Elixir): #2GCJ2QPU (Jared) gives Barbarian <-> #AAABBB (Sam) gives Archer.
+<member> gives <card> <-> <member> gives <card>
 ```
 
-Both bases *and* both owners are named, since a tag alone tells nobody who to talk to. Owner
-names are unbounded free text, so the message can overrun `MAX_CHAT_LENGTH` and be refused by the
-chat route — it therefore degrades in a deliberate order: **drop the owner names first** (the
-tags still identify the bases), and only then truncate. That ordering is what the tests pin down.
+Read back out of the composer's DOM in a browser:
+
+```
+darek gives Archer <-> Zack gives Goblin
+```
+
+No category prefix, no tags, no full stop. The category is not in the text because the sentence
+already names two cards a reader can see are in the same deck, and the shorter it is the less there
+is to tidy before pressing Send.
+
+**It names members, not owners, and that is a real loss.** The message now says which two *bases*
+should swap rather than which two *people* to contact, so an owner playing a base under a different
+name is no longer identified. What it buys is a line that reads as a sentence about two players,
+which is what actually gets pasted into a clan chat — and the owner is still on screen in the
+suggestion table right next to the button, so the person is one glance away.
+
+The names come from the same resolver as everything else on the page (`baseOptions()` in
+`base-names.ts`), not a second one. **A base no visible roster names falls back to its tag** rather
+than leaving a gap: verified in a browser, a base with no resolvable name yields
+`darek gives Archer <-> #8QQ9YVLL gives Wizard`.
+
+Member names are unbounded free text off a live roster, so the message can overrun
+`MAX_CHAT_LENGTH` and be refused by the chat route. It therefore degrades in a deliberate order:
+**fall back to the tags first**, which are bounded (`#` plus 3–12 characters) and are the identity
+everything is keyed on anyway, and only then **truncate with an ellipsis** so what is left is
+visibly incomplete rather than a shorter claim about a different trade. That ordering, the tag
+fallback and "never longer than the limit it was given" are all pinned by tests.
 
 The plumbing is `web/src/chat-draft.ts`, a module-level external store over
 `useSyncExternalStore` — the same mechanism as the shared lists, because the card page and the

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   MAX_CARD_COUNT,
   normalizeTag,
@@ -6,7 +6,6 @@ import {
   type SessionUser,
 } from '@coc/shared'
 import { saveBaseCounts } from '../card-inventory.ts'
-import { cardFraming } from '../card-crops.ts'
 import {
   blurDecision,
   cardEntryAccess,
@@ -30,8 +29,8 @@ import {
 } from '../cards.ts'
 import { deckProgress, deckSizes } from '../deck-progress.ts'
 import { formatDateTime } from '../format.ts'
+import { CardTile } from './CardTile.tsx'
 import { DeckPlaques } from './DeckPlaques.tsx'
-import { GameIcon } from './primitives.tsx'
 
 /**
  * The 60-tile grid and its entry form, for **one** base.
@@ -72,7 +71,12 @@ function Attribution({ base }: { base: BaseInventory | undefined }) {
 }
 
 /**
- * One card: a crop of the picture, and the count.
+ * One card, with the box you type its count into.
+ *
+ * The picture, the frame, the deck colour and the desaturation are all `CardTile`,
+ * shared with the clan-totals grid on the card page. What is added here is the
+ * entry control and the one thing that has to be said at a tile: a save that did
+ * not happen.
  *
  * The tile shows no card name — the art is the identity, which is how the event
  * itself presents these. The name has not gone anywhere it cannot be recovered
@@ -82,22 +86,16 @@ function Attribution({ base }: { base: BaseInventory | undefined }) {
  * nothing more — a tooltip does not appear on a touch tap, and assistive tech
  * mostly ignores a `title` on a plain container — so the input's label is the
  * accessible name that has to carry this, and it is written out in full there
- * rather than assembled from the surroundings.
+ * rather than assembled from the surroundings. That is also why the tile itself is
+ * given **no** `label`: the box inside it is already the named thing, and naming
+ * both would announce every card twice.
  *
  * Held-vs-not is still not carried by colour alone. `--locked` desaturates the art,
  * and the **number box** says it independently: 0 for a card the base lacks, n for
  * one it holds. That box is visible at every breakpoint, which is why the `Have n` /
  * `None` line that used to repeat it a third time has gone.
- *
- * `GameIcon` is used without a `fallback` on purpose. The card art is gitignored,
- * so a fresh clone has none of it; the element removes itself on error rather
- * than showing a broken-image glyph, and the fixed-size art box keeps the tile
- * the same size either way, so the grid cannot collapse. Without the name label a
- * checkout with no art shows an empty frame over its count — the input's label and
- * the `title` are then the only way to tell the sixty tiles apart, which is the
- * cost of a picture-only grid.
  */
-function CardTile({
+function CardEntryTile({
   card,
   count,
   onCount,
@@ -114,44 +112,20 @@ function CardTile({
   /** Set on the one tile whose blur triggered a save that did not happen. */
   failed: boolean
 }) {
-  const held = count > 0
-  const framing = cardFraming(card.id)
-
-  /* The crop's three numbers reach CSS as custom properties, so the geometry stays
-     in styles.css and only the per-card values are set from data. */
-  const frameStyle =
-    framing.kind === 'face'
-      ? ({
-          '--card-x': `${framing.x}%`,
-          '--card-y': `${framing.y}%`,
-          '--card-zoom': `${framing.zoom}`,
-        } as CSSProperties)
-      : undefined
-
-  const classes = ['card-tile']
-  if (!held) classes.push('card-tile--locked')
-  if (failed) classes.push('card-tile--failed')
-
   return (
-    <div
-      className={classes.join(' ')}
-      // The deck's frame colour is picked in CSS off this, so the palette stays
-      // in styles.css with the rest of the theme rather than inline here.
-      data-deck={deckSlug(card.category)}
+    <CardTile
+      card={card}
+      held={count > 0}
+      // Only past one copy: `×1` on fifty tiles would be noise, where a spare is
+      // the fact worth spotting. The totals grid makes the opposite choice, which
+      // is why this is the caller's decision and not the tile's.
+      badge={count > 1 ? `×${count}` : undefined}
       // Names the tile for a pointer now that no text does. The category rides
       // along because the decks draw no heading any more, leaving the frame colour
       // as the only visible grouping.
       title={`${card.name} · ${card.category}`}
+      className={failed ? 'card-tile--failed' : undefined}
     >
-      <div className="card-tile__frame" data-crop={framing.kind} style={frameStyle}>
-        <GameIcon src={card.image} className="card-tile__art" />
-        {count > 1 ? (
-          <span className="card-tile__badge" aria-hidden="true">
-            ×{count}
-          </span>
-        ) : null}
-      </div>
-
       <input
         className="card-tile__input"
         type="number"
@@ -178,7 +152,7 @@ function CardTile({
       {/* At the tile, because the Save button that used to be the success signal is
           gone and a silent failure would leave somebody believing a count stored. */}
       {failed ? <span className="card-tile__note">Not saved</span> : null}
-    </div>
+    </CardTile>
   )
 }
 
@@ -457,7 +431,7 @@ export function BaseCardEditor({
                 {category}
               </h3>
               {cardsInCategory(category).map((card) => (
-                <CardTile
+                <CardEntryTile
                   key={card.id}
                   card={card}
                   count={draft.get(card.id) ?? 0}

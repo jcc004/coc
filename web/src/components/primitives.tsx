@@ -182,15 +182,24 @@ export function RowLimitSelect({
   options,
   value,
   onChange,
+  label = 'Rows',
 }: {
   id: string
   options: RowLimit[]
   value: RowLimit
   onChange: (next: RowLimit) => void
+  /**
+   * What the control says it counts. `Rows` for a table where a row is a record;
+   * overridden by the trade suggestions, which page by **pair** because a pair's
+   * options are one block that must not be split across a page boundary — and a
+   * control labelled `Rows` beside a pager counting pairs would be a lie about
+   * which of the two numbers the limit applies to.
+   */
+  label?: string
 }) {
   return (
     <label className="row-limit" htmlFor={id}>
-      Rows
+      {label}
       <select
         id={id}
         value={String(value)}

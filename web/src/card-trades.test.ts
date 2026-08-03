@@ -290,65 +290,79 @@ describe('tradeProposalMessage', () => {
   }
   const NAMES: Record<number, string> = { 1: 'Barbarian', 2: 'Archer' }
   const cardName = (id: number) => NAMES[id]
-  const OWNERS: Record<string, string> = { '#AAA': 'Jared', '#BBB': 'Sam' }
-  const owner = (tag: string) => OWNERS[tag]
+  const MEMBERS: Record<string, string> = { '#AAA': 'darek', '#BBB': 'Zack' }
+  const member = (tag: string) => MEMBERS[tag]
 
-  it('names both bases, both owners and both cards', () => {
+  it('names both members and both cards, and nothing else', () => {
+    // The requested format, literally: no category prefix and no full stop.
     assert.equal(
-      tradeProposalMessage(trade, { cardName, owner }),
-      'Card trade (Elixir): #AAA (Jared) gives Barbarian <-> #BBB (Sam) gives Archer.',
+      tradeProposalMessage(trade, { cardName, member }),
+      'darek gives Barbarian <-> Zack gives Archer',
     )
   })
 
-  it('falls back to the bare tag when a base has no owner', () => {
+  it('names the category nowhere, whatever deck the swap is in', () => {
+    const message = tradeProposalMessage(
+      { ...trade, category: 'Dark Elixir' },
+      { cardName, member },
+    )
+    assert.ok(!message.includes('Dark Elixir'))
+    assert.ok(!message.includes('Card trade'))
+    assert.ok(!message.endsWith('.'))
+  })
+
+  it('falls back to the tag when no roster names a base', () => {
+    // Never an empty name: a tag is unfriendly, a gap is unusable.
     assert.equal(
-      tradeProposalMessage(trade, { cardName, owner: (tag) => (tag === '#AAA' ? 'Jared' : '') }),
-      'Card trade (Elixir): #AAA (Jared) gives Barbarian <-> #BBB gives Archer.',
+      tradeProposalMessage(trade, { cardName, member: (tag) => (tag === '#AAA' ? 'darek' : '') }),
+      'darek gives Barbarian <-> #BBB gives Archer',
     )
   })
 
-  it('works with no owner resolver at all', () => {
+  it('works with no member resolver at all', () => {
     assert.equal(
       tradeProposalMessage(trade, { cardName }),
-      'Card trade (Elixir): #AAA gives Barbarian <-> #BBB gives Archer.',
+      '#AAA gives Barbarian <-> #BBB gives Archer',
     )
   })
 
   it('names an unknown card by its id rather than leaving a gap', () => {
     assert.equal(
       tradeProposalMessage({ ...trade, cardFromB: 99 }, { cardName }),
-      'Card trade (Elixir): #AAA gives Barbarian <-> #BBB gives card 99.',
+      '#AAA gives Barbarian <-> #BBB gives card 99',
     )
   })
 
-  it('drops the owner names before it truncates, when they will not fit', () => {
-    // Owner names are unbounded free text, so this is a real case and not a
-    // theoretical one — an over-long body is a 400 from the chat route.
+  it('falls back to the tags before it truncates, when the names will not fit', () => {
+    // Member names come off a live roster and are unbounded, so this is a real
+    // case and not a theoretical one — an over-long body is a 400 from the chat
+    // route. The tags are bounded, so the sentence has somewhere to land before
+    // anything has to be cut.
     const long = (tag: string) => (tag === '#AAA' ? 'J'.repeat(200) : 'S'.repeat(200))
-    const message = tradeProposalMessage(trade, { cardName, owner: long, maxLength: 120 })
+    const message = tradeProposalMessage(trade, { cardName, member: long, maxLength: 60 })
 
-    assert.ok(message.length <= 120)
-    assert.equal(message, 'Card trade (Elixir): #AAA gives Barbarian <-> #BBB gives Archer.')
-    assert.ok(!message.includes('JJJ'), 'the giant owner name must be gone')
+    assert.ok(message.length <= 60)
+    assert.equal(message, '#AAA gives Barbarian <-> #BBB gives Archer')
+    assert.ok(!message.includes('JJJ'), 'the giant member name must be gone')
   })
 
-  it('keeps the owners when they do fit', () => {
-    const message = tradeProposalMessage(trade, { cardName, owner, maxLength: 120 })
-    assert.ok(message.includes('(Jared)') && message.includes('(Sam)'))
+  it('keeps the member names when they do fit', () => {
+    const message = tradeProposalMessage(trade, { cardName, member, maxLength: 60 })
+    assert.ok(message.includes('darek') && message.includes('Zack'))
   })
 
   it('truncates only as a last resort, still naming the first base', () => {
-    const message = tradeProposalMessage(trade, { cardName, owner, maxLength: 40 })
-    assert.ok(message.length <= 40, `got ${message.length}`)
-    assert.ok(message.endsWith('…'))
-    assert.ok(message.startsWith('Card trade (Elixir): #AAA'))
+    const message = tradeProposalMessage(trade, { cardName, member, maxLength: 30 })
+    assert.ok(message.length <= 30, `got ${message.length}`)
+    assert.ok(message.endsWith('…'), 'a clipped message has to look clipped')
+    assert.ok(message.startsWith('#AAA gives'))
   })
 
   it('never exceeds the limit it was given', () => {
-    for (const maxLength of [20, 30, 64, 120, 500]) {
+    for (const maxLength of [1, 5, 20, 30, 64, 120, 500]) {
       const message = tradeProposalMessage(
         { ...trade, category: 'Dark Elixir' },
-        { cardName, owner, maxLength },
+        { cardName, member, maxLength },
       )
       assert.ok(message.length <= maxLength, `${maxLength}: got ${message.length}`)
     }
@@ -357,10 +371,11 @@ describe('tradeProposalMessage', () => {
   it('fits the chat limit by default, with the longest realistic names', () => {
     const message = tradeProposalMessage(trade, {
       cardName: () => 'Super Wall Breaker',
-      owner: () => 'Somebody With A Fairly Long Name',
+      member: () => 'Somebody With A Fairly Long Name',
     })
     assert.ok(message.length <= MAX_CHAT_LENGTH)
     assert.ok(message.includes('Super Wall Breaker'))
+    assert.ok(message.includes('Somebody With A Fairly Long Name'))
   })
 })
 
