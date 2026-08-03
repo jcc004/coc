@@ -106,8 +106,25 @@ function BuildStamp({ isAdmin }: { isAdmin: boolean }) {
   const line = buildLine(
     buildInfo(),
     isAdmin,
-    (date) => date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }),
-    (date) => date.toLocaleString(),
+    /*
+     * Date *and* time. A date alone cannot answer the question this line exists for:
+     * on the day you deploy — which is every day this is looked at — "Aug 3" is true
+     * of both the build you are running and the one you pushed twenty minutes ago.
+     * The minute is what distinguishes them. Seconds are not, so they stay in the
+     * tooltip.
+     */
+    (date) =>
+      date.toLocaleString(undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }),
+    /* The tooltip now has to earn its place, since the readable time is on screen:
+       `toString` adds the seconds and names the timezone, which is what you want when
+       comparing against a commit timestamp from somewhere else. */
+    (date) => date.toString(),
   )
   if (line === null) return null
 
