@@ -7,6 +7,7 @@ import { createLoginLimiter } from '../auth/rate-limit.ts'
 import { createAuthStore } from '../auth/store.ts'
 import { TtlCache } from '../cache.ts'
 import { createCardInventoryStore } from '../cards/store.ts'
+import { createTradeStore } from '../cards/trades-store.ts'
 import type { CocClient } from '../coc-client.ts'
 import { openDatabase } from '../db.ts'
 import { createSharedDataStore } from '../shared-data/store.ts'
@@ -33,13 +34,15 @@ function createHarness() {
   })
 
   const chat = createChatStore(db)
+  const cards = createCardInventoryStore(db)
   const app = createApp({
     coc: {} as unknown as CocClient,
     cache: new TtlCache(60_000),
     auth: store,
     chat,
     sharedData: createSharedDataStore(db),
-    cards: createCardInventoryStore(db),
+    cards,
+    trades: createTradeStore(db, cards),
     loginLimiter: createLoginLimiter(),
   })
 

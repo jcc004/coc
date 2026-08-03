@@ -3,6 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      The tab icon is the topbar's compass rosette, generated at /favicon.svg from
+      the same path data the inline mark uses — see the plugin in vite.config.ts and
+      the geometry in src/rosette.ts. SVG only: the mark is already vector, so there
+      is nothing to rasterise and no set of sizes to keep in step.
+    -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!--
+      The gold plate the icon and the topbar share (--gold, light value). A literal
+      because browser chrome cannot read a custom property, and *that* value so the
+      tab strip matches the banner rather than framing the icon's disc in some
+      unrelated colour.
+    -->
+    <meta name="theme-color" content="#f2b431" />
     <title>Clash of Clans Explorer</title>
   </head>
   <body>

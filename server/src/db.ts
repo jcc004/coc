@@ -329,7 +329,83 @@ UPDATE owner_assignments
 `)
 }
 
-const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5, v6]
+/**
+ * v7 — `trades`, the Trade Tracker's one table: a swap two bases have agreed to,
+ * which either party can then mark complete or declined.
+ *
+ * Until now a trade was a *suggestion* computed on the client from the shared
+ * inventories and thrown away on the next render. Nothing recorded that two
+ * people had agreed to one, so "did we do that swap?" had no answer anywhere but
+ * in a chat scrollback. A row per agreed trade is that answer, and completing one
+ * is what moves the cards (see `trades-store.ts`).
+ *
+ * Shape notes, each deliberate:
+ *
+ * - `season` is stored, and is `CARD_SEASON` at the time of the proposal — never
+ *   a value from a request, exactly as `card_inventory` is written. Next August
+ *   cannot resolve this August's trades.
+ * - `base_a` / `base_b` are canonical `#TAG`s with `base_a < base_b`, the same
+ *   orientation `suggestTrades` produces, so one swap is one row however the two
+ *   sides happened to name themselves. The `CHECK` keeps a base from trading with
+ *   itself, which is rule 4 of the suggester restated where it cannot be skipped.
+ * - The card `CHECK`s repeat `CARD_ID_MIN`…`CARD_ID_MAX` from the route, for the
+ *   reason v4's do: the database is the last line and the only one a future
+ *   caller cannot forget. `card_from_a <> card_from_b` is there because a swap of
+ *   one card for itself moves nothing and cannot arise from the rules (a giver
+ *   needs two while the receiver needs none of the same card).
+ * - `category` is **not** constrained to the four decks here. The card id →
+ *   category map is generated into `web/`, so neither this file nor the route can
+ *   check that the two ids really share a deck; the route validates the value is
+ *   one of the four names and the column stores what it was told. A CHECK listing
+ *   the four would have to be migrated for a fifth deck while adding nothing the
+ *   route does not already do.
+ * - Both user columns are `ON DELETE SET NULL`, like every other user reference
+ *   in this schema. A resolved trade is the record of a swap that really
+ *   happened; deleting the account that resolved it must cost the attribution,
+ *   not the record.
+ * - The status/`resolved_at` `CHECK` ties the two together in the only place that
+ *   cannot be bypassed: pending means no timestamp, resolved means there is one.
+ *   `resolved_by_user_id` is left out of it, because a deleted account nulls that
+ *   column and must not turn a stored row into an unwritable one.
+ *
+ * The partial unique index makes a duplicate *pending* proposal impossible while
+ * leaving history alone: the same pair can swap the same two cards again next
+ * week, and a declined attempt does not block a second try. The route answers 409
+ * before it gets here; the index is what makes that guarantee rather than a race.
+ *
+ * Idempotence is the version pragma's job, as for every step: a plain CREATE
+ * throws on a second run, and `user_version` is what guarantees there is none.
+ */
+const v7: Migration = (db) => {
+  db.exec(`
+CREATE TABLE trades (
+  id                  INTEGER PRIMARY KEY,
+  season              TEXT NOT NULL,
+  base_a              TEXT NOT NULL,
+  base_b              TEXT NOT NULL,
+  card_from_a         INTEGER NOT NULL CHECK (card_from_a BETWEEN 1 AND 60),
+  card_from_b         INTEGER NOT NULL CHECK (card_from_b BETWEEN 1 AND 60),
+  category            TEXT NOT NULL,
+  status              TEXT NOT NULL CHECK (status IN ('pending', 'complete', 'declined')),
+  proposed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  proposed_at         TEXT NOT NULL,
+  resolved_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  resolved_at         TEXT,
+  CHECK (base_a <> base_b),
+  CHECK (card_from_a <> card_from_b),
+  CHECK ((status = 'pending') = (resolved_at IS NULL))
+);
+
+-- Every list is one season's, pending first; this index serves that ordering.
+CREATE INDEX trades_season_status ON trades (season, status, id);
+
+CREATE UNIQUE INDEX trades_one_pending_per_swap
+  ON trades (season, base_a, base_b, card_from_a, card_from_b)
+  WHERE status = 'pending';
+`)
+}
+
+const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5, v6, v7]
 
 /** The version a fully migrated database reports. */
 export const SCHEMA_VERSION = MIGRATIONS.length

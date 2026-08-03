@@ -1,10 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ROLE_LABELS, type Clan, type ClanMember } from '@coc/shared'
+import {
+  ROLE_LABELS,
+  type AdminUser,
+  type Clan,
+  type ClanMember,
+  type OwnerRecord,
+  type SessionUser,
+} from '@coc/shared'
 import { api } from '../api.ts'
 import { labelIcon } from '../coc-assets.ts'
 import { formatFull, formatStat, humanizeCamel, ratio } from '../format.ts'
 import { hrefFor, useAsync, useRowLimit, useStackedTables, type Recent } from '../hooks.ts'
-import { applyOwners, knownOwners, useOwnersState } from '../owners.ts'
+import {
+  legacyOwnerCount,
+  ownerCellFor,
+  ownerOptions,
+  parseOwnerChoice,
+  type OwnerCell,
+} from '../owner-picker.ts'
+import { applyOwners, assignOwner, clearOwner, knownOwners, useOwnersState } from '../owners.ts'
 import { removeClan, saveClan, useSavedClans } from '../saved-clans.ts'
 import {
   filterRosterRows,
@@ -39,7 +53,141 @@ import {
 } from './primitives.tsx'
 import { TagButton } from './TagButton.tsx'
 
-const OWNER_LIST_ID = 'known-owners'
+/** The bulk bar's suggestions: **account** display names, not labels in use. */
+const ACCOUNT_LIST_ID = 'owner-accounts'
+
+/**
+ * The value the picker shows for a row whose owner is a pre-accounts label. It is
+ * never submitted — the option carrying it is `disabled`, and `parseOwnerChoice`
+ * refuses it a second time — it exists so the select can *show what is stored*.
+ * Falling back to the empty option would draw a row that names somebody as "No
+ * owner", which is the one thing the migration must not do: those 32 rows are the
+ * only surviving record of who those bases belong to in real life.
+ */
+const LEGACY_VALUE = 'legacy'
+
+/**
+ * The owner as read-only text: what a non-admin gets, since assigning is an admin
+ * decision and a control that always 403s is worse than no control.
+ *
+ * A member still **sees** the owner — that is the point of the column, and the rows
+ * are shared and world-readable — including whether it is a real account. "not an
+ * account" is not admin trivia to them either: it is why a base they might be
+ * looking after is one they cannot type card counts into.
+ */
+function OwnerText({ cell }: { cell: OwnerCell }) {
+  if (cell.kind === 'unassigned') return <span className="role-pill">—</span>
+  if (cell.kind === 'account') return <>{cell.label}</>
+
+  return (
+    <span className="owner-legacy">
+      {cell.label} <span className="owner-legacy__mark">not an account</span>
+    </span>
+  )
+}
+
+/**
+ * The Owner cell for an admin: a select over accounts.
+ *
+ * A select rather than the old free-text box because the thing being chosen is an
+ * account — `PUT /api/owners/:tag` takes a user id and nothing else — so typing a
+ * name could only ever be guessed at, and a guess that misses becomes another
+ * unlinked label. **No owner** is the first option and clears the assignment, which
+ * has to stay possible.
+ *
+ * A legacy row is drawn distinctly three ways at once, none of them colour alone:
+ * its stored label sits in the select as an unchoosable option that says *not an
+ * account*, the control takes a `--warning` edge, and the line beneath names it as a
+ * legacy label — with the account it most likely meant, where the fold in
+ * `owner-picker.ts` finds exactly one. Confirming is still a click: the suggestion
+ * is a prompt, never an assignment.
+ *
+ * Failures are reported in the cell that caused them, like every other row write
+ * here, and the message is the server's own.
+ */
+function OwnerPicker({
+  tag,
+  name,
+  cell,
+  accounts,
+}: {
+  tag: string
+  name: string
+  cell: OwnerCell
+  accounts: readonly AdminUser[]
+}) {
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+
+  const current = cell.kind === 'account' ? { userId: cell.userId, label: cell.label } : undefined
+  const options = ownerOptions(accounts, current)
+
+  const value =
+    cell.kind === 'account' ? String(cell.userId) : cell.kind === 'legacy' ? LEGACY_VALUE : ''
+
+  async function choose(raw: string) {
+    const choice = parseOwnerChoice(raw)
+    // The legacy placeholder, or anything else this list never offered.
+    if (choice === null) return
+
+    setBusy(true)
+    setProblem(null)
+    try {
+      if (choice.kind === 'clear') await clearOwner(tag)
+      else await assignOwner(tag, choice.userId)
+    } catch (cause) {
+      // The server's wording, not ours: a 403 here says an admin assigns
+      // ownership, which is the fact, and a 404 says the account is gone.
+      setProblem(cause instanceof Error ? cause.message : `Could not set the owner of ${tag}.`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="owner-cell">
+      <select
+        className={cell.kind === 'legacy' ? 'owner-cell__select--legacy' : undefined}
+        value={value}
+        disabled={busy}
+        /* Named per row: `.section-title` and the column head are uppercased in
+           CSS and Chrome derives a name from the *transformed* text, so pointing at
+           the header would read "OWNER". The member's name is also what makes fifty
+           of these tell each other apart. */
+        aria-label={`Owner of ${name}`}
+        onChange={(event) => void choose(event.target.value)}
+      >
+        <option value="">No owner</option>
+        {cell.kind === 'legacy' ? (
+          <option value={LEGACY_VALUE} disabled>
+            {cell.label} — not an account
+          </option>
+        ) : null}
+        {options.map((option) => (
+          <option key={option.userId} value={String(option.userId)}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+
+      {cell.kind === 'legacy' ? (
+        <p className="owner-cell__note">
+          Legacy label
+          {cell.suggestion ? (
+            <>
+              {' · likely '}
+              <strong>{cell.suggestion.label}</strong>
+            </>
+          ) : (
+            ' · no matching account'
+          )}
+        </p>
+      ) : null}
+
+      {problem ? <p className="owner-cell__problem">{problem}</p> : null}
+    </div>
+  )
+}
 
 function SaveToggle({ clan }: { clan: Clan }) {
   const saved = useSavedClans().some((entry) => entry.tag === clan.tag)
@@ -87,10 +235,30 @@ function SaveToggle({ clan }: { clan: Clan }) {
   )
 }
 
-function RosterTable({ members }: { members: ClanMember[] }) {
+function RosterTable({ members, user }: { members: ClanMember[]; user: SessionUser }) {
   const ownersState = useOwnersState()
   const owners = ownersState.entries
   const stacked = useStackedTables()
+
+  /*
+   * Every owner write is admin-only on the server, so the controls for them are
+   * admin-only here. Not as a second layer of enforcement — the server is the lock —
+   * but because offering a member a control whose only possible outcome is a 403 is
+   * a lie told at the moment of clicking.
+   */
+  const isAdmin = user.role === 'admin'
+
+  /*
+   * The accounts the picker offers. `GET /api/admin/users` is admin-only, so it is
+   * simply **not requested** for anyone else — `useAsync(null)` stays idle, which is
+   * what keeps a member's session from firing a request that would 403 in the
+   * network log and tell them nothing.
+   */
+  const accountsState = useAsync(isAdmin ? (signal) => api.users(signal) : null, [isAdmin])
+  const accounts = useMemo<AdminUser[]>(
+    () => (accountsState.status === 'ready' ? accountsState.data.users : []),
+    [accountsState],
+  )
 
   const [sortKey, setSortKey] = useState<RosterSortKey>('clanRank')
   const [ascending, setAscending] = useState(true)
@@ -117,12 +285,28 @@ function RosterTable({ members }: { members: ClanMember[] }) {
     [members],
   )
 
-  // Owner is a local annotation keyed by tag, so the roster is the API's member
-  // list joined against the store whenever either side changes.
-  const rows = useMemo<RosterRow[]>(() => {
-    const byTag = new Map(owners.map((entry) => [entry.tag, entry.owner]))
-    return members.map((member) => ({ ...member, owner: byTag.get(member.tag) }))
+  /*
+   * The assignments this roster's members have, by tag. The *whole record*, not just
+   * the label: the Owner cell has to know whether a row points at an account or is
+   * one of the pre-accounts labels, and only `ownerUserId` answers that.
+   */
+  const ownerByTag = useMemo(() => {
+    const wanted = new Set(members.map((member) => member.tag))
+    return new Map<string, OwnerRecord>(
+      owners.filter((entry) => wanted.has(entry.tag)).map((entry) => [entry.tag, entry]),
+    )
   }, [members, owners])
+
+  /** How much of the migration is still outstanding in *this* clan. */
+  const legacyHere = useMemo(() => legacyOwnerCount([...ownerByTag.values()]), [ownerByTag])
+
+  // Owner is an annotation keyed by tag, so the roster is the API's member list
+  // joined against the store whenever either side changes. The row carries the
+  // label, because that is what sorts and what the Owner filter matches.
+  const rows = useMemo<RosterRow[]>(
+    () => members.map((member) => ({ ...member, owner: ownerByTag.get(member.tag)?.owner })),
+    [members, ownerByTag],
+  )
 
   /** Town Hall levels actually present, so the filter never offers an empty result. */
   const thLevels = useMemo(() => rosterTownHallLevels(rows), [rows])
@@ -329,7 +513,7 @@ function RosterTable({ members }: { members: ClanMember[] }) {
             onChange={(event) => setBulkOwner(event.target.value)}
             placeholder="Set owner (blank to clear)"
             aria-label="Owner to apply to selected members"
-            list={OWNER_LIST_ID}
+            list={ACCOUNT_LIST_ID}
             autoComplete="off"
           />
           <button type="button" onClick={() => void applyOwnerToSelected()} disabled={busy}>
@@ -647,7 +831,7 @@ function RosterTable({ members }: { members: ClanMember[] }) {
         <Pager view={view} noun="members" onPage={setPage} />
       </div>
 
-      <datalist id={OWNER_LIST_ID}>
+      <datalist id={ACCOUNT_LIST_ID}>
         {ownerNames.map((name) => (
           <option key={name} value={name} />
         ))}
@@ -656,7 +840,16 @@ function RosterTable({ members }: { members: ClanMember[] }) {
   )
 }
 
-export function ClanView({ tag, onLoaded }: { tag: string; onLoaded: (entry: Recent) => void }) {
+export function ClanView({
+  tag,
+  user,
+  onLoaded,
+}: {
+  tag: string
+  /** Assigning an owner is admin-only, so the roster needs the signed-in user. */
+  user: SessionUser
+  onLoaded: (entry: Recent) => void
+}) {
   const state = useAsync<Clan>((signal) => api.clan(tag, signal), [tag])
 
   const clan = state.status === 'ready' ? state.data : null
@@ -749,7 +942,7 @@ export function ClanView({ tag, onLoaded }: { tag: string; onLoaded: (entry: Rec
       </TileRow>
 
       <Card title={`Roster · ${clan.memberList.length} members`}>
-        <RosterTable members={clan.memberList} />
+        <RosterTable members={clan.memberList} user={user} />
       </Card>
 
       <CapitalRaidsCard tag={clan.tag} />

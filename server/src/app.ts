@@ -13,6 +13,8 @@ import type { AuthStore } from './auth/store.ts'
 import { TtlCache } from './cache.ts'
 import { mountCardRoutes } from './cards/routes.ts'
 import type { CardInventoryStore } from './cards/store.ts'
+import { mountTradeRoutes } from './cards/trade-routes.ts'
+import type { TradeStore } from './cards/trades-store.ts'
 import { mountChatRoutes } from './chat/routes.ts'
 import type { ChatStore } from './chat/store.ts'
 import { CocApiError, type CocClient } from './coc-client.ts'
@@ -29,6 +31,12 @@ export interface AppDeps {
   sharedData: SharedDataStore
   /** Hand-entered card counts for the event season — shared, like the above. */
   cards: CardInventoryStore
+  /**
+   * Proposed and resolved trades. Completing one writes `cards`' table too, in one
+   * transaction, which is why the trade store is handed the inventory store rather
+   * than the two being kept apart.
+   */
+  trades: TradeStore
   /** Injectable so tests can trip the lockout in a few requests. */
   loginLimiter?: LoginLimiter
   /** `Secure` on the session cookie. Derive it with `cookieSecureFromEnv`. */
@@ -57,6 +65,7 @@ export function createApp({
   chat,
   sharedData,
   cards,
+  trades,
   loginLimiter,
   cookieSecure = false,
 }: AppDeps) {
@@ -85,6 +94,10 @@ export function createApp({
   // The card routes need the owner column to answer "may this caller write this
   // base", which is the one place the two shared stores meet.
   mountCardRoutes(app, cards, sharedData)
+
+  // The Trade Tracker reads the same owner column, for a different rule: a trade
+  // is mutual, so *either* base's owner may propose and resolve it.
+  mountTradeRoutes(app, trades, sharedData)
 
   // Public so a host's liveness probe can reach it, but the cache size is an
   // internal detail an anonymous caller has no business seeing.

@@ -1,5 +1,7 @@
+import type { ReactNode } from 'react'
 import { AccountView } from './components/AccountView.tsx'
 import { CardsView } from './components/CardsView.tsx'
+import { ChatPanel } from './components/ChatPanel.tsx'
 import { ClanSearchView } from './components/ClanSearchView.tsx'
 import { ClanView } from './components/ClanView.tsx'
 import { ForcedPasswordChange } from './components/ForcedPasswordChange.tsx'
@@ -19,6 +21,15 @@ import {
   type Theme,
 } from './hooks.ts'
 import { useOneTimeImport } from './import.ts'
+import {
+  ROSETTE_CARDINAL_PATH,
+  ROSETTE_DIAGONAL_OPACITY,
+  ROSETTE_DIAGONAL_PATH,
+  ROSETTE_RING_OPACITY,
+  ROSETTE_RING_RADIUS,
+  ROSETTE_RING_WIDTH,
+  ROSETTE_VIEWBOX,
+} from './rosette.ts'
 import { useSession } from './session.ts'
 
 const NEXT_THEME: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' }
@@ -37,6 +48,12 @@ const THEME_LABEL: Record<Theme, string> = { system: '◐ System', light: '☀ L
  * `opacity` rather than a second colour is what separates the two stars, for the
  * same reason.
  *
+ * **The geometry is imported rather than written here**, because the same mark is
+ * now the browser tab's icon too: `rosette.ts` holds the paths and the plugin in
+ * `vite.config.ts` builds `/favicon.svg` out of them, so the tab cannot end up
+ * showing an older drawing than the banner. The icon simplifies what it *composes*
+ * from those paths — see that module for what 16 pixels can hold.
+ *
  * `aria-hidden`, and it sits **inside** the title's existing link rather than
  * beside it as a second one. Two adjacent links to the same place would be two
  * tab stops reading as two destinations, and giving the icon its own name ("Home")
@@ -47,7 +64,7 @@ function CompassRosette() {
   return (
     <svg
       className="topbar__rosette"
-      viewBox="0 0 24 24"
+      viewBox={ROSETTE_VIEWBOX}
       width="24"
       height="24"
       aria-hidden="true"
@@ -56,23 +73,16 @@ function CompassRosette() {
       <circle
         cx="12"
         cy="12"
-        r="10.75"
+        r={ROSETTE_RING_RADIUS}
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.25"
-        opacity="0.5"
+        strokeWidth={ROSETTE_RING_WIDTH}
+        opacity={ROSETTE_RING_OPACITY}
       />
       {/* NE, SE, SW, NW, with the notches between them on the cardinals. */}
-      <path
-        d="M17.3 6.7 14.2 12 17.3 17.3 12 14.2 6.7 17.3 9.8 12 6.7 6.7 12 9.8Z"
-        fill="currentColor"
-        opacity="0.45"
-      />
+      <path d={ROSETTE_DIAGONAL_PATH} fill="currentColor" opacity={ROSETTE_DIAGONAL_OPACITY} />
       {/* N, E, S, W: longer, solid, and drawn last so they read as the needle. */}
-      <path
-        d="M12 1.7 14.3 9.7 22.3 12 14.3 14.3 12 22.3 9.7 14.3 1.7 12 9.7 9.7Z"
-        fill="currentColor"
-      />
+      <path d={ROSETTE_CARDINAL_PATH} fill="currentColor" />
     </svg>
   )
 }
@@ -139,8 +149,31 @@ export function App() {
    */
   const clanTarget: Route = lastClan !== null ? { view: 'clan', tag: lastClan } : { view: 'home' }
 
+  /*
+   * What the sidebar has to show on this route — and, by being a list, whether
+   * there is a sidebar at all.
+   *
+   * **Lookup is the homepage's, not every page's.** Two forms for finding a base or
+   * a clan are what you want when you arrive with nothing on screen; on a clan,
+   * player or card page they were a permanent 260px of chrome beside the thing you
+   * had already found. The Recent chips come with them, because they live *inside*
+   * the two lookup cards — each list sits under the box that produced it — and
+   * because "where I was" is the same question as "where do I go", asked on the
+   * same page. The title navigates home from anywhere, so they are one click away.
+   *
+   * The column is decided by **counting what is left**, not by naming the routes
+   * that keep a sidebar. The chat panel is the only other panel and it is on its way
+   * out of here entirely (it becomes a trade tracker on the card pages), so the day
+   * this list comes back empty must not need a second edit: no panels, no `<aside>`,
+   * and `.shell--single` gives the width back to the content instead of leaving a
+   * dead gutter. See the collapse rule in styles.css.
+   */
+  const sidePanels: ReactNode[] = []
+  if (route.view === 'home') sidePanels.push(<SearchBar key="lookup" recents={recents} />)
+  sidePanels.push(<ChatPanel key="chat" currentUserId={user.id} />)
+
   return (
-    <div className="shell">
+    <div className={sidePanels.length > 0 ? 'shell' : 'shell shell--single'}>
       <header className="topbar">
         <h1 className="topbar__title">
           {/* One link over the rosette and the words, so the icon navigates home
@@ -224,7 +257,7 @@ export function App() {
         ) : null}
 
         {route.view === 'clan' ? (
-          <ClanView key={route.tag} tag={route.tag} onLoaded={remember} />
+          <ClanView key={route.tag} tag={route.tag} user={user} onLoaded={remember} />
         ) : null}
 
         {route.view === 'war' ? <WarView key={route.tag} tag={route.tag} /> : null}
@@ -232,10 +265,9 @@ export function App() {
         {route.view === 'search' ? <ClanSearchView key={route.name} name={route.name} /> : null}
       </main>
 
-      {/* Lookup lives here so it stays put while the main column scrolls. */}
-      <aside className="shell__side">
-        <SearchBar recents={recents} currentUserId={user.id} />
-      </aside>
+      {/* Sticky, so what is in it stays put while the main column scrolls — and
+          absent altogether when this route has nothing to put in it. */}
+      {sidePanels.length > 0 ? <aside className="shell__side">{sidePanels}</aside> : null}
 
       {/*
        * Required by Supercell's Fan Content Policy, near-verbatim: this app shows

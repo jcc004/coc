@@ -11,6 +11,7 @@ import { createLoginLimiter, type LimiterOptions } from './auth/rate-limit.ts'
 import { createAuthStore, SESSION_TTL_MS, type AuthStore } from './auth/store.ts'
 import { TtlCache } from './cache.ts'
 import { createCardInventoryStore } from './cards/store.ts'
+import { createTradeStore } from './cards/trades-store.ts'
 import { createChatStore, type ChatStore } from './chat/store.ts'
 import type { CocClient } from './coc-client.ts'
 import { openDatabase } from './db.ts'
@@ -70,6 +71,7 @@ function createHarness(
 
   const chat = createChatStore(db)
   const shared = createSharedDataStore(db)
+  const cards = createCardInventoryStore(db)
 
   const app = createApp({
     coc,
@@ -77,7 +79,8 @@ function createHarness(
     auth: store,
     chat,
     sharedData: shared,
-    cards: createCardInventoryStore(db),
+    cards,
+    trades: createTradeStore(db, cards),
     loginLimiter: createLoginLimiter(options.limiter),
   })
 
@@ -228,13 +231,15 @@ describe('login and session', () => {
 
   it('marks the cookie Secure when configured', async () => {
     const harness = createHarness()
+    const secureCards = createCardInventoryStore(harness.db)
     const secureApp = createApp({
       coc: {} as unknown as CocClient,
       cache: new TtlCache(60_000),
       auth: harness.store,
       chat: harness.chat,
       sharedData: createSharedDataStore(harness.db),
-      cards: createCardInventoryStore(harness.db),
+      cards: secureCards,
+      trades: createTradeStore(harness.db, secureCards),
       cookieSecure: true,
     })
     const response = await secureApp.request(...postJson('/api/auth/login', ADMIN))

@@ -15,6 +15,7 @@ import type { CocClient } from '../coc-client.ts'
 import { openDatabase } from '../db.ts'
 import { createSharedDataStore, type SharedDataStore } from '../shared-data/store.ts'
 import { createCardInventoryStore, type CardInventoryStore } from './store.ts'
+import { createTradeStore } from './trades-store.ts'
 
 /*
  * The card routes over the whole app, driven through `app.request` against an
@@ -75,6 +76,7 @@ function createHarness(databasePath = ':memory:'): Harness {
     chat: createChatStore(db),
     sharedData: shared,
     cards,
+    trades: createTradeStore(db, cards),
     loginLimiter: createLoginLimiter(),
   })
 

@@ -248,7 +248,7 @@ describe('migration bookkeeping', () => {
     // Mark it as already at v1 — which it effectively is — so v2 onwards run.
     const marked = new DatabaseSync(path)
     marked.exec('PRAGMA user_version = 1')
-    assert.deepEqual(migrate(marked), [2, 3, 4, 5, 6])
+    assert.deepEqual(migrate(marked), [2, 3, 4, 5, 6, 7])
     marked.close()
   })
 })
@@ -432,11 +432,13 @@ describe('migration v5 — card_base_updates', () => {
     createV1Database(path, [{ username: 'jcc@example.com' }])
 
     // Wind back to a realistic v4-shaped database for the backfill to read: the
-    // stamp table gone, and v6's column with it, so both steps really re-run.
+    // stamp table gone, v6's column with it, and v7's table too, so every step
+    // after v4 really re-runs.
     const staged = new DatabaseSync(path)
     migrate(staged)
     staged.exec('DROP TABLE card_base_updates')
     staged.exec('ALTER TABLE owner_assignments DROP COLUMN owner_user_id')
+    staged.exec('DROP TABLE trades')
     staged.exec('PRAGMA user_version = 4')
 
     const userId = Number(staged.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
@@ -450,7 +452,7 @@ describe('migration v5 — card_base_updates', () => {
     // A second season must get its own stamp, not be folded into the first.
     insert.run('2027-08', '#AAABBB', 9, 4, '2027-08-01T10:00:00.000Z', userId)
 
-    assert.deepEqual(migrate(staged), [5, 6], 'v4 leaves exactly v5 and v6 outstanding')
+    assert.deepEqual(migrate(staged), [5, 6, 7], 'v4 leaves exactly v5, v6 and v7 outstanding')
 
     const stamps = staged
       .prepare(
@@ -549,6 +551,8 @@ describe('migration v6 — owner_user_id', () => {
     const db = new DatabaseSync(path)
     migrate(db)
     db.exec('ALTER TABLE owner_assignments DROP COLUMN owner_user_id')
+    // v7's table goes too, so a v5-shaped fixture really is one and v7 re-runs.
+    db.exec('DROP TABLE trades')
     db.exec('PRAGMA user_version = 5')
 
     const insert = db.prepare(
@@ -704,6 +708,248 @@ describe('migration v6 — owner_user_id', () => {
     db.exec('DELETE FROM users WHERE id = 1')
     assert.deepEqual(ownerRows(db), [['#AAA1', 'Jared', null]])
     db.close()
+  })
+})
+
+describe('migration v7 — trades', () => {
+  const NOW = '2026-08-01T10:00:00.000Z'
+
+  /**
+   * A database shaped the way the shipped build left it: at `user_version = 6`,
+   * with no `trades` table. Built by migrating to the head and dropping v7's table
+   * back off — which keeps the rest of the schema honest rather than re-typing an
+   * old copy of it that could drift — then filling it with the kinds of row a live
+   * install holds, so "did v7 disturb anything" has something to answer with.
+   */
+  function createV6Database(path: string): { userId: number } {
+    createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const db = new DatabaseSync(path)
+    migrate(db)
+    db.exec('DROP TABLE trades')
+    db.exec('PRAGMA user_version = 6')
+
+    const userId = Number(db.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
+
+    db.prepare(
+      `INSERT INTO owner_assignments (player_tag, owner, updated_at, updated_by_user_id, owner_user_id)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run('#AAABBB', 'Jared', NOW, userId, userId)
+    db.prepare(
+      `INSERT INTO card_inventory (season, player_tag, card_id, count, updated_at, updated_by_user_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run('2026-08', '#AAABBB', 4, 3, NOW, userId)
+    db.prepare(
+      `INSERT INTO card_base_updates (season, player_tag, updated_at, updated_by_user_id)
+       VALUES (?, ?, ?, ?)`,
+    ).run('2026-08', '#AAABBB', NOW, userId)
+    // Chat is being replaced by the tracker, but v7 must not touch a stored
+    // message: destroying what people wrote is not a side effect to take on.
+    db.prepare('INSERT INTO chat_messages (user_id, body, created_at) VALUES (?, ?, ?)').run(
+      userId,
+      'has anyone got a spare Barbarian',
+      NOW,
+    )
+
+    assert.equal(Number(db.prepare('PRAGMA user_version').get()?.['user_version']), 6)
+    db.close()
+    return { userId }
+  }
+
+  /** The insert every test below builds on: one pending trade. */
+  function insertTrade(
+    db: DatabaseSync,
+    overrides: Partial<Record<string, unknown>> = {},
+  ): void {
+    const row = {
+      season: '2026-08',
+      base_a: '#AAABBB',
+      base_b: '#CCCDDD',
+      card_from_a: 1,
+      card_from_b: 2,
+      category: 'Elixir',
+      status: 'pending',
+      proposed_by_user_id: null,
+      proposed_at: NOW,
+      resolved_by_user_id: null,
+      resolved_at: null,
+      ...overrides,
+    }
+
+    db.prepare(
+      `INSERT INTO trades
+         (season, base_a, base_b, card_from_a, card_from_b, category, status,
+          proposed_by_user_id, proposed_at, resolved_by_user_id, resolved_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      row['season'] as string,
+      row['base_a'] as string,
+      row['base_b'] as string,
+      row['card_from_a'] as number,
+      row['card_from_b'] as number,
+      row['category'] as string,
+      row['status'] as string,
+      row['proposed_by_user_id'] as number | null,
+      row['proposed_at'] as string,
+      row['resolved_by_user_id'] as number | null,
+      row['resolved_at'] as string | null,
+    )
+  }
+
+  it('creates the table with the shape the trade routes rely on', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV6Database(path)
+
+    const db = openDatabase(path)
+    assert.deepEqual(migrate(db), [], 'opening it applied v7 already')
+    assert.deepEqual(columnsOf(path, 'trades'), [
+      'id',
+      'season',
+      'base_a',
+      'base_b',
+      'card_from_a',
+      'card_from_b',
+      'category',
+      'status',
+      'proposed_by_user_id',
+      'proposed_at',
+      'resolved_by_user_id',
+      'resolved_at',
+    ])
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+    db.close()
+  })
+
+  it('applies to a v6 database and preserves every row it already had', () => {
+    const path = join(tempDir(), 'coc.db')
+    const { userId } = createV6Database(path)
+
+    const db = new DatabaseSync(path)
+    assert.deepEqual(migrate(db), [7], 'v6 leaves exactly v7 outstanding')
+
+    // v7 adds a table; it must not have disturbed any of the ones before it.
+    const store = createAuthStore(db)
+    assert.equal(store.countUsers(), 1)
+    assert.ok(store.authenticate('jcc@example.com', LEGACY_PASSWORD), 'the password still works')
+    assert.equal(
+      db.prepare('SELECT owner_user_id FROM owner_assignments').get()?.['owner_user_id'],
+      userId,
+    )
+    assert.equal(Number(db.prepare('SELECT count FROM card_inventory').get()?.['count']), 3)
+    assert.equal(db.prepare('SELECT updated_at FROM card_base_updates').get()?.['updated_at'], NOW)
+
+    // Chat's UI is going away; its stored messages are not.
+    assert.equal(
+      db.prepare('SELECT body FROM chat_messages').get()?.['body'],
+      'has anyone got a spare Barbarian',
+    )
+    assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM trades').get()?.['n']), 0)
+    db.close()
+  })
+
+  it('is idempotent across two boots, trades and all', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV6Database(path)
+
+    const first = openDatabase(path)
+    insertTrade(first, { status: 'complete', resolved_at: NOW })
+    first.close()
+
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+
+    // A plain CREATE TABLE run twice would throw, so opening at all is half the
+    // assertion; the row still being there is the other half.
+    const second = openDatabase(path)
+    assert.deepEqual(migrate(second), [], 'nothing left to apply')
+    const row = second.prepare('SELECT base_a, status, resolved_at FROM trades').get()
+    assert.equal(row?.['base_a'], '#AAABBB')
+    assert.equal(row?.['status'], 'complete')
+    assert.equal(row?.['resolved_at'], NOW)
+    assert.equal(Number(second.prepare('SELECT COUNT(*) AS n FROM chat_messages').get()?.['n']), 1)
+    second.close()
+  })
+
+  it('keeps a resolved trade when the account that resolved it is deleted', () => {
+    const path = join(tempDir(), 'coc.db')
+    const { userId } = createV6Database(path)
+
+    const db = openDatabase(path)
+    insertTrade(db, {
+      status: 'complete',
+      resolved_at: NOW,
+      proposed_by_user_id: userId,
+      resolved_by_user_id: userId,
+    })
+
+    // ON DELETE SET NULL, like every other user reference here. A completed trade
+    // is the record of a swap that really happened: deleting the account must cost
+    // the attribution, not the record — and must not leave a row the CHECK now
+    // rejects, which is why `resolved_by_user_id` is not part of that constraint.
+    db.exec(`DELETE FROM users WHERE id = ${userId}`)
+    const row = db.prepare('SELECT status, resolved_at, resolved_by_user_id FROM trades').get()
+    assert.equal(row?.['status'], 'complete', 'the trade must survive')
+    assert.equal(row?.['resolved_at'], NOW, 'and so must when it happened')
+    assert.equal(row?.['resolved_by_user_id'], null, 'only the attribution is lost')
+    db.close()
+  })
+
+  it('is the last line on a trade that could not be honoured', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV6Database(path)
+    const db = openDatabase(path)
+
+    // Each of these is validated in the route as well. The schema is the backstop,
+    // and the only one a future caller cannot forget.
+    const refusals: [string, Record<string, unknown>][] = [
+      ['a status nobody defined', { status: 'maybe' }],
+      ['a card id below the manifest', { card_from_a: 0 }],
+      ['a card id above the manifest', { card_from_b: 61 }],
+      ['a base trading with itself', { base_b: '#AAABBB' }],
+      ['one card for itself, which moves nothing', { card_from_b: 1 }],
+      ['a pending trade that claims to be resolved', { resolved_at: NOW }],
+      ['a resolved trade with no timestamp', { status: 'complete' }],
+    ]
+
+    for (const [why, overrides] of refusals) {
+      assert.throws(() => insertTrade(db, overrides), /CHECK constraint failed/, `${why} must be refused`)
+    }
+
+    insertTrade(db)
+    assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM trades').get()?.['n']), 1)
+    db.close()
+  })
+
+  it('allows one pending proposal per swap, and any number of resolved ones', () => {
+    const path = join(tempDir(), 'coc.db')
+    createV6Database(path)
+    const db = openDatabase(path)
+
+    insertTrade(db)
+    // The same swap, pending twice, is one agreement recorded twice. The route
+    // answers 409 before it gets here; the index is what makes that a guarantee.
+    assert.throws(() => insertTrade(db), /UNIQUE constraint failed/)
+
+    // History is not constrained: the same two bases can swap the same two cards
+    // again next week, and a declined attempt must not block a second try.
+    insertTrade(db, { status: 'declined', resolved_at: NOW })
+    insertTrade(db, { status: 'complete', resolved_at: NOW })
+    assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM trades').get()?.['n']), 3)
+
+    // A different swap between the same bases is a different agreement.
+    insertTrade(db, { card_from_a: 5 })
+    // …and so is the same swap in another season.
+    insertTrade(db, { season: '2027-08' })
+    assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM trades').get()?.['n']), 5)
+    db.close()
+  })
+
+  it('takes a fresh database straight to the trades table, empty', () => {
+    const path = join(tempDir(), 'coc.db')
+    const db = openDatabase(path)
+    assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM trades').get()?.['n']), 0)
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+    db.close()
+    assert.ok(columnsOf(path, 'trades').includes('resolved_at'))
   })
 })
 

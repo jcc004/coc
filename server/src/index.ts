@@ -5,6 +5,7 @@ import { cookieSecureFromEnv } from './auth/middleware.ts'
 import { createAuthStore } from './auth/store.ts'
 import { TtlCache } from './cache.ts'
 import { createCardInventoryStore } from './cards/store.ts'
+import { createTradeStore } from './cards/trades-store.ts'
 import { createChatStore } from './chat/store.ts'
 import { createCocClient } from './coc-client.ts'
 import {
@@ -32,6 +33,9 @@ const auth = createAuthStore(db)
 const chat = createChatStore(db)
 const sharedData = createSharedDataStore(db)
 const cards = createCardInventoryStore(db)
+// Handed the inventory store because completing a trade moves cards: the status
+// change and the four count changes are one transaction over both tables.
+const trades = createTradeStore(db, cards)
 
 const bootstrap = bootstrapAdmin(auth, process.env)
 /*
@@ -70,6 +74,7 @@ const app = createApp({
   chat,
   sharedData,
   cards,
+  trades,
   cookieSecure: cookieSecureFromEnv(process.env),
 })
 

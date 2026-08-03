@@ -2,7 +2,6 @@ import { useState, type FormEvent } from 'react'
 import { isValidTag, normalizeTag, usesCanonicalAlphabet } from '@coc/shared'
 import { navigate } from '../hooks.ts'
 import { recentsOfKind, type Recent } from '../recents.ts'
-import { ChatPanel } from './ChatPanel.tsx'
 
 const TAG_SHAPE = 'Tags are 3–12 letters and digits, e.g. #2PP0JCCLV.'
 
@@ -146,18 +145,19 @@ function ClanLookup({ recents }: { recents: Recent[] }) {
   )
 }
 
-export function SearchBar({
-  recents,
-  currentUserId,
-}: {
-  recents: Recent[]
-  currentUserId: number
-}) {
+/**
+ * The two lookup cards, each carrying its own Recent list.
+ *
+ * **Homepage only** — `App` decides that, and it is the whole component now: the
+ * chat panel used to be bundled in here, which made "show the lookups" and "show
+ * the chat" one decision that could not be taken separately. `App` composes the
+ * sidebar from panels instead, so either can move or go without touching the other.
+ */
+export function SearchBar({ recents }: { recents: Recent[] }) {
   return (
     <>
       <PlayerLookup recents={recents} />
       <ClanLookup recents={recents} />
-      <ChatPanel currentUserId={currentUserId} />
     </>
   )
 }

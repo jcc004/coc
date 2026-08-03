@@ -16,6 +16,7 @@ import {
   type ImportRequest,
   type ImportResponse,
   type MeResponse,
+  type OwnerAssignResponse,
   type OwnerBulkResponse,
   type OwnerBulkRow,
   type OwnersResponse,
@@ -233,6 +234,18 @@ export const api = {
     request<{ ok: true }>('DELETE', `/api/saved/clans/${tagPath(tag)}`),
 
   owners: (signal?: AbortSignal) => get<OwnersResponse>('/api/owners', signal),
+
+  /**
+   * Hands one base to one account. **Admin only, server-side** — the 403 it answers
+   * a member with carries the reason ("An admin assigns ownership of a base…"),
+   * which is what `owners.ts` surfaces rather than replacing with wording of its own.
+   *
+   * A `userId` and nothing else: a name cannot be compared against the session of
+   * whoever is trying to write that base's card counts, which is why ownership moved
+   * onto accounts in the first place. Clearing is `removeOwner`, not an empty name.
+   */
+  assignOwner: (tag: string, userId: number) =>
+    request<OwnerAssignResponse>('PUT', `/api/owners/${tagPath(tag)}`, { body: { userId } }),
 
   removeOwner: (tag: string) => request<{ ok: true }>('DELETE', `/api/owners/${tagPath(tag)}`),
 

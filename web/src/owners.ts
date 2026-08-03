@@ -17,9 +17,12 @@ import { createServerStore, type StoreSnapshot } from './server-store.ts'
  * point, and also why every write has to cope with somebody else having got there
  * first (see `applyOwners`).
  *
- * The exported shape is deliberately the same as before — `useOwners`, `ownerFor`,
- * `setOwner`, `clearOwner`, `knownOwners` — so the components barely changed. What
- * did change is that the writes are async and can fail.
+ * The writes are async, they can fail, and — since ownership became an account
+ * rather than a label — **they are admin-only on the server**. `assignOwner` and
+ * `clearOwner` therefore reject with the server's own message rather than pretending
+ * to have written something; the UI's job is to not offer them to a member at all,
+ * which the roster does by rendering the owner as text for anyone who is not an
+ * admin (see `owner-picker.ts` for the rules and `ClanView` for the controls).
  */
 
 /** A local alias, so existing imports keep reading the same. */
@@ -94,11 +97,6 @@ export function useOwnersState(): StoreSnapshot<OwnerAssignment> {
   return store.use()
 }
 
-export function ownerFor(tag: string): string | undefined {
-  const canonical = normalizeTag(tag)
-  return store.peek().find((entry) => entry.tag === canonical)?.owner
-}
-
 /**
  * The whole assignment, not just the label. Card entry needs `ownerUserId` to ask
  * whether *this* session owns the base, and a name alone cannot answer that: an
@@ -116,34 +114,38 @@ export function ownerRecordFor(
 }
 
 /**
- * Assigns one owner. A blank owner clears the entry rather than storing `""`.
+ * Hands one base to one account, through `PUT /api/owners/:tag`.
  *
- * It goes through the same expected-value check as a bulk apply, using whatever
- * this browser currently believes — so a single edit is no more able to clobber
- * somebody else's change than a bulk one is. Rejects if the server refused.
+ * **This used to be a single-row bulk apply of free text.** It is not any more,
+ * because the thing being set is not text: it is which account holds the base, and
+ * therefore who may write its card counts. A name could only ever be matched to an
+ * account by display name and left as an unlinked label when it matched nobody —
+ * which is precisely the 32-row mess the picker now exists to clear up.
+ *
+ * There is no expected-value check on this path, and that is the endpoint's design
+ * rather than an omission: the picker is offered to admins only, it shows the row's
+ * current owner as its selected value, and the store refreshes from the server after
+ * every write — so an admin choosing a name is choosing it against what is on
+ * screen. The bulk bar, which writes many rows blind from one typed value, keeps
+ * its conditional write.
+ *
+ * Rejects with the server's own `ApiError` — including the 403 a non-admin gets,
+ * whose message names the rule ("An admin assigns ownership of a base…"). Callers
+ * show `error.message`; nothing here rewords it.
  */
-export async function setOwner(tag: string, owner: string): Promise<void> {
-  const canonical = normalizeTag(tag)
-  const expectedOwner = ownerFor(canonical) ?? ''
-
-  const result = await store.mutate(() =>
-    api.applyOwners([{ tag: canonical, owner: owner.trim(), expectedOwner }]),
-  )
-
-  const conflict = result.conflicts[0]
-  if (conflict) {
-    throw new Error(
-      `${canonical} was changed by someone else — it now reads "${conflict.currentOwner || '(none)'}". Nothing was written.`,
-    )
-  }
+export async function assignOwner(tag: string, userId: number): Promise<void> {
+  await store.mutate(() => api.assignOwner(normalizeTag(tag), userId))
 }
 
+/**
+ * Removes an assignment, whatever it currently says.
+ *
+ * Still reachable — and still one action, not "assign to nobody" — because a base
+ * changes hands, leaves the clan, or turns out to have been recorded against the
+ * wrong person, and a stale owner is worse than none: it is what makes card counts
+ * unwritable by the person actually holding the base.
+ */
 export async function clearOwner(tag: string): Promise<void> {
-  await setOwner(tag, '')
-}
-
-/** Removes an assignment outright, whatever its current value. */
-export async function deleteOwner(tag: string): Promise<void> {
   await store.mutate(() => api.removeOwner(tag))
 }
 
@@ -156,7 +158,15 @@ export async function applyOwners(rows: OwnerBulkRow[]): Promise<OwnerBulkRespon
   return store.mutate(() => api.applyOwners(rows))
 }
 
-/** Every distinct owner already in use — powers the datalist on the owner input. */
+/**
+ * Every distinct owner label already in use, for the roster's Owner **filter** —
+ * which has to be able to name what is stored, legacy labels included, and is shown
+ * to everybody.
+ *
+ * Deliberately *not* what the picker offers. Suggesting the labels already in use
+ * would keep proposing the unlinked ones, so the picker's options come from
+ * `GET /api/admin/users` through `ownerOptions()` in `owner-picker.ts`.
+ */
 export function knownOwners(): string[] {
   return [...new Set(store.peek().map((entry) => entry.owner))].sort()
 }

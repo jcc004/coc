@@ -98,8 +98,14 @@ export interface BaseOwnerLookup {
   getOwner(tag: string): OwnerRecord | undefined
 }
 
-/** Flattens what the store knows into what the rule needs, absent row included. */
-function ownershipOf(owners: BaseOwnerLookup, tag: string): BaseOwnership {
+/**
+ * Flattens what the store knows into what the rule needs, absent row included.
+ *
+ * Exported because the trade routes need exactly the same flattening for both
+ * sides of a swap, and two copies of it would be two chances for one of them to
+ * start treating an unlinked label as an owner.
+ */
+export function ownershipOf(owners: BaseOwnerLookup, tag: string): BaseOwnership {
   const canonical = normalizeTag(tag)
   const record = owners.getOwner(canonical)
   return {
