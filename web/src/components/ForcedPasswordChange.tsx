@@ -92,7 +92,7 @@ export function ForcedPasswordChange({
           </div>
         ) : null}
 
-        <form className="search search--stacked" onSubmit={submit}>
+        <form className="search search--stacked" onSubmit={(event) => void submit(event)}>
           {/* `current-password` is right for the temporary one: it *is* the
               current credential, and a password manager should offer what it has
               stored rather than try to save this throwaway value as the new one. */}

@@ -114,7 +114,7 @@ function PasswordCard() {
       <h2 className="section-title">Change password</h2>
       {result ? <Message text={result.text} tone={result.tone} /> : null}
 
-      <form className="search search--stacked" onSubmit={submit}>
+      <form className="search search--stacked" onSubmit={(event) => void submit(event)}>
         <PasswordField
           label="Current password"
           value={current}

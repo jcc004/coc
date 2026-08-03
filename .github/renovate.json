@@ -1,0 +1,52 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Dependency updates for a solo project with about ten users. Renovate's JSON does not allow comments, so the reasoning lives in these description fields.",
+    "NOTHING AUTO-MERGES, anywhere in this file, including patches and including security fixes. A merge to main here is a production deploy: the droplet's coc-update.timer pulls main every five minutes and runs deploy/update.sh, with no human in the path. An automerged PR is therefore an unreviewed deploy, and the CI workflow can tell you a commit is broken but cannot stop the timer shipping it. Every Renovate PR gets read before it lands.",
+    "Volume is capped deliberately. There is one maintainer, and a wall of open dependency PRs would bury the one signal the Verify workflow exists to give.",
+    "See docs/setup.md for the Node pin and deploy/README.md for the timer."
+  ],
+  "extends": ["config:recommended"],
+  "automerge": false,
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 1,
+  "schedule": ["before 6am on monday"],
+  "constraints": {
+    "node": "22.x"
+  },
+  "vulnerabilityAlerts": {
+    "description": "Advisories are raised out of schedule and past the concurrent limit, because an advisory is the one update worth interrupting a week for. It still does not automerge — a security patch is a deploy like any other.",
+    "enabled": true,
+    "labels": ["security"],
+    "schedule": ["at any time"],
+    "automerge": false
+  },
+  "osvVulnerabilityAlerts": true,
+  "packageRules": [
+    {
+      "description": "One PR a week for everything non-major. These are the updates that are almost always fine, and reading one diff is the whole point of grouping them; a per-package PR for each would be the wall of noise this config exists to avoid.",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "non-major dependencies",
+      "automerge": false
+    },
+    {
+      "description": "Majors stay one PR each, unlabelled by any group. A major is a change to read on its own, and it is the case where an unreviewed deploy would actually hurt.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": "Node itself is pinned exactly, in .nvmrc and in the CI workflow, because node:sqlite is experimental and is the entire persistence layer. Renovate may move that pin within 22.x only: production installs Node from deb.nodesource.com/setup_22.x, so a bump to 23 or 24 here would silently point local dev and CI at a different major from the droplet — which is the divergence docs/setup.md exists to warn about, not one to automate. Raising the major is a deliberate decision that has to include the host.",
+      "matchDatasources": ["node-version", "docker"],
+      "matchPackageNames": ["node"],
+      "allowedVersions": "<23",
+      "groupName": "node runtime pin",
+      "automerge": false
+    },
+    {
+      "description": "A Node bump touches .nvmrc and .github/workflows/verify.yml together and must stay out of the grouped dependency PR, so that moving the runtime is never something you find inside a diff you opened to read about a lint plugin.",
+      "matchManagers": ["nvm", "github-actions"],
+      "matchPackageNames": ["node", "actions/setup-node"],
+      "groupName": "node runtime pin"
+    }
+  ]
+}

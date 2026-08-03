@@ -115,6 +115,11 @@ describe('resolveCardColumns', () => {
       assert.equal(
         resolveCardColumns(stored, DESKTOP.width, DESKTOP.gap),
         DEFAULT_CARD_COLUMNS,
+        // `String(stored)` is only reached when `JSON.stringify` returns undefined,
+        // which of these inputs is `undefined` alone — so the `[object Object]` the
+        // rule is warning about cannot happen. The rule reasons from the array's
+        // union type, which includes `{}`, not from which branch runs.
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string
         `for ${JSON.stringify(stored) ?? String(stored)}`,
       )
     }

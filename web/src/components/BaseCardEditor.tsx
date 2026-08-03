@@ -289,6 +289,19 @@ export function BaseCardEditor({
   /* The draft, for the same reason — a blur handler must see what is in the boxes
      now, not what was there when React last closed over it. */
   const draftRef = useRef(stored)
+  /*
+   * Assigned during render, which React's rules say not to do — a render can be
+   * discarded, and this would have written anyway. The linter is right on the point
+   * of principle and the suppression is narrow for that reason.
+   *
+   * It stands because the two readers, `commit` and the unmount cleanup, run outside
+   * render and need the draft *as it is now* rather than the one closed over when
+   * their render happened — that is the whole reason the ref exists, and moving the
+   * assignment into an effect would reintroduce exactly the lag it is here to avoid.
+   * The honest fix is to stop stashing the draft and pass it in at the call site,
+   * which is a change to the auto-save path and not a formatting one.
+   */
+  // eslint-disable-next-line react-hooks/refs
   draftRef.current = draft
 
   /*
@@ -368,7 +381,6 @@ export function BaseCardEditor({
       // stored counts, which is the honest outcome.
       void saveBaseCounts(tag, toCardCounts(new Map(draftRef.current))).catch(() => undefined)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tag, writable])
 
   const summary = inventorySummary({ tag, counts: toCardCounts(draft) })

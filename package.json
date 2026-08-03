@@ -10,7 +10,7 @@
     "web"
   ],
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.23.2 <23"
   },
   "scripts": {
     "dev": "concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
@@ -18,14 +18,25 @@
     "dev:web": "npm --workspace web run dev",
     "start": "npm --workspace server run start",
     "build": "npm --workspace web run build",
-    "test": "npm --workspace server run test && npm --workspace web run test",
+    "test": "npm --workspace shared run test && npm --workspace server run test && npm --workspace web run test",
     "assets:coc": "node scripts/fetch-coc-assets.mjs",
     "assets:wiki": "node scripts/fetch-wiki-art.mjs",
     "cards:generate": "node scripts/generate-cards.mjs",
-    "typecheck": "npm --workspace shared run typecheck && npm --workspace server run typecheck && npm --workspace web run typecheck"
+    "typecheck": "npm --workspace shared run typecheck && npm --workspace server run typecheck && npm --workspace web run typecheck",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,css,json,js}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,css,json,js}\""
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "concurrently": "^9.1.2",
-    "typescript": "^5.7.3"
+    "eslint": "^10.8.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.9.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.66.0"
   }
 }

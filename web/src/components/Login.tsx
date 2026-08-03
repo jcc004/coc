@@ -57,7 +57,7 @@ export function LoginScreen({ onSignedIn }: { onSignedIn: (user: SessionUser) =>
           </div>
         ) : null}
 
-        <form className="search search--stacked" onSubmit={submit}>
+        <form className="search search--stacked" onSubmit={(event) => void submit(event)}>
           <input
             type="email"
             value={email}

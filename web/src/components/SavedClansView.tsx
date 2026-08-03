@@ -99,7 +99,7 @@ function AddForm() {
 
   return (
     <>
-      <form className="search" onSubmit={submit}>
+      <form className="search" onSubmit={(event) => void submit(event)}>
         <input
           value={tag}
           onChange={(event) => setTag(event.target.value)}
@@ -321,7 +321,7 @@ export function SavedClansView({ user }: { user: Pick<SessionUser, 'role'> }) {
               <button
                 type="button"
                 className="icon-button"
-                onClick={refreshAll}
+                onClick={() => void refreshAll()}
                 disabled={refreshing}
               >
                 {refreshing ? 'Refreshing…' : 'Refresh all'}

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import type { CardCategory } from '@coc/shared'
 import { ALL_CARDS, cardCategoriesInOrder } from './cards.ts'
 import type { GeneratedCard } from './cards.ts'
 import { cardsInGridOrder } from './card-standings.ts'
@@ -133,7 +132,7 @@ describe('decksPresent', () => {
   })
 
   it('keeps the given order rather than order of appearance', () => {
-    const reversed = [...order].reverse() as CardCategory[]
+    const reversed = [...order].reverse()
     assert.deepEqual(decksPresent(grid, reversed), reversed)
   })
 

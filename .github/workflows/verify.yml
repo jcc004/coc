@@ -1,4 +1,4 @@
-# Typecheck, test and build on every push and pull request.
+# Typecheck, lint, test and build on every push and pull request.
 #
 # **This does not deploy.** Deployment is the droplet's own `coc-update.timer`, which
 # runs `deploy/update.sh` — see deploy/README.md. This workflow exists for the one
@@ -12,9 +12,9 @@
 # dormant second one earns nothing and costs attention.
 #
 # If you ever do want push-triggered deployment, the recipe is in deploy/README.md
-# under "Trigger on push", and the job that did it is in this file's git history at
-# commit 9a2b550. It needs four repository secrets and a sudoers rule before it will
-# do anything but fail.
+# under "What CI does, and does not, do", and the job that did it is in this file's git
+# history at commit 9a2b550. It needs four repository secrets and a sudoers rule before
+# it will do anything but fail.
 
 name: Verify
 
@@ -32,14 +32,23 @@ concurrency:
 
 jobs:
   verify:
-    name: Typecheck, test, build
+    name: Typecheck, lint, test, build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      # An exact patch, not '22'. The whole persistence layer is `node:sqlite`, which is
+      # still experimental and has changed API across Node 22, 23 and 24 — it is the one
+      # dependency with no fallback, so the runtime is the last thing that should drift
+      # underneath a test run. '22' would silently follow whatever 22.x shipped this
+      # week and report the change as a failure on a commit that did not cause it.
+      # It is 22 rather than 24 because production is: deploy/README.md installs Node
+      # from deb.nodesource.com/setup_22.x, and CI is only worth trusting where it runs
+      # the major the droplet runs. Keep this equal to .nvmrc — Renovate moves the two
+      # together and cannot raise them past 22.x (.github/renovate.json).
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.23.2'
           cache: npm
 
       # ci, not install: exactly the lockfile, and it never rewrites it.
@@ -47,6 +56,29 @@ jobs:
 
       - run: npm run typecheck
 
+      # Ahead of the tests, because a lint failure is cheap to read and a test failure
+      # is not: if both break on one commit, the twenty lines of rule names are the
+      # ones you want first. Warnings fail it too (`--max-warnings 0` in the script) —
+      # a warning nothing enforces is a comment, and this is the only thing that
+      # enforces anything here. See eslint.config.js for what is on and why.
+      - run: npm run lint
+
+      # `npm run format:check` is deliberately **not** a step, and this comment is here
+      # so that reads as a decision rather than an omission.
+      #
+      # Prettier is configured to match the code as it was already written — 100
+      # columns, no semicolons, single quotes, all measured off the source rather than
+      # picked (see prettier.config.js). It still wants to rewrite 61 of the 142 code
+      # files, about 1,100 lines. Almost none of that is disagreement about style: it
+      # is that Prettier decides line breaks by an algorithm and this code was laid out
+      # by hand *within* the same 100 columns. Discriminated unions written one member
+      # per line get collapsed onto one; hand-wrapped English inside JSX gets reflowed;
+      # imports and prop types broken up for readability get joined back.
+      #
+      # Gating CI on it means committing that reformat, which would bury every real
+      # change in the diff it landed with. So the scripts exist — run `npm run format`
+      # on a branch of its own if the reformat is ever wanted, and `format:check` will
+      # pass from that commit on — and CI checks the things that can fail for a reason.
       - run: npm test
 
       # Catches a build that only fails in a clean checkout — a missing tracked file,

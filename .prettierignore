@@ -1,0 +1,24 @@
+# Prettier deliberately does **not** touch Markdown here. Every `.md` in this repo —
+# README.md, everything under docs/, deploy/README.md — is hand-wrapped prose whose
+# line breaks are chosen, not incidental. Reflowing them would produce an enormous
+# diff that changes no meaning and loses the shape of paragraphs somebody wrote on
+# purpose. Prose review happens in review, not in a formatter.
+*.md
+LICENSE
+
+# Generated: written by scripts/generate-cards.mjs and scripts/fetch-wiki-art.mjs.
+# Formatting them means the next regeneration reverts it.
+web/src/*.generated.ts
+
+# Not ours to format.
+node_modules
+package-lock.json
+
+# Build output and vendored art, including the pre-build snapshot update.sh keeps.
+web/dist
+web/dist.prev-*/
+web/public/coc
+
+# SQLite files and anything else the server writes at runtime.
+server/data
+data
