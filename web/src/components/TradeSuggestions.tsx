@@ -401,43 +401,44 @@ function SuggestionTable({
                    */
                   data-pair-start={index === 0 ? 'true' : undefined}
                 >
-                  {/* The pair is named once per group; the rows under it are its
-                      options. A cell for a later row is genuinely empty, which is
-                      how the stacked layout knows to drop the line rather than
-                      print a blank one. */}
-                  <td className="stack-title" role="cell">
-                    {index === 0 ? (
-                      <BaseLabel
-                        tag={pair.baseA}
-                        label={labelOf(pair.baseA)}
-                        owner={ownerOf(pair.baseA)}
-                      />
-                    ) : null}
-                  </td>
                   {/*
-                   * Stacked, a row is its own card, so a later option in a pair has
-                   * no base named above it and two bare "Gives" lines would not say
-                   * whose. Those rows name the member in the label instead; the
-                   * first does not need to, because the member is the line above it.
+                   * **Both members named on every row**, including the second and third
+                   * option for the same pair.
+                   *
+                   * They used to be named once per pair, with blank cells beneath and a
+                   * rule above each group to say "same two bases as above". That was
+                   * reported as missing data twice — once from a screenshot and again
+                   * from the live server, where the reporter noticed that pressing
+                   * Propose recorded a trade with names the row had not shown. The
+                   * button was always right: it holds the whole suggestion regardless of
+                   * what is drawn. It was the row that was lying by omission.
+                   *
+                   * The cost is repetition on a pair with several options. That is the
+                   * cheaper mistake: a repeated name is read once and ignored, an absent
+                   * one sends somebody looking for a bug. `data-pair-start` still rules a
+                   * line above each group, which is now grouping rather than the only
+                   * thing making the blanks legible.
                    */}
-                  <td
-                    role="cell"
-                    data-label={index === 0 ? 'Gives' : `${labelOf(pair.baseA)} gives`}
-                  >
+                  <td className="stack-title" role="cell">
+                    <BaseLabel
+                      tag={pair.baseA}
+                      label={labelOf(pair.baseA)}
+                      owner={ownerOf(pair.baseA)}
+                    />
+                  </td>
+                  <td role="cell" data-label="Gives">
                     <TradeCard cardId={trade.cardFromA} />
                   </td>
                   <td className="stack-title" role="cell">
-                    {index === 0 ? (
-                      <BaseLabel
-                        tag={pair.baseB}
-                        label={labelOf(pair.baseB)}
-                        owner={ownerOf(pair.baseB)}
-                      />
-                    ) : null}
+                    <BaseLabel
+                      tag={pair.baseB}
+                      label={labelOf(pair.baseB)}
+                      owner={ownerOf(pair.baseB)}
+                    />
                   </td>
                   <td
                     role="cell"
-                    data-label={index === 0 ? 'Gives' : `${labelOf(pair.baseB)} gives`}
+                    data-label="Gives"
                   >
                     <TradeCard cardId={trade.cardFromB} />
                   </td>
