@@ -16,9 +16,10 @@ import {
 import { cardById, categoryOfCard } from '../cards.ts'
 import { hrefFor, useRowLimit } from '../hooks.ts'
 import { useOwners } from '../owners.ts'
-import { paginate, type RowLimit } from '../saved-table.ts'
+import { paginate, type PagedRows, type RowLimit } from '../saved-table.ts'
 import { findPendingSwap, sidesOfTrade, tradeProposeAccess } from '../trade-tracker.ts'
 import { proposeTrade, useTrades } from '../trades.ts'
+import { SwapRules } from './help-copy.tsx'
 import { GameIcon, Pager, RowLimitSelect } from './primitives.tsx'
 
 /**
@@ -274,18 +275,89 @@ export function TradeSuggestions({
     if (view.page !== page) setPage(view.page)
   }, [view.page, page])
 
-  if (pairs.length === 0) {
-    return (
-      <p className="empty-hint">
-        {focus === null ? 'No trades available yet.' : 'No trades available for this base yet.'} A
-        swap needs one base holding <strong>two or more</strong> of a card the other has{' '}
-        <strong>none</strong> of, in <strong>both</strong> directions, within one category.
-      </p>
-    )
-  }
-
   const rowCount = view.rows.reduce((sum, pair) => sum + pair.trades.length, 0)
 
+  /*
+   * The rules used to be the *empty* message: "no trades available yet — a swap
+   * needs one base holding two or more of a card the other has none of". Which meant
+   * the explanation disappeared the moment there were trades to explain, and stayed
+   * gone from then on. It is a disclosure below the table now, always present and
+   * always shut, so the panel reads the same whether or not it has rows — and the
+   * copy itself is `SwapRules`, shared with the help page rather than restated there.
+   */
+  return (
+    <>
+      {pairs.length === 0 ? (
+        <p className="empty-hint">
+          {focus === null ? 'No trades available yet.' : 'No trades available for this base yet.'}{' '}
+          Nobody holds a spare the other side is missing, in the same deck, both ways round.
+        </p>
+      ) : (
+        <SuggestionTable
+          view={view}
+          labelOf={labelOf}
+          ownerOf={ownerOf}
+          user={user}
+          owners={owners}
+          tracked={tracked}
+          limit={limit}
+          onLimit={(next) => {
+            setLimit(next)
+            setPage(1)
+          }}
+          onPage={setPage}
+          pairCount={pairs.length}
+          rowCount={rowCount}
+          focusLabel={focus === null ? null : labelOf(focus)}
+        />
+      )}
+
+      <details className="group">
+        <summary>What makes a swap legal</summary>
+        <div className="group__body help-prose">
+          <SwapRules />
+        </div>
+      </details>
+    </>
+  )
+}
+
+/**
+ * The table, its pager and its count line — everything that only exists when there
+ * is at least one pair.
+ *
+ * Split out purely so the rule disclosure above can sit outside the empty check
+ * without wrapping the whole body in a ternary the length of the file. It takes what
+ * it draws and decides nothing.
+ */
+function SuggestionTable({
+  view,
+  labelOf,
+  ownerOf,
+  user,
+  owners,
+  tracked,
+  limit,
+  onLimit,
+  onPage,
+  pairCount,
+  rowCount,
+  focusLabel,
+}: {
+  view: PagedRows<TradePair>
+  labelOf: (tag: string) => string
+  ownerOf: (tag: string) => string | undefined
+  user: Pick<SessionUser, 'id' | 'role'>
+  owners: OwnerRecord[]
+  tracked: TradeRecord[]
+  limit: RowLimit
+  onLimit: (next: RowLimit) => void
+  onPage: (next: number) => void
+  pairCount: number
+  rowCount: number
+  /** The focused base's member name, or `null` when the table is clan-wide. */
+  focusLabel: string | null
+}) {
   return (
     <>
       <div className="table-wrap">
@@ -399,26 +471,25 @@ export function TradeSuggestions({
           label="Pairs"
           options={TRADE_PAIR_LIMITS}
           value={limit}
-          onChange={(next) => {
-            setLimit(next)
-            setPage(1)
-          }}
+          onChange={onLimit}
         />
-        <Pager view={view} noun="pairs" onPage={setPage} />
+        <Pager view={view} noun="pairs" onPage={onPage} />
       </div>
 
+      {/*
+       * Counts only. The two rules this line used to carry — that a row is an option
+       * rather than a commitment, and what Propose does — are in the disclosure
+       * below, which is present whether or not there are rows to count.
+       */}
       <p className="empty-hint" style={{ marginTop: 12, fontSize: 13 }}>
-        {pairs.length} pair{pairs.length === 1 ? '' : 's'} could trade
-        {focus === null ? null : <> with {labelOf(focus)}</>}
+        {pairCount} pair{pairCount === 1 ? '' : 's'} could trade
+        {focusLabel === null ? null : <> with {focusLabel}</>}
         {view.pageCount > 1 ? (
           <>
             , {rowCount} option{rowCount === 1 ? '' : 's'} on this page
           </>
         ) : null}
-        . Each row is one option, not a commitment — one spare can appear against several partners,
-        so pick one per card. <strong>Propose</strong> puts a swap on the{' '}
-        <strong>trade tracker</strong> below for the other member to approve; no cards move, and no
-        counts need re-entering, until somebody completes it there.
+        .
       </p>
     </>
   )

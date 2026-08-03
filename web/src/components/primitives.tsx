@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from 'react'
 import type { ApiError } from '../api.ts'
 import { formatFull, formatStat } from '../format.ts'
+import type { HelpSectionId } from '../help.ts'
+import { hrefFor } from '../hooks.ts'
 import {
   sortOptionLabel,
   type PagedRows,
@@ -174,6 +176,34 @@ export function LevelRow({
         {valueLabel ?? `${level}/${maxLevel}`}
       </div>
     </div>
+  )
+}
+
+/**
+ * The quiet `?` beside a panel heading, linking into the help page.
+ *
+ * **The glyph is not the name.** `?` is a mark, not a label, so it is
+ * `aria-hidden` and the accessible name is a `.visually-hidden` sentence naming
+ * the topic — the same split the compass rosette and the account-menu silhouette
+ * use, and for the same reason: a link announced as "question mark" tells a screen
+ * reader user nothing about where it goes, and six of them on one page tell them
+ * nothing six times. `title` carries the same words for a pointer.
+ *
+ * A real `<a href>`, not a button, because it navigates: it middle-clicks and
+ * copies like any other link here, and the routes are hashes so there is nothing to
+ * intercept.
+ *
+ * Deliberately visually quiet — an outlined circle in muted ink, not a chip. It
+ * sits beside content somebody has already found and is only worth noticing when
+ * they are stuck.
+ */
+export function HelpLink({ section, topic }: { section: HelpSectionId; topic: string }) {
+  const name = `Help: ${topic}`
+  return (
+    <a className="help-link" href={hrefFor({ view: 'help', section })} title={name}>
+      <span aria-hidden="true">?</span>
+      <span className="visually-hidden">{name}</span>
+    </a>
   )
 }
 

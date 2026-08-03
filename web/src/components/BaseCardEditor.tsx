@@ -29,8 +29,10 @@ import {
 } from '../cards.ts'
 import { deckProgress, deckSizes } from '../deck-progress.ts'
 import { formatDateTime } from '../format.ts'
+import { hrefFor } from '../hooks.ts'
 import { CardTile } from './CardTile.tsx'
 import { DeckPlaques } from './DeckPlaques.tsx'
+import { HelpLink } from './primitives.tsx'
 
 /**
  * The 60-tile grid and its entry form, for **one** base.
@@ -165,8 +167,15 @@ function ReadOnlyNotice({ access }: { access: CardEntryAccess }) {
         {access.refusal === 'notOwner' ? 'Someone else owns this base' : 'This base has no owner'}
       </p>
       <p className="notice__body">{access.message}</p>
+      {/* A full-text link rather than a `?` here: this is the moment somebody is
+          actually stuck, and the answer is a paragraph about accounts and labels
+          rather than something the notice can restate in a clause. */}
       <p className="notice__hint">
-        The counts below are shown as stored and cannot be changed from here.
+        The counts below are shown as stored and cannot be changed from here.{' '}
+        <a href={hrefFor({ view: 'help', section: 'owners' })}>
+          Who owns a base, and why it matters
+        </a>
+        .
       </p>
     </div>
   )
@@ -369,6 +378,11 @@ export function BaseCardEditor({
           <span className="card-meta" aria-live="polite">
             {saving ? 'Saving…' : writable ? 'Counts save as you leave each box' : 'Read-only'}
           </span>
+          {/* Beside the status rather than beside the heading, because the heading is
+              a person's name and a `?` after somebody's name reads as a question about
+              them. Both callers get it: the grid behaves identically on either page,
+              so the explanation should be reachable from either. */}
+          <HelpLink section="cards" topic="how the card grid works" />
           {/* The deck totals, on their own line under the count they break down —
               the header's tools box already wraps, which is what puts them there. */}
           <DeckPlaques decks={decks} />

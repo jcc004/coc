@@ -16,12 +16,38 @@ const admin: Pick<SessionUser, 'role'> = { role: 'admin' }
 const ids = (user: Pick<SessionUser, 'role'>) => userMenuItems(user).map((item) => item.id)
 
 describe('userMenuItems', () => {
-  it('gives a member their own password and Sign out, and nothing else', () => {
-    assert.deepEqual(ids(member), ['account', 'signOut'])
+  it('gives a member help, their own password and Sign out, and nothing else', () => {
+    assert.deepEqual(ids(member), ['help', 'account', 'signOut'])
   })
 
   it('adds the admin panel for an admin', () => {
-    assert.deepEqual(ids(admin), ['account', 'admin', 'signOut'])
+    assert.deepEqual(ids(admin), ['help', 'account', 'admin', 'signOut'])
+  })
+
+  it('offers help to a member as well as an admin, unlike the admin panel', () => {
+    // The one entry with no version that is not theirs: a help page withheld from
+    // members would be withheld from exactly the people most likely to need it.
+    for (const user of [member, admin]) {
+      assert.ok(
+        userMenuItems(user).some((item) => item.id === 'help'),
+        'help should be on every menu',
+      )
+    }
+  })
+
+  it('puts help first, where somebody who is stuck will look', () => {
+    for (const user of [member, admin]) {
+      assert.equal(userMenuItems(user)[0]?.id, 'help')
+    }
+  })
+
+  it('points help at the whole page, not into a section', () => {
+    // The `?` marks beside the panels are the deep links. Arriving from the menu,
+    // nobody has said which part they want, and landing mid-page would look broken.
+    assert.deepEqual(
+      userMenuItems(member).find((item) => item.id === 'help')?.route,
+      { view: 'help', section: null },
+    )
   })
 
   it('omits the admin entry for a member rather than including it disabled', () => {
@@ -67,7 +93,7 @@ describe('userMenuItems', () => {
   it('does not mutate a shared array between calls', () => {
     const first = userMenuItems(admin)
     first.length = 0
-    assert.equal(userMenuItems(admin).length, 3)
+    assert.equal(userMenuItems(admin).length, 4)
   })
 })
 

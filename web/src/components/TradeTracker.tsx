@@ -5,7 +5,7 @@ import { cardById } from '../cards.ts'
 import { formatRelative } from '../format.ts'
 import { hrefFor, useRowLimit } from '../hooks.ts'
 import { useOwners } from '../owners.ts'
-import { paginate, type RowLimit } from '../saved-table.ts'
+import { paginate, type PagedRows, type RowLimit } from '../saved-table.ts'
 import {
   pendingCount,
   sidesOfTrade,
@@ -14,6 +14,7 @@ import {
   tradesInvolving,
 } from '../trade-tracker.ts'
 import { completeTrade, declineTrade, useTradesState } from '../trades.ts'
+import { TradeResolutionRules } from './help-copy.tsx'
 import { GameIcon, Pager, RowLimitSelect } from './primitives.tsx'
 
 /**
@@ -233,30 +234,87 @@ export function TradeTracker({
     if (view.page !== page) setPage(view.page)
   }, [view.page, page])
 
-  /* A failed load leaves an empty list that would otherwise read as "no trades
-     agreed", which is a different and much more comfortable claim than the truth. */
-  if (status === 'error' && entries.length === 0) {
-    return (
-      <p className="empty-hint">
-        Could not load the trade tracker{error ? `: ${error.message}` : '.'}
-      </p>
-    )
-  }
-
-  if (rows.length === 0) {
-    return (
-      <p className="empty-hint">
-        {status === 'loading'
-          ? 'Loading agreed trades…'
-          : focusTag === undefined
-            ? 'No trades proposed yet. Propose one from the suggestions above and it appears here for the other member to approve.'
-            : 'No trades proposed for this base yet. Propose one from the suggestions above.'}
-      </p>
-    )
-  }
-
   const waiting = pendingCount(rows)
 
+  /*
+   * The rules — who may resolve one, and that Complete moves cards for everyone and
+   * cannot be undone — used to be the line *under a populated table*, so they were
+   * absent from an empty tracker and, more to the point, from the tracker somebody
+   * reads before they have ever completed anything. They are a disclosure now,
+   * rendered whatever state the list is in, sharing `TradeResolutionRules` with the
+   * help page.
+   *
+   * It is drawn even on a load failure: that message is about the network, and the
+   * rules are still what the panel is for.
+   */
+  return (
+    <>
+      {status === 'error' && entries.length === 0 ? (
+        <p className="empty-hint">
+          Could not load the trade tracker{error ? `: ${error.message}` : '.'}
+        </p>
+      ) : rows.length === 0 ? (
+        <p className="empty-hint">
+          {status === 'loading'
+            ? 'Loading agreed trades…'
+            : focusTag === undefined
+              ? 'No trades proposed yet. Propose one from the suggestions above and it appears here for the other member to approve.'
+              : 'No trades proposed for this base yet. Propose one from the suggestions above.'}
+        </p>
+      ) : (
+        <TrackerTable
+          view={view}
+          rowTotal={rows.length}
+          waiting={waiting}
+          labelOf={labelOf}
+          user={user}
+          limit={limit}
+          onLimit={(next) => {
+            setLimit(next)
+            setPage(1)
+          }}
+          onPage={setPage}
+        />
+      )}
+
+      <details className="group">
+        <summary>Who can complete a trade, and what completing does</summary>
+        <div className="group__body help-prose">
+          <TradeResolutionRules />
+        </div>
+      </details>
+    </>
+  )
+}
+
+/**
+ * The table, its pager and its count line: the part that only exists once a trade
+ * has been proposed.
+ *
+ * Extracted for the same reason the suggestions' table was — so the rule disclosure
+ * can sit outside the empty-and-error checks without the whole body becoming one
+ * ternary. It draws what it is given and decides nothing.
+ */
+function TrackerTable({
+  view,
+  rowTotal,
+  waiting,
+  labelOf,
+  user,
+  limit,
+  onLimit,
+  onPage,
+}: {
+  view: PagedRows<TradeRecord>
+  /** Every trade in scope, not just this page's — the count line says "of N". */
+  rowTotal: number
+  waiting: number
+  labelOf: (tag: string) => string
+  user: Pick<SessionUser, 'id' | 'role'>
+  limit: RowLimit
+  onLimit: (next: RowLimit) => void
+  onPage: (next: number) => void
+}) {
   return (
     <>
       <div className="table-wrap">
@@ -315,22 +373,17 @@ export function TradeTracker({
           label="Trades"
           options={TRADE_LIMITS}
           value={limit}
-          onChange={(next) => {
-            setLimit(next)
-            setPage(1)
-          }}
+          onChange={onLimit}
         />
-        <Pager view={view} noun="trades" onPage={setPage} />
+        <Pager view={view} noun="trades" onPage={onPage} />
       </div>
 
+      {/* How many need somebody, and nothing else — the rules that used to finish
+          this sentence are in the disclosure below, where they survive an empty list. */}
       <p className="empty-hint" style={{ marginTop: 12, fontSize: 13 }}>
         {waiting === 0
-          ? `Nothing waiting — all ${rows.length} trade${rows.length === 1 ? ' is' : 's are'} resolved.`
-          : `${waiting} waiting on somebody, of ${rows.length}.`}{' '}
-        Either member in a trade can resolve it, and an admin can resolve any.{' '}
-        <strong>Complete</strong> moves both cards immediately and for everyone;{' '}
-        <strong>Decline</strong> moves nothing. A trade is resolved once, so both are
-        recorded with who and when.
+          ? `Nothing waiting — all ${rowTotal} trade${rowTotal === 1 ? ' is' : 's are'} resolved.`
+          : `${waiting} waiting on somebody, of ${rowTotal}.`}
       </p>
     </>
   )

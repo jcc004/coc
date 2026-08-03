@@ -603,8 +603,8 @@ saved-clans list stays one click away on the title.
 
 ### The account menu
 
-One silhouette button on the right, holding everything about *you*: the appearance switch, a link
-to your password page, the **admin panel** if you are an admin, and **Sign out**.
+One silhouette button on the right, holding everything about *you*: the appearance switch, **Help**,
+a link to your password page, the **admin panel** if you are an admin, and **Sign out**.
 
 It replaced three separate topbar controls — a theme cycler labelled with the current theme, the
 display name as a link, and a Sign out button. At 390px those competed with Clan and Cards for a
@@ -620,6 +620,13 @@ who cannot hear the label.
 their account is lacking; an absent one says the feature is not theirs. `userMenuItems()` in
 `web/src/user-menu.ts` decides it, pure and tested, and **Sign out is last** so it is never between
 two navigation items where it can be pressed by accident.
+
+**Help is first, and it is on everybody's menu** — the opposite of the admin entry, because there is
+no version of a help page that is not yours, and hiding it from members would hide it from exactly
+the people most likely to need it. It is first because it is the only item somebody opens this panel
+for while *confused* rather than while administering something. It points at the whole page, never at
+a section: arriving from the menu nobody has said which part they want, and landing mid-page looks
+broken. See [In-app help](#in-app-help).
 
 **Appearance stays a cycler, not three radio items.** It is the only item pressed repeatedly, it has
 to visit all three states, and as a cycler it can be pressed without the menu closing underneath it
@@ -641,6 +648,100 @@ that has moved. All four verified in a browser, including `aria-controls` matchi
 
 The silhouette itself is inline SVG in `web/src/components/UserMenu.tsx`, a circle and a clipped
 half-capsule in `currentColor`, for the same reason the rosette is.
+
+## In-app help
+
+`#/help` is one page of prose about the four things people ask about twice: who owns a base, the
+difference between a suggested swap and an agreed trade, what the leaderboard is measuring, and that
+there is one copy of the data and it is everybody's. `HelpView` in
+`web/src/components/HelpView.tsx`; reachable from the account menu, and from a `?` beside each panel
+it describes.
+
+It is **not a feature tour**. Every claim on it was checked against the module that enforces the
+rule rather than against the README, and the numbers in it are *computed* — `MIN_TRADEABLE_COUNT`,
+the 0–10 entry cap, the sixty cards and the whole points curve come from `shared/src/card-types.ts`,
+`cards.ts` and `cardPoints()`, so raising a cap cannot leave a paragraph quietly lying about it.
+
+### Rules used to disappear when they became relevant
+
+The app carried around thirty-five explanatory blocks (`empty-hint` / `notice__hint`), and several of
+them **only rendered in an empty-state branch** — so the explanation vanished at exactly the moment
+the panel filled with data somebody might be confused by. The clearest case: the sentence defining a
+legal swap ("one base holding two or more of a card the other has none of, in both directions, within
+one category") was the trade suggestions' *empty* message. Once there were trades to explain, the
+rule was gone, and it never came back.
+
+Three of those are now collapsed `<details class="group">` — the idiom this app already uses — sitting
+under the panel they govern, present whether or not the panel has rows:
+
+| Panel | Disclosure | Was |
+|---|---|---|
+| Trade suggestions | *What makes a swap legal* | the empty-state message, plus a clause on the footer count line |
+| Trade tracker | *Who can complete a trade, and what completing does* | a clause on the footer count line, so absent from an empty tracker |
+| Collection leaderboard | *How the points work* | nowhere; the visible intro line described the **old** measure |
+| Clan roster's Owner column | *Who owns a base, and what an owner may do* | nowhere at all |
+
+Genuine "nothing here yet" messages were left where they are — `No clans saved yet`,
+`No members match those filters`, the capital-raid weekend that has no per-member breakdown because
+the API omits one. Those explain an absence rather than a rule.
+
+**The leaderboard's intro line was wrong**, which is why it is in that table. It read *"by distinct
+cards out of 60. Level on that, more copies goes first"* — the measure it described stopped being the
+measure when `cardPoints()` arrived, and a base holding nine copies of one card outranks a base
+holding eight single cards, which is the opposite of what the sentence said. It now names points, and
+the curve itself is in the disclosure and on the help page from one source.
+
+**No copy is written twice.** Each rule is one component in `web/src/components/help-copy.tsx`,
+rendered by the disclosure *and* by its help-page section. They are fragments — no headings, no
+wrappers, no margins — so the caller supplies the container.
+
+### Deep links: `#/help/<section>`, and the scroll is ours
+
+`{ view: 'help'; section }` was added exactly as `{ view: 'admin' }` was — the union in
+`web/src/hooks.ts`, `parseHash`, `hrefFor`, and a render branch in `App.tsx`. The section ids, the
+href builder and the parser are a pure module, `web/src/help.ts`, with tests: a `?` that scrolls to
+the wrong section is worse than no `?`, and a link naming a section that has since been renamed lands
+silently at the top of the page and looks like it worked.
+
+**The obvious spelling is unavailable.** `#/help#owners` is not two fragments; the hash is already the
+router, so a second `#` is just more fragment text and the browser's own anchor scrolling can never
+fire. Of the two remaining shapes — a query (`#/help?section=owners`) and a path segment
+(`#/help/owners`) — the path segment is the one this app already speaks: `parseHash` splits on `/` and
+hands the second segment to the view, exactly as `#/player/<tag>` does. A query would have taught
+`parseHash` a second syntax for one route.
+
+The cost is that `HelpView` scrolls itself, in one effect. That buys something the native behaviour
+does not: the ids stay ordinary element ids, so the in-page contents list uses the same hrefs the `?`
+marks do. The effect also **moves focus** to the heading (`tabIndex={-1}`, `preventScroll` so it does
+not fight the smooth scroll) — a link that scrolls the page but leaves the caret in the topbar sends a
+keyboard user back through the whole page to reach what they clicked for. An unrecognised section is
+**not** an error: it falls back to the top of the page, because somebody following an old link should
+get the help page rather than a 404 for a heading that was renamed.
+
+Verified in a browser at 390px and 1280px, in both themes: all six sections render, all six deep
+links land with the heading at the top of the viewport and holding focus, `#/help/nonsense` opens the
+page at `scrollY` 0, and every disclosure opens and closes.
+
+### The `?` mark
+
+`HelpLink` in `web/src/components/primitives.tsx`, on the card grid's header, the trade suggestions,
+the trade tracker, the collection leaderboard and under the roster's Owner column.
+
+**The glyph is not the name.** `?` is a mark, so it is `aria-hidden` and the accessible name is a
+`.visually-hidden` sentence naming the topic — `Help: what makes a swap legal`. Same split as the
+compass rosette and the account-menu silhouette, for the same reason: six links all announced as
+"question mark" tell a screen reader user nothing, six times.
+
+It is deliberately the quietest control in the app — an 18px outlined circle in `--ink-muted`, no
+fill, no gold, no new colour role. It sits beside something the reader has already found and is only
+worth noticing when they are stuck. On the card grid it goes beside the *status* line rather than the
+heading, because that heading is a person's name and a `?` after somebody's name reads as a question
+about them.
+
+On a touch screen the **target** grows without the drawing changing: an absolutely positioned 44px
+pseudo-element centred on the glyph takes the press, since growing the box would push the line height
+of every panel header it sits in around. Nothing adjacent to it is interactive, so the overhang costs
+nothing.
 
 ## Looking a player or clan up
 

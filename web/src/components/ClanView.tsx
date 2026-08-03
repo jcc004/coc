@@ -38,10 +38,12 @@ import {
   type RosterSortKey,
 } from '../saved-table.ts'
 import { CapitalRaidsCard } from './CapitalRaidsCard.tsx'
+import { OwnershipRules } from './help-copy.tsx'
 import {
   Card,
   ErrorPanel,
   GameIcon,
+  HelpLink,
   Loading,
   Meter,
   Pager,
@@ -872,6 +874,33 @@ function RosterTable({ members, user }: { members: ClanMember[]; user: SessionUs
         />
         <Pager view={view} noun="members" onPage={setPage} />
       </div>
+
+      {/*
+       * The Owner column has never explained itself anywhere, which is how the one
+       * distinction that decides permissions — an account versus a name somebody
+       * typed — came to be carried entirely by the words "not an account" inside a
+       * cell. The count is why this earns a visible line rather than only a `?`: most
+       * assignments on this install are still labels, so "3 of these grant nobody
+       * anything" is a fact about the table in front of you, not general advice.
+       */}
+      <p className="empty-hint" style={{ marginTop: 12, fontSize: 13 }}>
+        <strong>Owner</strong> is an account, and only an admin sets it.{' '}
+        {legacyHere > 0 ? (
+          <>
+            {legacyHere} of this roster's assignments {legacyHere === 1 ? 'is' : 'are'} still a
+            typed-in name linked to no account, so {legacyHere === 1 ? 'it grants' : 'they grant'}{' '}
+            nobody the right to edit that base's card counts.{' '}
+          </>
+        ) : null}
+        <HelpLink section="owners" topic="who owns a base, and why it matters" />
+      </p>
+
+      <details className="group">
+        <summary>Who owns a base, and what an owner may do</summary>
+        <div className="group__body help-prose">
+          <OwnershipRules />
+        </div>
+      </details>
     </>
   )
 }

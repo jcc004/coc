@@ -26,7 +26,7 @@ import type { Route, Theme } from './hooks.ts'
 
 export interface MenuItem {
   /** Stable id, for keys and for tests to assert on without matching prose. */
-  id: 'account' | 'admin' | 'signOut'
+  id: 'help' | 'account' | 'admin' | 'signOut'
   label: string
   /** Where it goes, or `null` for the action item (Sign out). */
   route: Route | null
@@ -35,15 +35,30 @@ export interface MenuItem {
 }
 
 /**
- * The menu, in order: your own password, then the admin panel if it is yours, then
- * Sign out.
+ * The menu, in order: help, your own password, then the admin panel if it is yours,
+ * then Sign out.
  *
  * Sign out is **last and on its own**, because it is the one item that discards
  * state — putting it between two navigation items is how it gets pressed by
- * accident. Change password is first because it is the item every account has.
+ * accident.
+ *
+ * **Help is first, and it is on everybody's menu.** It is the only item somebody
+ * opens this panel for while confused rather than while administering something, so
+ * it should be the first thing under their own name; and unlike the admin entry
+ * there is no version of it that is not theirs — a help page hidden from members
+ * would be hidden from exactly the people who need it. Nothing on it depends on the
+ * account reading it, so there is no rule here to get wrong, only an order.
  */
 export function userMenuItems(user: Pick<SessionUser, 'role'>): MenuItem[] {
   const items: MenuItem[] = [
+    {
+      id: 'help',
+      label: 'Help',
+      /* The whole page, from the top. The `?` marks beside the panels are what link
+         into a section; arriving from here you have not said which part you want. */
+      route: { view: 'help', section: null },
+      hint: 'Cards, owners, trades and how the board scores',
+    },
     {
       id: 'account',
       label: 'Change password',

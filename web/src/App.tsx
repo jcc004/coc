@@ -5,6 +5,7 @@ import { CardsView } from './components/CardsView.tsx'
 import { ClanSearchView } from './components/ClanSearchView.tsx'
 import { ClanView } from './components/ClanView.tsx'
 import { ForcedPasswordChange } from './components/ForcedPasswordChange.tsx'
+import { HelpView } from './components/HelpView.tsx'
 import { LoginScreen } from './components/Login.tsx'
 import { PlayerView } from './components/PlayerView.tsx'
 import { SavedClansView } from './components/SavedClansView.tsx'
@@ -245,6 +246,11 @@ export function App() {
             page is admins-only rather than silently sent home, which would read as a
             broken link. Every `/api/admin/*` route is gated on the server anyway. */}
         {route.view === 'admin' ? <AdminView user={user} /> : null}
+
+        {/* Everybody's, unlike the admin panel — and it takes no user, because
+            nothing on it depends on who is reading. The section comes off the
+            route rather than out of a fragment; see the note in `help.ts`. */}
+        {route.view === 'help' ? <HelpView section={route.section} /> : null}
 
         {/* Both carry a card grid, and only a base's owner may type into it, so
             each needs to know who is signed in. Passed down rather than read from

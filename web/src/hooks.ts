@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ApiError } from './api.ts'
 import { baseScopeFor, baseScopeKey, type BaseScope } from './base-scope.ts'
+import { helpHref, helpSection, type HelpSectionId } from './help.ts'
 import {
   clanTargetTag,
   hashTarget,
@@ -81,6 +82,15 @@ export type Route =
    */
   | { view: 'admin' }
   | { view: 'cards' }
+  /**
+   * The help page, optionally scrolled to one section.
+   *
+   * A route of its own for the same reason `admin` is: it has to be linkable. The
+   * `?` beside a panel is a link *into* a section, so the section has to be part of
+   * the address — see `help.ts` for why it is a path segment and not a fragment.
+   * `null` is the whole page, from the top.
+   */
+  | { view: 'help'; section: HelpSectionId | null }
 
 export function parseHash(hash: string): Route {
   const [view, param] = hash.replace(/^#\/?/, '').split('/')
@@ -88,6 +98,9 @@ export function parseHash(hash: string): Route {
 
   if (view === 'account') return { view: 'account' }
   if (view === 'admin') return { view: 'admin' }
+  // An unknown section is `null` rather than a miss, so an old link still opens
+  // the page. The whole scheme is in `help.ts`, tested there.
+  if (view === 'help') return { view: 'help', section: helpSection(decoded) }
   // No tag in the route: the card page picks its base from the shared list, so a
   // deep link to one base would be a link into somebody else's editing session.
   if (view === 'cards') return { view: 'cards' }
@@ -114,6 +127,8 @@ export function hrefFor(route: Route): string {
       return '#/admin'
     case 'cards':
       return '#/cards'
+    case 'help':
+      return helpHref(route.section)
     case 'home':
       return '#/'
   }

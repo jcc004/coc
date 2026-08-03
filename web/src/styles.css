@@ -1927,6 +1927,138 @@ table.roster th button:hover {
   border-radius: 4px;
 }
 
+/* ---------- help ---------- */
+
+/*
+ * The `?` beside a panel heading.
+ *
+ * Deliberately the quietest control in the app: an outlined circle in muted ink,
+ * no fill, no gold. It sits next to something somebody has already found and is
+ * only worth noticing when they are stuck, so it borrows the existing `--border`
+ * and `--ink-muted` rather than earning a colour of its own.
+ *
+ * `inline-flex` with equal width and height and no line-height inherited from the
+ * heading, because a 12px uppercase `.section-title` would otherwise squash the
+ * glyph into an oval. `vertical-align: middle` keeps it on the heading's line
+ * rather than on the text baseline, where a round box reads as sitting low.
+ */
+.help-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  vertical-align: middle;
+  /* The heading is uppercase and letter-spaced; neither belongs on a glyph. */
+  text-transform: none;
+  letter-spacing: 0;
+}
+.help-link:hover {
+  background: var(--hover);
+  color: var(--ink-2);
+  border-color: var(--ink-muted);
+}
+
+/*
+ * Prose on the help page, held to a measure.
+ *
+ * ~68 characters is the readable line; a help section left to fill a 1280px panel
+ * is a wall. `ch` rather than a pixel width so it tracks the font, and `max-width`
+ * so a phone is unaffected. The paragraphs themselves are `.empty-hint`, which is
+ * what this app already uses for explanatory text — the class name is about where
+ * it started, not what it means now.
+ */
+.help-prose {
+  max-width: 68ch;
+}
+.help-prose > p,
+.help-prose > ul {
+  margin: 0 0 10px;
+}
+.help-prose > :last-child {
+  margin-bottom: 0;
+}
+
+/*
+ * The section heading is the scroll and focus target for a deep link, so it needs
+ * to clear the topbar's height when it arrives at the top of the viewport — the
+ * banner is not sticky, but `scroll-margin-top` also keeps a section from landing
+ * flush against the edge, which reads as a page cut off mid-word.
+ */
+.help-section__title {
+  scroll-margin-top: 16px;
+}
+
+/* The contents list: link, then what the section answers. Not a table of numbered
+   items — six lines of prose read better than six rows of chrome. */
+.help-contents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.help-contents li {
+  padding: 6px 0;
+  border-top: 1px solid var(--grid);
+  font-size: 14px;
+}
+.help-contents li:first-child {
+  border-top: none;
+}
+
+/* The four swap conditions, and anything else that is genuinely a list of rules
+   rather than a paragraph. Inherits `.empty-hint`'s ink from its container. */
+.rule-list {
+  color: var(--ink-2);
+  font-size: 14px;
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+.rule-list li {
+  margin-bottom: 4px;
+}
+
+/*
+ * The points curve: one pill per copy, wrapping.
+ *
+ * A table was the obvious shape and the wrong one — eleven columns of two
+ * characters would have to stack into ten cards on a phone under this app's own
+ * table rules, and a legend is not a set of records. Wrapping pills say the same
+ * thing at every width with no breakpoint of their own.
+ */
+.points-curve {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+}
+.points-curve li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.points-curve__copy {
+  color: var(--ink-muted);
+}
+.points-curve__worth {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .result-list {
   list-style: none;
   margin: 0;
@@ -2442,6 +2574,33 @@ table.roster--pairs td {
    */
   .site-footer {
     line-height: 1.8;
+  }
+
+  /*
+   * The `?` beside a panel heading is 18px drawn, which is right next to a 12px
+   * uppercase title and far too small for a thumb. Growing the box would push the
+   * line height of every panel header it sits in around, so the **target** is
+   * extended past the drawing instead: a positioned pseudo-element 44px square,
+   * centred on the glyph, takes the press. Nothing adjacent to it is interactive —
+   * a status line, a heading, or the deck plaques — so the overhang costs nothing.
+   */
+  .help-link {
+    position: relative;
+  }
+  .help-link::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+
+  /* A list of destinations, not links inside a sentence, so these do want the
+     floor — and padding a list item is free, unlike padding a word mid-paragraph. */
+  .help-contents li {
+    padding: 12px 0;
   }
 }
 

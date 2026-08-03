@@ -9,7 +9,7 @@ import { deckProgress, deckSizes } from '../deck-progress.ts'
 import { ownerRecordFor, useOwners } from '../owners.ts'
 import { BaseCardEditor } from './BaseCardEditor.tsx'
 import { DeckPlaques } from './DeckPlaques.tsx'
-import { ErrorPanel } from './primitives.tsx'
+import { ErrorPanel, HelpLink } from './primitives.tsx'
 import { TradeSuggestions } from './TradeSuggestions.tsx'
 import { TradeTracker } from './TradeTracker.tsx'
 
@@ -164,7 +164,7 @@ export function PlayerCardPanel({
            * this way.
            */}
           <h3 className="section-title" style={{ marginTop: 20 }}>
-            Trade suggestions
+            Trade suggestions <HelpLink section="trades" topic="what makes a swap legal" />
           </h3>
           <TradeSuggestions
             bases={state.entries}
@@ -182,7 +182,8 @@ export function PlayerCardPanel({
            * shares their heading treatment.
            */}
           <h3 className="section-title" style={{ marginTop: 20 }}>
-            Trade tracker
+            Trade tracker{' '}
+            <HelpLink section="tracker" topic="who can complete a trade, and what it does" />
           </h3>
           <TradeTracker user={user} labelOf={labelOf} focusTag={tag} />
         </div>

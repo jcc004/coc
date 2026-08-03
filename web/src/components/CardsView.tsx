@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { SessionUser } from '@coc/shared'
+import { MAX_CARD_COUNT, type SessionUser } from '@coc/shared'
 import { useBaseLabels } from '../base-labels.ts'
 import { activeTag, ownsAnyBase, tagsInScope, type BaseScope } from '../base-scope.ts'
 import { baseOwnerOf } from '../card-entry.ts'
 import { inventoryFor, useCardInventoryState } from '../card-inventory.ts'
 import {
   baseStandings,
+  cardPoints,
   cardTotals,
   cardsInGridOrder,
   type BaseStanding,
@@ -18,7 +19,8 @@ import { ownerRecordFor, useOwners, useOwnersState } from '../owners.ts'
 import { paginate, type RowLimit } from '../saved-table.ts'
 import { BaseCardEditor } from './BaseCardEditor.tsx'
 import { CardTile } from './CardTile.tsx'
-import { ErrorPanel, Loading, Meter, Pager, RowLimitSelect } from './primitives.tsx'
+import { ScoringRules } from './help-copy.tsx'
+import { ErrorPanel, HelpLink, Loading, Meter, Pager, RowLimitSelect } from './primitives.tsx'
 import { TradeSuggestions } from './TradeSuggestions.tsx'
 import { TradeTracker } from './TradeTracker.tsx'
 
@@ -73,9 +75,12 @@ const STANDING_LIMITS: RowLimit[] = [5, 10, 20, 50]
  * should trade with whom" and "who is furthest ahead" are the same question asked
  * two ways — the base near the top with spares is the one worth messaging.
  *
- * The order is `baseStandings`', not this component's: distinct descending, then
- * copies descending, then member name and tag. Ties are the *normal* case early in
- * an event, which is why the comparator is total and lives somewhere tested.
+ * The order is `baseStandings`', not this component's: **points** descending, then
+ * distinct descending, then member name and tag. Ties are the *normal* case early in
+ * an event, which is why the comparator is total and lives somewhere tested. (This
+ * note used to say "distinct descending, then copies descending", which was the
+ * measure before `cardPoints` — the same staleness the intro line under the heading
+ * below was carrying.)
  *
  * **Paging never touches the rank.** The number in the first column is
  * `baseStanding.rank` — computed once over the whole board, shared on a genuine tie
@@ -150,9 +155,17 @@ function Leaderboard({ rows }: { rows: BaseStanding[] }) {
                    * Kept beside `17/60` rather than replacing it: a bare score does
                    * not say how far through the sixty a base is, and the fraction
                    * alone no longer explains why one row outranks another.
+                   *
+                   * The best possible score comes from the curve rather than a
+                   * literal 55, so raising `MAX_CARD_COUNT` cannot leave this
+                   * tooltip quoting a ceiling that no longer exists.
                    */}
                   {row.recorded ? (
-                    <span title={`${formatFull(row.points)} of ${formatFull(row.size * 55)} possible`}>
+                    <span
+                      title={`${formatFull(row.points)} of ${formatFull(
+                        row.size * cardPoints(MAX_CARD_COUNT),
+                      )} possible`}
+                    >
                       {formatFull(row.points)}
                     </span>
                   ) : (
@@ -474,7 +487,9 @@ export function CardsView({ user }: { user: SessionUser }) {
           suggestions are made of, and this is the only panel on the page that asks
           you to do something. */}
       <section className="card">
-        <h2 className="section-title">Trade suggestions</h2>
+        <h2 className="section-title">
+          Trade suggestions <HelpLink section="trades" topic="what makes a swap legal" />
+        </h2>
         <TradeSuggestions bases={bases} labelOf={labelOf} ownerOf={ownerOf} user={user} />
       </section>
 
@@ -487,18 +502,37 @@ export function CardsView({ user }: { user: SessionUser }) {
        * of arithmetic.
        */}
       <section className="card">
-        <h2 className="section-title">Trade tracker</h2>
+        <h2 className="section-title">
+          Trade tracker{' '}
+          <HelpLink section="tracker" topic="who can complete a trade, and what it does" />
+        </h2>
         <TradeTracker user={user} labelOf={labelOf} />
       </section>
 
       <section className="card">
-        <h2 className="section-title">Collection leaderboard</h2>
+        <h2 className="section-title">
+          Collection leaderboard <HelpLink section="leaderboard" topic="how the leaderboard scores" />
+        </h2>
+        {/*
+         * This line said "by distinct cards out of 60", which stopped being true when
+         * the measure became points: a base holding 9 copies of one card outranks a
+         * base holding 8 single cards, and the old sentence said the opposite. The
+         * curve itself is in the disclosure below — where it can be read without
+         * turning the intro into a paragraph — and in the help page, from one source.
+         */}
         <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
-          Every tracked base, by <strong>distinct cards out of {totals.length}</strong>. Level on
-          that, more copies goes first; level on both, alphabetically — so the order never
-          reshuffles. Not affected by <strong>Show</strong>: this is the whole clan.
+          Every tracked base, by <strong>points</strong>: {cardPoints(1)} for the first copy of a
+          card and less for every copy after it, so breadth outranks hoarding. Level on points, more
+          distinct cards of {totals.length} goes first. Not affected by <strong>Show</strong>: this
+          is the whole clan.
         </p>
         <Leaderboard rows={standings} />
+        <details className="group">
+          <summary>How the points work</summary>
+          <div className="group__body help-prose">
+            <ScoringRules />
+          </div>
+        </details>
       </section>
 
       {/*
