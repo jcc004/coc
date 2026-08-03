@@ -235,3 +235,82 @@ cp server/data/coc.db* ~/backup-$(date +%F)/
 > `nginx-coc.conf` sets `client_max_body_size 10M` as a plain ceiling on request
 > bodies — nothing the app serves comes close. If a route ever needs more, raise
 > the server-side limit to match rather than relying on Nginx alone.
+
+## Automating it
+
+`deploy/update.sh` **is** the deploy. Run it by hand, from a timer, or from CI — it
+behaves identically, because all the judgement lives in the script rather than in
+whatever triggered it.
+
+```bash
+cd /srv/coc && ./deploy/update.sh          # deploy if origin/main has moved
+cd /srv/coc && ./deploy/update.sh --force  # rebuild and restart regardless
+```
+
+Safe to run repeatedly: with nothing new upstream it prints one line and exits 0,
+which is what makes it usable on a timer.
+
+### What it refuses to do
+
+It checks outcomes rather than exit codes, because every fault this deployment
+actually hit let each individual command succeed. It aborts **before touching
+anything** if:
+
+- the checkout is not on `main`, or `main` does not track `origin/main` — the stale-branch outage
+- the tree has uncommitted changes, so the deploy could not be reproduced from the commit
+- the card art is not exactly 60 images, or an art directory is missing
+- `main` has diverged from the remote (`--ff-only`, so it never writes a merge commit on the server)
+
+After building it checks that the bundle **the site is actually serving** is the one
+just built — the only test that catches Nginx pointing at a different directory. It
+also warns above 450 kB, the signature of a development React.
+
+If the build fails or the API does not come back healthy, the previous `web/dist` is
+restored, so the site is left as it was.
+
+Two things it deliberately does not do: it never runs `git clean` (that would delete
+the gitignored artwork and the `.env`), and it never installs the Nginx config. Config
+drift is *reported* with the command to apply it, because a deploy that can rewrite
+the TLS config has a larger blast radius than the problem it solves.
+
+### Trigger on push — GitHub Actions
+
+`.github/workflows/deploy.yml` runs typecheck, tests and a build on every push, and
+only if all three pass does it SSH in and run the script. Setup — a dedicated key,
+four repository secrets including a pinned `known_hosts`, and the sudoers rule below —
+is in the comment block at the top of that file.
+
+The trade: port 22 has to be reachable from GitHub's runners, which use a wide and
+changing set of addresses.
+
+### Or trigger on a timer — no secrets, nothing exposed
+
+```bash
+sudo cp deploy/coc-update.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now coc-update.timer
+systemctl list-timers coc-update     # when it next fires
+journalctl -u coc-update -n 40       # what the last run did
+```
+
+The droplet checks every five minutes and pulls when there is something to pull. No
+private key leaves your machine, nothing is held by a CI provider, and SSH need not be
+reachable from the internet at all. The cost is up to five minutes of latency.
+
+**For ten users the timer is the better trade** — immediacy is worth less than not
+having a deploy key for your server sitting in a third-party service. Actions earns
+its keep only for the test gate, which is a real advantage: the timer will happily
+deploy a commit whose tests fail.
+
+### Either way, one sudoers rule
+
+The script restarts a service, so it needs passwordless `sudo` for exactly that:
+
+```bash
+sudo visudo -f /etc/sudoers.d/coc-deploy
+# crighjc ALL=(root) NOPASSWD: /usr/bin/systemctl restart coc, /usr/bin/systemctl reload nginx
+sudo -n systemctl restart coc     # must not prompt
+```
+
+Narrow it to those commands. A blanket `NOPASSWD: ALL` would make the deploy key — or
+a compromised CI job — equivalent to root.

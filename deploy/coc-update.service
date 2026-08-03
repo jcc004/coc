@@ -1,0 +1,31 @@
+# Runs deploy/update.sh once. Paired with coc-update.timer, this is the
+# no-secrets alternative to the GitHub Actions workflow: the droplet pulls when it
+# is ready rather than being pushed to, so nothing needs a private key in a CI
+# provider and port 22 need not be reachable from the internet at all.
+#
+#   sudo cp deploy/coc-update.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now coc-update.timer
+#   systemctl list-timers coc-update       # when it next fires
+#   journalctl -u coc-update -n 40         # what the last run did
+#
+# It still needs the sudoers rule for the restart — see the note in
+# .github/workflows/deploy.yml, which applies identically here.
+
+[Unit]
+Description=Update the CoC app to origin/main if it has moved
+# Pointless without a network, and it should not delay boot waiting for one.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=crighjc
+WorkingDirectory=/srv/coc
+ExecStart=/srv/coc/deploy/update.sh
+# The script exits 0 and does nothing when already current, so a quiet run is the
+# normal case and leaves one line in the journal.
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,23 @@
+# Checks for new commits every five minutes.
+#
+# Five is a deliberate compromise: a `git fetch` against an unchanged remote costs
+# almost nothing, and for an app used by ten people the difference between "live in
+# seconds" and "live within five minutes" is not worth a private key in a CI
+# provider and an SSH port open to the world. If you want it faster, use the
+# GitHub Actions workflow instead — that is push-triggered and immediate.
+
+[Unit]
+Description=Check for new CoC app commits every five minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+# Spread the load off exact minute boundaries; also means two hosts sharing a
+# remote do not fetch in lockstep.
+RandomizedDelaySec=45
+# A missed window (the box was off) fires once on the next boot rather than
+# queueing up every window that was skipped.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
