@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CARD_SEASON, type BaseInventory } from '@coc/shared'
+import { CARD_SEASON, type BaseInventory, type SessionUser } from '@coc/shared'
 import { api } from '../api.ts'
 import { baseOptions } from '../base-names.ts'
+import { baseOwnerOf } from '../card-entry.ts'
 import { inventoryFor, useCardInventoryState } from '../card-inventory.ts'
 import {
   groupTradesByPair,
@@ -12,7 +13,7 @@ import {
 import { cardById, categoryOfCard } from '../cards.ts'
 import { requestChatDraft } from '../chat-draft.ts'
 import { hrefFor } from '../hooks.ts'
-import { useOwners } from '../owners.ts'
+import { ownerRecordFor, useOwners } from '../owners.ts'
 import { useSavedClans } from '../saved-clans.ts'
 import { BaseCardEditor } from './BaseCardEditor.tsx'
 import { ErrorPanel, GameIcon, Loading } from './primitives.tsx'
@@ -262,7 +263,7 @@ function useMemberNames(baseTags: string[]): Map<string, string> {
   return names
 }
 
-export function CardsView() {
+export function CardsView({ user }: { user: SessionUser }) {
   const state = useCardInventoryState()
   const bases = state.entries
   const owners = useOwners()
@@ -341,13 +342,7 @@ export function CardsView() {
             No bases to track yet. Card counts hang off the <strong>owner assignments</strong> —
             open a clan and set an owner on a member, and that base appears here.
           </p>
-        ) : (
-          <p className="empty-hint" style={{ fontSize: 13 }}>
-            Counts are <strong>shared</strong> — everyone signed in sees and edits the same ones,
-            and there is no API for this, so every number is typed in by hand. The last write to a
-            base wins, which is why each one says when it changed and who changed it.
-          </p>
-        )}
+        ) : null}
       </section>
 
       {active !== null ? (
@@ -357,6 +352,11 @@ export function CardsView() {
             tag={active}
             label={labelOf(active)}
             base={inventoryFor(bases, active)}
+            /* Only the *owner* of the chosen base may type into the grid, so the
+               editor is handed that base's assignment rather than being left to
+               guess from the label beside it. */
+            owner={baseOwnerOf(ownerRecordFor(owners, active))}
+            user={user}
           />
         </section>
       ) : null}

@@ -100,6 +100,22 @@ export function ownerFor(tag: string): string | undefined {
 }
 
 /**
+ * The whole assignment, not just the label. Card entry needs `ownerUserId` to ask
+ * whether *this* session owns the base, and a name alone cannot answer that: an
+ * unlinked legacy label is a note about a person, not a permission.
+ *
+ * Takes the records rather than reading the store, so a component looks up in the
+ * same snapshot it subscribed to and re-renders when an admin reassigns a base.
+ */
+export function ownerRecordFor(
+  records: readonly OwnerAssignment[],
+  tag: string,
+): OwnerAssignment | undefined {
+  const canonical = normalizeTag(tag)
+  return records.find((entry) => entry.tag === canonical)
+}
+
+/**
  * Assigns one owner. A blank owner clears the entry rather than storing `""`.
  *
  * It goes through the same expected-value check as a bulk apply, using whatever

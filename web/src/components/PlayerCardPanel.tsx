@@ -1,8 +1,10 @@
 import { useMemo } from 'react'
-import { CARD_SEASON } from '@coc/shared'
+import { CARD_SEASON, type SessionUser } from '@coc/shared'
+import { baseOwnerOf } from '../card-entry.ts'
 import { inventoryFor, useCardInventoryState } from '../card-inventory.ts'
 import { summariseBase } from '../card-summary.ts'
 import { cardCategoriesInOrder, cardsInCategory, categoryOfCard } from '../cards.ts'
+import { ownerRecordFor, useOwners } from '../owners.ts'
 import { BaseCardEditor } from './BaseCardEditor.tsx'
 import { ErrorPanel } from './primitives.tsx'
 
@@ -28,7 +30,20 @@ function deckSizes(): Map<string, number> {
   )
 }
 
-export function PlayerCardPanel({ tag, name }: { tag: string; name: string }) {
+export function PlayerCardPanel({
+  tag,
+  name,
+  user,
+}: {
+  tag: string
+  name: string
+  /** Only a base's owner, or an admin, may type counts into the grid below. */
+  user: SessionUser
+}) {
+  /* Subscribed rather than read once, so an admin reassigning this base flips the
+     grid between editable and read-only without a reload. */
+  const owners = useOwners()
+
   /*
    * The whole shared inventory, not just this base: a trade is a pair, so the
    * hint cannot be computed from one base's counts. It is the same module-level
@@ -97,7 +112,13 @@ export function PlayerCardPanel({ tag, name }: { tag: string; name: string }) {
           {/* Reported here rather than page-wide: the rest of the player page is
               fine when only the card store failed. */}
           {state.status === 'error' && state.error ? <ErrorPanel error={state.error} /> : null}
-          <BaseCardEditor tag={tag} label={name} base={inventoryFor(state.entries, tag)} />
+          <BaseCardEditor
+            tag={tag}
+            label={name}
+            base={inventoryFor(state.entries, tag)}
+            owner={baseOwnerOf(ownerRecordFor(owners, tag))}
+            user={user}
+          />
         </div>
       </details>
     </section>

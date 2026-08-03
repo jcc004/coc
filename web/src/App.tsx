@@ -214,10 +214,13 @@ export function App() {
 
         {route.view === 'account' ? <AccountView user={user} /> : null}
 
-        {route.view === 'cards' ? <CardsView /> : null}
+        {/* Both carry a card grid, and only a base's owner may type into it, so
+            each needs to know who is signed in. Passed down rather than read from
+            `useSession` again, which would refetch /api/auth/me per mount. */}
+        {route.view === 'cards' ? <CardsView user={user} /> : null}
 
         {route.view === 'player' ? (
-          <PlayerView key={route.tag} tag={route.tag} onLoaded={remember} />
+          <PlayerView key={route.tag} tag={route.tag} user={user} onLoaded={remember} />
         ) : null}
 
         {route.view === 'clan' ? (

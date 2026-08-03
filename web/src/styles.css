@@ -1127,32 +1127,59 @@ details.group--flush {
 /* ---------- card-collecting grid ---------- */
 
 /*
- * Each event card has one picture (see cards.generated.ts). A card the base
- * holds shows it in colour; a card it lacks shows the same file desaturated,
- * rather than shipping a second greyscale image. `grayscale(1)` plus a slight
- * dim reads as "not collected" while keeping the art legible; drop the opacity
- * line if you want the lock state to lean only on colour.
+ * Each event card has one picture (see cards.generated.ts), and the tile shows a
+ * *crop* of it: the event frames every card on the character's head, portrait, so
+ * the face fills the frame, while the vendored art is a whole figure on a patch of
+ * grass. The crop is done here rather than by generating a second set of files —
+ * nothing to re-fetch, nothing to keep in step with the card list, no build step,
+ * and the untouched originals still serve the trade table's thumbnails.
+ *
+ * Three custom properties do it, set per tile from `card-crops.ts`, which is also
+ * where the numbers and the how-to-adjust note live:
+ *
+ *   --card-zoom  the image's height as a multiple of the frame's height, so the
+ *                frame shows 1/zoom of the picture. 2.3 ≈ the top 43%.
+ *   --card-y     the point of the image, in per-cent of its own height, held at the
+ *                frame's vertical centre — the middle of the head, for a face.
+ *   --card-x     the same horizontally.
+ *
+ * Absolute positioning plus a per-cent translate, not `object-position`: a
+ * translate per-cent resolves against the image's own box, which is what makes
+ * "this point of the picture, at the centre of the frame" one subtraction rather
+ * than two interacting crops. `width: auto` against a definite height keeps the
+ * aspect ratio, so nothing is ever stretched.
+ *
+ * A card the base holds shows its crop in colour; a card it lacks shows the same
+ * file desaturated, rather than shipping a second greyscale image. `grayscale(1)`
+ * plus a slight dim reads as "not collected" while keeping the art legible.
  */
 .card-tile__art {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: auto;
+  max-width: none;
+  height: calc(var(--card-zoom, 2.3) * 100%);
+  transform: translate(calc(-1 * var(--card-x, 52%)), calc(-1 * var(--card-y, 22%)));
+}
+
+/*
+ * The opt-out, for the five cards whose subject is a vehicle or a building: there
+ * is no head on a Cannon Cart, and its silhouette is its identity. The whole
+ * picture, letterboxed into the same portrait frame — which is exactly what every
+ * tile did before the crop existed.
+ */
+.card-tile__frame[data-crop='whole'] .card-tile__art {
+  position: static;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  transform: none;
 }
 
 .card-tile--locked .card-tile__art {
   filter: grayscale(1);
   opacity: 0.65;
-}
-
-/*
- * Greyscale stays the *secondary* cue and never the only one: a locked tile reads
- * "None" in words underneath, and its number box shows 0. The rule above must
- * stay decorative for that reason. (It used to dim the card's name as well; the
- * tiles carry no name now, so the words and the box are the whole non-colour
- * half.)
- */
-.card-tile--locked .card-tile__state {
-  color: var(--ink-muted);
 }
 
 .card-grid {
@@ -1219,20 +1246,32 @@ details.group--flush {
 }
 
 /*
- * The art box is a *reserved* height, not a box that shrinks to its content. The
+ * The art box is a *reserved* size, not a box that shrinks to its content. The
  * card art is gitignored, so a fresh clone has none of it and `GameIcon` removes
- * the <img> on error — with the height here rather than on the image, every tile
+ * the <img> on error — with the size here rather than on the image, every tile
  * stays the same size and the grid neither collapses nor reflows. Relative, so
- * the count badge can sit in its lower-right corner.
+ * the art can be positioned inside it and the count badge can sit in its
+ * lower-right corner.
  *
- * 88px against a 256px source (THUMB.unit in scripts/fetch-wiki-art.mjs), which
- * clears 2x on a retina display — the art was raised to 256 precisely so this
- * grid could be this size. Going bigger here means raising that, or it goes soft.
+ * Portrait, by `aspect-ratio` off the column width rather than a fixed height:
+ * portrait is what makes a head crop read as a card rather than as a letterboxed
+ * strip, and tying it to the width keeps the shape identical at every breakpoint.
+ * `overflow: hidden` is what does the cropping — the image inside is deliberately
+ * larger than this box.
+ *
+ * 3:4 against a 256px source (THUMB.unit in scripts/fetch-wiki-art.mjs): at ~107px
+ * of column the frame is ~107x143 and shows ~83x111 real pixels at the default
+ * zoom, so it is a slight upscale at 1x and soft at 2x. That is the ceiling of the
+ * vendored art, and raising it means re-fetching at 512 — see card-crops.ts.
  */
 .card-tile__frame {
   position: relative;
+  overflow: hidden;
   width: 100%;
-  height: 88px;
+  aspect-ratio: 3 / 4;
+  /* Inside the tile's own 12px radius and its 2px frame, so the cropped art does
+     not square off the corners the deck border rounds. */
+  border-radius: calc(var(--radius) - 6px);
 }
 
 /* Quantity, over the art, and only past one copy: "×1" on fifty tiles would be
@@ -1254,10 +1293,32 @@ details.group--flush {
   font-variant-numeric: tabular-nums;
 }
 
-.card-tile__state {
+/*
+ * The `Have n` / `None` line that used to sit here has gone: the number box below
+ * it showed the same figure, at every breakpoint, so it said everything twice.
+ *
+ * That box is now the whole non-colour half of the held-vs-not encoding, which is
+ * why it is never hidden and never replaced by the badge — the greyscale filter and
+ * the ×n badge are both decoration over a number that is always readable, and the
+ * input's accessible name spells out the card and the deck in words.
+ *
+ * The slot is reused for the one thing that genuinely needs saying at the tile: a
+ * save that did not happen. Sixty fields that save themselves have no Save button
+ * left to go quiet, so the failure has to be visible where it was typed.
+ */
+.card-tile__note {
   font-size: 11px;
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--critical);
+  /* Never colour alone: the word is the message, and the tile is outlined too. */
+  text-align: center;
+  line-height: 1.25;
+}
+
+.card-tile--failed {
+  /* Outranks the deck frame on purpose — the deck is grouping, an unsaved count is
+     a thing to act on, and the two never need to be read at the same moment. */
+  border-color: var(--critical);
 }
 
 .card-tile__input {
@@ -1269,6 +1330,20 @@ details.group--flush {
   border: 1px solid var(--border);
   border-radius: 6px;
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * A base somebody else owns. The counts are still readable — they are shared, and
+ * seeing them is the whole point of the page — so the box keeps its value and only
+ * loses the ability to take a new one. `not-allowed` and the muted ink are the
+ * visible half; the input carries the reason as its title and in its accessible
+ * name, and the panel above names the owner in a sentence, so the tile is never
+ * silently uneditable.
+ */
+.card-tile__input:disabled {
+  color: var(--ink-muted);
+  background: var(--grid);
+  cursor: not-allowed;
 }
 
 /* Timestamps, attribution and totals: supporting text, never an encoding. */

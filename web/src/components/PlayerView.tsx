@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { ROLE_LABELS, type Player, type PlayerItemLevel } from '@coc/shared'
+import { ROLE_LABELS, type Player, type PlayerItemLevel, type SessionUser } from '@coc/shared'
 import { api } from '../api.ts'
 import { labelIcon, leagueIcon } from '../coc-assets.ts'
 import { formatFull, formatStat, ratio } from '../format.ts'
@@ -58,7 +58,16 @@ function LevelGroup({
   )
 }
 
-export function PlayerView({ tag, onLoaded }: { tag: string; onLoaded: (entry: Recent) => void }) {
+export function PlayerView({
+  tag,
+  user,
+  onLoaded,
+}: {
+  tag: string
+  /** Passed to the card panel: only a base's owner may type counts into it. */
+  user: SessionUser
+  onLoaded: (entry: Recent) => void
+}) {
   const state = useAsync<Player>((signal) => api.player(tag, signal), [tag])
 
   const player = state.status === 'ready' ? state.data : null
@@ -138,7 +147,7 @@ export function PlayerView({ tag, onLoaded }: { tag: string; onLoaded: (entry: R
       {/* Directly under the profile header, above the stats: a player page is a
           base in the card event, and the tag it is keyed by is this one. Collapsed,
           so sixty tiles cannot bury the rest of the page. */}
-      <PlayerCardPanel tag={player.tag} name={player.name} />
+      <PlayerCardPanel tag={player.tag} name={player.name} user={user} />
 
       <TileRow>
         <StatTile label="Best trophies" value={player.bestTrophies} />
