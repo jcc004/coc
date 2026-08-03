@@ -1347,9 +1347,24 @@ details.group > .group__body {
   opacity: 0.65;
 }
 
+/*
+ * Sixty cards as **ten rows of six, at every width** — by request, and not what a
+ * responsive grid would choose.
+ *
+ * `auto-fill` used to pick the column count from the available width, which meant the
+ * deck reflowed as five, six or seven across depending on the window and a card was
+ * never in the same place twice. A fixed six makes the layout a map: the third row is
+ * always the third row, so you can find a card by where it sits rather than by reading
+ * every tile. With sixty cards it also divides exactly, so no row is short.
+ *
+ * `minmax(0, 1fr)` rather than `1fr`: the second keyword defaults to `auto`, which
+ * floors each track at its content's intrinsic width and would push the grid wider
+ * than a phone. With a 0 floor the tiles simply get smaller, which is the trade this
+ * layout accepts — see the narrow-width rules further down, and the landscape note.
+ */
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -1493,7 +1508,11 @@ details.group > .group__body {
 }
 
 .card-tile__input {
-  width: 56px;
+  /* Was a fixed 56px, which is wider than a tile at six columns on a phone and would
+     have pushed the grid into a horizontal scroll. It now takes the tile's width and
+     stops growing at the size it was. */
+  width: 100%;
+  max-width: 56px;
   margin-top: 4px;
   padding: 3px 4px;
   text-align: center;
@@ -2699,10 +2718,23 @@ table.roster--pairs td {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  /* Three across instead of two: the tiles are square-ish art, and a 60-card
-     deck at two columns is thirty rows of scrolling. */
+  /*
+   * Still six across — the column count is fixed at every width now. What gives here
+   * is the spacing, not the shape: a 4px gap and less tile padding hand the artwork the
+   * width that gaps and borders would otherwise take, which at 390px is the difference
+   * between a recognisable portrait and a smudge.
+   *
+   * Six columns on a 390px screen is about 52px a tile. That is deliberately tight, and
+   * it is why turning the phone sideways matters: landscape is ~844px, which gives each
+   * card roughly 130px — a comfortable size for the same fixed grid, no layout switch
+   * involved.
+   */
   .card-grid {
-    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-    gap: 8px;
+    gap: 4px;
+  }
+  .card-tile {
+    padding: 3px;
+    gap: 1px;
+    border-width: 1px;
   }
 }
