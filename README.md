@@ -410,9 +410,11 @@ tests point — `wiki-art.ts` for the second, `cards.ts` for the third.
 Anything with rules in it is a pure module in `web/src/` with its own tests, never inline in a
 component: `saved-table.ts` (sorting, paging), `base-names.ts` (how a base is written),
 `card-trades.ts` (the four swap rules), `card-summary.ts` (per-deck counts and "is a trade
-waiting"), `last-route.ts` (what to restore, and which clan the topbar's Clan button opens).
+waiting"), `deck-progress.ts` (those counts as the four progress plaques), `last-route.ts` (what to
+restore, and which clan the topbar's Clan button opens).
 Components that are shown in more than one place are shared rather than copied — `BaseCardEditor`
-is the one 60-tile card grid, rendered by both the card page and a player page.
+is the one 60-tile card grid, rendered by both the card page and a player page, and `DeckPlaques`
+is the one set of deck bars, rendered by both as well.
 
 ## Phones and tablets first
 
@@ -427,7 +429,7 @@ a gap in the middle:
 | Band | What changes |
 | --- | --- |
 | **≤ 900px** (tablet and phone) | One column, lookup stacked above the content, footer forced last. **Every wide table becomes one card per row.** Gutters drop to `20px 16px`. |
-| **≤ 600px** (phone) | Gutters drop again to `14px 12px`, every `.search` form goes one control per line, form controls go to 16px, the 60-card grid tightens to a 96px column floor, and the hero and war blocks left-align. |
+| **≤ 600px** (phone) | Gutters drop again to `14px 12px`, every `.search` form goes one control per line, form controls go to 16px, the 60-card grid tightens to a 96px column floor, the four deck plaques go 2×2, and the hero and war blocks left-align. |
 | **> 900px** (desktop) | Unchanged. |
 
 600px is the line where a two-up control row stops fitting: phones in use run 320–430px and a
@@ -1042,32 +1044,105 @@ option are two people's names in one label, and the reader cannot tell which is 
   boxes is one write, not sixty. The draft re-seeds when the base changes or when somebody
   else's save lands — but never while there are unsaved edits, because silently replacing what
   someone is typing is worse than showing a stale number they are about to overwrite.
+- **The four deck plaques** sit in the base header's **upper right, directly beneath the
+  `13/60 cards · 22 copies · 9 spares` line** they break down. See
+  [Deck progress plaques](#deck-progress-plaques) — the same four are on every player page.
 - **Last updated and who** is shown above the grid for the selected base.
 - **A failed write is reported at the Save button**, with the typed counts left exactly as they
   are so nothing has to be re-entered. `Saved` never appears unless the request succeeded.
 - **Trade suggestions** are a third panel, driven entirely by the pure module and grouped by the
   pair of bases involved, with both owners named.
 
+### Deck progress plaques
+
+How far a base has got in each of the four decks, drawn the way the event itself draws it across
+the top of its own panel: one rounded plaque per deck, in that deck's colour with a full-strength
+rim, the deck named across the top in bold, and beneath it a bar — dark track, fill growing from
+the left, **the fraction printed on the bar** — `Elixir Cards 7/19`.
+
+**Where they are.** Two placements, both showing the same four numbers:
+
+- **a player page**, full width, immediately under the panel's `Event cards · 2026-08` title and
+  **above** the `<details>` that holds the grid — so they are readable whether the grid is open or
+  shut, which is the whole point of them. Deliberately *not* inside the `<summary>`: a summary's
+  accessible name is its own contents, so four progressbars in there would rename the disclosure
+  control from `Card grid · Trades available with 1 base` to a paragraph of numbers every time it
+  was announced, and four block plaques would have to lay out around the marker glyph a summary
+  draws. The summary keeps the **trade indicator**, which is now the only thing it says that the
+  plaques do not;
+- **the card page**, in the base header's upper right, directly beneath the
+  `13/60 cards · 22 copies · 9 spares` line they break down. There they read off the live **draft**
+  rather than the stored record, so they never disagree with that count while somebody is typing.
+
+**Four across, 2×2 at ≤600px** — four in a row at 390px would be 75px each, narrower than the
+words on them. The header placement reserves `34rem` beside the base name and lets the *name* take
+its own line rather than squeezing the plaques, which is what keeps four across down to 601px with
+no third breakpoint. Measured 320–1280px: names on one line at every width, no horizontal
+overflow anywhere.
+
+**The bar fill is the sequential blue ramp, not the game's gold.** The game fills these bars gold;
+gold in this app is chrome — panel edges, buttons, the two display numerals — and has never encoded
+a value. A gold bar whose length meant something would be the first, and it would spend the one
+signal the palette has for "this is furniture, not data". The deck's own colour was the other
+candidate and is out for the mirror-image reason: `--deck-*` is *categorical*, it already says
+which deck on the plaque wrapped around the bar, and reusing it for the bar would leave four bars
+whose colours differ for a reason that has nothing to do with their lengths. So the plaque keeps
+the deck colour, the bar keeps `--accent` on `--track` like every other meter here, and **the
+fraction is printed either way** — progress is never carried by a length or a hue alone. That last
+part is the non-negotiable one; the choice between the three colours is a judgement call and this
+is where it is recorded, alongside the same note in `DeckPlaques.tsx`.
+
+The plaque is a *tint* of the deck colour rather than a solid fill like the game's, because the
+four tokens run from bright magenta to deep purple and no single text colour clears 4.5:1 on all
+four; tinting keeps the name and the fraction in `--ink`. The fraction sits over bare track on an
+empty deck and over full-strength `--accent` on a complete one, so it carries a `--surface` ring
+in `text-shadow` — the panel colour `--ink` is already designed to be read on, in both themes.
+The game outlines its numerals for the same reason.
+
+**No resource icon** at the right end, unlike the game. The event's elixir, dark-elixir,
+builder-gold and potion icons are not among the vendored art — `web/public/coc/` has card art,
+league badges, labels and wiki unit art and nothing else — and an equipment gem standing in for a
+resource would be a picture saying something untrue. The space goes to the fraction.
+
+**A base with nothing recorded gets no plaques at all**, on either page: four `0/19` bars for a
+base nobody has entered would be a claim nobody made. A base entered once and then **cleared back
+to zero** does show four empty bars, because that is a base somebody checked. Same distinction the
+card page's attribution line draws, and it comes from the same place — `summariseBase().recorded`.
+
+Each plaque's bar is a real `role="progressbar"` with `aria-valuemin` / `max` / `now` set and an
+`aria-valuetext` of `7 of 19` (not `7/19`, which is read out as "seven slash nineteen"). Its
+accessible name, read back off Chrome's computed accessibility tree, is
+**`Elixir cards: 7 of 19 collected`** — deck, count and total, so nothing depends on seeing the
+bar.
+
+The shape is `deckProgress()` in `web/src/deck-progress.ts`, pure and tested: it pairs each deck's
+`distinct` from `summariseBase()` with its size from `cardsInCategory()`, clamps the bar, and
+builds the two strings. It **recounts nothing** — that was the point of extracting it, since the
+denominators had already been assembled once in the player panel and a second copy on the card
+page would have been the third place a `7/19` could be built and the first place it could disagree.
+
 ### The same grid on a player page
 
 A player page **is** a base, so it carries the card panel too — directly under the profile header
-that holds the name and trophies, above the stat tiles. It is a `<details>`, **collapsed** by
-default, because sixty tiles unfurled there would bury the rest of the page.
-
-**Collapsed** it is one line, and it is the two things worth knowing without opening:
+that holds the name and trophies, above the stat tiles. The panel's four deck plaques are always
+on screen; the sixty tiles are a `<details>` below them, **collapsed** by default, because sixty
+tiles unfurled there would bury the rest of the page. Shut, the panel is the plaques plus one line:
 
 ```
-▸ Event cards · 2026-08 · Elixir 6/19 · Dark Elixir 1/13 · Builder Base 0/11 · Super Troop 2/17 · Trades available with 2 bases
+EVENT CARDS · 2026-08
+[Elixir Cards 7/19] [Dark Elixir Cards 2/13] [Builder Base Cards 2/11] [Super Troop Cards 2/17]
+▸ Card grid · Trades available with 1 base
 ```
 
-- **cards held per deck**, `held/deck size`, with copies and spares on the hover title;
+- **how far each deck has got**, as the plaques above;
 - **whether a swap is waiting**, in words, with the status green as a second carrier and never
   the only one — `No trades available` reads the same with no colour vision at all.
 
-A base nobody has entered reads **`Nothing recorded yet — open to enter counts`**, not sixty
-zeroes dressed as data. That is the same distinction the card page's attribution line draws, and
-it is why the summary keys off whether a base has a record at all rather than off its totals: a
-base saved and then cleared back to zero keeps its stamp and reads as recorded-and-empty.
+A base nobody has entered shows **no plaques** and reads
+**`Nothing recorded yet — open to enter counts`**, not sixty zeroes dressed as data. That is the
+same distinction the card page's attribution line draws, and it is why the panel keys off whether
+a base has a record at all rather than off its totals: a base saved and then cleared back to zero
+keeps its stamp and reads as recorded-and-empty.
 
 **Opened it is the card page's grid, with no base selector** — the base is the player whose page
 it is. Same tiles, same greyscale, same deck-coloured frames, same `×n` badges, same 0–10 boxes,
@@ -1079,6 +1154,11 @@ tiles and their draft-and-save logic was the thing to avoid — the greyscale, t
 clamping would have drifted apart the first time either copy was touched. Choosing the base is
 deliberately not the shared component's job; each page keeps its own idea of which base it is
 about.
+
+The **one** thing the two callers differ on is the deck plaques, which `BaseCardEditor` draws only
+when asked (`showDeckProgress`, on for the card page and off here). A player page already has them
+above the panel, where they can be read without opening it, so drawing them in the grid's header
+too would print the same four bars twice on one screen.
 
 **The trade hint needs the other bases**, because a trade is a pair. It comes from the same
 module-level `card-inventory.ts` store the card page uses, so the player page costs **one**

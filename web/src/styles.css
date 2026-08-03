@@ -1076,17 +1076,6 @@ details.group > .group__body {
   padding-top: 12px;
 }
 
-/*
- * A group that is the whole panel rather than one section inside one. The rule
- * and the space above exist to separate consecutive groups in a shared card;
- * alone in its own card they draw a line under the card's own top edge.
- */
-details.group--flush {
-  border-top: none;
-  padding-top: 0;
-  margin-top: 0;
-}
-
 /* ---------- unit art ---------- */
 
 /*
@@ -1353,12 +1342,12 @@ details.group--flush {
 }
 
 /*
- * The collapsed card panel on a player page, whose summary line is the whole of
- * what it shows shut. `summary` is semibold, so the per-deck counts step back to
- * normal weight and only the label keeps the heading treatment; they then wrap as
- * ordinary text, which is what a 390px column needs them to do.
+ * The card panel's disclosure line on a player page. `summary` is semibold, so the
+ * trade state steps back to normal weight and only the label it opens keeps the
+ * heading treatment; it then wraps as ordinary text, which is what a 390px column
+ * needs it to do. The per-deck counts that used to share this line are now the
+ * plaques above it.
  */
-.card-panel__decks,
 .card-panel__trades {
   font-weight: 400;
 }
@@ -1372,6 +1361,157 @@ details.group--flush {
 .card-panel__trades--yes {
   color: var(--good-text);
   font-weight: 600;
+}
+
+/* ---------- deck progress plaques ---------- */
+
+/*
+ * The event's own panel header, restated: four rounded plaques in the deck colours,
+ * each naming its deck across the top with a bar beneath carrying the fraction.
+ *
+ * Three colour roles, kept apart on purpose:
+ *
+ *  - the **plaque** is the deck. `--deck-*`, the same categorical token the card
+ *    frames use, as a full-strength 2px rim over a wash of the same colour on the
+ *    panel surface. Not a solid fill like the game's: the four tokens run from
+ *    bright magenta to deep purple, and no single text colour clears 4.5:1 on all
+ *    four of them. Tinting instead keeps the name and the fraction in `--ink`.
+ *  - the **bar** is magnitude. `--accent` on `--track`, the sequential ramp
+ *    `.meter` uses. The game's bar is gold; gold here is chrome and has never
+ *    encoded a value — the reasoning is written out in DeckPlaques.tsx.
+ *  - the **fraction** is the value in words, printed in every state, so neither a
+ *    length nor a hue is ever the only carrier of how far a base has got.
+ *
+ * `--deck` is not a new theme role: it is a per-plaque alias pointing at one of the
+ * four tokens already declared in all three scopes, so these mixes follow the
+ * theme without restating a single value.
+ */
+.deck-plaques {
+  display: grid;
+  /* Four across, as the game has them; 2×2 on a phone — see the 600px block. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.deck-plaque[data-deck='elixir'] {
+  --deck: var(--deck-elixir);
+}
+.deck-plaque[data-deck='dark-elixir'] {
+  --deck: var(--deck-dark-elixir);
+}
+.deck-plaque[data-deck='builder-base'] {
+  --deck: var(--deck-builder-base);
+}
+.deck-plaque[data-deck='super-troop'] {
+  --deck: var(--deck-super-troop);
+}
+
+.deck-plaque {
+  /* Without this a long deck name sets a min-content floor and four plaques push
+     the grid wider than its column. */
+  min-width: 0;
+  padding: 4px 7px 6px;
+  border: 2px solid var(--deck, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--deck, var(--surface)) 18%, var(--surface));
+  /* Top highlight and a hard shade below, so it sits proud like the other plaques
+     in this skin. The shade is the neutral bevel token rather than the deck colour
+     taken towards ink, which only reads as *darker* in light mode. */
+  box-shadow:
+    inset 0 1px 0 var(--bevel-light),
+    0 2px 0 var(--bevel-dark);
+}
+
+.deck-plaque__name {
+  display: block;
+  margin-bottom: 3px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  text-align: center;
+  color: var(--ink);
+}
+
+/* The positioning context for the fill, which is absolute so the fraction stays
+   centred on the whole bar rather than on the filled part of it. */
+.deck-plaque__bar {
+  position: relative;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--track);
+  overflow: hidden;
+  box-shadow: inset 0 1px 2px var(--bevel-dark);
+}
+
+.deck-plaque__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--accent);
+  /* Square at the data end, like `.meter__fill`; the track's overflow rounds the
+     left. No `min-width`: an empty deck must draw nothing at all. */
+  border-radius: 8px 2px 2px 8px;
+}
+
+.deck-plaque__fraction {
+  position: relative;
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  /*
+   * It sits over bare track on an empty deck and over full-strength `--accent` on a
+   * complete one, and no one ink clears 4.5:1 against both ends of the ramp. So it
+   * carries its own background: a ring of `--surface`, the panel colour `--ink` is
+   * already designed to be read on, in both themes. The game outlines its numerals
+   * for the same reason.
+   */
+  text-shadow:
+    0 0 2px var(--surface),
+    1px 0 0 var(--surface),
+    -1px 0 0 var(--surface),
+    0 1px 0 var(--surface),
+    0 -1px 0 var(--surface);
+}
+
+/*
+ * On the card page the plaques belong in the base header's right-hand tools, on
+ * their own line directly beneath the `10/60 cards` count. `flex: 1 1 100%` is what
+ * breaks that line — `.card-header__tools` already wraps — and the basis on the
+ * tools box keeps four plaques from squeezing the base's name beside them to
+ * nothing, or from claiming the whole header when the name is long.
+ */
+.card-header__tools--progress {
+  /* No grow: left to stretch, four plaques take the whole header and stop reading
+     as the count's breakdown. 34rem is the narrowest that keeps "Builder Base
+     Cards" on one line in a quarter of it — measured, not guessed. */
+  flex: 0 1 34rem;
+  min-width: 0;
+  justify-content: flex-end;
+}
+.card-header__tools .deck-plaques {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+/*
+ * The base name gives up the line rather than squeezing the plaques.
+ *
+ * Only this header wraps above 600px, and only because of what is in it: between
+ * about 600 and 700px the title and a 34rem tools box no longer both fit, and
+ * shrinking the tools box took each plaque to ~112px, where "Builder Base Cards"
+ * needs 99px plus its padding and broke onto a second line. Wrapping instead gives
+ * the plaques the full card width — 123px each at 601px, measured — with no third
+ * breakpoint to keep in step with the two the layout already has.
+ */
+.card-header--progress {
+  flex-wrap: wrap;
 }
 
 /*
@@ -2323,6 +2463,12 @@ table.roster--pairs td {
   .result-list__stats {
     margin-left: 0;
     text-align: left;
+  }
+
+  /* 2×2. Four plaques in a row here would be ~75px each on the player page —
+     narrower than the words on them, with a bar too short to read. */
+  .deck-plaques {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   /* Three across instead of two: the tiles are square-ish art, and a 60-card

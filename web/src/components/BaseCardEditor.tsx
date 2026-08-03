@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { MAX_CARD_COUNT, type BaseInventory, type SessionUser } from '@coc/shared'
+import {
+  MAX_CARD_COUNT,
+  normalizeTag,
+  type BaseInventory,
+  type SessionUser,
+} from '@coc/shared'
 import { saveBaseCounts } from '../card-inventory.ts'
 import { cardFraming } from '../card-crops.ts'
 import {
@@ -11,17 +16,21 @@ import {
   type CardEntryAccess,
   type SaveFailure,
 } from '../card-entry.ts'
+import { summariseBase } from '../card-summary.ts'
 import {
   ALL_CARDS,
   cardCategoriesInOrder,
   cardsInCategory,
+  categoryOfCard,
   clampCardCount,
   countMap,
   deckSlug,
   inventorySummary,
   toCardCounts,
 } from '../cards.ts'
+import { deckProgress, deckSizes } from '../deck-progress.ts'
 import { formatDateTime } from '../format.ts'
+import { DeckPlaques } from './DeckPlaques.tsx'
 import { GameIcon } from './primitives.tsx'
 
 /**
@@ -216,6 +225,7 @@ export function BaseCardEditor({
   base,
   owner,
   user,
+  showDeckProgress = false,
 }: {
   tag: string
   /** The base's member name, or its tag when no roster we can see names it. */
@@ -224,6 +234,15 @@ export function BaseCardEditor({
   /** Who owns this base, as `GET /api/owners` reports it. */
   owner: BaseOwner
   user: Pick<SessionUser, 'id' | 'role'>
+  /**
+   * Whether to draw the four deck plaques under the header's count line.
+   *
+   * Off by default, and on only for the card page. A player page shows the same
+   * plaques *above* this component, outside the `<details>` that holds it, so that
+   * they can be read without opening the grid — drawing them here too would print
+   * the same four bars twice on one screen.
+   */
+  showDeckProgress?: boolean
 }) {
   const stored = useMemo(() => countMap(base), [base])
   const [draft, setDraft] = useState<Map<number, number>>(stored)
@@ -330,13 +349,43 @@ export function BaseCardEditor({
   const summary = inventorySummary({ tag, counts: toCardCounts(draft) })
   const readOnlyReason = access.writable ? null : access.message
 
+  /*
+   * The plaques, read off the *draft* rather than the stored record so they agree
+   * with the `10/60 cards` count printed directly above them while somebody is
+   * typing. Nothing is recounted here: it is `summariseBase` — the same function the
+   * player page's plaques come from — handed this base as it currently stands on
+   * screen, exactly as `inventorySummary` is handed it above. The real `updatedAt`
+   * rides along so a base entered once and then cleared back to zero still reads as
+   * recorded-and-empty rather than as never entered.
+   */
+  const sizes = useMemo(() => deckSizes(), [])
+  const decks = useMemo(() => {
+    if (!showDeckProgress) return []
+    const canonical = normalizeTag(tag)
+    const onScreen: BaseInventory = {
+      tag: canonical,
+      counts: toCardCounts(draft),
+      ...(base?.updatedAt === undefined ? {} : { updatedAt: base.updatedAt }),
+    }
+    const stand = summariseBase(canonical, [onScreen], categoryOfCard, cardCategoriesInOrder())
+    if (!stand.recorded) return []
+    return deckProgress(stand.byCategory, (category) => sizes.get(category))
+  }, [showDeckProgress, tag, draft, base?.updatedAt, sizes])
+
+  const headerClass = showDeckProgress ? 'card-header card-header--progress' : 'card-header'
+  const toolsClass = showDeckProgress
+    ? 'card-header__tools card-header__tools--progress'
+    : 'card-header__tools'
+
   return (
     <>
-      <div className="card-header">
+      {/* The plaques make this header tall enough that the base name has to be
+          allowed to take its own line rather than squeeze them — see styles.css. */}
+      <div className={headerClass}>
         <h2 className="section-title" style={{ margin: 0 }}>
           {label}
         </h2>
-        <div className="card-header__tools">
+        <div className={toolsClass}>
           <span className="card-meta">
             {summary.distinct}/{ALL_CARDS.length} cards · {summary.total} copies ·{' '}
             {summary.duplicates} spare{summary.duplicates === 1 ? '' : 's'}
@@ -346,6 +395,9 @@ export function BaseCardEditor({
           <span className="card-meta" aria-live="polite">
             {saving ? 'Saving…' : writable ? 'Counts save as you leave each box' : 'Read-only'}
           </span>
+          {/* The deck totals, on their own line under the count they break down —
+              the header's tools box already wraps, which is what puts them there. */}
+          <DeckPlaques decks={decks} />
         </div>
       </div>
 

@@ -357,6 +357,9 @@ export function CardsView({ user }: { user: SessionUser }) {
                guess from the label beside it. */
             owner={baseOwnerOf(ownerRecordFor(owners, active))}
             user={user}
+            /* The four deck plaques, under the count line in the header. Only here:
+               the player page draws its own above the panel that holds this grid. */
+            showDeckProgress
           />
         </section>
       ) : null}
