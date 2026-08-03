@@ -30,8 +30,9 @@ the generator. That is exactly why the module is committed rather than generated
 A missing picture is the **normal** case, not an error. The art is a hand-placed set under
 `web/public/coc/cards/` and no committed script fetches it; without it, `GameIcon` removes the
 `<img>` on error and the tile is an empty, correctly sized art box over its count — the tiles carry
-no name of their own, so on such a checkout the number box's accessible name and the tile's `title`
-are the only things that still say which card is which.
+no name of their own, so on such a checkout the accessible names of the controls under the frame —
+the number box, and the two steppers wherever the tile is wide enough to draw them — and the tile's
+`title` are the only things that still say which card is which.
 `.card-tile__frame` reserves the height rather than shrinking to its content, so the grid
 neither collapses nor reflows. Never a broken-image glyph.
 

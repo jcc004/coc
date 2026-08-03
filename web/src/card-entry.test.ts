@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import type { OwnerRecord } from '@coc/shared'
+import { MAX_CARD_COUNT, type OwnerRecord } from '@coc/shared'
 import { ApiError } from './api.ts'
 import {
   baseOwnerOf,
   blurDecision,
+  cardCountStep,
   cardEntryAccess,
   classifySaveFailure,
   countsDiffer,
@@ -118,6 +119,40 @@ describe('countsDiffer', () => {
   })
 })
 
+describe('cardCountStep', () => {
+  it('moves a count by one in either direction', () => {
+    assert.equal(cardCountStep(3, 1), 4)
+    assert.equal(cardCountStep(3, -1), 2)
+  })
+
+  it('reports a bound as nowhere to go, rather than as the same number again', () => {
+    // `null` is what disables the button. Returning 0 for `−` at 0 would leave a
+    // control that is offered, pressed, and does nothing — sixty times over.
+    assert.equal(cardCountStep(0, -1), null)
+    assert.equal(cardCountStep(MAX_CARD_COUNT, 1), null)
+  })
+
+  it('leaves the far end of the range reachable from the near one', () => {
+    assert.equal(cardCountStep(0, 1), 1)
+    assert.equal(cardCountStep(MAX_CARD_COUNT, -1), MAX_CARD_COUNT - 1)
+  })
+
+  it('steps a count from outside the range back into it, never further out', () => {
+    // Nothing should store one, but a count above the cap must not be confirmed by a
+    // `−` that reads it as 11 and offers 10 back as a change.
+    assert.equal(cardCountStep(MAX_CARD_COUNT + 5, -1), MAX_CARD_COUNT - 1)
+    assert.equal(cardCountStep(MAX_CARD_COUNT + 5, 1), null)
+    assert.equal(cardCountStep(-4, 1), 1)
+    assert.equal(cardCountStep(-4, -1), null)
+  })
+
+  it('reads a fraction and a non-number as the count nearest below', () => {
+    assert.equal(cardCountStep(2.7, 1), 3)
+    assert.equal(cardCountStep(Number.NaN, 1), 1)
+    assert.equal(cardCountStep(Number.NaN, -1), null)
+  })
+})
+
 describe('blurDecision', () => {
   const saved = new Map([
     [1, 3],
@@ -126,15 +161,21 @@ describe('blurDecision', () => {
 
   it('stays silent when nothing changed — the sixty-blurs case', () => {
     const draft = new Map(saved)
-    assert.deepEqual(blurDecision({ draft, saved, writable: true, saving: false }), {
-      save: false,
-      reason: 'unchanged',
-    })
+    assert.deepEqual(
+      blurDecision({ draft, saved, writable: true, saving: false, focusStaysInCell: false }),
+      {
+        save: false,
+        reason: 'unchanged',
+      },
+    )
   })
 
   it('saves once a number really changed', () => {
     const draft = new Map(saved).set(1, 4)
-    assert.deepEqual(blurDecision({ draft, saved, writable: true, saving: false }), { save: true })
+    assert.deepEqual(
+      blurDecision({ draft, saved, writable: true, saving: false, focusStaysInCell: false }),
+      { save: true },
+    )
   })
 
   it('compares against the last saved value, not the value before this focus', () => {
@@ -142,26 +183,47 @@ describe('blurDecision', () => {
     // took, and must not churn the base's updated_at.
     const draft = new Map(saved).set(1, 4)
     draft.set(1, 3)
-    assert.deepEqual(blurDecision({ draft, saved, writable: true, saving: false }), {
-      save: false,
-      reason: 'unchanged',
-    })
+    assert.deepEqual(
+      blurDecision({ draft, saved, writable: true, saving: false, focusStaysInCell: false }),
+      {
+        save: false,
+        reason: 'unchanged',
+      },
+    )
   })
 
   it('never writes a base the session may not write', () => {
     const draft = new Map(saved).set(1, 4)
-    assert.deepEqual(blurDecision({ draft, saved, writable: false, saving: false }), {
-      save: false,
-      reason: 'notWritable',
-    })
+    assert.deepEqual(
+      blurDecision({ draft, saved, writable: false, saving: false, focusStaysInCell: false }),
+      {
+        save: false,
+        reason: 'notWritable',
+      },
+    )
+  })
+
+  it('writes nothing while focus is only moving inside the one card', () => {
+    /* The stepper case, and the reason this skip outranks every other: a press on `+`
+       blurs the box, and five presses would otherwise be five whole-base writes. It is
+       checked with a *real* change pending, since that is the only state where the
+       other three skips would not have caught it anyway. */
+    const draft = new Map(saved).set(1, 4)
+    assert.deepEqual(
+      blurDecision({ draft, saved, writable: true, saving: false, focusStaysInCell: true }),
+      { save: false, reason: 'sameCell' },
+    )
   })
 
   it('defers rather than racing a request already in flight', () => {
     const draft = new Map(saved).set(1, 4)
-    assert.deepEqual(blurDecision({ draft, saved, writable: true, saving: true }), {
-      save: false,
-      reason: 'busy',
-    })
+    assert.deepEqual(
+      blurDecision({ draft, saved, writable: true, saving: true, focusStaysInCell: false }),
+      {
+        save: false,
+        reason: 'busy',
+      },
+    )
   })
 })
 

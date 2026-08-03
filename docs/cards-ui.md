@@ -48,10 +48,10 @@ option are two people's names in one label, and the reader cannot tell which is 
   Tiles are **picture only**: no card name. A card the base holds renders in colour; one it lacks
   renders the same file under `grayscale(1)`. That is **never the only cue** — the number box under
   the art reads 0 for a card the base lacks and n for one it holds, at every breakpoint, so
-  held-vs-not survives with no colour vision at all. The name is on the tile's `title` and opens
-  the number box's accessible name, so nothing that reads the page aloud has lost it. The cost is
-  real and worth knowing: the card art is gitignored, so on a checkout with no art a tile is an
-  empty frame over a count.
+  held-vs-not survives with no colour vision at all. The name is on the tile's `title` and in the
+  accessible name of every control in the cell, so nothing that reads the page aloud has lost it.
+  The cost is real and worth knowing: the card art is gitignored, so on a checkout with no art a
+  tile is an empty frame over a count.
 - **The count badge** sits in the art's lower right and appears **only past one copy**: `×1` on
   fifty tiles would be noise, where a spare is the fact worth spotting. The clan-totals grid makes
   the opposite call and badges every count — see [Cards across the clan](#cards-across-the-clan).
@@ -69,16 +69,20 @@ option are two people's names in one label, and the reader cannot tell which is 
   values are recorded in `CARD_CATEGORY_BORDER` in `shared/src/card-types.ts`; what the page
   paints is the CSS token, because a colour that must work on parchment *and* dark wood is a
   theme decision.
-- **Entry** is a capped 0–10 number box on each tile, kept in a local draft so typing sixty
-  boxes is one write, not sixty. The draft re-seeds when the base changes or when somebody
-  else's save lands — but never while there are unsaved edits, because silently replacing what
-  someone is typing is worse than showing a stale number they are about to overwrite.
+- **Entry** is a **count row under each frame** — `−`, a capped 0–10 number box, `+` — kept in a
+  local draft so typing sixty boxes is one write, not sixty. The draft re-seeds when the base
+  changes or when somebody else's save lands — but never while there are unsaved edits, because
+  silently replacing what someone is typing is worse than showing a stale number they are about to
+  overwrite. See [The count row](#the-count-row) for the three things that row has to get right.
 - **The four deck plaques** sit in the base header's **upper right, directly beneath the
   `13/60 cards · 22 copies · 9 spares` line** they break down. See
   [Deck progress plaques](#deck-progress-plaques) — the same four are on every player page.
 - **Last updated and who** is shown above the grid for the selected base.
-- **A failed write is reported at the Save button**, with the typed counts left exactly as they
-  are so nothing has to be re-entered. `Saved` never appears unless the request succeeded.
+- **A failed write is reported at the card it was typed on** — `Not saved` under the frame and a
+  `--critical` outline on that one tile — and again in a notice above the grid saying why, with the
+  typed counts left exactly as they are so nothing has to be re-entered. There is no Save button
+  left to report it at: sixty fields that save themselves have no button to go quiet in, which is
+  why the failure has to be visible at the tile.
 - **Trade suggestions** are the panel directly under the grid, driven entirely by the pure module
   and grouped by the pair of bases involved. Its two identity columns are headed **Member** and
   print the **member name** as the link — a tag is not who you go and talk to — with the **tag and
@@ -92,6 +96,142 @@ option are two people's names in one label, and the reader cannot tell which is 
   pairs — see [the trades under a player's grid](#the-trades-themselves-under-the-grid). Here it
   is deliberately unfiltered and group-wide: a trade has two sides and half of them are somebody
   else's bases by definition.
+
+### The count row
+
+Under each frame, never over the art:
+
+```
+┌─────────────────┐
+│   card artwork  │
+└─────────────────┘
+  −     [ 3 ]    +
+```
+
+**The box stays typeable, and that is the point of the layout.** Sixty cards is sixty numbers, and
+somebody entering them types `7` rather than pressing `+` seven times; the buttons are the
+adjustment afterwards, which is the thing a thumb is bad at doing through a keyboard. So they went
+*beside* the box and not instead of it. Overlaying them on the artwork was rejected for a separate
+reason: the art is the only thing on a tile that identifies the card, so a tap target on top of it
+would be covering the identity to reach the control.
+
+**Three controls, and what each is called.** Sixty tiles times three is 180 things a screen reader
+can land on, and the tiles print no names, so every word of "which card is this" is in an accessible
+name. Read back through the accessible-name computation in
+`web/src/components/BaseCardEditor.test.tsx`:
+
+```
+button      One fewer Barbarian
+spinbutton  Barbarian, Elixir — copies held, 0 to 10
+button      One more Barbarian
+```
+
+The card's name three times, because somebody landing on a `+` has to know which card it belongs to;
+the deck and the range **once**, on the control the cell is actually about. Naming all three in full
+was tried and is worse — one deck would read out `Elixir` nineteen times over and `0 to 10`
+fifty-seven times. So was wrapping the row in a `role="group"` named for the card and leaving the
+buttons as bare `One more`: a group is announced when focus *enters* it, and `+` is the third
+control in, so the one place the card most needs naming is exactly where the group has stopped
+saying it. The tile itself is still given **no** `label` — the controls inside it are the named
+things, and naming the container would be a fourth announcement per card.
+
+**Leaving the *cell* is the save, not leaving the box.** A press on `+` moves focus off the number
+box, so a save-on-blur would turn five presses into five PUTs of the base's whole season, each
+moving the `updated_at` the attribution line reads out. The row is one element with one `onBlur`;
+`focusout` bubbles, and `relatedTarget` says whether focus went to another control in the same cell
+or out of it. The skip is a fourth reason in `blurDecision` — `sameCell`, ahead of `unchanged`,
+`notWritable` and `busy` — rather than a second, quieter rule inside the component, and a test
+presses `+` five times and asserts **one** write of `count: 5`.
+
+**Both ends are `disabled` at the bounds, not clamping.** `−` is unavailable at 0 and `+` at 10 —
+`cardCountStep()` in `card-entry.ts` returns `null`, which is both the disabled state and the
+press's destination, so the two cannot disagree. A `+` still offered at ten would be a control that
+answers a press by doing nothing, which is the dead end this page refuses to hand out sixty times;
+the bound is legible without it, since the number is right there and the box's name gives the range.
+The one cost is handled deliberately: a `disabled` element cannot hold focus, so the press that
+takes a button away hands focus to the box beside it rather than letting the browser drop it on
+`<body>` — which would lose the user's place *and* count as leaving the cell, firing a save
+mid-sequence.
+
+**A read-only base disables all three**, and the reason still reaches the reader: in full in the
+notice above the grid, in full in the box's own accessible name and `title`, and as a plain
+`, read-only` suffix on each button's name. It is deliberately not repeated in full three times —
+the sentence is about the *base*, so it is the same sentence on all sixty tiles, and tripling it
+would cost far more than it tells anyone.
+
+**The buttons are drawn only where they fit, and the box is never the one that gives way.** The
+constraint is horizontal, and it is the tightest thing on the page. What has to fit is
+`24 + 2 + box + 2 + 24`: two 24px buttons (WCAG 2.5.8's floor, not a number with slack in it), two
+2px gaps, and the box's 1px borders — **54px of chrome, plus whatever `10` needs**. The grid is
+`minmax(0, 1fr)`, so it cannot widen to help.
+
+That last term is not a constant, which is why the threshold is
+**`@container card-tile (min-width: calc(54px + 1.25em))`** — 72.8px at this app's 15px body type —
+rather than a round number:
+
+- `10` is set in `tabular-nums`, so it is **wider than a proportional measurement of the same
+  string** (18.4px against 15.9px at 15px type). Measuring the text rather than the glyphs is what
+  two earlier guesses at this threshold, 78px and then 72px, both got wrong. Measured, the box needs
+  18px of usable width at 15px type, 20px at 16px and 24px at 20px: about 1.25em throughout.
+- writing it in `em` means the row responds to type size on its own. If the app's text ever grows,
+  the steppers **stop being drawn** rather than start clipping a count — a number cut in half is a
+  wrong number, whereas a button that is not offered is a convenience that is not offered, and the
+  box beside it still does the whole job.
+
+A *container* query and not a media query, because the tile's width is a product of the viewport, the
+gutters, the panel padding **and** the density control's 6/8/10/12, so a width breakpoint would be
+answering a different question. Below the threshold the steppers are `display: none`, which also
+keeps them out of the tab order and the accessibility tree, so a phone reads sixty controls and not
+a hundred and eighty. Where they are drawn, a touch-sized screen takes them to 24×44 — taller,
+because height is the axis that is free here.
+
+**One exception the `em` cannot see**, and it is written next to the rule it corrects: below 601px
+the responsive section forces 16px on `input` specifically — iOS zooms the page whenever a focused
+control is under 16px — and that rule names the input, not the tile the `em` resolves against. So a
+second, stricter `@container card-tile (width < 75px)` inside the same media query hides the row
+there. Measured: at 16px type a 19px box clips `10` and a 20px box does not. In practice it decides
+only a ~15px band of viewport width around 570px, because below 601px the density control offers
+nothing but six columns.
+
+Measured in Chrome against the real stylesheet — 31 widths from 320 to 1280px at six columns, both
+themes, plus every width the density control offers 8, 10 and 12 at, plus a coarse pointer, 125%
+zoom, and three browser default font sizes. Clipping is read off the box's `scrollWidth` against its
+`clientWidth` on a tile holding `10`, the widest value, not off the arithmetic:
+
+| | tile content | steppers | box |
+|---|---|---|---|
+| 320px, 6 cols | 33px | no | 33×44 |
+| **390px, 6 cols** | **44.7px** | **no** | 44.7×44 |
+| 570px, 6 cols | 74.7px | no (the 16px exception) | 56×44 |
+| **600px, 6 cols** | **79.7px** | **yes, 24×44** | 27.7×44 |
+| 844px, 6 cols (landscape) | 104px | yes, 24×44 | 52×44 |
+| **1280px, 6 cols** | **175.3px** | **yes, 24×24** | 56×30.5 |
+| 1280px, 8 cols | 125px | yes, 24×24 | 56×30.5 |
+| 1280px, 10 cols | 94.8px | yes, 24×24 | 42.8×30.5 |
+| **1280px, 12 cols** | **74.7px** | **yes, 24×24** | **22.7×30.5** |
+
+**No horizontal overflow at any width, in either theme; no row overflowing its tile; no clipped
+`10` anywhere the steppers are drawn**; the deck frame colours untouched.
+
+The **densest view is the tightest case in the app** and the reason the gaps are 2px and the box has
+no inline padding: twelve across at 1280px is 74.7px of tile against a 72.8px threshold, 1.9px of
+margin, and at the 3px gaps and 4px of box padding this started with it missed by 3.3px and lost its
+steppers. It follows that twelve-across needs a **CSS viewport of about 1250px** to keep them —
+below that the tile drops under the threshold and the row falls back to the box. At **125% zoom**
+that is 1250 × 1.25 ≈ 1560 physical pixels: verified, a 1600px window at 125% keeps the full row at
+twelve across with no clipping, and a 1280px window at 125% (1024 CSS px) drops the steppers
+cleanly rather than clipping. A larger **browser default font size** changes nothing at all, because
+`body` sets `font-size: 15px` in pixels — that is a pre-existing property of the whole app, not of
+this row. A forced **root** font size does reach it, and behaves as designed: at 20px the twelve-column
+view hides its steppers instead of clipping the count.
+
+The honest cost, recorded because it is the part somebody will want to argue with: **at the default
+six columns on a phone there are no stepper buttons at all.** 390px yields 44.7px of tile, three
+controls in which would be about 14px each — under every target-size floor this app applies and
+narrower than the digits inside them. Turning the phone sideways is enough (≈844px landscape gives
+104px of tile and the full row), as is a tablet. Fitting them at 390px needs a decision this change
+did not have: fewer columns on a phone, which would break the fixed six-across the grid is built
+around.
 
 ### Row counts on the trade suggestions
 
@@ -184,13 +324,19 @@ readable against the tiles above, because "the same picture in the same place" n
 translation. That is not a claim about two similar components: `CardTile` in
 `web/src/components/CardTile.tsx` **is** the tile, and `BaseCardEditor`'s entry grid and this one
 are its two callers — same art, same framing, same deck-coloured frame, same greyscale.
-Measured at 1280px, both grids render 7 columns of 123px tiles over a 107×134 (4:5) frame; five
-columns at 600px, three at 390px. What the two callers vary is only the badge, what sits under the
-frame (a number box, or nothing) and where the accessible name comes from.
+Re-measured in Chrome against the real stylesheet, at the six columns the grid is fixed to: both
+render **191.3px tiles over a 175.3×219.2 (4:5) frame at 1280px**, 87.7px tiles at 600px and 52.7px
+at 390px, tile for tile the same width in both grids at every one of them. (An earlier note here
+said seven columns of 123px at 1280px and three columns at 390px. That was true of the `auto-fill`
+grid it was written against; the column count has since been fixed at six, with the density control
+on the card page — 6/8/10/12 — the only thing that changes it, and it changes both grids together.)
+What the two callers vary is only the badge, what sits under the frame (the entry grid's count row,
+or nothing) and where the accessible name comes from.
 
 **`CardTile` itself is still not a control.** The press is a `<button class="card-total__pick">` that
 this panel wraps each tile in, not a click handler inside the tile — so the entry grid, whose tiles
-hold a number box people type into, is untouched, and the pressable version gets keyboard
+hold a number box people type into and a `−` and `+` of their own (a button inside a button is not
+markup a browser keeps), is untouched, and the pressable version gets keyboard
 activation, focus, the focus ring and a real pressed state from the element rather than from
 attributes. `.card-deck` is `display: contents`, so the button takes the tile's place as the grid
 item; it is `display: block; width: 100%` with the browser's button chrome removed, and the tile
@@ -445,12 +591,14 @@ a base has a record at all rather than off its totals: a base saved and then cle
 keeps its stamp and reads as recorded-and-empty.
 
 **Opened it is the card page's grid, with no base selector** — the base is the player whose page
-it is. Same tiles, same greyscale, same deck-coloured frames, same `×n` badges, same 0–10 boxes,
-same one-request save, same 4 named deck groups. That is not a claim about two similar
-components: `BaseCardEditor` in `web/src/components/BaseCardEditor.tsx` **is** the grid, and
-`CardsView` and the player page are its two callers, and one tile of it is `CardTile`, shared in
-turn with the clan-totals grid. Measured side by side at 1280px, both render `123.141px ×7`
-columns, a 10px gap and a 107×134 frame per tile; five columns at 600px, three at 390px.
+it is. Same tiles, same greyscale, same deck-coloured frames, same `×n` badges, same
+[count rows](#the-count-row), same one-request save, same 4 named deck groups. That is not a claim
+about two similar components: `BaseCardEditor` in `web/src/components/BaseCardEditor.tsx` **is** the
+grid, and `CardsView` and the player page are its two callers, and one tile of it is `CardTile`,
+shared in turn with the clan-totals grid. Measured at 1280px, six columns of 191.3px tiles, a 10px
+gap and a 175.3×219.2 frame per tile; 87.7px tiles at 600px and 52.7px at 390px. The one thing that
+can differ is the *column count*, and only because the card page has a density control and this page
+does not: the player page renders `DEFAULT_CARD_COLUMNS`, which is the six both are built around.
 Duplicating sixty tiles and their draft-and-save logic was the thing to avoid — the greyscale, the
 badges and the clamping would have drifted apart the first time either copy was touched. Choosing
 the base is deliberately not the shared component's job; each page keeps its own idea of which base

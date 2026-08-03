@@ -14,8 +14,8 @@ import { GameIcon } from './primitives.tsx'
  * `card-crops.ts`.
  *
  * It is here rather than inside `BaseCardEditor` because **two grids draw it** —
- * the per-base entry grid, where each tile wraps a number box, and the clan-wide
- * totals grid on the card page, where a tile wraps nothing and carries the
+ * the per-base entry grid, where each tile wraps a row of count controls, and the
+ * clan-wide totals grid on the card page, where a tile wraps nothing and carries the
  * clan's total in its badge. Same reasoning as `BaseCardEditor` being its own
  * file: the two grids only earn their place by being scannable card-for-card
  * against each other, and a second copy of the crop geometry, the deck frame and
@@ -26,21 +26,26 @@ import { GameIcon } from './primitives.tsx'
  * - **the badge.** The entry grid shows one only past a second copy, because `×1`
  *   on fifty tiles is noise where a spare is the fact worth spotting. The totals
  *   grid shows every count including 1, because the totals *are* what it is for.
- * - **what sits under the frame.** A number box, or nothing.
- * - **where the accessible name comes from.** In the entry grid the number box is
- *   the named control and the tile needs no name of its own; in the totals grid the
- *   tile holds no control, so `label` names the tile and is the only place "nobody
- *   holds this" is stated in words — greyscale with no badge would otherwise be
- *   colour alone.
+ * - **what sits under the frame.** The entry grid's count row — a typeable number box
+ *   between a `−` and a `+`, all three named for the card — or nothing at all. It was
+ *   one number box until the steppers arrived; the slot has never cared how many
+ *   controls go in it, which is why they went in as `children` and not as a prop here.
+ * - **where the accessible name comes from.** In the entry grid the controls under the
+ *   frame are the named things and the tile needs no name of its own — three of them
+ *   already say which card this is, and a name on the container would be a fourth. In
+ *   the totals grid the tile holds no control, so `label` names the tile and is the
+ *   only place "nobody holds this" is stated in words — greyscale with no badge would
+ *   otherwise be colour alone.
  *
  * **Nothing here is clickable, and that is a decision rather than an omission.** The
  * totals grid does make its tiles pressable — a press lists the bases holding that
  * card — but it does so by wrapping this in a `<button>` of its own. Handling the
  * press in here would make the entry grid's tiles pressable too, where the target
- * would sit around a number box people are typing into, and it would mean
- * re-implementing keyboard activation, focus and the pressed state that a real button
- * has already. So the caller wrapping it is the contract: this stays a picture, and
- * `label` is the name that button computes from its content.
+ * would sit around a number box people are typing into **and around that cell's own
+ * `−` and `+`** — a button inside a button, which is not even markup a browser will
+ * keep — and it would mean re-implementing keyboard activation, focus and the pressed
+ * state that a real button has already. So the caller wrapping it is the contract: this
+ * stays a picture, and `label` is the name that button computes from its content.
  *
  * `GameIcon` is used without a `fallback` on purpose: the card art is gitignored,
  * so a fresh clone has none of it, and the element removes itself on error rather

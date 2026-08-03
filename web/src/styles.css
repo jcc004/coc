@@ -1433,6 +1433,21 @@ details.group > .group__body {
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  /*
+   * A query container, so the count row below can ask how wide *this tile* is.
+   *
+   * It has to be the tile and it has to be a container query. The thing that decides
+   * whether three controls fit is the tile's own width, and that is a product of the
+   * viewport, the gutters, the panel padding **and** the density control's 6/8/10/12 —
+   * so a `@media (min-width: …)` would be answering a different question and would get
+   * twelve-across on a desktop wrong in the same breath as six-across on a phone.
+   *
+   * `inline-size` and not `size`: the tile's width comes from its grid track, which is
+   * outside it, but its height still comes from its contents. Measured with and
+   * without: identical tile boxes at every breakpoint, which is what containing only
+   * the inline axis buys.
+   */
+  container: card-tile / inline-size;
   /* Tighter than it was: the name line it used to sit under has gone. */
   padding: 6px;
   /* 2px so the deck frame below is actually legible as a frame. */
@@ -1551,14 +1566,97 @@ details.group > .group__body {
   border-color: var(--critical);
 }
 
-.card-tile__input {
-  /* Was a fixed 56px, which is wider than a tile at six columns on a phone and would
-     have pushed the grid into a horizontal scroll. It now takes the tile's width and
-     stops growing at the size it was. */
+/*
+ * The count row under the frame: `−`, the box, `+`.
+ *
+ * **Under the frame and not over the art**, by request and for a reason: the art is the
+ * only thing on a tile that identifies the card, and a tap target laid over it would be
+ * covering the identity to reach the control.
+ *
+ * A flex row rather than a three-column grid, because the middle track is the only one
+ * allowed to give: the buttons are a fixed target size or they are not drawn at all,
+ * and the box takes whatever is left. Horizontal space is the whole problem here — see
+ * the input below.
+ */
+.card-tile__count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   width: 100%;
-  max-width: 56px;
   margin-top: 4px;
-  padding: 3px 4px;
+}
+
+/*
+ * One end of the row. **Not drawn at all until the tile can hold it** — see the
+ * container query below, which is the load-bearing part of this rule.
+ *
+ * 24px square is the floor from WCAG 2.5.8, and it is a floor rather than a comfortable
+ * size: at six columns the tile is 44.7px of content on a 390px phone and 79.7px on a
+ * 600px one, so this is a control that fits in the second case and cannot fit in the
+ * first. On a touch-sized screen the generic `button { min-height: 44px }` in the tap
+ * targets block below takes it to 24×44 — taller, because height is the axis that is
+ * free here and width is the one that is not.
+ */
+.card-tile__step {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: var(--plane);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.card-tile__step:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+/*
+ * A bound reached, or a base somebody else owns — the same treatment for both, because
+ * both are "this press is not available" and the difference is said in words elsewhere:
+ * a bound is visible as the number itself (0 or 10, in a box whose accessible name
+ * gives the range), and a refusal is in the panel above the grid and in the box's own
+ * accessible name.
+ */
+.card-tile__step:disabled {
+  color: var(--ink-muted);
+  background: var(--grid);
+  cursor: not-allowed;
+}
+
+.card-tile__input {
+  /*
+   * Was a fixed 56px, which is wider than a tile at six columns on a phone and would
+   * have pushed the grid into a horizontal scroll. 56px is now a flex *basis* with
+   * shrink left on, which is the same thing said in a way that also survives having
+   * two buttons beside it: 56px where there is room, and whatever is left over where
+   * there is not — measured, 27.7px at six columns on a 600px screen and 22.7px at
+   * twelve columns on a 1280px one, which is the narrowest it is ever drawn.
+   *
+   * `min-width: 0` because a flex item floors at its intrinsic content width
+   * otherwise, and an `input`'s intrinsic width is its `size` attribute's worth of
+   * characters — about 170px. That is the same floor `minmax(0, 1fr)` is guarding
+   * against on the grid itself, and the same horizontal scroll at the end of it.
+   *
+   * **No inline padding at all.** The number is centred, so inline padding is invisible
+   * at every width — and it is charged twice over in the one place there is nothing to
+   * spare. It was 4px, then 2px, and each step bought a case back: at 4px `10` clipped
+   * at six columns on a 600px screen, and at 2px the densest desktop view could not fit
+   * a stepper at all. What is left is the honest minimum, `10` plus its 1px borders,
+   * which is what the container query below is written in terms of.
+   */
+  flex: 0 1 56px;
+  min-width: 0;
+  padding: 3px 0;
   text-align: center;
   background: var(--plane);
   border: 1px solid var(--border);
@@ -1578,6 +1676,95 @@ details.group > .group__body {
   color: var(--ink-muted);
   background: var(--grid);
   cursor: not-allowed;
+}
+
+/*
+ * Where the steppers are drawn, and every number in it was measured in a browser
+ * rather than reasoned about. The arithmetic here was wrong twice before it was right.
+ *
+ * What has to fit is `24 + 2 + box + 2 + 24`, so the threshold is **54px of chrome
+ * plus whatever `10` needs**: two 24px buttons (WCAG 2.5.8's floor, not a number with
+ * slack in it), the two 2px gaps, and the box's 1px borders. The digits are the rest,
+ * and they are the part that is not a constant — which is why the threshold is written
+ * as a `calc()` in `em` rather than as a round number:
+ *
+ *   `10` is set in `tabular-nums`, so it is **wider than the proportional figures a
+ *   text measurement suggests** — 18.4px against 15.9px at 15px type. That gap is
+ *   exactly what an earlier 78px-and-then-72px pair of guesses got wrong: measured, the
+ *   box needs 18px of usable width at 15px type, 20px at 16px and 24px at 20px, which
+ *   is ~1.25em across the range.
+ *
+ * So `calc(54px + 1.25em)` — 72.8px at this app's 15px body type. In `em` and not px
+ * because the one thing that moves the requirement is the type size, and if that ever
+ * changes globally the row should stop being drawn rather than start clipping a count.
+ * A number cut in half is a wrong number; a button that is not offered is a
+ * convenience that is not offered, and the box beside it still does the whole job.
+ * (`em` resolves against `.card-tile`, the container — see the phone override below
+ * for the one font size it therefore cannot see.)
+ *
+ * The tile's content box is **44.7px at six columns on a 390px phone**. Three controls
+ * in 44.7px would be about 14px each: under every target-size floor this app applies,
+ * narrower than the digits inside them, and — since the grid is `minmax(0, 1fr)` and
+ * cannot widen — the horizontal scroll the input's own note above records having
+ * already caused once.
+ *
+ * So below the threshold the tile keeps exactly what it has always had: the box, which
+ * is the control that can do the whole job on its own. That is the decision the layout
+ * is built around — the buttons are the convenience, the box is the feature — and it is
+ * why they are hidden with `display: none` and not merely shrunk: a control nobody can
+ * hit is worse than one that is not offered, and `display: none` also keeps them out of
+ * the tab order and the accessibility tree, so a phone still reads sixty controls
+ * rather than a hundred and eighty.
+ *
+ * Measured, six columns: 33px of tile content at 320px and 44.7px at 390px (box only),
+ * 79.7px at 600px and 104px at 844px (steppers, 24×44), 175.3px at 1280px (24×24).
+ * Across the density control at 1280px: 175.3px at six, 125px at eight, 94.8px at ten
+ * and **74.7px at twelve — which now clears 72.8px and keeps its steppers**, by 1.9px.
+ * That is the tightest case in the app and it is the reason the constant is 54 and the
+ * gaps are 2px: at a 3px gap and 4px of box padding, twelve-across missed by 3.3px.
+ */
+@container card-tile (min-width: calc(54px + 1.25em)) {
+  .card-tile__step {
+    display: flex;
+  }
+
+  /*
+   * The native spinners go, but only here. They do the same job as the buttons either
+   * side of them, and two steppers in a 21px box is one too many — but where the
+   * buttons are not drawn the native pair is the only one there is, so it stays.
+   */
+  .card-tile__input {
+    appearance: textfield;
+  }
+  .card-tile__input::-webkit-outer-spin-button,
+  .card-tile__input::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+}
+
+/*
+ * The one font size the `em` above cannot see, and it is here rather than down in the
+ * phone block because it is unreadable away from the rule it corrects.
+ *
+ * Below 601px the responsive section forces **16px on inputs specifically** — iOS zooms
+ * the page whenever a focused control is under 16px — and that rule names `input`, not
+ * the tile. So the container's type is still 15px, `1.25em` still resolves to 18.8px,
+ * and the threshold comes out 2px short of what a 16px `10` actually needs: measured, a
+ * 19px box clips at 16px type and a 20px box does not, so the row needs 74px of tile
+ * there rather than 72.8px. 75px, for a pixel of margin.
+ *
+ * In practice this only decides a ~15px band of viewport width around 570px, because
+ * below 601px the density control offers nothing but six columns — see
+ * `MIN_OPTIONAL_TILE` — so the tile is 44.7px at 390px and 79.7px at 600px, and only
+ * the narrow strip between those two lands near the threshold at all.
+ */
+@media (max-width: 600px) {
+  @container card-tile (width < 75px) {
+    .card-tile__step {
+      display: none;
+    }
+  }
 }
 
 /* Timestamps, attribution and totals: supporting text, never an encoding. */
@@ -2701,10 +2888,18 @@ table.roster--pairs td {
     padding: 12px 0;
   }
 
-  /* The card grid's only control, and the one a phone user touches sixty times. */
+  /*
+   * The count box: the one control a phone user touches sixty times, and at six columns
+   * on a phone still the *only* one in the cell — the steppers need 76px of tile and a
+   * 390px screen gives 45px, so they are not drawn there at all. See
+   * `@container card-tile` above.
+   *
+   * The generic `button` rule at the top of this block already gives a stepper its 44px
+   * of height wherever it *is* drawn. Its width is deliberately left at 24px: there is
+   * no more width to give it, and 24×44 is a target that clears 2.5.8 in both axes.
+   */
   .card-tile__input {
-    width: 100%;
-    padding: 6px 4px;
+    padding: 6px 0;
   }
 
   /*

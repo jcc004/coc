@@ -1,4 +1,4 @@
-import type { OwnerRecord, SessionUser } from '@coc/shared'
+import { MAX_CARD_COUNT, type OwnerRecord, type SessionUser } from '@coc/shared'
 import { ApiError } from './api.ts'
 
 /**
@@ -18,6 +18,10 @@ import { ApiError } from './api.ts'
  * `cardEntryAccess` mirrors `server/src/cards/write-access.ts`. The server is still
  * the enforcement — this is only so the UI stops offering what will be refused —
  * but the two must agree, so both are one pure function with its own tests.
+ *
+ * `cardCountStep` joined them when the count grew a `−` and a `+` beside it, for the
+ * third version of the same reason: whether a stepper is *offered* and where a press
+ * *lands* have to be one answer, and computed inline in the component they were two.
  */
 
 /* ---------- who may write ---------- */
@@ -85,6 +89,33 @@ export function cardEntryAccess(
   }
 }
 
+/* ---------- stepping a count by one ---------- */
+
+/**
+ * Where a `−` or `+` press lands, or `null` when the bound leaves it nowhere to go.
+ *
+ * **One function, not a `step` and a `canStep`.** The button's disabled state and what
+ * its press does are the same question, and asked twice they can disagree: a `+` still
+ * offered at ten either clamps — a control that answers a press by doing nothing, which
+ * is the dead end this grid already refuses to hand out sixty times — or it writes an
+ * eleventh copy the server would reject. `null` is that decision, and the component
+ * reads it for both.
+ *
+ * The count is clamped on the way **in** as well as out. Nothing should ever store a
+ * count outside 0…{@link MAX_CARD_COUNT}, but if one arrived, `−` on an eleven has to
+ * step back *into* range rather than confirming it, and `+` has to be unavailable
+ * rather than making it worse.
+ */
+export function cardCountStep(count: number, by: 1 | -1): number | null {
+  // A non-number is treated as no copies, the same reading `clampCardCount` gives an
+  // unparseable box: it is the only value that cannot be wrong in the other direction.
+  const whole = Number.isFinite(count) ? Math.trunc(count) : 0
+  const from = Math.min(Math.max(whole, 0), MAX_CARD_COUNT)
+  const next = from + by
+  if (next < 0 || next > MAX_CARD_COUNT) return null
+  return next
+}
+
 /* ---------- when a blur is worth a request ---------- */
 
 export type CardCounts = ReadonlyMap<number, number>
@@ -102,14 +133,23 @@ export function countsDiffer(a: CardCounts, b: CardCounts): boolean {
   return false
 }
 
-export type SkipReason = 'unchanged' | 'notWritable' | 'busy'
+export type SkipReason = 'sameCell' | 'unchanged' | 'notWritable' | 'busy'
 
 export type BlurDecision = { save: true } | { save: false; reason: SkipReason }
 
 /**
- * What to do when a count field loses focus.
+ * What to do when focus leaves a count control.
  *
- * `unchanged` is the case that matters: it is compared against the **last value
+ * `sameCell` is the one the stepper buttons added, and it is first because it is not a
+ * departure at all. A cell is three controls now — `−`, the box, `+` — and pressing a
+ * button moves focus off the box, so a rule that saved on every blur would turn five
+ * presses of `+` into five whole-base writes, each one moving `updated_at`. Focus
+ * landing somewhere else *inside the same cell* is a user still working on one card;
+ * the commit waits for them to leave it. Which is the same instinct as `unchanged`,
+ * one level up: the question is never "did the box lose focus" but "is there now a
+ * number the server has not been told about, and has the user finished saying it".
+ *
+ * `unchanged` is the case that matters most: it is compared against the **last value
  * the server accepted**, not against the value the field started the focus with,
  * so retyping the same number, or arrowing up and back down, is silent too.
  *
@@ -122,7 +162,13 @@ export function blurDecision(input: {
   saved: CardCounts
   writable: boolean
   saving: boolean
+  /**
+   * Whether focus went to another control in the same card's cell — its own `−`, `+`
+   * or count box — rather than out of it.
+   */
+  focusStaysInCell: boolean
 }): BlurDecision {
+  if (input.focusStaysInCell) return { save: false, reason: 'sameCell' }
   if (!input.writable) return { save: false, reason: 'notWritable' }
   if (!countsDiffer(input.draft, input.saved)) return { save: false, reason: 'unchanged' }
   if (input.saving) return { save: false, reason: 'busy' }
