@@ -1,8 +1,37 @@
 # Deploy
 
-Config for hosting this app on a $6 DigitalOcean droplet (`146.190.196.236`),
-**HTTPS only** — port 80 redirects and answers ACME challenges, and serves no
-application traffic.
+Config for hosting this app on a $6 DigitalOcean droplet, **HTTPS only** — port 80
+redirects and answers ACME challenges, and serves no application traffic.
+
+## The droplet has two addresses, and they are not interchangeable
+
+This is the one thing to get right, because getting it wrong breaks every game
+lookup in production with a 403 and nothing else.
+
+| Address | Which | Used for |
+| --- | --- | --- |
+| `146.190.196.236` | Reserved IP | **Inbound.** The `A` record for `coc.jcciv.com`, and the address the certificate is issued against. |
+| `192.81.212.182` | The droplet's own public IP | **Outbound.** What every request *leaving* the droplet appears to come from — including calls to the Clash of Clans API. |
+
+A DigitalOcean reserved IP is an inbound mapping. Attaching one does not change
+where the droplet's own traffic egresses from: that still leaves via its public
+IPv4. So **the CoC API key must be minted for the outbound address**, not for the
+one in DNS.
+
+Supercell rejects a mismatch with `403 accessDenied.invalidIp` and names the
+address it saw, which is the address to mint for. Confirm it from the droplet
+itself:
+
+```bash
+curl -s https://api.ipify.org        # the address Supercell will see
+```
+
+If you would rather the key follow the reserved IP — worth it only if you expect to
+rebuild the droplet and keep that IP as the stable identity — you have to force
+egress through it with policy routing or SNAT on the droplet. That is a persistent
+networking change that must survive reboots and can lock you out of SSH if it is
+wrong. Minting the key for the public IP, or naming **both** addresses on one key,
+costs a minute and carries no such risk.
 
 ## Hostname
 
@@ -45,7 +74,8 @@ npm install          # includes tsx (a runtime dep) — do NOT use --omit=dev
 
 # Environment
 cp deploy/.env.production.example .env
-# edit .env: paste the CoC token minted for 146.190.196.236, set ADMIN_PASSWORD
+# edit .env: paste the CoC token minted for the droplet's OUTBOUND IP — see the
+# two-addresses note above; it is NOT the reserved IP — then set ADMIN_PASSWORD
 # (fresh install only), and for now COMMENT OUT NODE_ENV=production (TLS note below)
 
 # Build — imageless for now; the art is fetched AFTER launch (see below)

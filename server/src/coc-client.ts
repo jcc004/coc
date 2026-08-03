@@ -51,8 +51,11 @@ function describeFailure(
       ? 'This clan keeps its war log private, which also hides the current war. ' +
         'Nothing to fix — only the clan can change that. (If every request is failing, ' +
         'not just wars, it is your key’s IP binding instead.)'
-      : 'Your API key is bound to a specific IP address. If your IP changed, create a ' +
-        'new key at https://developer.clashofclans.com/#/account and update COC_API_TOKEN.',
+      : 'Your API key is bound to a specific IP address, and the message above names the ' +
+        'one Supercell actually saw. Mint a key for THAT address at ' +
+        'https://developer.clashofclans.com/#/account and update COC_API_TOKEN. It is the ' +
+        "host's *outbound* address, which on a host behind a reserved or floating IP is not " +
+        'the address its DNS points at.',
     404: 'Check the tag — a typo or a deleted account both look like this.',
     429: 'Rate limited by Supercell. Back off and retry; raise CACHE_TTL_SECONDS to reduce calls.',
     503: 'Clash of Clans is in maintenance. Nothing to fix on this end — wait it out.',

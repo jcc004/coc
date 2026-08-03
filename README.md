@@ -28,9 +28,21 @@ Get a token from <https://developer.clashofclans.com/#/account>.
 ### The IP binding
 
 Supercell binds each API key to the IP addresses you name when you create it. If requests
-start failing with **403 `accessDenied`**, your public IP changed — mint a new key for the
-new IP and update `.env`. The server surfaces this as a hint in the error panel rather than
-leaving you to guess, because it is by far the most common failure.
+start failing with **403 `accessDenied.invalidIp`**, the address the app calls out from has
+changed — mint a new key for the new one and update `.env`. The server surfaces this as a
+hint in the error panel rather than leaving you to guess, because it is by far the most
+common failure, and Supercell's own message names the address it saw.
+
+**It is the *outbound* address, which is not always the one you reach the host on.** A host
+behind a reserved, floating or elastic IP answers on that address but still makes its own
+requests from its underlying public IP — and Supercell only ever sees the latter. This bit
+production once: the key had been minted for the reserved IP the DNS points at, so every
+lookup 403'd while the app itself was perfectly healthy. Ask the host what it looks like from
+outside rather than assuming:
+
+```bash
+curl -s https://api.ipify.org
+```
 
 This is also the thing to solve before deploying anywhere: you need a static egress IP (a
 small VPS, or a proxy with a fixed address), because most PaaS hosts rotate outbound IPs.
@@ -345,9 +357,11 @@ What the host actually has to provide:
   bootstrap runs again — which is also the one case where `ADMIN_PASSWORD` lingering in the
   environment would silently recreate the admin.
 - **A static egress IP.** Supercell binds the API key to the IP addresses you name when you
-  create it, so the app's *outbound* address must be fixed. Most PaaS hosts rotate outbound
-  IPs, which is why this wants a small VPS or a fixed-address proxy. Symptom of getting it
-  wrong: every upstream call returns 403 `accessDenied`.
+  create it, so the app's *outbound* address must be fixed — and must be the address the key
+  names. Most PaaS hosts rotate outbound IPs, which is why this wants a small VPS or a
+  fixed-address proxy. Note that a reserved or floating IP is an *inbound* mapping and does
+  not change where the host's own traffic comes from. Symptom of getting either wrong: every
+  upstream call returns 403 `accessDenied.invalidIp`, naming the address that was seen.
 - **HTTPS, and only HTTPS.** This is not optional. The app has real accounts, so on plain http
   the password and the session cookie both cross the network in clear text. `deploy/` is
   configured for TLS on 443 with port 80 doing nothing but redirecting and answering ACME
