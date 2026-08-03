@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
-import { MAX_CARD_COUNT, type SessionUser } from '@coc/shared'
+import { MAX_CARD_COUNT, type BaseInventory, type SessionUser } from '@coc/shared'
 import { useBaseLabels } from '../base-labels.ts'
 import { activeTag, ownsAnyBase, tagsInScope, type BaseScope } from '../base-scope.ts'
 import { baseOwnerOf } from '../card-entry.ts'
+import { cardHolders, type CardHolder } from '../card-holders.ts'
 import { cardColumnOptions } from '../card-scale.ts'
 import { searchCards } from '../card-search.ts'
 import { inventoryFor, useCardInventoryState } from '../card-inventory.ts'
@@ -28,7 +29,15 @@ import { paginate, type RowLimit } from '../saved-table.ts'
 import { BaseCardEditor } from './BaseCardEditor.tsx'
 import { CardTile } from './CardTile.tsx'
 import { ScoringRules } from './help-copy.tsx'
-import { ErrorPanel, HelpLink, Loading, Meter, Pager, RowLimitSelect } from './primitives.tsx'
+import {
+  ErrorPanel,
+  GameIcon,
+  HelpLink,
+  Loading,
+  Meter,
+  Pager,
+  RowLimitSelect,
+} from './primitives.tsx'
 import { TradeSuggestions } from './TradeSuggestions.tsx'
 import { TradeTracker } from './TradeTracker.tsx'
 
@@ -62,6 +71,11 @@ import { TradeTracker } from './TradeTracker.tsx'
  * you have just typed in are what the suggestions are made of — and they are the
  * only panel that asks you to *do* something. The leaderboard and the clan totals
  * are both reference, and the totals are sixty more tiles, so they go last.
+ *
+ * The one thing the totals grid can be asked is **who** holds a card: a tile there is
+ * a button, and pressing it opens the holders table under the grid. That needs no
+ * route of its own — `/api/cards/inventory` already returns every base's per-card
+ * counts, so it is a projection of the same `bases` array, in `card-holders.ts`.
  */
 
 
@@ -259,6 +273,17 @@ function heldAcrossTheClan(total: number): string {
  * `title`, and the disclosure line above counts them. The tile stays exactly where
  * it is: nothing sorts, in any mode.
  *
+ * **Every tile is a button**, and pressing one lists the bases holding that card
+ * below the grid — see `CardHolders`. Including the 38 of sixty nobody holds, which
+ * was the decision worth making rather than assuming. The rule this page keeps is
+ * that a control is never dead and never navigates nowhere, and "nobody in the clan
+ * holds it, so it cannot be traded for" is an answer — arguably the most useful one
+ * on the panel, since it is the one the badge cannot show. The alternative, tiles
+ * that respond only where a badge happens to be, was rejected: it makes two thirds of
+ * the grid silently inert, leaves nothing to explain why a press did nothing, and
+ * would have a keyboard user tabbing through a set of stops that changes with the
+ * counts.
+ *
  * Group-wide, like the leaderboard, and including the bases whose owner is still
  * only a text label — most of them are — because their cards are as tradeable as
  * anyone's and leaving them out would undercount the group by more than half.
@@ -273,7 +298,26 @@ const WIDE_GRID_GAP = 10
 const NARROW_GRID_GAP = 4
 const NARROW_GRID_WIDTH = 600
 
-function CardTotalsGrid({ totals, columns }: { totals: CardTotal[]; columns: number }) {
+/**
+ * The id of the holders block below the grid, so the pressed tile can point at the
+ * thing it opened. Only the pressed one carries `aria-controls`: on the other
+ * fifty-nine there is nothing with this id to point at, and an `aria-controls`
+ * naming an element that does not exist is worse than none.
+ */
+const HOLDERS_ID = 'card-holders'
+
+function CardTotalsGrid({
+  totals,
+  columns,
+  picked,
+  onPick,
+}: {
+  totals: CardTotal[]
+  columns: number
+  /** The card whose holders are shown below, or `null` for none. */
+  picked: number | null
+  onPick: (cardId: number | null) => void
+}) {
   /* Grouped by deck exactly as the grid is: `display: contents`, so the tiles stay
      direct children of the one grid, named by a hidden heading. Walking `totals` in
      the order it arrives is what guarantees the two grids agree — grouping cannot
@@ -302,24 +346,234 @@ function CardTotalsGrid({ totals, columns }: { totals: CardTotal[]; columns: num
             </h4>
             {deck.entries.map(({ card, total }) => {
               const held = heldAcrossTheClan(total)
+              const isPicked = picked === card.id
               return (
-                <CardTile
+                /*
+                 * The tile in a real `<button>`, rather than click handling inside
+                 * `CardTile`.
+                 *
+                 * Two reasons. The entry grid is the other caller and must not
+                 * become clickable — its tiles already hold a number box, and a
+                 * press target around it would compete with typing in it. And a
+                 * `<button>` is keyboard-operable, focusable, Enter/Space-activated
+                 * and focus-ringed by the stylesheet's one `:focus-visible` rule
+                 * without any of that being written here; a `div` with `onClick`
+                 * would be four attributes and a key handler pretending to be one.
+                 *
+                 * `aria-pressed`, not `aria-expanded`: there is one table below the
+                 * grid and the sixty tiles take turns owning it, so this is which
+                 * tile is selected rather than sixty independent disclosures. It
+                 * also means the selected state is not carried by the ring alone.
+                 * The button's accessible name is the tile's own `aria-label` by
+                 * name-from-content, so nothing is duplicated and the count — or the
+                 * "none held" — is still what a screen reader reads out.
+                 */
+                <button
                   key={card.id}
-                  card={card}
-                  held={total > 0}
-                  badge={total > 0 ? `×${total}` : undefined}
-                  title={`${card.name} · ${card.category} · ${held}`}
-                  /* The tile's own name, because nothing inside it is a control
-                     that could carry one — and because it is where the zero is
-                     said in words. */
-                  label={`${card.name}, ${card.category} — ${held}`}
-                />
+                  type="button"
+                  className="card-total__pick"
+                  aria-pressed={isPicked}
+                  aria-controls={isPicked ? HOLDERS_ID : undefined}
+                  /* Pressing the selected tile again closes the table. It is the
+                     control that opened it, so it is the one somebody reaches for to
+                     put it away, and without that the table could only ever be
+                     swapped for another card's. */
+                  onClick={() => onPick(isPicked ? null : card.id)}
+                >
+                  <CardTile
+                    card={card}
+                    held={total > 0}
+                    badge={total > 0 ? `×${total}` : undefined}
+                    title={`${card.name} · ${card.category} · ${held}`}
+                    /* The tile's own name, because nothing inside it is a control
+                       that could carry one — and because it is where the zero is
+                       said in words. */
+                    label={`${card.name}, ${card.category} — ${held}`}
+                  />
+                </button>
               )
             })}
           </div>
         )
       })}
     </div>
+  )
+}
+
+/**
+ * The line under the picked card's name. The one place that sentence is written.
+ *
+ * It counts the spares as well as the rows because that is the actionable half and the
+ * Spare column below only yields it to a scan: four bases each sitting on their only
+ * copy is four bases you cannot ask, which is worth knowing before reading the table.
+ */
+function holdersLine(holders: readonly CardHolder[]): string {
+  const bases = holders.length === 1 ? '1 base holds it' : `${holders.length} bases hold it`
+  const sparing = holders.filter((holder) => holder.canSpare).length
+  return `${bases} · ${sparing === 0 ? 'none with a spare to trade' : `${sparing} with a spare to trade`}`
+}
+
+/**
+ * Who holds the card whose tile was just pressed — the other half of the badge's
+ * sentence. `×4` says a trade is arithmetically possible and nothing whatever about
+ * whom to message, which is the only reason to be reading this panel.
+ *
+ * Everything it needs was already on the page: `/api/cards/inventory` returns every
+ * tracked base with its per-card counts, so this is a projection of the same `bases`
+ * array the grid above and the leaderboard are drawn from, and no request is made.
+ * Which bases and in what order is `cardHolders`', tested there; this is the drawing.
+ *
+ * **It names the card, with its art.** Sixty tiles is a lot of grid, and on a phone
+ * the tile that was pressed is usually scrolled off the top by the time the table is
+ * on screen — a table headed only "Member / Copies" would be a table about nothing.
+ * It is also the sighted reader's carrier for *which* tile is selected, so the ring
+ * on the tile is not doing that job alone.
+ *
+ * **A card nobody holds gets a sentence, not an empty table.** Header rows over no
+ * rows is a table that looks broken; the fact is that no amount of trading can
+ * produce a copy, which is worth stating in the words the panel's intro uses.
+ *
+ * **No pager, unlike the two tables above.** It is bounded by the tracked bases and
+ * is one card's whole answer — truncating "who holds this" to the first five would
+ * hide the base somebody opened it to find. The row limit those tables carry exists
+ * because their length is unbounded in the count of *pairs* and *bases*; this one is
+ * at most one row per base and in practice a handful.
+ */
+function CardHolders({
+  entry,
+  bases,
+  labelOf,
+}: {
+  entry: CardTotal
+  /** Every tracked base, as `state.entries` — group-wide, like the grid above it. */
+  bases: readonly BaseInventory[]
+  labelOf: (tag: string) => string
+}) {
+  const { card } = entry
+  const holders = useMemo(() => cardHolders(bases, card.id, labelOf), [bases, card.id, labelOf])
+
+  return (
+    <div className="card-holders" id={HOLDERS_ID}>
+      {/* `h3` under the panel's `h2`, so the table is an outline entry somebody can
+          jump to rather than a slab of markup after sixty tiles. */}
+      <h3 className="card-holders__title">
+        <span className="trade-card">
+          <GameIcon src={card.image} className="trade-card__img" />
+          {card.name}
+        </span>
+        <span className="card-meta">
+          {card.category} · {heldAcrossTheClan(entry.total)}
+        </span>
+      </h3>
+
+      {holders.length === 0 ? (
+        <p className="empty-hint" style={{ margin: 0 }}>
+          <strong>Nobody in the clan holds it.</strong> Trading cannot produce a copy of a card
+          nobody has — this one has to come from the game.
+        </p>
+      ) : (
+        <>
+          <p className="card-holders__note">{holdersLine(holders)}</p>
+          <div className="table-wrap">
+            {/*
+             * Stacks into one labelled card per base on a phone, like every other table
+             * here, with the explicit roles that keep it a table for assistive tech once
+             * `display` changes. Named with `aria-label` rather than `aria-labelledby`
+             * the `h3` above it — not for the uppercase reason the other two carry, but
+             * because that heading holds an `<img>` and two spans, and the name has to
+             * be the card in words.
+             */}
+            <table
+              className="roster roster--stack"
+              role="table"
+              aria-label={`Bases holding ${card.name}`}
+            >
+              <thead role="rowgroup">
+                <tr role="row">
+                  {/* "Member", as the leaderboard and the trade table say it: the row is
+                      a person to talk to, and the tag is secondary text under the name. */}
+                  <th role="columnheader">Member</th>
+                  <th className="num" role="columnheader">
+                    Copies
+                  </th>
+                  <th role="columnheader">Spare</th>
+                </tr>
+              </thead>
+              <tbody role="rowgroup">
+                {holders.map((holder) => (
+                  <tr key={holder.tag} role="row">
+                    <td className="stack-title" role="cell">
+                      <a href={hrefFor({ view: 'player', tag: holder.tag })}>{holder.label}</a>
+                      {holder.label === holder.tag ? null : (
+                        <>
+                          <br />
+                          <span className="card-meta">{holder.tag}</span>
+                        </>
+                      )}
+                    </td>
+                    <td className="num" role="cell" data-label="Copies">
+                      {holder.count}
+                    </td>
+                    <td role="cell" data-label="Spare">
+                      {/*
+                       * The count on its own does not say what it means. A base never
+                       * gives away its last copy — `MIN_TRADEABLE_COUNT`, the same rule
+                       * the trade suggestions and the server apply — so 1 is a holding
+                       * you cannot ask for and 2 is an offer, and that is worth a
+                       * column of words rather than leaving everybody to do the
+                       * comparison per row.
+                       */}
+                      {holder.canSpare ? (
+                        'Can spare one'
+                      ) : (
+                        <span className="role-pill">Its only copy</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The totals grid and, once a tile is pressed, the table of who holds that card.
+ *
+ * The selection lives here rather than in `CardsView` because the grid and the table
+ * are one thing — the table is the grid's answer — and nothing else on the page reads
+ * it. It survives the disclosure being collapsed and reopened on purpose: coming back
+ * to the panel you were reading and finding your card still chosen is the behaviour
+ * that costs nobody anything, and clearing it would be a second way to close the
+ * table that the tile's own toggle already covers.
+ */
+function CardTotals({
+  totals,
+  columns,
+  bases,
+  labelOf,
+}: {
+  totals: CardTotal[]
+  columns: number
+  bases: readonly BaseInventory[]
+  labelOf: (tag: string) => string
+}) {
+  const [picked, setPicked] = useState<number | null>(null)
+  const entry = useMemo(() => totals.find((row) => row.card.id === picked), [totals, picked])
+
+  return (
+    <>
+      <CardTotalsGrid totals={totals} columns={columns} picked={picked} onPick={setPicked} />
+      {/* Below the grid, not above it: the tiles are what the panel is, and a table
+          that pushed sixty tiles down the page every time one was pressed would move
+          the tile you had just pressed out from under the pointer. */}
+      {entry === undefined ? null : (
+        <CardHolders entry={entry} bases={bases} labelOf={labelOf} />
+      )}
+    </>
   )
 }
 
@@ -664,14 +918,19 @@ export function CardsView({ user }: { user: SessionUser }) {
             </span>
           </summary>
           <div className="group__body">
+            {/* The last sentence is what tells anybody the tiles are pressable. A grid
+                of sixty buttons has no other affordance at this size — there is no room
+                for a caption on a 52px tile — so the panel says it once, in the line
+                that is already explaining what the badges mean. */}
             <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
               The same grid as above, with the copies held across <strong>every</strong> tracked
               base — linked to an account or not — as the badge in each tile's corner. The order is
               the grid's and never changes with the counts, so the two can be read tile for tile. A
               tile in <strong>grey with no badge</strong> is a card nobody in the clan holds; it
-              cannot be got by trading, only from the game.
+              cannot be got by trading, only from the game. <strong>Choose a card</strong> to list
+              the bases holding it below.
             </p>
-            <CardTotalsGrid totals={totals} columns={columns} />
+            <CardTotals totals={totals} columns={columns} bases={bases} labelOf={labelOf} />
           </div>
         </details>
       </section>

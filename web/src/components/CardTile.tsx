@@ -28,10 +28,19 @@ import { GameIcon } from './primitives.tsx'
  *   grid shows every count including 1, because the totals *are* what it is for.
  * - **what sits under the frame.** A number box, or nothing.
  * - **where the accessible name comes from.** In the entry grid the number box is
- *   the named control and the tile needs no name of its own; in the totals grid
- *   there is no control at all, so `label` names the tile and is the only place
- *   "nobody holds this" is stated in words — greyscale with no badge would
- *   otherwise be colour alone.
+ *   the named control and the tile needs no name of its own; in the totals grid the
+ *   tile holds no control, so `label` names the tile and is the only place "nobody
+ *   holds this" is stated in words — greyscale with no badge would otherwise be
+ *   colour alone.
+ *
+ * **Nothing here is clickable, and that is a decision rather than an omission.** The
+ * totals grid does make its tiles pressable — a press lists the bases holding that
+ * card — but it does so by wrapping this in a `<button>` of its own. Handling the
+ * press in here would make the entry grid's tiles pressable too, where the target
+ * would sit around a number box people are typing into, and it would mean
+ * re-implementing keyboard activation, focus and the pressed state that a real button
+ * has already. So the caller wrapping it is the contract: this stays a picture, and
+ * `label` is the name that button computes from its content.
  *
  * `GameIcon` is used without a `fallback` on purpose: the card art is gitignored,
  * so a fresh clone has none of it, and the element removes itself on error rather

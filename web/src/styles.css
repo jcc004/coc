@@ -1625,6 +1625,101 @@ details.group > .group__body {
   font-weight: 600;
 }
 
+/*
+ * A tile in the totals grid is a button: pressing it lists the bases holding that
+ * card, below the grid.
+ *
+ * The button is the grid item, not the tile — `.card-deck` is `display: contents`, so
+ * whatever wraps a tile takes its place in the track. `display: block` and `width:
+ * 100%` are what keep that swap invisible: a button is inline-block by default, which
+ * would shrink-wrap and leave the tile narrower than its column. Everything else here
+ * is the browser's button chrome being taken off; the tile inside supplies the border,
+ * the background and the padding it always did.
+ *
+ * No `overflow` and no clipping, because the focus ring is drawn by the one global
+ * `:focus-visible` rule at 2px with a 2px offset and has to be able to sit outside
+ * the box.
+ */
+.card-total__pick {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  /* Matches the tile's own radius, so the selected ring below follows the corners the
+     deck frame rounds rather than boxing them in. */
+  border-radius: var(--radius);
+}
+
+/*
+ * The selected state as a **ring outside the tile** rather than a change to its
+ * border, and hover as the tint every other hoverable row in the app uses.
+ *
+ * The border is the deck colour — the only visible carrier of which deck a card is in
+ * — so recolouring it would trade one encoding for another, and the selected tile
+ * would be the one tile whose deck you could not read. A `box-shadow` spreads outside
+ * the border instead and leaves it alone. `--accent` is the app's one interactive
+ * colour and is declared in all three theme scopes, so this needs no colour of its own
+ * and holds up on parchment and on dark wood alike.
+ *
+ * **Never the only carrier of the selection.** The pressed tile is `aria-pressed`, and
+ * the table that opens directly below names the card in words with its art beside it,
+ * which is what a sighted reader actually reads the selection off.
+ */
+.card-total__pick:hover .card-tile {
+  /* The same tint a roster row takes on hover, for the same reason: it is the app's
+     one "you are pointing at this" and it must not look like the selected ring. */
+  background: var(--hover);
+}
+.card-total__pick[aria-pressed='true'] {
+  box-shadow: 0 0 0 3px var(--accent);
+}
+
+/*
+ * The holders table under the totals grid, and the card it is about.
+ *
+ * Separated from the grid by a rule, like `details.group` is from what precedes it:
+ * sixty tiles above and a table below need a line between them or the table reads as a
+ * sixty-first row of the grid.
+ */
+.card-holders {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--grid);
+}
+
+/*
+ * The card's name and art, as the table's visible heading.
+ *
+ * An `h3` gets a browser default of 1.17em and thick margins, both of which would make
+ * it the largest thing on a panel whose own `h2` is 12px uppercase — so the size is set
+ * here. It wraps rather than truncating: the deck and the clan total sit beside the
+ * name on a desktop and drop under it on a phone, which is what `flex-wrap` buys for
+ * nothing.
+ */
+.card-holders__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* Counts the rows and says how many of them can actually give one away — the
+   actionable half, which the Spare column below only yields to a scan. */
+.card-holders__note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- deck progress plaques ---------- */
 
 /*
@@ -1798,7 +1893,11 @@ table.roster--divided tbody tr:not(:first-child) > td {
   border-top: 2px solid var(--baseline);
 }
 
-/* One side of a suggested swap, in the trade table. */
+/* One card, named, with its picture beside it. Two callers: each side of a suggested
+   swap in the trade table, and the heading over the holders table on the card page,
+   which names the tile that was pressed. Reused rather than copied — it is the same
+   28px thumbnail against the same text, and a second class would drift the first time
+   either was touched. */
 .trade-card {
   display: inline-flex;
   align-items: center;
