@@ -172,9 +172,29 @@ The three traps, in the order they are likely:
    or local edits blocking the merge. The build then succeeds against old sources.
 
 3. **A build with no art.** `web/public/coc/` is gitignored, so a fresh clone has none of
-   it and `npm run build` copies nothing into `dist`. The card portraits in particular
-   come from neither the API nor the wiki — they are copied to the host by hand — so
-   `ls web/public/coc/cards/*.png | wc -l` should read 60 before you build.
+   it and `npm run build` copies nothing into `dist`. A complete tree is ~10 MB in 288
+   files, from three different sources:
+
+   ```bash
+   npm run assets:coc     # clan badges, league icons, labels — needs a working token
+   npm run assets:wiki    # troop, spell, hero and Town Hall art
+   # card portraits: copied to the host by hand, from neither the API nor the wiki
+   ```
+
+   Check all four directories before building — a missing one is 60 broken tiles, not
+   an error:
+
+   ```bash
+   ls web/public/coc/cards/*.png | wc -l    # 60
+   du -sh web/public/coc/*                  # cards, labels, leagues, wiki
+   ```
+
+4. **A development build.** `vite build` takes its mode from the environment, so a shell
+   that has sourced an `.env` exporting `NODE_ENV=development` produces a *development*
+   React — nearly twice the bytes, dev-only warnings, none of the production fast paths.
+   It works, which is why it went unnoticed in production for a day. The build script now
+   forces `NODE_ENV=production` so the host environment cannot decide this, but the size
+   is the tell if it ever regresses: the JS bundle is ~327 kB, not ~616 kB.
 
 Restarting the service is also what applies any pending schema migration, so there is no
 separate migrate step. Back the database up first — all three files, since copying only
