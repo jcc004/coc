@@ -1,4 +1,5 @@
 import { AccountView } from './components/AccountView.tsx'
+import { AdminView } from './components/AdminView.tsx'
 import { CardsView } from './components/CardsView.tsx'
 import { ClanSearchView } from './components/ClanSearchView.tsx'
 import { ClanView } from './components/ClanView.tsx'
@@ -7,6 +8,7 @@ import { LoginScreen } from './components/Login.tsx'
 import { PlayerView } from './components/PlayerView.tsx'
 import { SavedClansView } from './components/SavedClansView.tsx'
 import { SearchBar } from './components/SearchBar.tsx'
+import { UserMenu } from './components/UserMenu.tsx'
 import { WarView } from './components/WarView.tsx'
 import {
   hrefFor,
@@ -16,7 +18,6 @@ import {
   useRoute,
   useTheme,
   type Route,
-  type Theme,
 } from './hooks.ts'
 import { useOneTimeImport } from './import.ts'
 import {
@@ -29,9 +30,6 @@ import {
   ROSETTE_VIEWBOX,
 } from './rosette.ts'
 import { useSession } from './session.ts'
-
-const NEXT_THEME: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' }
-const THEME_LABEL: Record<Theme, string> = { system: '◐ System', light: '☀ Light', dark: '☾ Dark' }
 
 /**
  * The compass rosette beside the title, drawn by hand.
@@ -183,24 +181,10 @@ export function App() {
             Cards
           </a>
         ) : null}
-        <button
-          type="button"
-          className="icon-button"
-          onClick={() => setTheme(NEXT_THEME[theme])}
-          title="Switch theme"
-        >
-          {THEME_LABEL[theme]}
-        </button>
-        <a
-          className="icon-button"
-          href={hrefFor({ view: 'account' })}
-          title={user.role === 'admin' ? 'Password and users' : 'Change your password'}
-        >
-          {user.displayName}
-        </a>
-        <button type="button" className="icon-button" onClick={session.signOut}>
-          Sign out
-        </button>
+        {/* One control for everything about *you*: the appearance switch, the
+            password page, the admin panel if it is yours, and Sign out. It replaced
+            three separate buttons that were squeezing the title on a phone. */}
+        <UserMenu user={user} theme={theme} onTheme={setTheme} onSignOut={session.signOut} />
       </header>
 
       <main className="shell__main">
@@ -234,6 +218,11 @@ export function App() {
         ) : null}
 
         {route.view === 'account' ? <AccountView user={user} /> : null}
+
+        {/* Guarded inside the view, not here: a member who types the URL is told the
+            page is admins-only rather than silently sent home, which would read as a
+            broken link. Every `/api/admin/*` route is gated on the server anyway. */}
+        {route.view === 'admin' ? <AdminView user={user} /> : null}
 
         {/* Both carry a card grid, and only a base's owner may type into it, so
             each needs to know who is signed in. Passed down rather than read from

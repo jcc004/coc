@@ -58,6 +58,19 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
 }
 
 /**
+ * A thrown cause as a sentence to show somebody.
+ *
+ * An `ApiError` already carries a message written for a person, so it is used
+ * verbatim; anything else reaching a catch block here is a fetch that never got an
+ * answer, and "could not reach the server" is both what happened and what to do
+ * about it. Here rather than in a component because three of them need it, and two
+ * were importing it out of `AccountView`.
+ */
+export function describe(cause: unknown): string {
+  return cause instanceof ApiError ? cause.message : 'Could not reach the server.'
+}
+
+/**
  * The same idea for the forced password change. An admin can flag an account
  * while its owner has the app open — or flag their own, from the admin panel —
  * and from that moment the server 403s every route but `/api/auth/{me,password,

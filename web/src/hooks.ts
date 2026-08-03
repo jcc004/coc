@@ -73,6 +73,13 @@ export type Route =
   | { view: 'war'; tag: string }
   | { view: 'search'; name: string }
   | { view: 'account' }
+  /**
+   * The admin panel. A route of its own rather than a card on `account`, so an admin
+   * can be sent a link to it — and so "the account page" means one thing whoever
+   * opens it. A member reaching it is refused *on the page*, by `AdminView`, not
+   * bounced: see the note there.
+   */
+  | { view: 'admin' }
   | { view: 'cards' }
 
 export function parseHash(hash: string): Route {
@@ -80,6 +87,7 @@ export function parseHash(hash: string): Route {
   const decoded = param ? decodeURIComponent(param) : ''
 
   if (view === 'account') return { view: 'account' }
+  if (view === 'admin') return { view: 'admin' }
   // No tag in the route: the card page picks its base from the shared list, so a
   // deep link to one base would be a link into somebody else's editing session.
   if (view === 'cards') return { view: 'cards' }
@@ -102,6 +110,8 @@ export function hrefFor(route: Route): string {
       return `#/search/${encodeURIComponent(route.name)}`
     case 'account':
       return '#/account'
+    case 'admin':
+      return '#/admin'
     case 'cards':
       return '#/cards'
     case 'home':

@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { MIN_PASSWORD_LENGTH, type SessionUser } from '@coc/shared'
-import { api } from '../api.ts'
-import { describe } from './AccountView.tsx'
+import { api, describe } from '../api.ts'
 import { PasswordField } from './primitives.tsx'
 
 /**

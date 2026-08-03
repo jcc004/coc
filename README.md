@@ -183,11 +183,20 @@ The app shell is not rendered until `GET /api/auth/me` answers; a 401 renders th
 *instead of* the shell, so no panel gets to fire a request and paint its own 401. A **global
 401 handler** in `web/src/api.ts` (`setUnauthorizedHandler`, wired up by `web/src/session.ts`)
 means a session expiring in an open tab drops you back to the login screen rather than
-surfacing as a confusing error inside a data panel. The topbar shows your **display name** — it
-links to `#/account`, which shows your identity (display name, email, guid — the guid is shown
-but not editable), the password-change form and, for admins only, the user list — plus a
-**Sign out** button. No credential is kept in `localStorage`: the cookie is the whole
+surfacing as a confusing error inside a data panel. The topbar carries an **account menu** behind a
+silhouette (see [The account menu](#the-account-menu)); `#/account` shows your identity (display
+name, email, guid — the guid is shown but not editable) and the password-change form, and `#/admin`
+is the accounts page, for admins. No credential is kept in `localStorage`: the cookie is the whole
 mechanism.
+
+**`#/account` and `#/admin` are two pages on purpose.** They were one, with the user list as a third
+card that members did not see — which put an admin's rarest and most consequential controls directly
+beneath the form they use to change their own password, and made "the account page" mean two
+different things depending on who opened it. A member who types `#/admin` is **refused on the
+page**, not bounced home: a redirect leaves them wondering whether the page exists, whether they
+mistyped, or whether something broke, and the refusal says which. It is only the screen — every
+`/api/admin/*` route is gated by `requireAdmin` on the server, so a member reaching that URL has
+been told no, not merely shown less.
 
 **Every password field** in the app — login, change-password, the new-user form, the forced
 change screen — is the one `PasswordField` component in `web/src/components/primitives.tsx`, so
@@ -534,9 +543,9 @@ per-process and disappears on restart — that is deliberate for a personal tool
 
 ## The topbar
 
-A gold plate spanning both columns, carrying the title and up to five controls. It wraps at
+A gold plate carrying the title, the Clan and Cards links, and the account menu. It wraps at
 390px rather than scrolling sideways, so everything on it stays reachable on a phone (measured:
-two rows, 128px tall, no horizontal overflow).
+two rows, no horizontal overflow).
 
 ### The compass rosette
 
@@ -577,6 +586,47 @@ which of the two it is doing (`Back to #G88CYQP, the last clan you opened` /
 Like the Cards link, it is **absent where it would point at the page you are on** — on any clan
 page (the last clan is the one you are looking at) and, with no clan yet, on the list itself. The
 saved-clans list stays one click away on the title.
+
+### The account menu
+
+One silhouette button on the right, holding everything about *you*: the appearance switch, a link
+to your password page, the **admin panel** if you are an admin, and **Sign out**.
+
+It replaced three separate topbar controls — a theme cycler labelled with the current theme, the
+display name as a link, and a Sign out button. At 390px those competed with Clan and Cards for a
+bar barely wide enough for the title, and "my settings" is a thing people look for behind their own
+avatar rather than spread across a toolbar.
+
+**The button's accessible name is the display name and role** — `verify (admin) — account menu` —
+because a silhouette says nothing about *who* is signed in, and on a shared browser that is the one
+thing worth being able to check. The panel repeats it in words, with the email, for a sighted user
+who cannot hear the label.
+
+**The admin entry is absent for a member, not disabled.** A greyed-out "Admin panel" tells somebody
+their account is lacking; an absent one says the feature is not theirs. `userMenuItems()` in
+`web/src/user-menu.ts` decides it, pure and tested, and **Sign out is last** so it is never between
+two navigation items where it can be pressed by accident.
+
+**Appearance stays a cycler, not three radio items.** It is the only item pressed repeatedly, it has
+to visit all three states, and as a cycler it can be pressed without the menu closing underneath it
+— so the effect is visible while the control is still under the cursor. Every other item navigates
+or signs out, and those close the menu. Read back in a browser: four presses gave
+`◐ System → ☀ Light → ☾ Dark → ◐ System` with the panel still open, and `data-theme` following on
+the root element.
+
+`system` is **in** the cycle and is the default. Without it, anybody whose OS switches at dusk could
+not get back to following it without clearing storage. An unrecognised stored value — an older
+build's, or one somebody edited — lands on `system`, the one answer that is never wrong.
+
+Hand-rolled ARIA, because there is no menu library here and one glyph is not worth a dependency:
+`aria-haspopup="menu"` and `aria-expanded` on the button, `role="menu"` / `role="menuitem"` on the
+panel and its items, **Escape closes it and returns focus to the button** (closing without moving
+focus leaves a keyboard user at a control that no longer exists), and an outside press closes it —
+bound on `pointerdown` rather than `click`, so a press that starts outside cannot land on an item
+that has moved. All four verified in a browser, including `aria-controls` matching the panel's id.
+
+The silhouette itself is inline SVG in `web/src/components/UserMenu.tsx`, a circle and a clipped
+half-capsule in `currentColor`, for the same reason the rosette is.
 
 ## Looking a player or clan up
 
@@ -1827,7 +1877,7 @@ available — the art is Supercell's, used under their fan policy or not at all.
 | Command | Does |
 |---|---|
 | `npm run dev` | API + UI with reload |
-| `npm test` | server auth, card and trade suites (`app.request` against `createApp`, in-memory SQLite) + web unit tests for table sort, paging, owner-overwrite, `coc:saved` migration, wiki-art name lookup, the card list, the trade rules and the tracker's access and ordering rules. Both workspaces glob `src/**/*.test.ts`, so a new test file runs without being added to a list |
+| `npm test` | server auth, card and trade suites (`app.request` against `createApp`, in-memory SQLite) + web unit tests for table sort, paging, owner-overwrite, `coc:saved` migration, wiki-art name lookup, the card list, the trade rules, the tracker's access and ordering rules, and the account menu. Both workspaces glob `src/**/*.test.ts`, so a new test file runs without being added to a list |
 | `npm run typecheck` | `tsc --noEmit` across all three workspaces |
 | `npm run build` | production bundle for the UI — run the two asset scripts *first* |
 | `npm run assets:coc` | re-download the vendored league and label icons from the CoC API |
