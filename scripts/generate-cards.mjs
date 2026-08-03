@@ -131,10 +131,13 @@ await writeFile(
  * grid still renders sixty named cards, and \`GameIcon\` removes an image that
  * fails to load rather than showing a broken-image glyph or collapsing the cell.
  *
- * The card art is derived from the wiki art vendored by
- * \`scripts/fetch-wiki-art.mjs\`, whose per-file provenance lives in
- * \`wiki-art.generated.ts\`; the manifest's \`art_source\` records which one each
- * card came from. It is Supercell's, used under their Fan Content Policy.
+ * The card art is a purpose-made 256x320 portrait set, each file already framed
+ * on its own subject — **not** derived from the wiki thumbnails
+ * \`fetch-wiki-art.mjs\` vendors, which is why the tiles are framed whole rather
+ * than cropped. No script regenerates it: it exists only where it was assembled,
+ * so a host is given the files by hand. Per-card provenance is
+ * \`scripts/card-art-sources.csv\`, and the manifest's \`art_source\` records it.
+ * It is Supercell's, used under their Fan Content Policy.
  *
  * The manifest's \`collected\` and \`confidence\` fields are **not** carried
  * across. They are notes about how each image was sourced, not inventory;

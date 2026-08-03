@@ -3,18 +3,20 @@ import { describe, it } from 'node:test'
 import { CARD_ID_MAX, CARD_ID_MIN } from '@coc/shared'
 import {
   cardFraming,
-  DEFAULT_CROP,
-  overriddenCardIds,
-  wholeFramedCardIds,
+  faceCrop,
+  faceCroppedCardIds,
+  WHOLE_FRAMING,
   type CardFaceCrop,
 } from './card-crops.ts'
 import { ALL_CARDS, cardById } from './cards.ts'
 
 /*
- * The crop table is hand-tuned by eye, which is exactly the kind of data that rots
- * — a card renamed, an id renumbered, a decimal fat-fingered — and the symptom is a
- * tile that quietly frames a patch of grass. None of that is visible in a
- * screenshot of the other fifty-nine, so it is checked here instead.
+ * The art is a purpose-made set, already cropped tight on each subject, so every
+ * tile is framed whole and the crop table is empty. Two things are worth pinning:
+ * that it really is *every* card and not fifty-nine of them, and that the face-crop
+ * path still works — it is kept for the next time the art is regenerated, and an
+ * empty table means the usual "check each entry" tests would pass vacuously. So the
+ * arithmetic is tested directly, on `faceCrop`, rather than over no data at all.
  */
 
 function faceCrops(): { id: number; crop: CardFaceCrop }[] {
@@ -37,32 +39,41 @@ describe('cardFraming', () => {
     }
   })
 
-  it('has been tuned for all sixty, leaving none on the untested default', () => {
-    // The default is the safety net for a card the table has not seen — a new one
-    // in next year's manifest. Every card that exists today has been looked at, so
-    // a gap here means one was added and never framed.
-    const missing = ALL_CARDS.filter((card) => !overriddenCardIds().includes(card.id)).map(
-      (card) => `${card.id} ${card.name}`,
-    )
-    assert.deepEqual(missing, [])
+  it('frames all sixty whole, because the art arrives already cropped', () => {
+    // The switchover this file exists to record: the pictures are 256×320 and tight
+    // on their subject, and `.card-tile__frame` is 4:5 to match, so re-cropping
+    // would zoom into a face that already fills the frame. Named per card rather
+    // than counted — a count would keep passing while the wrong one was cropped.
+    const cropped = faceCrops().map(({ id }) => `${id} ${cardById(id)?.name}`)
+    assert.deepEqual(cropped, [])
+    assert.deepEqual(faceCroppedCardIds(), [])
+  })
+
+  it('hands out the one shared whole framing, so two tiles compare by identity', () => {
+    assert.equal(cardFraming(1), WHOLE_FRAMING)
+    assert.equal(cardFraming(CARD_ID_MAX), WHOLE_FRAMING)
   })
 
   it('gives an unknown id the default instead of throwing', () => {
-    assert.deepEqual(cardFraming(0), DEFAULT_CROP)
-    assert.deepEqual(cardFraming(CARD_ID_MAX + 1), DEFAULT_CROP)
-    assert.deepEqual(cardFraming(-3), DEFAULT_CROP)
+    assert.deepEqual(cardFraming(0), WHOLE_FRAMING)
+    assert.deepEqual(cardFraming(CARD_ID_MAX + 1), WHOLE_FRAMING)
+    assert.deepEqual(cardFraming(-3), WHOLE_FRAMING)
   })
 
-  it('overrides only real card ids', () => {
-    for (const id of overriddenCardIds()) {
-      assert.ok(id >= CARD_ID_MIN && id <= CARD_ID_MAX, `override ${id} is outside 1–60`)
-      assert.ok(cardById(id), `override ${id} names no card`)
+  /*
+   * These three describe the crop table as it *would* be used. They pass over an
+   * empty table today; they are the guard rails for the next set of art, and they
+   * fail rather than pass silently if somebody adds an entry for a card that does
+   * not exist or a window that runs off the edge of its picture.
+   */
+  it('crops only real card ids', () => {
+    for (const id of faceCroppedCardIds()) {
+      assert.ok(id >= CARD_ID_MIN && id <= CARD_ID_MAX, `crop ${id} is outside 1–60`)
+      assert.ok(cardById(id), `crop ${id} names no card`)
     }
   })
 
   it('keeps every window inside the picture it crops', () => {
-    // The window is 1/zoom of the image tall and centred on `y`, so a centre
-    // nearer an edge than half a window would show empty frame beside the art.
     for (const { id, crop } of faceCrops()) {
       const half = 50 / crop.zoom
       const name = cardById(id)?.name ?? id
@@ -74,32 +85,73 @@ describe('cardFraming', () => {
   })
 
   it('never zooms out past the frame, nor so far in that the art cannot carry it', () => {
-    // Below 1 the image would be shorter than the frame; past ~3 a 256px source is
-    // showing under 64 real pixels, which no amount of upscaling rescues.
     for (const { id, crop } of faceCrops()) {
       const name = cardById(id)?.name ?? id
       assert.ok(crop.zoom >= 1, `${name}: zoom ${crop.zoom} is under 1`)
-      assert.ok(crop.zoom <= 3, `${name}: zoom ${crop.zoom} crops past what 256px can carry`)
+      assert.ok(crop.zoom <= 3, `${name}: zoom ${crop.zoom} crops past what 320px can carry`)
     }
   })
+})
 
-  it('frames the vehicles and the building whole rather than cropping a face', () => {
-    // Named, not counted: the point of the list is *which* cards have no face, and
-    // a count would keep passing while the wrong five were in it.
-    const whole = wholeFramedCardIds().map((id) => cardById(id)?.name)
-    assert.deepEqual(whole, [
-      'Balloon',
-      'Furnace',
-      'Cannon Cart',
-      'Drop Ship',
-      'Rocket Balloon',
-    ])
+/*
+ * The face path, kept for the next regeneration of the art and therefore tested on
+ * its own rather than through a table that has no entries in it.
+ */
+describe('faceCrop', () => {
+  it('passes a window that already fits through untouched', () => {
+    assert.deepEqual(faceCrop(50, 50, 2), { kind: 'face', x: 50, y: 50, zoom: 2 })
   })
 
-  it('gives the two Baby Dragons the same crop, since they share one picture', () => {
+  it('pulls a window back inside the picture rather than showing empty frame', () => {
+    // At zoom 2 the window is half the picture, so its centre cannot go nearer an
+    // edge than 25% without part of the frame falling outside the image.
+    assert.deepEqual(faceCrop(0, 0, 2), { kind: 'face', x: 25, y: 25, zoom: 2 })
+    assert.deepEqual(faceCrop(100, 100, 2), { kind: 'face', x: 75, y: 75, zoom: 2 })
+  })
+
+  it('clamps a tight crop less, because a small window can sit nearer the edge', () => {
+    // The whole point of the clamp being a function of zoom: at 4 the window is a
+    // quarter of the picture, so 12.5% is as close to the top as a head can be.
+    assert.deepEqual(faceCrop(10, 5, 4), { kind: 'face', x: 12.5, y: 12.5, zoom: 4 })
+  })
+
+  it('collapses to the centre at zoom 1, where the window is the whole picture', () => {
+    assert.deepEqual(faceCrop(20, 80, 1), { kind: 'face', x: 50, y: 50, zoom: 1 })
+  })
+})
+
+describe('the art behind the framing', () => {
+  /*
+   * This replaces a test that asserted the *opposite*: the wiki art had one Baby
+   * Dragon file serving cards 11 and 38, so the two tiles were the same picture and
+   * the test pinned their crops as equal. The purpose-made set draws each card
+   * separately, so that limitation is gone, and what is worth guarding now is that
+   * it stays gone — a regeneration that reused one file for two cards would give the
+   * grid two identical tiles, which reads as a bug in the grid.
+   */
+  it('gives every one of the sixty cards its own picture', () => {
+    const byImage = new Map<string, string[]>()
+    for (const card of ALL_CARDS) {
+      const shared = byImage.get(card.image) ?? []
+      shared.push(`${card.id} ${card.name}`)
+      byImage.set(card.image, shared)
+    }
+    const reused = [...byImage.entries()]
+      .filter(([, cards]) => cards.length > 1)
+      .map(([image, cards]) => `${image}: ${cards.join(', ')}`)
+
+    assert.deepEqual(reused, [])
+    assert.equal(byImage.size, ALL_CARDS.length)
+  })
+
+  it('draws the two Baby Dragons separately, one per deck', () => {
+    // The pair the old test was about, called out by name: they are different cards
+    // in different decks, and now different pictures, so the deck frame is no longer
+    // the only thing telling them apart.
     const home = cardById(11)
     const builder = cardById(38)
-    assert.equal(home?.image, builder?.image)
-    assert.deepEqual(cardFraming(11), cardFraming(38))
+    assert.equal(home?.name, 'Baby Dragon')
+    assert.equal(builder?.name, 'Baby Dragon (Builder)')
+    assert.notEqual(home?.image, builder?.image)
   })
 })

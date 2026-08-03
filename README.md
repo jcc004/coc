@@ -362,12 +362,14 @@ Order matters — `vite build` copies `web/public` into `dist`, so anything fetc
 not in the bundle you shipped. Skip them entirely and the app still works: every icon is
 optional and the UI falls back to the text-and-meter layout it had before the art existed.
 
-**The card grid's pictures come from `assets:wiki` too** — card art is drawn from the vendored
-wiki thumbnails, so that one script supplies it. What it does *not* supply is
-`web/public/coc/cards/manifest.json`, which no committed script produces; that is why
-`web/src/cards.generated.ts` is committed, and why the card *list* is always correct on a host
-even before any art arrives. A host with no art shows sixty named, correctly sized, pictureless
-tiles.
+**The card grid's pictures come from neither script.** They are a purpose-made set — sixty PNGs,
+**256×320 portrait, each already cropped tight on its own subject** — sitting in
+`web/public/coc/cards/` beside `manifest.json`, with per-file provenance in
+`scripts/card-art-sources.csv`. No committed script produces either the art or the manifest, which
+is why `web/src/cards.generated.ts` is committed: the card *list* is always correct on a host even
+before any art arrives, and a host with no art shows sixty named, correctly sized, pictureless
+tiles. An earlier set was derived from the `assets:wiki` thumbnails and cropped to a head in CSS;
+that is no longer how a tile is framed — see [The tiles are framed whole](#the-tiles-are-framed-whole).
 
 `assets:wiki` needs `COC_API_TOKEN` as well, because it asks the CoC API which units exist
 before it goes looking for their pictures. It takes about a minute on a cold run (requests are
@@ -417,8 +419,10 @@ default, and where the selection goes when the filter drops it), `last-route.ts`
 restore, and which clan the topbar's Clan button opens).
 Components that are shown in more than one place are shared rather than copied — `BaseCardEditor`
 is the one 60-tile card grid, rendered by both the card page and a player page; `CardTile` is the
-one card tile, rendered by that grid and by the card page's clan-totals grid; and `DeckPlaques`
-is the one set of deck bars, rendered by both pages as well.
+one card tile, rendered by that grid and by the card page's clan-totals grid; `TradeSuggestions` is
+the one trade table, clan-wide on the card page and filtered to one base on a player page; and
+`DeckPlaques` is the one set of deck bars, rendered by both pages as well. `useBaseLabels()` in
+`base-labels.ts` is the one place a base tag becomes a name, for all of them.
 
 ## Phones and tablets first
 
@@ -895,17 +899,55 @@ gitignored, so a fresh clone has the sixty cards' ids, names and categories but 
 pictures — and the manifest is inside that directory too, so a fresh clone cannot even re-run
 the generator. That is exactly why the module is committed rather than generated at build time.
 
-A missing picture is the **normal** case, not an error. Card art is drawn from the vendored wiki
-thumbnails, so `npm run assets:wiki` is what supplies it; without that, `GameIcon` removes the
+A missing picture is the **normal** case, not an error. The art is a hand-placed set under
+`web/public/coc/cards/` and no committed script fetches it; without it, `GameIcon` removes the
 `<img>` on error and the tile is an empty, correctly sized art box over its count — the tiles carry
 no name of their own, so on such a checkout the number box's accessible name and the tile's `title`
 are the only things that still say which card is which.
 `.card-tile__frame` reserves the height rather than shrinking to its content, so the grid
 neither collapses nor reflows. Never a broken-image glyph.
 
-Two cards can share one picture — "Baby Dragon" and "Baby Dragon (Builder)" are one wiki file —
-so the **id** is the identity and the **name** is what the user reads. Image paths are not
-unique and must not be treated as a key.
+The **id** is the identity and the **name** is what the user reads; an image path is neither.
+That was concrete under the old wiki art, where "Baby Dragon" and "Baby Dragon (Builder)" were one
+file and two tiles were the same picture. The current set draws **all sixty separately** — card 11
+is `elixir_11_baby_dragon.png`, card 38 is `builder_base_38_baby_dragon_builder.png`, and no two
+cards share a file. `card-crops.test.ts` pins that: it groups all sixty by image path and asserts
+no path is reused, naming the offenders if one ever is. Keying on the id anyway is what makes the
+grid survive a set that *does* reuse a file.
+
+### The tiles are framed whole
+
+Every tile shows the **whole** of its picture. `.card-tile__frame` is `aspect-ratio: 4 / 5`
+because the art is 4:5 — 256×320, all sixty — so `object-fit: contain` at the matching ratio
+neither trims an edge nor leaves a letterbox bar. Read back off the DOM at 390, 600 and 1280px,
+light and dark: all 120 frames on the card page have an `<img>` box **exactly** equal to the frame
+box, offset 0,0. At 1280px that is a 107×134 frame showing a 256×320 file, so the art downscales —
+sharper than any crop of it could be.
+
+This replaced a per-card **crop table**. The art used to be whole figures standing on a patch of
+grass, and `card-crops.ts` held three numbers per card (`x`, `y`, `zoom`) that CSS used to slide a
+window over the head. The new art is already framed on its subject, so cropping it would zoom into
+a face that already fills the frame. The frame was 3:4 while its shape was a free choice.
+
+**The crop machinery is kept, not deleted.** The art may be regenerated unframed, and re-cropping
+should stay a table of numbers rather than a rewrite:
+
+- `cardFraming(id)` returns `WHOLE_FRAMING` unless the id appears in `FACE_CROPS`, which is
+  **empty**. Whole is the default; a face crop is the exception, and `CardTile` sets
+  `data-crop="face"` plus the three custom properties only for one.
+- `faceCrop(x, y, zoom)` is exported and carries the clamp that keeps a window inside its picture.
+  It is tested **directly**, because an empty table would make the old per-entry assertions pass
+  vacuously — a crop at zoom 2 clamps to 25–75%, at zoom 4 to 12.5–87.5%, and at zoom 1 collapses
+  to dead centre.
+- the per-entry guard rails (ids must name real cards, windows must stay inside the picture, zoom
+  in 1–3) are still there and still run, so the table cannot be refilled wrongly unnoticed.
+
+**Roughly half the files carry transparency** (31 of 60 have fully transparent pixels; 29 are
+opaque edge to edge — measured by decoding the PNGs properly, filters reconstructed, not by reading
+raw scanlines). Where a background is transparent the tile's own `--surface` shows through:
+parchment in light mode, dark wood in dark. Looked at on both themes and all four deck frames, that
+reads as a cut-out figure on the card and matches the game's own treatment, so **no backing colour
+is painted** — one would only re-introduce a box edge the art was cut out to avoid.
 
 ### The data model, and why inventory is shared
 
@@ -1099,6 +1141,11 @@ option are two people's names in one label, and the reader cannot tell which is 
   name, i.e. for a base no visible roster names. The names come from the same `baseOptions()` the
   picker uses, so there is one resolver, not two. Stacked on a phone, a pair's later options label
   themselves `darek gives` / `Zack gives` rather than repeating the tags.
+  The table itself is `TradeSuggestions` in `web/src/components/TradeSuggestions.tsx`, **shared with
+  a player page**, which renders the same component with a `focusTag` so it shows only that base's
+  pairs — see [the trades under a player's grid](#the-trades-themselves-under-the-grid). Here it
+  is deliberately unfiltered and group-wide: a trade has two sides and half of them are somebody
+  else's bases by definition.
 
 #### Row counts on the trade suggestions
 
@@ -1167,10 +1214,10 @@ the per-base count badge sits. Collapsed by default, and its summary line carrie
 readable against the tiles above, because "the same picture in the same place" needs no
 translation. That is not a claim about two similar components: `CardTile` in
 `web/src/components/CardTile.tsx` **is** the tile, and `BaseCardEditor`'s entry grid and this one
-are its two callers — same art, same crop geometry, same deck-coloured frame, same greyscale.
-Measured at 1280px, both grids render 7 columns of 123px tiles over a 107×143 frame; three columns
-at 390px. What the two callers vary is only the badge, what sits under the frame (a number box, or
-nothing) and where the accessible name comes from.
+are its two callers — same art, same framing, same deck-coloured frame, same greyscale.
+Measured at 1280px, both grids render 7 columns of 123px tiles over a 107×134 (4:5) frame; five
+columns at 600px, three at 390px. What the two callers vary is only the badge, what sits under the
+frame (a number box, or nothing) and where the accessible name comes from.
 
 **The order is fixed by design and never changes with the counts.** It comes from
 `cardsInGridOrder()`, which is literally the grid's own two calls — `cardCategoriesInOrder()` then
@@ -1319,8 +1366,9 @@ page would have been the third place a `7/19` could be built and the first place
 
 A player page **is** a base, so it carries the card panel too — directly under the profile header
 that holds the name and trophies, above the stat tiles. The panel's four deck plaques are always
-on screen; the sixty tiles are a `<details>` below them, **collapsed** by default, because sixty
-tiles unfurled there would bury the rest of the page. Shut, the panel is the plaques plus one line:
+on screen; the sixty tiles **and this base's trade suggestions** are a `<details>` below them,
+**collapsed** by default, because sixty tiles unfurled there would bury the rest of the page. Shut,
+the panel is the plaques plus one line:
 
 ```
 EVENT CARDS · 2026-08
@@ -1344,11 +1392,11 @@ same one-request save, same 4 named deck groups. That is not a claim about two s
 components: `BaseCardEditor` in `web/src/components/BaseCardEditor.tsx` **is** the grid, and
 `CardsView` and the player page are its two callers, and one tile of it is `CardTile`, shared in
 turn with the clan-totals grid. Measured side by side at 1280px, both render `123.141px ×7`
-columns, a 10px gap and 123×195 tiles — 123×159 of frame and padding plus the 0–10 box; three
-columns at 390px. Duplicating sixty tiles and their draft-and-save logic was the thing to avoid —
-the greyscale, the badges and the clamping would have drifted apart the first time either copy was
-touched. Choosing the base is deliberately not the shared component's job; each page keeps its own
-idea of which base it is about.
+columns, a 10px gap and a 107×134 frame per tile; five columns at 600px, three at 390px.
+Duplicating sixty tiles and their draft-and-save logic was the thing to avoid — the greyscale, the
+badges and the clamping would have drifted apart the first time either copy was touched. Choosing
+the base is deliberately not the shared component's job; each page keeps its own idea of which base
+it is about.
 
 The **one** thing the two callers differ on is the deck plaques, which `BaseCardEditor` draws only
 when asked (`showDeckProgress`, on for the card page and off here). A player page already has them
@@ -1366,6 +1414,51 @@ one pair at a time (the whole-list call is quadratic and computes every pair the
 mention), so the hint cannot drift from the list on the card page. Its tests cover no cards, cards
 in one deck only, a base holding spares with no counterpart, and a base with a genuine swap
 available.
+
+#### The trades themselves, under the grid
+
+The summary line has always said `Trades available with N bases`. Now the panel **shows them**:
+the suggestions table sits inside the same `<details>`, directly below the grid, under a
+`Trade suggestions` sub-heading. Same disclosure, so it opens and closes with the tiles — verified
+by clicking the summary and reading `checkVisibility()` off the table, the heading and the grid at
+390, 600 and 1280px in both themes: all three hidden shut, all three shown open, no second control
+to find.
+
+**Filtered to this base.** The table takes an optional `focusTag` and keeps only the pairs that base
+is a side of. A clan-wide list under a heading counting *this* base's partners would contradict its
+own summary line; filtered, the two are the same number. Read back off the DOM on a seeded base
+with two partners: summary `Trades available with 2 bases`, table `2` pair blocks over `10` option
+rows, one `Propose in chat` per row. Seeded up to six partners: summary `Trades available with
+6 bases`, `6` pairs, and the pager appears — `Showing 1–5 of 6 pairs`, `Page 1 of 2`, 19 options on
+page 1 and 3 on page 2. Below five it hides itself, so a base with a couple of partners shows no
+control at all.
+
+**It is the card page's table, extracted — not a copy.** `TradeSuggestions` in
+`web/src/components/TradeSuggestions.tsx` is now the third thing the two pages share, after
+`CardTile` and `BaseCardEditor`, and it took `TradeCard`, `ProposeButton` and `BaseLabel` with it.
+Naming a base moved too, into `useBaseLabels()` in `web/src/base-labels.ts`, so both pages print the
+same text for the same tag right down to the `(#TAG)` suffix a shared name gets. The rules run over
+**every** base and the narrowing happens afterwards — one call, in one order, so the two pages
+cannot drift into disagreeing about what a trade is or which one comes first.
+
+Paging is the card page's, unchanged: **pairs, not rows**, five by default, remembered under one
+`coc:tradePairLimit` for both pages, because it is a reading preference about this table and not
+about a route. **Propose in chat** works here untouched — `requestChatDraft` writes to a
+module-level store and the chat panel is in the sidebar on every route. Checked from a player page:
+the composer went from empty to `Turtle gives Archer <-> darek gives Barbarian` and the button
+relabelled to `In chat box ↗`, with nothing posted.
+
+The table carries `aria-label="Trade suggestions"` and **never** `aria-labelledby` the heading above
+it. Both headings that sit over it are `.section-title`, which is `text-transform: uppercase`, and
+Chrome computes an accessible name from the *transformed* text — pointing at one would name the table
+`TRADE SUGGESTIONS`. Read back off the accessibility tree: `table: "Trade suggestions"`. The visible
+heading is the same words, so label-in-name still holds.
+
+**The Category column is kept**, deliberately. It is not redundant with the two cards beside it: the
+swap is legal *because* they share a deck, and on a player page the four deck plaques directly above
+make the deck the unit of progress — so "which deck does this swap move" is the column that says
+whether an option is worth taking. It costs nothing at 390px either, where the table stacks into one
+labelled card per swap and the deck becomes a line rather than a column competing for width.
 
 ### Proposing a trade over chat
 
@@ -1560,12 +1653,12 @@ server-side, so the app asks for art at the size it displays instead of pulling 
 4000×4000 original and needing an image library to shrink it. There is no `sharp`
 here and there should not be.
 
-`THUMB` is **256px**, sized for the biggest consumer — the card grid, whose tiles
-render at 88px and so want 2x on a retina display. The little 32px `.art-icon` slots
-simply downscale the same file. Raising a rendered size past what `THUMB` supplies
-makes the art soft; raise `THUMB` to match, and re-run with **`REFETCH=1`**, because
-the ordinary run skips anything already on disk and would otherwise keep the old,
-smaller files.
+`THUMB` is **256px**. It was sized for the card grid, which used to draw these files; the card art is
+now its own purpose-made set (see [The tiles are framed whole](#the-tiles-are-framed-whole)), so the
+biggest remaining consumer is the 32px `.art-icon` slot, which simply downscales. (The 28px
+thumbnails in the trade table are the *card* PNGs, not these.) Raising a rendered size past what `THUMB`
+supplies makes the art soft; raise `THUMB` to match, and re-run with **`REFETCH=1`**, because the
+ordinary run skips anything already on disk and would otherwise keep the old, smaller files.
 
 It is polite by construction: existence checks batch 50 titles per request,
 downloads run serially with a 300ms delay, anything already on disk is skipped

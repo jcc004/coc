@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { BaseInventory, SessionUser } from '@coc/shared'
-import { api } from '../api.ts'
-import { baseOptions } from '../base-names.ts'
+import type { SessionUser } from '@coc/shared'
+import { useBaseLabels } from '../base-labels.ts'
 import { activeTag, ownsAnyBase, tagsInScope, type BaseScope } from '../base-scope.ts'
 import { baseOwnerOf } from '../card-entry.ts'
 import { inventoryFor, useCardInventoryState } from '../card-inventory.ts'
@@ -12,28 +11,14 @@ import {
   type BaseStanding,
   type CardTotal,
 } from '../card-standings.ts'
-import {
-  groupTradesByPair,
-  suggestTrades,
-  tradeProposalMessage,
-  type TradeSuggestion,
-} from '../card-trades.ts'
-import { cardById, categoryOfCard, deckSlug } from '../cards.ts'
-import { requestChatDraft } from '../chat-draft.ts'
+import { deckSlug } from '../cards.ts'
 import { hrefFor, useBaseScope, useRowLimit } from '../hooks.ts'
 import { ownerRecordFor, useOwners, useOwnersState } from '../owners.ts'
-import { useSavedClans } from '../saved-clans.ts'
 import { paginate, type RowLimit } from '../saved-table.ts'
 import { BaseCardEditor } from './BaseCardEditor.tsx'
 import { CardTile } from './CardTile.tsx'
-import {
-  ErrorPanel,
-  GameIcon,
-  Loading,
-  Meter,
-  Pager,
-  RowLimitSelect,
-} from './primitives.tsx'
+import { ErrorPanel, Loading, Meter, Pager, RowLimitSelect } from './primitives.tsx'
+import { TradeSuggestions } from './TradeSuggestions.tsx'
 
 /**
  * The card-collecting event: who holds what, and who should trade with whom.
@@ -47,9 +32,13 @@ import {
  * card shaping in `cards.ts`, the leaderboard order and the group totals in
  * `card-standings.ts`, the base filter in `base-scope.ts`, and the paging in
  * `saved-table.ts`. This file is the controls, the panels, and reporting failures
- * at the control that caused them; the 60-tile grid and its entry form are
- * `BaseCardEditor`, shared with the player page, which shows the same grid for the
- * one base it is already about, and one tile of either grid is `CardTile`.
+ * at the control that caused them.
+ *
+ * **Three pieces of it are shared with the player page**, which is the same event
+ * seen from one base: the 60-tile grid and its entry form (`BaseCardEditor`), one
+ * tile of either grid (`CardTile`), and the suggestions table
+ * (`TradeSuggestions`) — clan-wide here, narrowed to one base there. Naming a base
+ * is shared too, in `useBaseLabels`, so both pages print the same text for it.
  *
  * **The page narrows as it goes down.** The picker and the grid are the one base
  * you can act on; everything below is the whole clan and is deliberately *not*
@@ -63,274 +52,6 @@ import {
  * are both reference, and the totals are sixty more tiles, so they go last.
  */
 
-/** One side of a suggested swap: the card, named, with its picture if we have it. */
-function TradeCard({ cardId }: { cardId: number }) {
-  const card = cardById(cardId)
-  if (!card) return <>Card {cardId}</>
-  return (
-    <span className="trade-card">
-      <GameIcon src={card.image} className="trade-card__img" />
-      {card.name}
-    </span>
-  )
-}
-
-/**
- * Loads a proposal into the chat composer in the sidebar.
- *
- * It fills the box; it does **not** post. A suggestion is a draft by definition —
- * the owners may want to change the wording, or say when — and a button that
- * silently posted to the group channel would be a nasty surprise. The label says
- * "Propose", the composer's own Send button is what sends, and the confirmation
- * below is about the composer, never about a message having gone out.
- */
-function ProposeButton({
-  trade,
-  labelOf,
-}: {
-  trade: TradeSuggestion
-  /**
-   * The same member-name resolver the picker and the table use — `baseOptions` in
-   * `base-names.ts` — so the message says the names that are on screen. The owner
-   * is deliberately *not* passed: the requested sentence names members, and what
-   * that costs is written out on `tradeProposalMessage`.
-   */
-  labelOf: (tag: string) => string
-}) {
-  const [offered, setOffered] = useState(false)
-
-  return (
-    <button
-      type="button"
-      className="chip"
-      onClick={() => {
-        requestChatDraft(
-          tradeProposalMessage(trade, {
-            cardName: (id) => cardById(id)?.name,
-            member: labelOf,
-          }),
-        )
-        setOffered(true)
-      }}
-      title="Put this proposal in the chat box — you still press Send"
-    >
-      {offered ? 'In chat box ↗' : 'Propose in chat'}
-    </button>
-  )
-}
-
-/** Rows-per-page options for the suggestions. See {@link TradeSuggestions}. */
-const TRADE_PAIR_LIMITS: RowLimit[] = [5, 10, 20, 'all']
-
-/**
- * Every swap the current counts allow, grouped by the pair of bases involved.
- *
- * The rules are entirely in `suggestTrades`; this only renders them, and names both
- * the **member** and the **owner**, because "#2GCJ2QPU should talk to #AAABBB" is
- * not actionable until you know that means Jared should talk to Sam.
- *
- * Group-wide on purpose: it takes the whole inventory rather than the filtered
- * picker list, because a trade has two sides and half of them are somebody else's
- * bases by definition.
- *
- * **The page counts pairs, not rows.** The two readings are genuinely different
- * here — twelve pairs can be thirty rows — and this is the one that keeps the
- * presentation honest: a pair is named once with its options listed beneath it, so
- * splitting a pair across a page boundary would put a row with two empty Member
- * cells at the top of page 2, which reads as missing data rather than as "same two
- * bases as above" (the failure the `data-pair-start` note below is about). Paging
- * by pair also makes "5" mean five *decisions to make*, which is what somebody
- * working down this list is actually counting. Both controls therefore say pairs —
- * the limit is labelled `Pairs` and the pager counts pairs — so the numbers on
- * screen can never disagree with the rows under them.
- */
-function TradeSuggestions({
-  bases,
-  labelOf,
-  ownerOf,
-}: {
-  bases: BaseInventory[]
-  labelOf: (tag: string) => string
-  ownerOf: (tag: string) => string | undefined
-}) {
-  const pairs = useMemo(
-    () => groupTradesByPair(suggestTrades(bases, categoryOfCard)),
-    [bases],
-  )
-
-  const [limit, setLimit] = useRowLimit('coc:tradePairLimit', 5)
-  const [page, setPage] = useState(1)
-  const view = useMemo(() => paginate(pairs, limit, page), [pairs, limit, page])
-
-  /* Re-entered counts can shrink the list under a page number that is now past the
-     end; `paginate` clamps, and this puts the control back in step with it. */
-  useEffect(() => {
-    if (view.page !== page) setPage(view.page)
-  }, [view.page, page])
-
-  if (pairs.length === 0) {
-    return (
-      <p className="empty-hint">
-        No trades available yet. A swap needs one base holding <strong>two or more</strong> of a
-        card the other has <strong>none</strong> of, in <strong>both</strong> directions, within one
-        category.
-      </p>
-    )
-  }
-
-  const rowCount = view.rows.reduce((sum, pair) => sum + pair.trades.length, 0)
-
-  return (
-    <>
-      <div className="table-wrap">
-        {/* Stacks into one labelled card per swap on a phone; the explicit roles
-            keep it a table for assistive tech once `display` changes. Nothing
-            sorts, so the header row is hidden there rather than kept — see the
-            note in styles.css. */}
-        <table className="roster roster--stack" role="table">
-          <thead role="rowgroup">
-            <tr role="row">
-              {/* "Member", not "Base": the cell now reads as a person, which is who
-                  you go and talk to. The tag is still under it. */}
-              <th role="columnheader">Member</th>
-              <th role="columnheader">Gives</th>
-              <th role="columnheader">Member</th>
-              <th role="columnheader">Gives</th>
-              <th role="columnheader">Category</th>
-              <th role="columnheader" />
-            </tr>
-          </thead>
-          <tbody role="rowgroup">
-            {view.rows.flatMap((pair) =>
-              pair.trades.map((trade, index) => (
-                <tr
-                  key={`${trade.baseA}-${trade.baseB}-${trade.cardFromA}-${trade.cardFromB}`}
-                  role="row"
-                  /*
-                   * Marks where one pair's block of options begins, so the wide
-                   * table can rule a line above it. Without that, a continuation
-                   * row's empty Member cells read as missing data rather than as
-                   * "same two bases as above" — seen in a screenshot, where the
-                   * second option rendered as a bare "Minion / Hog Rider" row
-                   * with nobody's name on it.
-                   */
-                  data-pair-start={index === 0 ? 'true' : undefined}
-                >
-                  {/* The pair is named once per group; the rows under it are its
-                      options. A cell for a later row is genuinely empty, which is
-                      how the stacked layout knows to drop the line rather than
-                      print a blank one. */}
-                  <td className="stack-title" role="cell">
-                    {index === 0 ? (
-                      <BaseLabel
-                        tag={pair.baseA}
-                        label={labelOf(pair.baseA)}
-                        owner={ownerOf(pair.baseA)}
-                      />
-                    ) : null}
-                  </td>
-                  {/*
-                   * Stacked, a row is its own card, so a later option in a pair has
-                   * no base named above it and two bare "Gives" lines would not say
-                   * whose. Those rows name the member in the label instead; the
-                   * first does not need to, because the member is the line above it.
-                   */}
-                  <td
-                    role="cell"
-                    data-label={index === 0 ? 'Gives' : `${labelOf(pair.baseA)} gives`}
-                  >
-                    <TradeCard cardId={trade.cardFromA} />
-                  </td>
-                  <td className="stack-title" role="cell">
-                    {index === 0 ? (
-                      <BaseLabel
-                        tag={pair.baseB}
-                        label={labelOf(pair.baseB)}
-                        owner={ownerOf(pair.baseB)}
-                      />
-                    ) : null}
-                  </td>
-                  <td
-                    role="cell"
-                    data-label={index === 0 ? 'Gives' : `${labelOf(pair.baseB)} gives`}
-                  >
-                    <TradeCard cardId={trade.cardFromB} />
-                  </td>
-                  <td className="card-meta" role="cell" data-label="Category">
-                    {trade.category}
-                  </td>
-                  <td className="row-actions" role="cell">
-                    <ProposeButton trade={trade} labelOf={labelOf} />
-                  </td>
-                </tr>
-              )),
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Under the table, like the roster's: the limit and the pager answer the
-          same question ("what am I looking at, and how do I see the rest"), and it
-          is what you reach for once you have scrolled to the bottom. */}
-      <div className="roster-footer">
-        <RowLimitSelect
-          id="trade-pairs"
-          label="Pairs"
-          options={TRADE_PAIR_LIMITS}
-          value={limit}
-          onChange={(next) => {
-            setLimit(next)
-            setPage(1)
-          }}
-        />
-        <Pager view={view} noun="pairs" onPage={setPage} />
-      </div>
-
-      <p className="empty-hint" style={{ marginTop: 12, fontSize: 13 }}>
-        {pairs.length} pair{pairs.length === 1 ? '' : 's'} could trade
-        {view.pageCount > 1 ? (
-          <>
-            , {rowCount} option{rowCount === 1 ? '' : 's'} on this page
-          </>
-        ) : null}
-        . Each row is one option, not a commitment — one spare can appear against several partners,
-        so pick one per card and re-enter the counts afterwards.{' '}
-        <strong>Propose in chat</strong> writes the swap into the chat box in the sidebar for you to
-        edit; nothing is posted until you press Send.
-      </p>
-    </>
-  )
-}
-
-/**
- * A base, as a person: the member name over the tag and the owner.
- *
- * The name is the link, because the name is what somebody recognises. **The tag
- * stays on screen** underneath — it is the identity the counts, the trades and the
- * routes are all keyed on, and a name alone is not enough to go and find a player
- * in the game. It is dropped only when it *is* the label, i.e. when no roster we
- * can see names the base, which is the same rule the grid's header uses.
- */
-function BaseLabel({
-  tag,
-  label,
-  owner,
-}: {
-  tag: string
-  label: string
-  owner: string | undefined
-}) {
-  return (
-    <>
-      <a href={hrefFor({ view: 'player', tag })}>{label}</a>
-      <br />
-      <span className="card-meta">
-        {label === tag ? null : <>{tag} · </>}
-        {owner ?? 'no owner set'}
-      </span>
-    </>
-  )
-}
 
 /**
  * Rows-per-page options for the leaderboard.
@@ -551,108 +272,28 @@ function CardTotalsGrid({ totals }: { totals: CardTotal[] }) {
   )
 }
 
-/**
- * Member names for every base, keyed by player tag.
- *
- * A base *is* a clan member, so the name to show is the one the roster shows. The
- * saved clans are where the owner assignments came from in the first place, so
- * their rosters are where the names are: one request per saved clan covers every
- * base in it, rather than one request per base.
- *
- * Sequential, like the saved-clans refresh, to keep the upstream rate limit
- * comfortable. A clan that will not load simply leaves its members unnamed — the
- * base falls back to its tag and the page carries on, because a name is a
- * convenience and the tag is the identity.
- */
-function useMemberNames(baseTags: string[]): Map<string, string> {
-  const clans = useSavedClans()
-  /* Joined into strings so the effect re-runs on a change of *which* clans or
-     bases, not on every re-render of the stores' arrays. */
-  const clanKey = useMemo(() => clans.map((clan) => clan.tag).sort().join(','), [clans])
-  const baseKey = useMemo(() => [...baseTags].sort().join(','), [baseTags])
-  const [names, setNames] = useState<Map<string, string>>(new Map())
-
-  useEffect(() => {
-    if (!baseKey) return
-    const controller = new AbortController()
-
-    void (async () => {
-      const found = new Map<string, string>()
-
-      for (const clanTag of clanKey ? clanKey.split(',') : []) {
-        try {
-          const { items } = await api.clanMembers(clanTag, controller.signal)
-          for (const member of items) found.set(member.tag, member.name)
-        } catch {
-          // Unnamed is a fine outcome; failing the whole page is not.
-        }
-      }
-
-      /*
-       * Anything the rosters did not cover, asked for directly. A base only has
-       * to be in a *saved* clan for the sweep above to name it, and an owner can
-       * be set on a base whose clan nobody saved — or who has since left. One
-       * request each, and only for the leftovers, so the common case still costs
-       * one request per clan rather than one per base.
-       */
-      for (const tag of baseKey.split(',')) {
-        if (found.has(tag) || controller.signal.aborted) continue
-        try {
-          const player = await api.player(tag, controller.signal)
-          found.set(tag, player.name)
-        } catch {
-          // A tag the API will not resolve keeps showing as a tag.
-        }
-      }
-
-      if (!controller.signal.aborted) setNames(found)
-    })()
-
-    return () => controller.abort()
-  }, [clanKey, baseKey])
-
-  return names
-}
-
 export function CardsView({ user }: { user: SessionUser }) {
   const state = useCardInventoryState()
   const bases = state.entries
   const ownersState = useOwnersState()
   const owners = useOwners()
 
-  /*
-   * The bases are the tracked owner assignments, not the bases that happen to
-   * have counts — otherwise a base nobody had entered yet could never be chosen,
-   * and the entry screen would have nothing to start from. Any base that somehow
-   * has counts without an assignment is added so its rows are never orphaned off
-   * the screen entirely.
-   */
-  const tags = useMemo(() => {
-    const all = new Set(owners.map((entry) => entry.tag))
-    for (const base of bases) all.add(base.tag)
-    return [...all].sort()
-  }, [owners, bases])
-
   const ownerOf = useMemo(() => {
     const byTag = new Map(owners.map((entry) => [entry.tag, entry.owner]))
     return (tag: string) => byTag.get(tag)
   }, [owners])
 
-  /* The list the Base select offers: member names, ordered by name, with a tag
-     appended only where two bases would otherwise read identically. Computed over
-     **every** tracked base, not the filtered subset, for two reasons: the labels
-     have to read the same in the group-wide panels below, and a name shared by two
-     bases must still be disambiguated when the filter happens to offer only one of
-     them. */
-  const memberNames = useMemberNames(tags)
-  const allOptions = useMemo(
-    () => baseOptions(tags.map((tag) => ({ tag, name: memberNames.get(tag) }))),
-    [tags, memberNames],
-  )
-  const labelOf = useMemo(() => {
-    const byTag = new Map(allOptions.map((option) => [option.tag, option.label]))
-    return (tag: string) => byTag.get(tag) ?? tag
-  }, [allOptions])
+  /*
+   * The tracked bases and the text to print for each. Which bases those are, and
+   * how a shared name is disambiguated, is `useBaseLabels`' — shared with the
+   * player page's trade table so the two name the same base the same way.
+   *
+   * `allOptions` is the list the Base select offers before the Mine/All filter, and
+   * is computed over **every** tracked base rather than the filtered subset: the
+   * labels have to read the same in the group-wide panels below, and a name shared by
+   * two bases must still be disambiguated when the filter offers only one of them.
+   */
+  const { tags, options: allOptions, labelOf } = useBaseLabels(owners, bases)
 
   /*
    * Mine / All. Every rule is in `base-scope.ts`; the only decision here is when

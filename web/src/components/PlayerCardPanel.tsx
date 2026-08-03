@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { SessionUser } from '@coc/shared'
+import { useBaseLabels } from '../base-labels.ts'
 import { baseOwnerOf } from '../card-entry.ts'
 import { inventoryFor, useCardInventoryState } from '../card-inventory.ts'
 import { summariseBase } from '../card-summary.ts'
@@ -9,10 +10,11 @@ import { ownerRecordFor, useOwners } from '../owners.ts'
 import { BaseCardEditor } from './BaseCardEditor.tsx'
 import { DeckPlaques } from './DeckPlaques.tsx'
 import { ErrorPanel } from './primitives.tsx'
+import { TradeSuggestions } from './TradeSuggestions.tsx'
 
 /**
- * This player's event cards: four progress plaques, over a grid collapsed until
- * asked for.
+ * This player's event cards: four progress plaques, over a grid and its trades,
+ * collapsed until asked for.
  *
  * A player page is a base, so the card grid belongs on it — but the cards are one
  * interest among many here, and sixty tiles unfurled above the stat tiles would
@@ -20,6 +22,19 @@ import { ErrorPanel } from './primitives.tsx'
  * answered in place: how far each deck has got, and whether a swap is waiting.
  * Opened, it is the card page's grid, `BaseCardEditor`, with no base selector —
  * the base is the player whose page this is.
+ *
+ * **The suggestions table is inside the same `<details>`, under the grid.** The
+ * summary line has always said "Trades available with N bases" and then shown
+ * nothing, which is the one promise this panel was not keeping. Under the grid
+ * because the grid is what the suggestions are computed from — the spares you have
+ * just typed are the rows — and inside the *same* disclosure because they are one
+ * subject: opening the cards opens the cards, and there is no second control to
+ * find.
+ *
+ * **Filtered to this base.** `TradeSuggestions` is the card page's table, given a
+ * `focusTag`; the whole clan's pairs under a heading counting *this* base's
+ * partners would contradict its own summary line. Filtered, the pair count and the
+ * heading are the same number.
  *
  * **The plaques sit outside the `<details>`, not inside its `<summary>`.** They have
  * to be readable collapsed *and* open, which a summary would also give — but a
@@ -58,6 +73,19 @@ export function PlayerCardPanel({
   const state = useCardInventoryState()
   const categories = useMemo(() => cardCategoriesInOrder(), [])
   const sizes = useMemo(() => deckSizes(), [])
+
+  /*
+   * Names and owners for the *other* side of each suggested swap. The same hook the
+   * card page uses, so a base reads identically on both pages down to the `(#TAG)`
+   * suffix a shared name gets — and so a partner is a person to message rather than
+   * a tag. It costs one roster request per saved clan on this page, which is the
+   * price of naming somebody who is not the player being viewed.
+   */
+  const { labelOf } = useBaseLabels(owners, state.entries)
+  const ownerOf = useMemo(() => {
+    const byTag = new Map(owners.map((entry) => [entry.tag, entry.owner]))
+    return (partner: string) => byTag.get(partner)
+  }, [owners])
 
   const summary = useMemo(
     () => summariseBase(tag, state.entries, categoryOfCard, categories),
@@ -124,6 +152,25 @@ export function PlayerCardPanel({
             base={inventoryFor(state.entries, tag)}
             owner={baseOwnerOf(ownerRecordFor(owners, tag))}
             user={user}
+          />
+
+          {/*
+           * Directly below the grid, still inside the disclosure. The heading is an
+           * `h3` with the panel's own title treatment, so it reads as a subsection of
+           * the cards rather than as another panel — and its rule is what separates
+           * sixty tiles from a table. Margin inline rather than a new class: it is
+           * one number, and the rest of this feature already spaces one-off blocks
+           * this way.
+           */}
+          <h3 className="section-title" style={{ marginTop: 20 }}>
+            Trade suggestions
+          </h3>
+          <TradeSuggestions
+            bases={state.entries}
+            labelOf={labelOf}
+            ownerOf={ownerOf}
+            /* This base only — the pair count then matches the summary above. */
+            focusTag={tag}
           />
         </div>
       </details>

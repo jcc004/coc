@@ -43,11 +43,13 @@ describe('the generated card list', () => {
   })
 
   /*
-   * Two cards *may* share one picture — "Baby Dragon" and "Baby Dragon (Builder)"
-   * are one wiki file — so image paths are not unique and must not be treated as
-   * an identity. The id is the identity, and the name is what the user reads.
+   * The id is the identity, not the image path. That mattered concretely under the
+   * old wiki art, where "Baby Dragon" and "Baby Dragon (Builder)" were one file; the
+   * purpose-made set draws all sixty separately, and `card-crops.test.ts` is where
+   * that is pinned. The rule here holds either way: two cards are two cards,
+   * whatever art they happen to point at.
    */
-  it('keeps the id as the identity, since two cards can share a picture', () => {
+  it('keeps the id as the identity, whatever art a card points at', () => {
     assert.equal(new Set(ALL_CARDS.map((card) => card.id)).size, ALL_CARDS.length)
   })
 

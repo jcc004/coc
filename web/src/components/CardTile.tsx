@@ -4,8 +4,14 @@ import { deckSlug, type GeneratedCard } from '../cards.ts'
 import { GameIcon } from './primitives.tsx'
 
 /**
- * One card as a framed picture: the crop, the deck frame, the held-vs-not
+ * One card as a framed picture: the framing, the deck frame, the held-vs-not
  * treatment, and the corner badge.
+ *
+ * The framing is `cardFraming`'s, and today it is `whole` for all sixty — the art
+ * is a 256×320 set already cropped on its subject, and the frame is 4:5 to match,
+ * so the picture fills the frame untouched. The face-crop branch below is the
+ * exception path, kept because the art may be regenerated unframed; see
+ * `card-crops.ts`.
  *
  * It is here rather than inside `BaseCardEditor` because **two grids draw it** —
  * the per-base entry grid, where each tile wraps a number box, and the clan-wide
@@ -60,8 +66,9 @@ export function CardTile({
 }) {
   const framing = cardFraming(card.id)
 
-  /* The crop's three numbers reach CSS as custom properties, so the geometry stays
-     in styles.css and only the per-card values are set from data. */
+  /* A face crop's three numbers reach CSS as custom properties, so the geometry
+     stays in styles.css and only the per-card values are set from data. A whole
+     framing needs none of them: `data-crop` alone selects the fill-the-frame rule. */
   const frameStyle =
     framing.kind === 'face'
       ? ({
