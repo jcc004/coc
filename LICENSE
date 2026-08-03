@@ -1,0 +1,49 @@
+MIT License
+
+Copyright (c) 2026 john@crighton.net
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## What the MIT licence above does not cover
+
+The grant above is for **the code in this repository**. It is not a grant over the game
+content this code displays, because that content is not the author's to license:
+
+- **Supercell's assets.** The league badges, the clan and player label icons, the clan
+  badges, and the sixty event-card pictures are Clash of Clans art. They are used under
+  Supercell's Fan Content Policy <https://supercell.com/en/fan-content-policy/> or not at
+  all. Clash of Clans is a trademark of Supercell Oy; this project is unofficial and not
+  endorsed by Supercell.
+- **The community wiki's images.** The troop, spell, hero, hero-equipment and Town Hall
+  art comes from the Clash of Clans Wiki, whose *text* is CC BY-SA. That licence does not
+  extend to those images: they are user-uploaded game rips, so they remain Supercell's.
+  Crediting the wiki as the source — which the app's footer does — is honest attribution,
+  not a licence, and no licence to them is available to give.
+
+**This repository redistributes none of it.** `web/public/coc/` is gitignored as a
+licensing decision, so a clone carries no Supercell asset and obtains no rights to one;
+the fetch scripts pull the art onto the host at deploy time. Adding the art to the repo
+would not grant any rights either, and would forfeit the reason it is absent.
+
+The full account — which asset arrives from where, what the Fan Content Policy requires of
+a publicly hosted deployment, and why the wiki's text licence stops at its text — is in
+[docs/game-art.md](docs/game-art.md), under
+[Licensing, and why it matters more now](docs/game-art.md#licensing-and-why-it-matters-more-now).
