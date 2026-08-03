@@ -41,7 +41,20 @@ STUB
 
 cat > "$SB/bin/npm" <<'STUB'
 #!/usr/bin/env bash
-if [[ "${1:-}" == "ci" ]]; then exit 0; fi
+if [[ "${1:-}" == "ci" ]]; then
+  # A real `npm ci` here installs tsx and vite, and update.sh now asserts both are
+  # on disk afterwards — because a bare `npm ci` under NODE_ENV=production silently
+  # prunes them, which took the site down once. Honour --include=dev the way npm
+  # does: without it, pretend the prune happened, so the guard can be tested.
+  mkdir -p node_modules/.bin
+  for a in "$@"; do [[ "$a" == "--include=dev" ]] && include_dev=1; done
+  if [[ -n "${include_dev:-}" || -z "${NODE_ENV:-}" ]]; then
+    printf '#!/bin/sh\n' > node_modules/.bin/tsx
+    printf '#!/bin/sh\n' > node_modules/.bin/vite
+    chmod +x node_modules/.bin/tsx node_modules/.bin/vite
+  fi
+  exit 0
+fi
 if [[ "${1:-}" == "run" && "${2:-}" == "build" ]]; then
   rm -rf web/dist
   mkdir -p web/dist/assets web/dist/coc/cards
@@ -216,6 +229,39 @@ rm web/public/coc/cards/card_01.png
 ./deploy/update.sh --force > "$SB/d9.log" 2>&1
 check "refuses with art missing" "$?" "1"
 grep -q "expected 60" "$SB/d9.log"; check "counts the images" "$?" "0"
+# Put it back, or every later test dies at this precondition instead of at whatever
+# it was written to exercise. It did exactly that.
+: > web/public/coc/cards/card_01.png
+
+banner "9. a pruned install is caught before anything is built or restarted"
+# The failure this guard exists for: `npm ci` exits 0 having installed the wrong tree,
+# because NODE_ENV=production makes npm omit devDependencies — and tsx (which runs the
+# server) and vite (which builds the front end) are both devDependencies. It took the
+# site down once, so it is worth a test. Swap in an npm that installs neither.
+cp "$SB/bin/npm" "$SB/bin/npm.real"
+cat > "$SB/bin/npm" <<'PRUNED'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "ci" ]]; then
+  rm -f node_modules/.bin/tsx node_modules/.bin/vite
+  echo "added 8 packages, and audited 12 packages"
+  exit 0
+fi
+exit 0
+PRUNED
+chmod +x "$SB/bin/npm"
+
+before_sha="$(git rev-parse HEAD)"
+cp web/dist/index.html "$SB/dist-before.html"
+./deploy/update.sh --force > "$SB/d11.log" 2>&1
+check "aborts" "$?" "1"
+grep -q "node_modules/.bin/tsx is missing" "$SB/d11.log"; check "names the missing binary" "$?" "0"
+grep -q "NODE_ENV=production" "$SB/d11.log"; check "names the likely cause" "$?" "0"
+grep -q "still up" "$SB/d11.log"; check "says the site is unaffected" "$?" "0"
+grep -q "Restarting" "$SB/d11.log"; check "never got as far as restarting" "$?" "1"
+check "the served build is untouched" "$(cmp -s web/dist/index.html "$SB/dist-before.html" && echo same || echo changed)" "same"
+check "HEAD is where it was" "$(git rev-parse HEAD)" "$before_sha"
+
+mv "$SB/bin/npm.real" "$SB/bin/npm"
 
 banner "8. an unknown option is rejected rather than ignored"
 ./deploy/update.sh --nonsense > "$SB/d10.log" 2>&1

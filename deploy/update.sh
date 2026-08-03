@@ -260,7 +260,40 @@ fi
 say "Installing dependencies"
 # ci, not install: it installs exactly the lockfile and never rewrites it, so the
 # tree cannot drift dirty and block the next deploy.
-npm ci --silent
+#
+# `--include=dev` is not redundant, and leaving it out took the site down once.
+#
+# **This project's devDependencies are runtime dependencies.** The service runs
+# `tsx` — there is no build step for the server, it executes TypeScript directly —
+# and the front end needs `vite` to build at all. Both are devDependencies.
+#
+# npm decides what to omit from `NODE_ENV`: with `NODE_ENV=production` exported,
+# `npm config get omit` returns `dev`, so a bare `npm ci` silently prunes both.
+# Nothing errors. `npm ci` reports "added 8 packages" instead of ~249, the build
+# then fails with `vite: not found`, and — the part that actually hurts — the
+# service restarts into a missing `tsx` and the site is down.
+#
+# It is easy to have `NODE_ENV=production` in the environment here, because
+# /srv/coc/.env sets it for the app and deploy/README.md tells you to source that
+# file before fetching artwork. `--include=dev` wins over any omit setting
+# regardless of order, which is exactly why it is the fix rather than unsetting
+# a variable and hoping.
+npm ci --silent --include=dev
+
+# Checking the outcome, not the exit code — the whole premise of this script, and
+# the one guard whose absence let the above reach production. `npm ci` exits 0
+# having installed the wrong tree, so the only honest test is whether the two
+# binaries the deploy and the service need are actually on disk.
+for tool in tsx vite; do
+  [[ -x "node_modules/.bin/$tool" ]] || die "npm ci finished but node_modules/.bin/$tool is missing.
+That means devDependencies were pruned — almost certainly NODE_ENV=production in this
+shell, which npm treats as --omit=dev. Both tsx (which *runs* the server) and vite
+(which builds the front end) are devDependencies here.
+
+Nothing has been built or restarted, so the site is still up. Fix with:
+  unset NODE_ENV && npm ci --include=dev"
+done
+info "tsx and vite present"
 
 say "Building the front end"
 # Snapshotted so a failed build or a failed health check can put back something
