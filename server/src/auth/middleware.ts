@@ -130,6 +130,27 @@ export function cookieSecureFromEnv(env: Record<string, string | undefined>): bo
 }
 
 /**
+ * Whether to believe `X-Real-IP` / `X-Forwarded-For` at all — see {@link clientIp}.
+ *
+ * Defaults to **false**, which is the only safe default: a forwarded header is a
+ * string the client typed, and it is trustworthy only because a specific proxy is
+ * known to overwrite it. `npm run dev` and `npm start` on a laptop have no proxy in
+ * front of them, so without this flag they would take rate-limiting identity from
+ * whatever the caller claimed. Opt in on the host, where `nginx-coc.conf` is what
+ * makes the headers mean something.
+ *
+ * It has to be set there, though, and the failure is quiet: behind a proxy with this
+ * off, the socket address is the proxy's for *every* request, so all callers share
+ * one IP bucket and 30 failures from anybody locks the IP brake for everybody. That
+ * is the shared-key lockout `rate-limit.ts` refuses to create with a placeholder, and
+ * it would arrive by configuration instead. The startup line in `index.ts` says which
+ * way this is set, for exactly that reason.
+ */
+export function trustProxyFromEnv(env: Record<string, string | undefined>): boolean {
+  return env.TRUST_PROXY === 'true'
+}
+
+/**
  * `SameSite=Lax` is the CSRF defence: the browser withholds the cookie on
  * cross-site POSTs, which is every state-changing route here. `HttpOnly` keeps
  * the token away from JavaScript, so an XSS bug cannot exfiltrate a session.
@@ -151,21 +172,45 @@ export function clearSessionCookie(c: AuthContext): void {
 /**
  * Best available client identity for rate limiting, or `''` when there is none.
  *
- * Behind the HTTPS terminator this deployment needs, the socket address is the
- * proxy's, so the forwarded header comes first; the socket is the fallback for an
- * app exposed directly. The header is spoofable by anyone who can reach the app
- * without going through the proxy, which is why the IP bucket is the loose one and
- * the email bucket carries the real protection.
+ * **This is a rate-limit bucket key, so a caller who can choose it has turned the
+ * brake off.** The previous version read `X-Forwarded-For.split(',')[0]`, and that
+ * was exactly wrong: nginx sets the header from `$proxy_add_x_forwarded_for`, which
+ * *appends* the real peer to whatever the client sent, so the list arrives as
+ * `<client's own value>, <real IP>`. Taking the first element took the attacker's
+ * string. A different value per request meant a fresh bucket per request, and the
+ * IP brake could never fire. The old comment here claimed the header was only
+ * spoofable by someone bypassing the proxy; that was the mistake, not a caveat.
+ *
+ * So, in order:
+ *
+ * 1. `X-Real-IP`, which nginx sets from `$remote_addr` — a single value it
+ *    overwrites rather than appends to, so a client cannot get a value of their own
+ *    into it through the proxy. Preferred for that reason alone.
+ * 2. The **last** element of `X-Forwarded-For`, which is the hop nginx appended.
+ *    Every earlier element is client-supplied and is ignored. (One proxy is the
+ *    deployment; behind two, the last hop would be the inner proxy and this would
+ *    need to count backwards by however many are trusted — there is one, and
+ *    `nginx-coc.conf` is where that would change.)
+ * 3. The socket address, for an app with nothing in front of it.
+ *
+ * `trustProxy` is the trust boundary, and it is a parameter rather than an
+ * assumption: with it off, both headers are ignored entirely and only the socket
+ * counts. Running this without nginx — a laptop, a container someone exposed
+ * directly — must not silently take identity from a request header, because there
+ * would then be nobody overwriting it. See {@link trustProxyFromEnv}.
  *
  * Empty matters: the limiter skips the IP bucket rather than filing every caller
  * under one shared key, because a shared key is a lockout for the whole app.
  */
-export function clientIp(c: AuthContext): string {
-  const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-  if (forwarded) return forwarded
+export function clientIp(c: AuthContext, trustProxy: boolean): string {
+  if (trustProxy) {
+    const real = c.req.header('x-real-ip')?.trim()
+    if (real) return real
 
-  const real = c.req.header('x-real-ip')?.trim()
-  if (real) return real
+    const hops = c.req.header('x-forwarded-for')?.split(',') ?? []
+    const nearest = hops[hops.length - 1]?.trim()
+    if (nearest) return nearest
+  }
 
   try {
     // Only present when served by @hono/node-server; absent under app.request().
@@ -173,4 +218,16 @@ export function clientIp(c: AuthContext): string {
   } catch {
     return ''
   }
+}
+
+/**
+ * The raw session token from the cookie, or `''`.
+ *
+ * Exported because logout needs the token itself rather than the `sessionId` on the
+ * context: the id is now `sha256(token)` and `deleteSession` hashes what it is
+ * given, so handing it the id would hash a digest and delete nothing. Reading the
+ * cookie belongs here, next to `SESSION_COOKIE`, rather than in a route.
+ */
+export function sessionTokenFromCookie(c: AuthContext): string {
+  return getCookie(c, SESSION_COOKIE) ?? ''
 }

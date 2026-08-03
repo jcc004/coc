@@ -10,7 +10,7 @@ import {
 import { mountAuthRoutes } from './auth/routes.ts'
 import { createLoginLimiter, type LoginLimiter } from './auth/rate-limit.ts'
 import type { AuthStore } from './auth/store.ts'
-import { TtlCache } from './cache.ts'
+import type { TtlCache } from './cache.ts'
 import { mountCardRoutes } from './cards/routes.ts'
 import type { CardInventoryStore } from './cards/store.ts'
 import { mountTradeRoutes } from './cards/trade-routes.ts'
@@ -38,6 +38,91 @@ export interface AppDeps {
   loginLimiter?: LoginLimiter
   /** `Secure` on the session cookie. Derive it with `cookieSecureFromEnv`. */
   cookieSecure?: boolean
+  /**
+   * Whether `X-Real-IP` / `X-Forwarded-For` may be believed. Derive it with
+   * `trustProxyFromEnv`. Defaults to **false**, the safe value: a forwarded header
+   * is only trustworthy because a known proxy overwrites it, and with nothing in
+   * front of the app there is nobody doing that. See `clientIp`.
+   */
+  trustProxy?: boolean
+}
+
+/**
+ * The ceiling on every numeric query parameter, before it is handed to Supercell and
+ * used as part of a cache key.
+ *
+ * `positiveInt` used to accept any positive integer, so `?limit=999999999` went
+ * upstream verbatim *and* earned its own cache entry. Two costs, and the second is
+ * the larger one: with the value unbounded, the key space is unbounded too, so a
+ * caller could mint a fresh entry per request for one dataset and spend the
+ * rate-limited Supercell token on answers nothing can use. That applies to
+ * `minMembers`, `maxMembers` and `minClanLevel` exactly as much as to `limit`, which
+ * is why the bound is on the parser rather than on one call site.
+ *
+ * 100 is chosen because it clears every real caller with room to spare — a clan
+ * holds at most 50 members, the client asks for 20 war-log entries and 6 raid
+ * seasons, and no clan is level 100 — while being small enough that a bounded value
+ * is still a *bound*. Every parameter here is a filter or a page size where a number
+ * past this point selects nothing that a clamped one would not have selected too, so
+ * clamping changes no real answer.
+ *
+ * Out of range is clamped rather than rejected, which keeps the existing contract: a
+ * malformed value has always been ignored in favour of the route's default, and a
+ * caller asking for more than exists has always got everything there was.
+ */
+const MAX_QUERY_INT = 100
+
+/**
+ * The largest request body any `/api/` route will read, enforced before a handler
+ * parses one.
+ *
+ * `nginx-coc.conf` caps bodies at 10 MB and its comment says to "raise the
+ * server-side limit to match rather than this alone" — there was no server-side
+ * limit to raise. This is it, and it is deliberately far below nginx's number
+ * because nginx is protecting itself from buffering while this is protecting the
+ * app from parsing.
+ *
+ * Sized against the two largest real payloads:
+ *
+ * - a whole-base card save (`PUT /api/cards/inventory/:tag`) — 60 card counts, a
+ *   few hundred bytes;
+ * - a browser import (`POST /api/import`) — every owner assignment and saved clan a
+ *   client has ever held. At ~60 bytes per row that is tens of kilobytes for the
+ *   real dataset, and 256 KiB leaves room for an install an order of magnitude
+ *   bigger than this one before anybody has to think about it again.
+ *
+ * Under nginx a body over 10 MB is refused before it arrives, so this fires for the
+ * band between the two limits and for a request that reached the app directly.
+ */
+const MAX_API_BODY_BYTES = 256 * 1024
+
+/**
+ * The interface to bind, defaulting to loopback.
+ *
+ * `serve({ fetch, port })` with no hostname binds `0.0.0.0` **and** `::`, so the
+ * process sat on every interface the box had. On the deployment that meant :8787 was
+ * reachable directly, and everything nginx does for a request — TLS, HSTS, the
+ * `client_max_body_size` ceiling, setting the forwarded headers the rate limiter
+ * reads — could be skipped by addressing the app instead of the site. Only the host
+ * firewall stood in the way, which is a second system having to be right about
+ * something this one can simply decline to offer.
+ *
+ * `nginx-coc.conf` proxies to `127.0.0.1:8787`, so loopback is what the deployment
+ * actually needs. `HOST` is the override for the case where direct exposure is the
+ * intent — a container that must publish a port, say — and having to set it is the
+ * point: that decision should be typed out somewhere rather than inherited from a
+ * default. It lives here rather than in `index.ts` so it can be tested without
+ * starting a listener.
+ */
+export const DEFAULT_BIND_HOST = '127.0.0.1'
+
+export function bindHostFromEnv(env: Record<string, string | undefined>): string {
+  return env.HOST?.trim() || DEFAULT_BIND_HOST
+}
+
+/** Whether `host` puts the app on every interface, i.e. in front of nginx. */
+export function bindsEveryInterface(host: string): boolean {
+  return host === '0.0.0.0' || host === '::' || host === ''
 }
 
 /**
@@ -49,10 +134,17 @@ export interface AppDeps {
  */
 const PUBLIC_API_PATHS = new Set(['/api/health', '/api/auth/login', '/api/auth/logout'])
 
+/**
+ * A positive integer from the query string, bounded by {@link MAX_QUERY_INT}.
+ * `undefined` for anything that is not one, so the caller falls back to the route's
+ * own default — that part is unchanged, and is why a malformed value is still
+ * ignored rather than answered with a 400.
+ */
 function positiveInt(raw: string | undefined): number | undefined {
   if (!raw) return undefined
   const parsed = Number(raw)
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
+  if (!Number.isInteger(parsed) || parsed <= 0) return undefined
+  return Math.min(parsed, MAX_QUERY_INT)
 }
 
 export function createApp({
@@ -64,13 +156,53 @@ export function createApp({
   trades,
   loginLimiter,
   cookieSecure = false,
+  trustProxy = false,
 }: AppDeps) {
   const app = new Hono<AuthEnv>()
+
+  /*
+   * The body cap goes on first, ahead of even the session lookup: a request too
+   * large to be legitimate should be refused before the server does any work on its
+   * behalf, and that includes a database read.
+   *
+   * `Content-Length` is what is checked, because it is the one thing available
+   * *before* reading a byte. It is also client-supplied, so this is not a limit on
+   * what a body can actually be — a chunked request carries no length at all and
+   * passes straight through. That is not a hole this middleware can close: bounding
+   * a stream means reading it, and the layer that already does that is nginx's
+   * `client_max_body_size`. What this catches is the case that matters at the app
+   * layer — an honest-but-enormous payload, and any request that reached :8787
+   * without going through nginx at all.
+   *
+   * 413 with the limit in the message, rather than a bare refusal, because the one
+   * caller who will ever hit this is a browser import of a genuinely large dataset
+   * and the useful answer tells them what the number is.
+   */
+  app.use('/api/*', async (c, next) => {
+    const declared = Number(c.req.header('content-length'))
+    if (Number.isFinite(declared) && declared > MAX_API_BODY_BYTES) {
+      return c.json(
+        errorBody(
+          413,
+          'payloadTooLarge',
+          `Request body is too large (${declared} bytes; the limit is ${MAX_API_BODY_BYTES}).`,
+          'Split the upload into smaller batches.',
+        ),
+        413,
+      )
+    }
+    await next()
+  })
 
   // Order matters: middleware only runs ahead of a handler if it was registered
   // first, so both gates go on before any route.
   app.use('/api/*', withSession(auth))
   app.use('/api/*', async (c, next) =>
+    // The `any` is Hono's own: a path-scoped `app.use` gives the handler a
+    // `Context<AuthEnv, '/api/*', any>`, and `requireAuth` is typed against the
+    // unscoped `Context<AuthEnv>`. Nothing untyped is being passed — it is the same
+    // context object either way — so this is the library's generic, not ours.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     PUBLIC_API_PATHS.has(c.req.path) ? next() : requireAuth(c, next),
   )
   // Ahead of requireAdmin, so a flagged *admin* is gated too — the role does not
@@ -81,6 +213,7 @@ export function createApp({
   mountAuthRoutes(app, auth, {
     limiter: loginLimiter ?? createLoginLimiter(),
     cookieSecure,
+    trustProxy,
   })
 
   mountSharedDataRoutes(app, sharedData)

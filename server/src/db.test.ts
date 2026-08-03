@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,11 +29,15 @@ function tempDir(): string {
  * Writes a v1-shaped database by hand — the old `CREATE TABLE IF NOT EXISTS`
  * schema verbatim, `user_version` left at 0 — and inserts real password records so
  * the "did the migration keep the password working" question can be answered.
+ *
+ * `chat_messages` is here because v1 really creates it. Leaving it out was harmless
+ * while nothing removed it; v9 drops it, and a fixture claiming to be v1 without it
+ * would be a database no install has ever been in.
  */
-function createV1Database(
+async function createV1Database(
   path: string,
   users: { username: string; role?: 'admin' | 'user'; password?: string }[],
-): void {
+): Promise<void> {
   const db = new DatabaseSync(path)
   db.exec(`
 CREATE TABLE IF NOT EXISTS users (
@@ -52,6 +57,13 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at   TEXT NOT NULL,
   last_seen_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 `)
 
   const insert = db.prepare(
@@ -59,7 +71,7 @@ CREATE TABLE IF NOT EXISTS sessions (
      VALUES (?, ?, ?, ?, ?)`,
   )
   for (const user of users) {
-    const { hash, salt } = hashPassword(user.password ?? LEGACY_PASSWORD)
+    const { hash, salt } = await hashPassword(user.password ?? LEGACY_PASSWORD)
     insert.run(user.username, hash, salt, user.role ?? 'admin', new Date().toISOString())
   }
 
@@ -85,9 +97,9 @@ function columnsOf(path: string, table: string): string[] {
 }
 
 describe('migration from a v1 database', () => {
-  it('backfills a guid and a display name, and leaves the password working', () => {
+  it('backfills a guid and a display name, and leaves the password working', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc' }])
+    await createV1Database(path, [{ username: 'jcc' }])
 
     const db = openDatabase(path)
     const store = createAuthStore(db)
@@ -101,17 +113,17 @@ describe('migration from a v1 database', () => {
 
     // A username with no @ cannot become an email, so this row cannot sign in yet.
     assert.equal(user.email, null)
-    assert.equal(store.authenticate('jcc', LEGACY_PASSWORD), undefined)
+    assert.equal(await store.authenticate('jcc', LEGACY_PASSWORD), undefined)
     // …but the password itself survived untouched, which is what the escape
     // hatch below then relies on.
-    assert.equal(store.verifyUserPassword(user.id, LEGACY_PASSWORD), true)
+    assert.equal(await store.verifyUserPassword(user.id, LEGACY_PASSWORD), true)
 
     db.close()
   })
 
-  it('adopts an @-containing username as the email', () => {
+  it('adopts an @-containing username as the email', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'Someone@Example.COM' }])
+    await createV1Database(path, [{ username: 'Someone@Example.COM' }])
 
     const db = openDatabase(path)
     const store = createAuthStore(db)
@@ -123,14 +135,14 @@ describe('migration from a v1 database', () => {
     assert.equal(user.displayName, 'Someone@Example.COM')
 
     // That account can sign in immediately, with no operator action at all.
-    assert.ok(store.authenticate('SOMEONE@example.com', LEGACY_PASSWORD))
+    assert.ok(await store.authenticate('SOMEONE@example.com', LEGACY_PASSWORD))
     db.close()
   })
 
-  it('leaves the second of two usernames that collide as one email without one', () => {
+  it('leaves the second of two usernames that collide as one email without one', async () => {
     const path = join(tempDir(), 'coc.db')
     // COLLATE NOCASE made these two distinct usernames; they normalise to one email.
-    createV1Database(path, [{ username: 'dup@example.com' }, { username: 'DUP@example.com  ' }])
+    await createV1Database(path, [{ username: 'dup@example.com' }, { username: 'DUP@example.com  ' }])
 
     const db = openDatabase(path)
     const store = createAuthStore(db)
@@ -140,9 +152,9 @@ describe('migration from a v1 database', () => {
     db.close()
   })
 
-  it('creates the shared tables and the new columns', () => {
+  it('creates the shared tables and the new columns', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc' }])
+    await createV1Database(path, [{ username: 'jcc' }])
     const db = openDatabase(path)
     db.close()
 
@@ -182,11 +194,19 @@ describe('migration from a v1 database', () => {
     assert.equal(columnsOf(path, 'users').includes('username'), false)
   })
 
-  it('keeps the sessions of an account it rebuilt', () => {
+  /**
+   * This test used to assert the opposite — that a session issued by the old build
+   * still resolved after migrating, because dropping and rebuilding `users` in v2
+   * must not cascade its sessions away. v8 changed the answer on purpose: the row it
+   * was resolving *was* the bearer token in plaintext, and v8 deletes every one of
+   * them precisely so that a token already sitting in a backup stops working. The
+   * property v2 needs is still checked, one row down — the account survives with its
+   * password intact, which is what a cascade would have destroyed.
+   */
+  it('deletes a plaintext session from an old build rather than carrying it over', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc@example.com' }])
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
 
-    // A session issued by the old build, which dropping `users` must not cascade away.
     const seed = new DatabaseSync(path)
     const expiresAt = new Date(Date.now() + 60_000).toISOString()
     seed
@@ -198,18 +218,29 @@ describe('migration from a v1 database', () => {
 
     const db = openDatabase(path)
     const store = createAuthStore(db)
-    assert.ok(
+
+    assert.equal(
       store.resolveSession('a-pre-migration-session'),
-      'a migration must not sign everybody out',
+      undefined,
+      'a token that has been sitting in a backup must not still work',
     )
+    assert.equal(
+      Number(db.prepare('SELECT COUNT(*) AS n FROM sessions').get()?.['n']),
+      0,
+      'and the row is gone, not merely unresolvable',
+    )
+
+    // The account itself came through v2's rebuild whole, which is the property the
+    // session row was standing in for: signing in once more is the intended cost.
+    assert.ok(await store.authenticate('jcc@example.com', LEGACY_PASSWORD))
     db.close()
   })
 })
 
 describe('migration bookkeeping', () => {
-  it('reports the head version and does nothing on a second boot', () => {
+  it('reports the head version and does nothing on a second boot', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc' }])
+    await createV1Database(path, [{ username: 'jcc' }])
 
     const first = openDatabase(path)
     const guidAfterFirst = createAuthStore(first).listUsers()[0]?.guid
@@ -230,7 +261,7 @@ describe('migration bookkeeping', () => {
     assert.equal(userVersion(path), SCHEMA_VERSION)
   })
 
-  it('takes a fresh database straight to the head in one pass', () => {
+  it('takes a fresh database straight to the head in one pass', async () => {
     const path = join(tempDir(), 'coc.db')
     const db = new DatabaseSync(path)
     assert.deepEqual(
@@ -241,22 +272,25 @@ describe('migration bookkeeping', () => {
     db.close()
   })
 
-  it('applies only the outstanding steps to a half-migrated database', () => {
+  it('applies only the outstanding steps to a half-migrated database', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc' }])
+    await createV1Database(path, [{ username: 'jcc' }])
 
     // Mark it as already at v1 — which it effectively is — so v2 onwards run.
     const marked = new DatabaseSync(path)
     marked.exec('PRAGMA user_version = 1')
-    assert.deepEqual(migrate(marked), [2, 3, 4, 5, 6, 7])
+    assert.deepEqual(
+      migrate(marked),
+      Array.from({ length: SCHEMA_VERSION - 1 }, (_, index) => index + 2),
+    )
     marked.close()
   })
 })
 
 describe('migration v3 — must_change_password', () => {
-  it('adds the column, defaults it off, and preserves the existing rows', () => {
+  it('adds the column, defaults it off, and preserves the existing rows', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc@example.com' }, { username: 'other@example.com' }])
+    await createV1Database(path, [{ username: 'jcc@example.com' }, { username: 'other@example.com' }])
 
     const db = openDatabase(path)
     const store = createAuthStore(db)
@@ -270,22 +304,22 @@ describe('migration v3 — must_change_password', () => {
       [false, false],
     )
     // …and the passwords still verify, i.e. v3 did not rebuild the table.
-    assert.ok(store.authenticate('jcc@example.com', LEGACY_PASSWORD))
+    assert.ok(await store.authenticate('jcc@example.com', LEGACY_PASSWORD))
     db.close()
 
     assert.ok(columnsOf(path, 'users').includes('must_change_password'))
   })
 
-  it('is idempotent across two boots, flag values and all', () => {
+  it('is idempotent across two boots, flag values and all', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc@example.com' }])
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
 
     const first = openDatabase(path)
     const store = createAuthStore(first)
     const [user] = store.listUsers()
     assert.ok(user)
     // Set the flag, so the second boot has something it could destroy.
-    store.setPassword(user.id, 'an-admin-issued-one', true)
+    await store.setPassword(user.id, 'an-admin-issued-one', true)
     assert.equal(store.findUser(user.id)?.mustChangePassword, true)
     first.close()
 
@@ -302,7 +336,7 @@ describe('migration v3 — must_change_password', () => {
     assert.equal(reopened.findUser(user.id)?.mustChangePassword, true)
     assert.equal(reopened.countUsers(), 1)
     assert.ok(
-      reopened.authenticate('jcc@example.com', 'an-admin-issued-one'),
+      await reopened.authenticate('jcc@example.com', 'an-admin-issued-one'),
       'the temporary password survives a restart',
     )
     second.close()
@@ -311,9 +345,9 @@ describe('migration v3 — must_change_password', () => {
 })
 
 describe('migration v4 — card_inventory', () => {
-  it('creates the table with the shape the card routes rely on', () => {
+  it('creates the table with the shape the card routes rely on', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc@example.com' }])
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
 
     const db = openDatabase(path)
     assert.deepEqual(columnsOf(path, 'card_inventory'), [
@@ -336,23 +370,23 @@ describe('migration v4 — card_inventory', () => {
     db.close()
   })
 
-  it('leaves the accounts and the other shared rows untouched', () => {
+  it('leaves the accounts and the other shared rows untouched', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc@example.com' }])
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
 
     const db = openDatabase(path)
     const store = createAuthStore(db)
     assert.equal(store.countUsers(), 1)
-    assert.ok(store.authenticate('jcc@example.com', LEGACY_PASSWORD))
+    assert.ok(await store.authenticate('jcc@example.com', LEGACY_PASSWORD))
     // v4 adds a table; it must not have disturbed the ones v2 made.
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM owner_assignments').get()?.['n'], 0)
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM saved_clans').get()?.['n'], 0)
     db.close()
   })
 
-  it('is idempotent across two boots, rows and all', () => {
+  it('is idempotent across two boots, rows and all', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc@example.com' }])
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
 
     const first = openDatabase(path)
     const userId = createAuthStore(first).listUsers()[0]?.id
@@ -377,9 +411,9 @@ describe('migration v4 — card_inventory', () => {
     second.close()
   })
 
-  it('keeps a base’s counts when the account that entered them is deleted', () => {
+  it('keeps a base’s counts when the account that entered them is deleted', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc@example.com' }])
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
 
     const db = openDatabase(path)
     const userId = createAuthStore(db).listUsers()[0]?.id
@@ -400,9 +434,9 @@ describe('migration v4 — card_inventory', () => {
 })
 
 describe('migration v5 — card_base_updates', () => {
-  it('creates the stamp table, keyed one row per base', () => {
+  it('creates the stamp table, keyed one row per base', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc@example.com' }])
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
 
     const db = openDatabase(path)
     assert.deepEqual(columnsOf(path, 'card_base_updates'), [
@@ -427,18 +461,26 @@ describe('migration v5 — card_base_updates', () => {
    * its count rows. v5 must lift them across rather than resetting every base to
    * "never edited".
    */
-  it('backfills each base from the newest count row it has', () => {
+  it('backfills each base from the newest count row it has', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc@example.com' }])
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
 
     // Wind back to a realistic v4-shaped database for the backfill to read: the
-    // stamp table gone, v6's column with it, and v7's table too, so every step
-    // after v4 really re-runs.
+    // stamp table gone, v6's column with it, v7's and v10's tables too, and v9's
+    // back in place, so every step after v4 really re-runs.
     const staged = new DatabaseSync(path)
     migrate(staged)
     staged.exec('DROP TABLE card_base_updates')
     staged.exec('ALTER TABLE owner_assignments DROP COLUMN owner_user_id')
     staged.exec('DROP TABLE trades')
+    staged.exec('DROP TABLE auth_events')
+    staged.exec(`
+CREATE TABLE chat_messages (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);`)
     staged.exec('PRAGMA user_version = 4')
 
     const userId = Number(staged.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
@@ -452,7 +494,11 @@ describe('migration v5 — card_base_updates', () => {
     // A second season must get its own stamp, not be folded into the first.
     insert.run('2027-08', '#AAABBB', 9, 4, '2027-08-01T10:00:00.000Z', userId)
 
-    assert.deepEqual(migrate(staged), [5, 6, 7], 'v4 leaves exactly v5, v6 and v7 outstanding')
+    assert.deepEqual(
+      migrate(staged),
+      Array.from({ length: SCHEMA_VERSION - 4 }, (_, index) => index + 5),
+      'v4 leaves v5 onwards outstanding',
+    )
 
     const stamps = staged
       .prepare(
@@ -476,18 +522,18 @@ describe('migration v5 — card_base_updates', () => {
     staged.close()
   })
 
-  it('backfills nothing when there were no counts to lift', () => {
+  it('backfills nothing when there were no counts to lift', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc@example.com' }])
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
 
     const db = openDatabase(path)
     assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM card_base_updates').get()?.['n']), 0)
     db.close()
   })
 
-  it('is idempotent across two boots, stamps and all', () => {
+  it('is idempotent across two boots, stamps and all', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc@example.com' }])
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
 
     const first = openDatabase(path)
     first
@@ -507,9 +553,9 @@ describe('migration v5 — card_base_updates', () => {
     second.close()
   })
 
-  it('keeps a stamp when the account that wrote it is deleted', () => {
+  it('keeps a stamp when the account that wrote it is deleted', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc@example.com' }])
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
 
     const db = openDatabase(path)
     const userId = createAuthStore(db).listUsers()[0]?.id
@@ -541,18 +587,27 @@ describe('migration v6 — owner_user_id', () => {
    * case, one padded with whitespace, and one belonging to a clan member who has
    * no account at all.
    */
-  function createV5Database(
+  async function createV5Database(
     path: string,
     owners: { tag: string; owner: string }[],
     users: { username: string; role?: 'admin' | 'user' }[],
-  ): void {
-    createV1Database(path, users)
+  ): Promise<void> {
+    await createV1Database(path, users)
 
     const db = new DatabaseSync(path)
     migrate(db)
     db.exec('ALTER TABLE owner_assignments DROP COLUMN owner_user_id')
-    // v7's table goes too, so a v5-shaped fixture really is one and v7 re-runs.
+    // Everything v6 onwards created goes too, and what v9 removed comes back, so a
+    // v5-shaped fixture really is one and each later step re-runs against it.
     db.exec('DROP TABLE trades')
+    db.exec('DROP TABLE auth_events')
+    db.exec(`
+CREATE TABLE chat_messages (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);`)
     db.exec('PRAGMA user_version = 5')
 
     const insert = db.prepare(
@@ -572,9 +627,9 @@ describe('migration v6 — owner_user_id', () => {
       .map((row) => [String(row['player_tag']), String(row['owner']), row['owner_user_id']])
   }
 
-  it('links the names that match an account and leaves the rest as labels', () => {
+  it('links the names that match an account and leaves the rest as labels', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV5Database(
+    await createV5Database(
       path,
       [
         // Matches 'Jared' but not its case.
@@ -608,10 +663,10 @@ describe('migration v6 — owner_user_id', () => {
     db.close()
   })
 
-  it('reports the split, which is what the boot log says out loud', () => {
+  it('reports the split, which is what the boot log says out loud', async () => {
     const path = join(tempDir(), 'coc.db')
     // The live shape: many assignments, one account, so most do not resolve.
-    createV5Database(
+    await createV5Database(
       path,
       [
         { tag: '#AAA1', owner: 'jcc' },
@@ -627,9 +682,9 @@ describe('migration v6 — owner_user_id', () => {
     db.close()
   })
 
-  it('resolves a duplicate display name to the lowest id, not at random', () => {
+  it('resolves a duplicate display name to the lowest id, not at random', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV5Database(
+    await createV5Database(
       path,
       [{ tag: '#AAA1', owner: 'Sam' }],
       // display_name has no UNIQUE constraint, so two accounts really can answer
@@ -642,9 +697,9 @@ describe('migration v6 — owner_user_id', () => {
     db.close()
   })
 
-  it('does not re-run the backfill over an assignment an admin has since changed', () => {
+  it('does not re-run the backfill over an assignment an admin has since changed', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV5Database(
+    await createV5Database(
       path,
       [
         { tag: '#AAA1', owner: 'Jared' },
@@ -688,7 +743,7 @@ describe('migration v6 — owner_user_id', () => {
     second.close()
   })
 
-  it('takes a fresh database to a linked owner column with nothing in it', () => {
+  it('takes a fresh database to a linked owner column with nothing in it', async () => {
     const path = join(tempDir(), 'coc.db')
     const db = openDatabase(path)
     assert.deepEqual(summarizeOwnerAssignments(db), { total: 0, resolved: 0, unresolved: 0 })
@@ -696,9 +751,9 @@ describe('migration v6 — owner_user_id', () => {
     assert.ok(columnsOf(path, 'owner_assignments').includes('owner_user_id'))
   })
 
-  it('keeps the assignment when the owning account is deleted', () => {
+  it('keeps the assignment when the owning account is deleted', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV5Database(path, [{ tag: '#AAA1', owner: 'Jared' }], [{ username: 'Jared' }])
+    await createV5Database(path, [{ tag: '#AAA1', owner: 'Jared' }], [{ username: 'Jared' }])
 
     const db = openDatabase(path)
     assert.deepEqual(ownerRows(db), [['#AAA1', 'Jared', 1]])
@@ -715,18 +770,34 @@ describe('migration v7 — trades', () => {
   const NOW = '2026-08-01T10:00:00.000Z'
 
   /**
-   * A database shaped the way the shipped build left it: at `user_version = 6`,
-   * with no `trades` table. Built by migrating to the head and dropping v7's table
-   * back off — which keeps the rest of the schema honest rather than re-typing an
-   * old copy of it that could drift — then filling it with the kinds of row a live
-   * install holds, so "did v7 disturb anything" has something to answer with.
+   * A database shaped the way the v6 build left it: no `trades` table, no
+   * `auth_events`, and `chat_messages` still present. Built by migrating to the head
+   * and undoing everything from v7 on — which keeps the rest of the schema honest
+   * rather than re-typing an old copy of it that could drift — then filling it with
+   * the kinds of row a live install holds, so "did the outstanding steps disturb
+   * anything" has something to answer with.
+   *
+   * Rewinding has to undo each later step, not just set the marker back: a plain
+   * CREATE and a plain DROP both throw on a second run, which is the whole reason
+   * `user_version` guards them, and a rewind that lied about the shape would be
+   * testing a database no install ever had.
    */
-  function createV6Database(path: string): { userId: number } {
-    createV1Database(path, [{ username: 'jcc@example.com' }])
+  async function createV6Database(path: string): Promise<{ userId: number }> {
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
 
     const db = new DatabaseSync(path)
     migrate(db)
     db.exec('DROP TABLE trades')
+    db.exec('DROP TABLE auth_events')
+    db.exec(`
+CREATE TABLE chat_messages (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX chat_messages_user_id ON chat_messages (user_id);
+`)
     db.exec('PRAGMA user_version = 6')
 
     const userId = Number(db.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
@@ -743,8 +814,8 @@ describe('migration v7 — trades', () => {
       `INSERT INTO card_base_updates (season, player_tag, updated_at, updated_by_user_id)
        VALUES (?, ?, ?, ?)`,
     ).run('2026-08', '#AAABBB', NOW, userId)
-    // Chat is being replaced by the tracker, but v7 must not touch a stored
-    // message: destroying what people wrote is not a side effect to take on.
+    // A stored chat message, which v9 is the step that deliberately destroys —
+    // see the v9 describe below. It is seeded here so the rewind is a faithful v6.
     db.prepare('INSERT INTO chat_messages (user_id, body, created_at) VALUES (?, ?, ?)').run(
       userId,
       'has anyone got a spare Barbarian',
@@ -782,23 +853,23 @@ describe('migration v7 — trades', () => {
           proposed_by_user_id, proposed_at, resolved_by_user_id, resolved_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      row['season'] as string,
-      row['base_a'] as string,
-      row['base_b'] as string,
-      row['card_from_a'] as number,
-      row['card_from_b'] as number,
-      row['category'] as string,
-      row['status'] as string,
+      row['season'],
+      row['base_a'],
+      row['base_b'],
+      row['card_from_a'],
+      row['card_from_b'],
+      row['category'],
+      row['status'],
       row['proposed_by_user_id'] as number | null,
-      row['proposed_at'] as string,
+      row['proposed_at'],
       row['resolved_by_user_id'] as number | null,
       row['resolved_at'] as string | null,
     )
   }
 
-  it('creates the table with the shape the trade routes rely on', () => {
+  it('creates the table with the shape the trade routes rely on', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV6Database(path)
+    await createV6Database(path)
 
     const db = openDatabase(path)
     assert.deepEqual(migrate(db), [], 'opening it applied v7 already')
@@ -820,36 +891,34 @@ describe('migration v7 — trades', () => {
     db.close()
   })
 
-  it('applies to a v6 database and preserves every row it already had', () => {
+  it('applies to a v6 database and preserves every row it already had', async () => {
     const path = join(tempDir(), 'coc.db')
-    const { userId } = createV6Database(path)
+    const { userId } = await createV6Database(path)
 
     const db = new DatabaseSync(path)
-    assert.deepEqual(migrate(db), [7], 'v6 leaves exactly v7 outstanding')
+    assert.deepEqual(
+      migrate(db),
+      Array.from({ length: SCHEMA_VERSION - 6 }, (_, index) => index + 7),
+      'v6 leaves v7 onwards outstanding',
+    )
 
     // v7 adds a table; it must not have disturbed any of the ones before it.
     const store = createAuthStore(db)
     assert.equal(store.countUsers(), 1)
-    assert.ok(store.authenticate('jcc@example.com', LEGACY_PASSWORD), 'the password still works')
+    assert.ok(await store.authenticate('jcc@example.com', LEGACY_PASSWORD), 'the password still works')
     assert.equal(
       db.prepare('SELECT owner_user_id FROM owner_assignments').get()?.['owner_user_id'],
       userId,
     )
     assert.equal(Number(db.prepare('SELECT count FROM card_inventory').get()?.['count']), 3)
     assert.equal(db.prepare('SELECT updated_at FROM card_base_updates').get()?.['updated_at'], NOW)
-
-    // Chat's UI is going away; its stored messages are not.
-    assert.equal(
-      db.prepare('SELECT body FROM chat_messages').get()?.['body'],
-      'has anyone got a spare Barbarian',
-    )
     assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM trades').get()?.['n']), 0)
     db.close()
   })
 
-  it('is idempotent across two boots, trades and all', () => {
+  it('is idempotent across two boots, trades and all', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV6Database(path)
+    await createV6Database(path)
 
     const first = openDatabase(path)
     insertTrade(first, { status: 'complete', resolved_at: NOW })
@@ -865,13 +934,15 @@ describe('migration v7 — trades', () => {
     assert.equal(row?.['base_a'], '#AAABBB')
     assert.equal(row?.['status'], 'complete')
     assert.equal(row?.['resolved_at'], NOW)
-    assert.equal(Number(second.prepare('SELECT COUNT(*) AS n FROM chat_messages').get()?.['n']), 1)
+    // Another table nothing in this step touches, to show the second boot was a
+    // no-op across the schema rather than only inside `trades`.
+    assert.equal(Number(second.prepare('SELECT COUNT(*) AS n FROM card_inventory').get()?.['n']), 1)
     second.close()
   })
 
-  it('keeps a resolved trade when the account that resolved it is deleted', () => {
+  it('keeps a resolved trade when the account that resolved it is deleted', async () => {
     const path = join(tempDir(), 'coc.db')
-    const { userId } = createV6Database(path)
+    const { userId } = await createV6Database(path)
 
     const db = openDatabase(path)
     insertTrade(db, {
@@ -893,9 +964,9 @@ describe('migration v7 — trades', () => {
     db.close()
   })
 
-  it('is the last line on a trade that could not be honoured', () => {
+  it('is the last line on a trade that could not be honoured', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV6Database(path)
+    await createV6Database(path)
     const db = openDatabase(path)
 
     // Each of these is validated in the route as well. The schema is the backstop,
@@ -919,9 +990,9 @@ describe('migration v7 — trades', () => {
     db.close()
   })
 
-  it('allows one pending proposal per swap, and any number of resolved ones', () => {
+  it('allows one pending proposal per swap, and any number of resolved ones', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV6Database(path)
+    await createV6Database(path)
     const db = openDatabase(path)
 
     insertTrade(db)
@@ -943,7 +1014,7 @@ describe('migration v7 — trades', () => {
     db.close()
   })
 
-  it('takes a fresh database straight to the trades table, empty', () => {
+  it('takes a fresh database straight to the trades table, empty', async () => {
     const path = join(tempDir(), 'coc.db')
     const db = openDatabase(path)
     assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM trades').get()?.['n']), 0)
@@ -953,10 +1024,204 @@ describe('migration v7 — trades', () => {
   })
 })
 
-describe('the ADMIN_EMAIL escape hatch', () => {
-  it('fills a missing email without touching the password, then stops', () => {
+describe('migration v8 — plaintext session tokens are wiped, not rehashed', () => {
+  /** A v7-shaped database: fully migrated, then rewound past v8 with rows in place. */
+  async function createV7Database(path: string): Promise<{ userId: number }> {
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const db = new DatabaseSync(path)
+    migrate(db)
+    // v10's table off and v9's back on, so each outstanding step really is outstanding.
+    db.exec('DROP TABLE auth_events')
+    db.exec(`
+CREATE TABLE chat_messages (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);`)
+    db.exec('PRAGMA user_version = 7')
+
+    const userId = Number(db.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
+    const insert = db.prepare(
+      'INSERT INTO sessions (id, user_id, created_at, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)',
+    )
+    const now = new Date().toISOString()
+    const expires = new Date(Date.now() + 30 * 24 * 60 * 60_000).toISOString()
+    // Three live sessions, i.e. the state a working install is always in.
+    for (const token of ['token-one', 'token-two', 'token-three']) {
+      insert.run(token, userId, now, expires, now)
+    }
+
+    db.close()
+    return { userId }
+  }
+
+  it('deletes every session row, whatever its expiry', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc' }])
+    await createV7Database(path)
+
+    const db = new DatabaseSync(path)
+    assert.deepEqual(
+      migrate(db),
+      Array.from({ length: SCHEMA_VERSION - 7 }, (_, index) => index + 8),
+      'v7 leaves v8 onwards outstanding',
+    )
+    assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM sessions').get()?.['n']), 0)
+    db.close()
+  })
+
+  it('does not rehash them in place, which is the entire point', async () => {
+    const path = join(tempDir(), 'coc.db')
+    await createV7Database(path)
+
+    const db = openDatabase(path)
+    const store = createAuthStore(db)
+
+    /*
+     * A rehash would have been the polite migration and would have defeated the
+     * change: the tokens in last week's backup would keep working, which is exactly
+     * the exposure v8 exists to close. So the plaintext token must not resolve, and
+     * neither must its digest — the row is gone, not relocated.
+     */
+    assert.equal(store.resolveSession('token-one'), undefined)
+    assert.equal(
+      store.resolveSession(createHash('sha256').update('token-one').digest('hex')),
+      undefined,
+      'nor does replaying what the row would have been rehashed to',
+    )
+    db.close()
+  })
+
+  it('leaves the accounts alone, so signing in once more is the whole cost', async () => {
+    const path = join(tempDir(), 'coc.db')
+    const { userId } = await createV7Database(path)
+
+    const db = openDatabase(path)
+    const store = createAuthStore(db)
+
+    assert.equal(store.countUsers(), 1)
+    assert.ok(await store.authenticate('jcc@example.com', LEGACY_PASSWORD))
+
+    // And a session minted after the migration works, with the token nowhere in
+    // the table — which is the state every install is in from here on.
+    const session = store.createSession(userId)
+    assert.ok(store.resolveSession(session.token))
+    assert.equal(
+      db.prepare('SELECT COUNT(*) AS n FROM sessions WHERE id = ?').get(session.token)?.['n'],
+      0,
+      'the token itself must not be a row id',
+    )
+    db.close()
+  })
+})
+
+describe('migration v9 — the dead chat_messages table', () => {
+  it('drops it, and a fresh database never ends up with one', async () => {
+    const path = join(tempDir(), 'coc.db')
+    const db = openDatabase(path)
+
+    // v1 still creates it — it is history and has to keep working from zero — and
+    // v9 is what takes it away again, in the same boot for a fresh file.
+    assert.throws(
+      () => db.prepare('SELECT COUNT(*) AS n FROM chat_messages').get(),
+      /no such table/,
+    )
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+    db.close()
+    assert.deepEqual(columnsOf(path, 'chat_messages'), [], 'not merely empty — gone')
+  })
+
+  it('drops it from an install that has messages in it, and keeps everything else', async () => {
+    const path = join(tempDir(), 'coc.db')
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const seed = new DatabaseSync(path)
+    // v1's shape, at v1's version, i.e. what the very first build left behind.
+    seed.exec('PRAGMA user_version = 1')
+    seed.exec(`
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);`)
+    seed
+      .prepare('INSERT INTO chat_messages (user_id, body, created_at) VALUES (?, ?, ?)')
+      .run(1, 'has anyone got a spare Barbarian', new Date().toISOString())
+    seed.close()
+
+    const db = openDatabase(path)
+    const store = createAuthStore(db)
+
+    assert.throws(() => db.prepare('SELECT body FROM chat_messages').get(), /no such table/)
+    // The messages go with the table, deliberately. Nothing has read them since the
+    // Trade Tracker replaced the UI, and a table nothing references is not free.
+    assert.equal(store.countUsers(), 1, 'the accounts are untouched')
+    assert.ok(await store.authenticate('jcc@example.com', LEGACY_PASSWORD))
+    db.close()
+  })
+})
+
+describe('migration v10 — auth_events', () => {
+  it('creates the table with the shape the audit trail relies on', async () => {
+    const path = join(tempDir(), 'coc.db')
+    const db = openDatabase(path)
+
+    assert.deepEqual(columnsOf(path, 'auth_events'), [
+      'id',
+      'at',
+      'kind',
+      'actor_user_id',
+      'target_user_id',
+      'email',
+      'ip',
+      'detail',
+    ])
+    assert.equal(Number(db.prepare('SELECT COUNT(*) AS n FROM auth_events').get()?.['n']), 0)
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+    db.close()
+  })
+
+  it('keeps an entry when the account it names is deleted, losing only the attribution', async () => {
+    const path = join(tempDir(), 'coc.db')
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const db = openDatabase(path)
+    const store = createAuthStore(db)
+    const userId = store.listUsers()[0]?.id
+    assert.ok(userId)
+
+    store.recordAuthEvent({
+      kind: 'roleChanged',
+      actorUserId: userId,
+      targetUserId: userId,
+      email: 'jcc@example.com',
+      detail: 'user → admin',
+    })
+
+    db.exec(`DELETE FROM users WHERE id = ${userId}`)
+
+    /*
+     * ON DELETE SET NULL, like every other user reference in this schema. The trail
+     * is the record of what happened: deleting an account must cost the attribution,
+     * not the entry — an audit log that a deletion can erase is not one.
+     */
+    const [event] = store.authEvents().list()
+    assert.ok(event)
+    assert.equal(event.kind, 'roleChanged')
+    assert.equal(event.detail, 'user → admin')
+    assert.equal(event.actorUserId, null, 'only the attribution is lost')
+    assert.equal(event.targetUserId, null)
+    assert.equal(event.email, 'jcc@example.com', 'the address it was about survives')
+    db.close()
+  })
+})
+
+describe('the ADMIN_EMAIL escape hatch', () => {
+  it('fills a missing email without touching the password, then stops', async () => {
+    const path = join(tempDir(), 'coc.db')
+    await createV1Database(path, [{ username: 'jcc' }])
 
     const db = openDatabase(path)
     const store = createAuthStore(db)
@@ -964,54 +1229,54 @@ describe('the ADMIN_EMAIL escape hatch', () => {
     // Before: a real account nobody can sign in to.
     assert.equal(store.countUsersWithEmail(), 0)
 
-    const first = bootstrapAdmin(store, { ADMIN_EMAIL: '  JCC@OnEngine.ai  ' })
+    const first = await bootstrapAdmin(store, { ADMIN_EMAIL: '  John@Crighton.net  ' })
     assert.equal(first.status, 'emailBackfilled')
-    assert.match(first.message, /jcc@onengine\.ai/)
+    assert.match(first.message, /john@crighton\.net/)
 
     const [user] = store.listUsers()
-    assert.equal(user?.email, 'jcc@onengine.ai')
+    assert.equal(user?.email, 'john@crighton.net')
     assert.equal(user?.displayName, 'jcc', 'the display name is not overwritten')
 
     // The password is the one they already had — the whole point of this path.
-    assert.ok(store.authenticate('jcc@onengine.ai', LEGACY_PASSWORD))
-    assert.equal(store.authenticate('jcc@onengine.ai', 'some-other-password'), undefined)
+    assert.ok(await store.authenticate('john@crighton.net', LEGACY_PASSWORD))
+    assert.equal(await store.authenticate('john@crighton.net', 'some-other-password'), undefined)
 
     // Idempotent: a restart with the var still set finds nothing to do.
-    const second = bootstrapAdmin(store, { ADMIN_EMAIL: 'jcc@onengine.ai' })
+    const second = await bootstrapAdmin(store, { ADMIN_EMAIL: 'john@crighton.net' })
     assert.equal(second.status, 'existing')
 
     // And it cannot be used to *move* an address that is already set.
-    const third = bootstrapAdmin(store, { ADMIN_EMAIL: 'someone-else@example.com' })
+    const third = await bootstrapAdmin(store, { ADMIN_EMAIL: 'someone-else@example.com' })
     assert.equal(third.status, 'existing')
-    assert.equal(store.listUsers()[0]?.email, 'jcc@onengine.ai')
+    assert.equal(store.listUsers()[0]?.email, 'john@crighton.net')
 
     db.close()
   })
 
-  it('never creates an account, and never sets a password', () => {
+  it('never creates an account, and never sets a password', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc' }])
+    await createV1Database(path, [{ username: 'jcc' }])
 
     const db = openDatabase(path)
     const store = createAuthStore(db)
-    bootstrapAdmin(store, { ADMIN_EMAIL: 'jcc@onengine.ai', ADMIN_PASSWORD: 'a-brand-new-one!!' })
+    await bootstrapAdmin(store, { ADMIN_EMAIL: 'john@crighton.net', ADMIN_PASSWORD: 'a-brand-new-one!!' })
 
     assert.equal(store.countUsers(), 1, 'the existing account is adopted, not duplicated')
     // ADMIN_PASSWORD is ignored on this path: it must not be able to reset a
     // password that has since been changed.
-    assert.equal(store.authenticate('jcc@onengine.ai', 'a-brand-new-one!!'), undefined)
-    assert.ok(store.authenticate('jcc@onengine.ai', LEGACY_PASSWORD))
+    assert.equal(await store.authenticate('john@crighton.net', 'a-brand-new-one!!'), undefined)
+    assert.ok(await store.authenticate('john@crighton.net', LEGACY_PASSWORD))
     db.close()
   })
 
-  it('says exactly what to set when nothing is configured', () => {
+  it('says exactly what to set when nothing is configured', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc' }])
+    await createV1Database(path, [{ username: 'jcc' }])
 
     const db = openDatabase(path)
     const store = createAuthStore(db)
 
-    const result = bootstrapAdmin(store, {})
+    const result = await bootstrapAdmin(store, {})
     assert.equal(result.status, 'noUsableEmail')
     assert.match(result.message, /ADMIN_EMAIL/)
     assert.match(result.message, /"jcc"/, 'it must name the account that is stranded')
@@ -1020,23 +1285,23 @@ describe('the ADMIN_EMAIL escape hatch', () => {
     db.close()
   })
 
-  it('refuses a malformed ADMIN_EMAIL rather than storing it', () => {
+  it('refuses a malformed ADMIN_EMAIL rather than storing it', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc' }])
+    await createV1Database(path, [{ username: 'jcc' }])
 
     const db = openDatabase(path)
     const store = createAuthStore(db)
 
-    const result = bootstrapAdmin(store, { ADMIN_EMAIL: 'not-an-address' })
+    const result = await bootstrapAdmin(store, { ADMIN_EMAIL: 'not-an-address' })
     assert.equal(result.status, 'invalid')
     assert.equal(store.listUsers()[0]?.email, null)
     db.close()
   })
 
-  it('refuses an ADMIN_EMAIL that belongs to somebody else', () => {
+  it('refuses an ADMIN_EMAIL that belongs to somebody else', async () => {
     const path = join(tempDir(), 'coc.db')
     // The second row already holds the address; the first is the stranded admin.
-    createV1Database(path, [
+    await createV1Database(path, [
       { username: 'jcc', role: 'admin' },
       { username: 'taken@example.com', role: 'user' },
     ])
@@ -1044,7 +1309,7 @@ describe('the ADMIN_EMAIL escape hatch', () => {
     const db = openDatabase(path)
     const store = createAuthStore(db)
 
-    const result = bootstrapAdmin(store, { ADMIN_EMAIL: 'taken@example.com' })
+    const result = await bootstrapAdmin(store, { ADMIN_EMAIL: 'taken@example.com' })
     assert.equal(result.status, 'invalid')
     assert.match(result.message, /already belongs/)
     assert.equal(store.listUsers()[0]?.email, null)
@@ -1053,28 +1318,31 @@ describe('the ADMIN_EMAIL escape hatch', () => {
     db.close()
   })
 
-  it('leaves an already-usable install alone', () => {
+  it('leaves an already-usable install alone', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'jcc@example.com' }])
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
 
     const db = openDatabase(path)
     const store = createAuthStore(db)
 
-    assert.equal(bootstrapAdmin(store, { ADMIN_EMAIL: 'someone@else.com' }).status, 'existing')
+    assert.equal(
+      (await bootstrapAdmin(store, { ADMIN_EMAIL: 'someone@else.com' })).status,
+      'existing',
+    )
     assert.equal(store.listUsers()[0]?.email, 'jcc@example.com')
     db.close()
   })
 
-  it('does not adopt a non-admin account automatically', () => {
+  it('does not adopt a non-admin account automatically', async () => {
     const path = join(tempDir(), 'coc.db')
-    createV1Database(path, [{ username: 'regular', role: 'user' }])
+    await createV1Database(path, [{ username: 'regular', role: 'user' }])
 
     const db = openDatabase(path)
     const store = createAuthStore(db)
 
     // Handing an admin's configured address to a plain user would be a quiet
     // privilege muddle, so it stays a loud message instead.
-    const result = bootstrapAdmin(store, { ADMIN_EMAIL: 'jcc@onengine.ai' })
+    const result = await bootstrapAdmin(store, { ADMIN_EMAIL: 'john@crighton.net' })
     assert.equal(result.status, 'noUsableEmail')
     assert.equal(store.listUsers()[0]?.email, null)
     db.close()

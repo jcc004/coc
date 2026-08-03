@@ -62,10 +62,12 @@ interface Harness {
   db: ReturnType<typeof openDatabase>
 }
 
-function createHarness(databasePath = ':memory:'): Harness {
+// Async because seeding hashes four passwords, and scrypt is async now — see
+// `auth/passwords.ts` for why a synchronous derivation was a denial of service.
+async function createHarness(databasePath = ':memory:'): Promise<Harness> {
   const db = openDatabase(databasePath)
   const auth = createAuthStore(db)
-  bootstrapAdmin(auth, {
+  await bootstrapAdmin(auth, {
     ADMIN_EMAIL: ADMIN.email,
     ADMIN_PASSWORD: ADMIN.password,
     ADMIN_DISPLAY_NAME: ADMIN_NAME,
@@ -77,7 +79,7 @@ function createHarness(databasePath = ':memory:'): Harness {
     [OUTSIDER, OUTSIDER_NAME],
   ] as const) {
     try {
-      auth.createUser({
+      await auth.createUser({
         email: credentials.email,
         displayName,
         password: credentials.password,
@@ -258,7 +260,7 @@ async function proposed(harness: Harness, cookie: string): Promise<number> {
 
 describe('proposing a trade', () => {
   it('records the swap, pending, attributed and timestamped', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a } = await seeded(harness)
 
     const response = await propose(harness, a)
@@ -289,7 +291,7 @@ describe('proposing a trade', () => {
   })
 
   it('stores the same swap one way round however it is sent', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { b } = await seeded(harness)
 
     // B describes the trade from its own side: itself first, its own card first.
@@ -313,7 +315,7 @@ describe('proposing a trade', () => {
   })
 
   it('answers a duplicate pending proposal with the trade that already exists', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, b } = await seeded(harness)
     const id = await proposed(harness, a)
 
@@ -335,7 +337,7 @@ describe('proposing a trade', () => {
   })
 
   it('lets the same swap be proposed again once the first one is resolved', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, b } = await seeded(harness)
     const first = await proposed(harness, a)
     assert.equal((await resolve(harness, b, first, 'decline')).status, 200)
@@ -348,7 +350,7 @@ describe('proposing a trade', () => {
   })
 
   it('refuses a member who owns neither base, naming who can', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, outsider } = await seeded(harness)
 
     const response = await propose(harness, outsider)
@@ -364,7 +366,7 @@ describe('proposing a trade', () => {
   })
 
   it('lets an admin propose a trade between two other people’s bases', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { admin, a } = await seeded(harness)
 
     assert.equal((await propose(harness, admin)).status, 201)
@@ -374,7 +376,7 @@ describe('proposing a trade', () => {
   })
 
   it('refuses a trade whose bases nobody’s account owns, except to an admin', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const admin = await signIn(harness, ADMIN)
     const a = await signIn(harness, MEMBER_A)
     // No assignments at all: a label-free base grants nobody anything.
@@ -384,7 +386,7 @@ describe('proposing a trade', () => {
   })
 
   it('rejects a proposal that is not a swap between two bases', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a } = await seeded(harness)
 
     const bad: [unknown, RegExp][] = [
@@ -413,7 +415,7 @@ describe('proposing a trade', () => {
   })
 
   it('rejects a tag that could never be a tag', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a } = await seeded(harness)
 
     const response = await propose(harness, a, { ...PROPOSAL, baseB: '#!!' })
@@ -424,7 +426,7 @@ describe('proposing a trade', () => {
   })
 
   it('canonicalises the tags, so a lowercase proposal is the same trade', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a } = await seeded(harness)
     await proposed(harness, a)
 
@@ -436,7 +438,7 @@ describe('proposing a trade', () => {
 
 describe('listing trades', () => {
   it('is readable by every signed-in member, pending first', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, b, outsider } = await seeded(harness)
 
     const first = await proposed(harness, a)
@@ -465,7 +467,7 @@ describe('listing trades', () => {
   })
 
   it('lists nothing at all before anyone has proposed', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { outsider } = await seeded(harness)
     assert.deepEqual(await listTrades(harness, outsider), [])
     harness.db.close()
@@ -474,7 +476,7 @@ describe('listing trades', () => {
 
 describe('completing a trade moves the cards', () => {
   it('moves one card each way, and the totals reconcile', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, b } = await seeded(harness)
     const id = await proposed(harness, a)
     const before = totalCards(harness)
@@ -530,7 +532,7 @@ describe('completing a trade moves the cards', () => {
 
   it('lets either party complete it, and an admin too', async () => {
     for (const who of ['a', 'b', 'admin'] as const) {
-      const harness = createHarness()
+      const harness = await createHarness()
       const cookies = await seeded(harness)
       const id = await proposed(harness, cookies.a)
 
@@ -542,7 +544,7 @@ describe('completing a trade moves the cards', () => {
   })
 
   it('refuses a second completion rather than moving the cards twice', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, b } = await seeded(harness)
     const id = await proposed(harness, a)
     assert.equal((await resolve(harness, b, id, 'complete')).status, 200)
@@ -565,7 +567,7 @@ describe('completing a trade moves the cards', () => {
   })
 
   it('refuses a member who owns neither base, and changes nothing', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, outsider } = await seeded(harness)
     const id = await proposed(harness, a)
 
@@ -586,7 +588,7 @@ describe('completing a trade moves the cards', () => {
   })
 
   it('refuses a trade whose giver no longer holds two, leaving everything alone', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, b } = await seeded(harness)
     const id = await proposed(harness, a)
 
@@ -625,7 +627,7 @@ describe('completing a trade moves the cards', () => {
   })
 
   it('refuses when the *other* giver has dropped to one, naming that base', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, b } = await seeded(harness)
     const id = await proposed(harness, a)
     await saveCounts(harness, b, BASE_B, [{ cardId: CARD_B, count: 1 }])
@@ -638,7 +640,7 @@ describe('completing a trade moves the cards', () => {
   })
 
   it('refuses when a giver has since dropped to none at all', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, b } = await seeded(harness)
     const id = await proposed(harness, a)
     // Emptied entirely — the row is gone, not zeroed, since storage is sparse.
@@ -653,7 +655,7 @@ describe('completing a trade moves the cards', () => {
   })
 
   it('completes anyway when the receiver has since acquired the card', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, b } = await seeded(harness)
     const id = await proposed(harness, a)
 
@@ -680,7 +682,7 @@ describe('completing a trade moves the cards', () => {
   })
 
   it('refuses when a receiver is already at the count ceiling', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, b } = await seeded(harness)
     const id = await proposed(harness, a)
 
@@ -702,7 +704,7 @@ describe('completing a trade moves the cards', () => {
   })
 
   it('leaves the giver holding one, never a stored zero', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, b } = await seeded(harness)
     const id = await proposed(harness, a)
     assert.equal((await resolve(harness, b, id, 'complete')).status, 200)
@@ -718,7 +720,7 @@ describe('completing a trade moves the cards', () => {
   })
 
   it('does not touch a base that is not part of the trade', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { admin, a, b } = await seeded(harness)
     await saveCounts(harness, admin, '#EEEFFF', [{ cardId: CARD_A, count: 3 }])
     const id = await proposed(harness, a)
@@ -731,7 +733,7 @@ describe('completing a trade moves the cards', () => {
 
 describe('declining a trade', () => {
   it('records who declined it and when, and moves nothing', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, b } = await seeded(harness)
     const id = await proposed(harness, a)
     const before = totalCards(harness)
@@ -756,7 +758,7 @@ describe('declining a trade', () => {
   })
 
   it('can be declined by the member who proposed it', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a } = await seeded(harness)
     const id = await proposed(harness, a)
 
@@ -768,7 +770,7 @@ describe('declining a trade', () => {
   })
 
   it('refuses to complete a trade that was declined', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a, b } = await seeded(harness)
     const id = await proposed(harness, a)
     assert.equal((await resolve(harness, a, id, 'decline')).status, 200)
@@ -785,7 +787,7 @@ describe('declining a trade', () => {
 
 describe('resolving something that is not there', () => {
   it('404s an unknown id and 400s an id that is not one', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a } = await seeded(harness)
 
     const missing = await resolve(harness, a, 4242, 'complete')
@@ -807,7 +809,7 @@ describe('resolving something that is not there', () => {
 
 describe('the trade routes need a session', () => {
   it('401s every one of them anonymously, changing nothing', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const { a } = await seeded(harness)
     const id = await proposed(harness, a)
 
@@ -838,7 +840,7 @@ describe('trades are on disk, not in memory', () => {
     after(() => rmSync(dir, { recursive: true, force: true }))
     const databasePath = join(dir, 'coc.db')
 
-    const first = createHarness(databasePath)
+    const first = await createHarness(databasePath)
     const { a, b } = await seeded(first)
     const completed = await proposed(first, a)
     assert.equal((await resolve(first, b, completed, 'complete')).status, 200)
@@ -849,7 +851,7 @@ describe('trades are on disk, not in memory', () => {
 
     // A second boot runs the migrations again and must find both trades as they
     // were, with the counts the completed one moved.
-    const second = createHarness(databasePath)
+    const second = await createHarness(databasePath)
     const trades = second.trades.list(CARD_SEASON)
     assert.deepEqual(
       trades.map((trade) => [trade.id, trade.status]),

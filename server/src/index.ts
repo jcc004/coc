@@ -1,7 +1,7 @@
 import { serve } from '@hono/node-server'
-import { createApp } from './app.ts'
+import { bindHostFromEnv, bindsEveryInterface, createApp } from './app.ts'
 import { bootstrapAdmin } from './auth/bootstrap.ts'
-import { cookieSecureFromEnv } from './auth/middleware.ts'
+import { cookieSecureFromEnv, trustProxyFromEnv } from './auth/middleware.ts'
 import { createAuthStore } from './auth/store.ts'
 import { TtlCache } from './cache.ts'
 import { createCardInventoryStore } from './cards/store.ts'
@@ -17,6 +17,10 @@ import { createSharedDataStore } from './shared-data/store.ts'
 
 const port = Number(process.env.PORT ?? 8787)
 const ttlSeconds = Number(process.env.CACHE_TTL_SECONDS ?? 60)
+
+/** Loopback unless `HOST` says otherwise — see `bindHostFromEnv` for why. */
+const host = bindHostFromEnv(process.env)
+const trustProxy = trustProxyFromEnv(process.env)
 
 let coc
 try {
@@ -35,7 +39,10 @@ const cards = createCardInventoryStore(db)
 // change and the four count changes are one transaction over both tables.
 const trades = createTradeStore(db, cards)
 
-const bootstrap = bootstrapAdmin(auth, process.env)
+// Awaited: `bootstrapAdmin` hashes a password and scrypt is async now, and the
+// first admin has to exist before the first request. This file is an ES module, so
+// top-level await is available and no wrapper function is needed for it.
+const bootstrap = await bootstrapAdmin(auth, process.env)
 /*
  * `existing` is the quiet case. `created` and `emailBackfilled` both changed
  * something and say so. Everything else means **nobody can sign in**, which has to
@@ -73,10 +80,24 @@ const app = createApp({
   cards,
   trades,
   cookieSecure: cookieSecureFromEnv(process.env),
+  trustProxy,
 })
 
-serve({ fetch: app.fetch, port }, ({ port: bound }) => {
+serve({ fetch: app.fetch, port, hostname: host }, ({ address, port: bound }) => {
+  /*
+   * The bound address is logged rather than a hard-coded `localhost`, which is what
+   * this line used to say whether or not it was true. A startup line naming an
+   * interface the process is not on is how a wide bind goes unnoticed for months.
+   */
   console.log(
-    `→ API listening on http://localhost:${bound} (cache TTL ${ttlSeconds}s, db ${databasePath} at schema v${SCHEMA_VERSION})`,
+    `→ API listening on http://${address}:${bound} (cache TTL ${ttlSeconds}s, ` +
+      `db ${databasePath} at schema v${SCHEMA_VERSION}, ` +
+      `${trustProxy ? 'trusting' : 'ignoring'} forwarded headers)`,
   )
+  if (bindsEveryInterface(address)) {
+    console.warn(
+      `⚠ HOST=${process.env.HOST ?? ''} binds every interface, so :${bound} is reachable ` +
+        'without going through nginx — no TLS, no HSTS, no body cap, no forwarded headers.',
+    )
+  }
 })

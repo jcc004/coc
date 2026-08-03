@@ -1,10 +1,12 @@
 import type { Hono } from 'hono'
 import { isValidEmail, MIN_PASSWORD_LENGTH, normalizeEmail, type UserRole } from '@coc/shared'
 import { errorBody } from '../http.ts'
+import { AUTH_EVENT_PAGE_DEFAULT, AUTH_EVENT_PAGE_MAX } from './events.ts'
 import {
   clearSessionCookie,
   clientIp,
   currentUser,
+  sessionTokenFromCookie,
   setSessionCookie,
   type AuthContext,
   type AuthEnv,
@@ -63,12 +65,14 @@ function noSuchUser(c: AuthContext, id: number) {
 export interface AuthRouteOptions {
   limiter: LoginLimiter
   cookieSecure: boolean
+  /** Whether the forwarded headers may be believed — see `clientIp`. */
+  trustProxy: boolean
 }
 
 export function mountAuthRoutes(
   app: Hono<AuthEnv>,
   store: AuthStore,
-  { limiter, cookieSecure }: AuthRouteOptions,
+  { limiter, cookieSecure, trustProxy }: AuthRouteOptions,
 ): void {
   app.post('/api/auth/login', async (c) => {
     const body = await readJson(c)
@@ -76,10 +80,19 @@ export function mountAuthRoutes(
     // and `a@b.com` share one failure bucket instead of getting five tries each.
     const email = normalizeEmail(asString(body['email']))
     const password = asString(body['password'])
-    const keys = { email, ip: clientIp(c) }
+    const ip = clientIp(c, trustProxy)
+    const keys = { email, ip }
 
     const verdict = limiter.check(keys)
     if (!verdict.allowed) {
+      // Recorded because a run of these is the brake holding, which is a different
+      // story from a run of failures and is the one you want to see afterwards.
+      store.recordAuthEvent({
+        kind: 'loginBlocked',
+        email,
+        ip,
+        detail: `locked for another ${verdict.retryAfterSeconds}s`,
+      })
       c.header('Retry-After', String(verdict.retryAfterSeconds))
       return c.json(
         errorBody(
@@ -98,16 +111,30 @@ export function mountAuthRoutes(
      * indistinguishable from outside. The equal-work half of that promise lives in
      * `store.authenticate`, which hashes against a decoy when there is no match.
      */
-    const user = email && password ? store.authenticate(email, password) : undefined
+    const user = email && password ? await store.authenticate(email, password) : undefined
     if (!user) {
       if (email) limiter.recordFailure(keys)
+      /*
+       * The trail records the *attempt*, with the address that was tried and
+       * nothing else — never the password, and not whether the address exists.
+       * Storing which failures were for a real account would turn the log into
+       * the account oracle the 401 body goes to such lengths to avoid, for anyone
+       * who later gets to read it.
+       */
+      store.recordAuthEvent({ kind: 'loginFailed', email, ip })
       // A request with no email at all is a malformed client, not an attempt.
       return c.json(errorBody(401, 'invalidCredentials', LOGIN_FAILED), 401)
     }
 
     limiter.recordSuccess(keys)
     const session = store.createSession(user.id)
-    setSessionCookie(c, session.id, cookieSecure)
+    setSessionCookie(c, session.token, cookieSecure)
+    store.recordAuthEvent({
+      kind: 'loginSucceeded',
+      actorUserId: user.id,
+      email: user.email,
+      ip,
+    })
 
     return c.json({
       user: {
@@ -128,9 +155,22 @@ export function mountAuthRoutes(
   // Public and idempotent: signing out with a dead cookie should still clear it
   // rather than answer 401 and leave the browser holding a stale token.
   app.post('/api/auth/logout', (c) => {
-    const sessionId = c.get('sessionId')
-    if (sessionId) store.deleteSession(sessionId)
+    // The raw cookie, not `sessionId`: the id is the token's digest, and
+    // `deleteSession` hashes what it is given, so passing the id would look for
+    // sha256(sha256(token)) and delete nothing.
+    const user = c.get('user')
+    store.deleteSession(sessionTokenFromCookie(c))
     clearSessionCookie(c)
+    // Only a real session is worth a row. An anonymous POST here is a browser
+    // tidying up after itself, not an account action.
+    if (user) {
+      store.recordAuthEvent({
+        kind: 'logout',
+        actorUserId: user.id,
+        email: user.email,
+        ip: clientIp(c, trustProxy),
+      })
+    }
     return c.json({ ok: true })
   })
 
@@ -152,23 +192,86 @@ export function mountAuthRoutes(
     // real owner out of their own account. By id rather than by email, because the
     // session already establishes who is asking — and because an account whose
     // email is null is still entitled to change its own password.
-    if (!store.verifyUserPassword(user.id, currentPassword)) {
+    if (!(await store.verifyUserPassword(user.id, currentPassword))) {
       return c.json(errorBody(401, 'invalidCredentials', 'Current password is incorrect.'), 401)
     }
 
     // Third argument defaults to false, which is what clears
     // `must_change_password`: this is the account holder choosing a password, so
     // the reason the flag was set no longer holds. It is the only way it clears.
-    store.setPassword(user.id, newPassword)
+    await store.setPassword(user.id, newPassword)
     // Changing a password is also how you get rid of someone who has your old
     // one, so every other session for this user goes with it.
     const revoked = store.deleteUserSessions(user.id, c.get('sessionId') ?? undefined)
+    store.recordAuthEvent({
+      kind: 'passwordChanged',
+      actorUserId: user.id,
+      email: user.email,
+      ip: clientIp(c, trustProxy),
+      // The count, never the password. A revocation of several is the interesting
+      // part of this event: it is what a session hijack looks like from the log.
+      detail: `${revoked} other session(s) revoked`,
+    })
     return c.json({ ok: true, revokedSessions: revoked })
   })
 
   app.get('/api/admin/users', (c) => c.json({ users: store.listUsers() }))
 
+  /*
+   * The trail, read-only, newest first. There is no route that writes it from
+   * outside and none that edits or deletes it — see `events.ts` for why an audit
+   * log an admin can amend answers a much weaker question than one they cannot.
+   *
+   * Capped rather than complete: `limit` is clamped and a `before` cursor walks
+   * backwards, because a table that grows with every login attempt must not be
+   * returnable in one response. The cap is the server's, not a suggestion to the
+   * client — an absent or nonsense `limit` gets the default, and an enormous one
+   * gets the maximum.
+   */
+  app.get('/api/admin/auth-events', (c) => {
+    const events = store.authEvents()
+    const requested = Number(c.req.query('limit'))
+    const limit = Number.isInteger(requested)
+      ? Math.min(Math.max(requested, 1), AUTH_EVENT_PAGE_MAX)
+      : AUTH_EVENT_PAGE_DEFAULT
+
+    const cursor = Number(c.req.query('before'))
+    const beforeId = Number.isInteger(cursor) && cursor > 0 ? cursor : undefined
+
+    const page = events.list({ limit, beforeId })
+    return c.json({
+      events: page,
+      total: events.count(),
+      /*
+       * The oldest id on this page, or null when the page came back short — a short
+       * page is the end of the table, so offering a cursor would be inviting one
+       * more round trip to learn nothing. Derived from the rows rather than from
+       * the requested limit, so it stays right if a row is ever filtered out.
+       */
+      nextBefore: page.length === limit ? (page[page.length - 1]?.id ?? null) : null,
+    })
+  })
+
+  /*
+   * The invite path. The `password` in the body is the one the admin will read out
+   * to the new person, and it is *required* — there is no mail delivery, so the
+   * admin is the channel and something has to travel down it.
+   *
+   * It is also, unavoidably, a password somebody else chose. The temp-password route
+   * below argues that case at length and then mints its own value to avoid it; this
+   * route cannot, because the admin has to be able to say the password out loud.
+   * What it can do is make the admin's choice **temporary**, which is what
+   * `mustChangePassword` is for: the account is gated to /me, /password and /logout
+   * until the person who will actually be using it has picked their own. The gate is
+   * `requirePasswordUpToDate`, already mounted in `createApp` — the same one a
+   * temporary password goes through, because it is the same problem.
+   *
+   * Until this, an invited account kept the admin's string for as long as it existed,
+   * which meant every account had a second person who knew its password and no
+   * moment at which that stopped being true.
+   */
   app.post('/api/admin/users', async (c) => {
+    const admin = currentUser(c)
     const body = await readJson(c)
     const email = normalizeEmail(asString(body['email']))
     const password = asString(body['password'])
@@ -192,7 +295,22 @@ export function mountAuthRoutes(
     if (problem) return c.json(errorBody(400, 'badRequest', problem), 400)
 
     try {
-      return c.json({ user: store.createUser({ email, displayName, password, role }) }, 201)
+      const user = await store.createUser({
+        email,
+        displayName,
+        password,
+        role,
+        mustChangePassword: true,
+      })
+      store.recordAuthEvent({
+        kind: 'userCreated',
+        actorUserId: admin.id,
+        targetUserId: user.id,
+        email: user.email,
+        ip: clientIp(c, trustProxy),
+        detail: `role ${user.role}, must change password`,
+      })
+      return c.json({ user }, 201)
     } catch (cause) {
       if (cause instanceof EmailTakenError) {
         return c.json(errorBody(409, 'conflict', cause.message), 409)
@@ -248,6 +366,13 @@ export function mountAuthRoutes(
 
     const user = store.setDisabled(id, disabled)
     if (!user) return noSuchUser(c, id)
+    store.recordAuthEvent({
+      kind: disabled ? 'userDisabled' : 'userEnabled',
+      actorUserId: admin.id,
+      targetUserId: user.id,
+      email: user.email,
+      ip: clientIp(c, trustProxy),
+    })
     return c.json({ user })
   })
 
@@ -257,6 +382,7 @@ export function mountAuthRoutes(
    * to be done twice on the live database.
    */
   app.patch('/api/admin/users/:id/email', async (c) => {
+    const admin = currentUser(c)
     const id = userIdParam(c)
     if (id === undefined) return badUserId(c)
 
@@ -266,6 +392,7 @@ export function mountAuthRoutes(
       return c.json(errorBody(400, 'badRequest', EMAIL_PROBLEM), 400)
     }
 
+    const before = store.findUser(id)
     let user
     try {
       user = store.setEmail(id, email)
@@ -289,6 +416,16 @@ export function mountAuthRoutes(
      * the set being deleted in the first place.
      */
     const revokedSessions = store.deleteUserSessions(id, c.get('sessionId') ?? undefined)
+    store.recordAuthEvent({
+      kind: 'emailChanged',
+      actorUserId: admin.id,
+      targetUserId: user.id,
+      // The new address, since that is the credential from now on; the old one goes
+      // in `detail` so the change is legible without joining two rows together.
+      email: user.email,
+      ip: clientIp(c, trustProxy),
+      detail: `was ${before?.email ?? 'unset'}, ${revokedSessions} session(s) revoked`,
+    })
     return c.json({ user, revokedSessions })
   })
 
@@ -363,15 +500,26 @@ export function mountAuthRoutes(
 
     const user = store.setRole(id, role)
     if (!user) return noSuchUser(c, id)
+    store.recordAuthEvent({
+      kind: 'roleChanged',
+      actorUserId: admin.id,
+      targetUserId: user.id,
+      email: user.email,
+      ip: clientIp(c, trustProxy),
+      detail: `${target.role} → ${user.role}`,
+    })
     return c.json({ user })
   })
 
   /*
    * The whole password-recovery story, given there is no mail infrastructure: an
-   * admin issues a temporary password out of band. See the README for why a
-   * reset-by-email link is deliberately absent.
+   * admin issues a temporary password out of band. See `docs/authentication.md` —
+   * "Password recovery is admin-mediated, and there is deliberately no email reset"
+   * — for why a reset-by-email link is absent. (That lived in the README until it
+   * was split into `docs/`.)
    */
-  app.post('/api/admin/users/:id/temp-password', (c) => {
+  app.post('/api/admin/users/:id/temp-password', async (c) => {
+    const admin = currentUser(c)
     const id = userIdParam(c)
     if (id === undefined) return badUserId(c)
 
@@ -383,7 +531,7 @@ export function mountAuthRoutes(
      * password on any account, which is a far worse primitive than it looks.
      */
     const password = generateTemporaryPassword()
-    const user = store.setPassword(id, password, true)
+    const user = await store.setPassword(id, password, true)
     if (!user) return noSuchUser(c, id)
 
     /*
@@ -395,6 +543,21 @@ export function mountAuthRoutes(
      * gated to /me, /password and /logout like any other flagged session.
      */
     const revokedSessions = store.deleteUserSessions(id, c.get('sessionId') ?? undefined)
+
+    /*
+     * That an issue *happened* is exactly what an audit trail is for — it is how a
+     * password reset somebody did not ask for gets noticed. What was issued is not:
+     * `password` never reaches this row, and the trail has no column that could
+     * hold it even by accident.
+     */
+    store.recordAuthEvent({
+      kind: 'tempPasswordIssued',
+      actorUserId: admin.id,
+      targetUserId: user.id,
+      email: user.email,
+      ip: clientIp(c, trustProxy),
+      detail: `${revokedSessions} session(s) revoked`,
+    })
 
     // Returned once, in this body, and nowhere else. Never logged, never stored
     // in plaintext, never in a URL — the URL has no room for it and a log line

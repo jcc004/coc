@@ -76,3 +76,63 @@ export interface TempPasswordResponse {
  * discover it.
  */
 export const MIN_PASSWORD_LENGTH = 12
+
+/**
+ * The account actions the server keeps an audit trail of.
+ *
+ * A closed union rather than free text, so the reader of a log line and the writer
+ * of it cannot drift apart, and so a new kind is a deliberate addition here rather
+ * than a typo that quietly becomes its own category. Named for what happened, not
+ * for the route that caused it: `emailChanged` stays true if the address ever
+ * becomes editable somewhere else.
+ *
+ * `loginBlocked` is the rate limiter refusing an attempt before any password work —
+ * distinct from `loginFailed`, because a burst of the former is the brake working
+ * and a burst of the latter is the attack it was working against.
+ */
+export type AuthEventKind =
+  | 'loginSucceeded'
+  | 'loginFailed'
+  | 'loginBlocked'
+  | 'logout'
+  | 'passwordChanged'
+  | 'userCreated'
+  | 'userDisabled'
+  | 'userEnabled'
+  | 'roleChanged'
+  | 'emailChanged'
+  | 'tempPasswordIssued'
+
+/**
+ * One row of the trail, as `GET /api/admin/auth-events` returns it.
+ *
+ * There is no password, no temporary password and no session token in this shape,
+ * and there is nowhere for one to hide: `email` is the address a login attempt
+ * used, and `detail` is a short literal written by the server.
+ */
+export interface AuthEvent {
+  id: number
+  /** ISO-8601 UTC, as every other timestamp in this app is. */
+  at: string
+  kind: AuthEventKind
+  /** The signed-in account that acted, or `null` for an anonymous login attempt. */
+  actorUserId: number | null
+  /** Joined at read time, so a rename shows the person as they are known now. */
+  actorDisplayName: string | null
+  /** The account it was done to, when that is not the actor. */
+  targetUserId: number | null
+  targetDisplayName: string | null
+  /** The login address an attempt used. Recorded because a *failed* attempt has no user. */
+  email: string | null
+  ip: string | null
+  detail: string | null
+}
+
+/** `GET /api/admin/auth-events`. Newest first, capped — never the whole table. */
+export interface AuthEventsResponse {
+  events: AuthEvent[]
+  /** Rows in the table altogether, so the client can say "50 of 1,203". */
+  total: number
+  /** Pass as `?before=` to fetch the next page. `null` when this was the last. */
+  nextBefore: number | null
+}

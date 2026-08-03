@@ -46,10 +46,15 @@ function displayNameFor(env: Record<string, string | undefined>, email: string):
   return isValidDisplayName(configured) ? configured : emailLocalPart(email)
 }
 
-export function bootstrapAdmin(
+/**
+ * Async only because `createUser` hashes a password and scrypt is async now (see
+ * `passwords.ts`). Nothing about the ordering changed: `index.ts` awaits this before
+ * it starts serving, so the first admin still exists before the first request.
+ */
+export async function bootstrapAdmin(
   store: AuthStore,
   env: Record<string, string | undefined>,
-): BootstrapResult {
+): Promise<BootstrapResult> {
   const rawEmail = env.ADMIN_EMAIL?.trim() ?? ''
   const email = normalizeEmail(rawEmail)
   const password = env.ADMIN_PASSWORD ?? ''
@@ -128,7 +133,16 @@ export function bootstrapAdmin(
     }
   }
 
-  const admin = store.createUser({
+  /*
+   * `mustChangePassword` is left at its default of false here, and that is not an
+   * oversight — it is the one case where the password's author and its owner are
+   * the same person. The operator set `ADMIN_PASSWORD` for their own account, so
+   * there is nobody else's choice to be got out of, and forcing a change would make
+   * the documented "start once, then remove ADMIN_PASSWORD" sequence a three-step
+   * dance for no gain. An account an admin creates for *somebody else* is the
+   * opposite case, and `POST /api/admin/users` sets the flag for exactly that reason.
+   */
+  const admin = await store.createUser({
     email,
     displayName: displayNameFor(env, email),
     password,

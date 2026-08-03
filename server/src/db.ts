@@ -35,6 +35,10 @@ type Migration = (db: DatabaseSync) => void
  * v1 — the original two tables, plus chat. Written with IF NOT EXISTS on purpose:
  * a database created before `user_version` was used already has these and still
  * reports version 0, so v1 has to be a no-op for it and a create for a fresh file.
+ *
+ * `chat_messages` is dropped again by v9, and this step still has to create it: a
+ * fresh database passes through both, and a DROP of something never created is the
+ * one failure the version marker cannot prevent. v9 says the rest.
  */
 const v1: Migration = (db) => {
   db.exec(`
@@ -405,7 +409,116 @@ CREATE UNIQUE INDEX trades_one_pending_per_swap
 `)
 }
 
-const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5, v6, v7]
+/**
+ * v8 — session tokens stop being stored in plaintext. **Everybody signs in again.**
+ *
+ * `sessions.id` *was* the bearer token: the exact string in the cookie, written to
+ * the table verbatim. Anyone who could read `coc.db` — or any of the twenty
+ * unencrypted copies `deploy/update.sh` keeps, or the WAL beside it — held a
+ * working 30-day session for every signed-in account, no password needed and no
+ * trace left behind. The store now hashes the cookie with SHA-256 and stores the
+ * digest, so the file holds a verifier rather than a credential.
+ *
+ * SHA-256 rather than scrypt, deliberately: the token is 256 bits of CSPRNG output,
+ * so there is no low-entropy guess for a slow hash to defend against, and this runs
+ * on every authenticated request where 40 ms would be unaffordable.
+ *
+ * The rows are **deleted, not rehashed**. Rehashing in place would be the polite
+ * option and would defeat the entire point: the tokens sitting in last week's
+ * backups would keep working, which is precisely the exposure being closed. So the
+ * cost is real and intended — every signed-in person is logged out once and signs
+ * in again. That is cheaper than the alternative on any day, and much cheaper than
+ * it looks on a ten-person tool.
+ *
+ * No schema change is needed; the column already holds an opaque string. What
+ * changes is what the application puts in it, and this step is what guarantees no
+ * row is left over from when that meant something else.
+ */
+const v8: Migration = (db) => {
+  db.exec('DELETE FROM sessions')
+}
+
+/**
+ * v9 — drop `chat_messages`.
+ *
+ * Created by v1 alongside the tables that are still in use, for a chat feature that
+ * the Trade Tracker replaced. Nothing in the repo reads it, writes it, or joins to
+ * it: no store, no route, no client call. A table nothing references is not free —
+ * it is a `user_id` foreign key that constrains what `users` can do, a row that
+ * shows up in every backup, and a thing the next reader of this schema has to work
+ * out is dead.
+ *
+ * v1 is left exactly as it is. It is history, and it must still create this table
+ * for a database starting from zero, because v9 is the step that removes it and a
+ * migration that drops what was never created is the one kind of failure the
+ * version marker cannot save. The pair reads oddly and is correct: create at v1,
+ * drop at v9, and a fresh file passes through both in one boot.
+ *
+ * One concern per migration, which is why this is not folded into v8 — the session
+ * wipe and a dead table have nothing to do with each other, and a step that does
+ * two things is a step you cannot describe in its own header.
+ */
+const v9: Migration = (db) => {
+  db.exec('DROP TABLE chat_messages')
+}
+
+/**
+ * v10 — `auth_events`, the audit trail for account actions.
+ *
+ * `updated_by_user_id` on the shared tables records who changed the data. Nothing
+ * recorded the actions that grant access to it, so logins, failed attempts,
+ * lockouts, disables, role changes and temporary passwords left no trace at all —
+ * and the questions that get asked after an incident ("when did that account become
+ * an admin", "was there a burst of failures first") had no answer to be wrong
+ * about. See `auth/events.ts` for what is written and what is deliberately not.
+ *
+ * Shape notes, each deliberate:
+ *
+ * - **Append-only by construction as far as the app is concerned**: nothing outside
+ *   this file issues an UPDATE or a DELETE against it, and no route exposes either.
+ *   SQLite cannot enforce that without triggers, which would then have to be
+ *   migrated around; the guarantee is that there is no code path, and the reason it
+ *   matters is that the accounts most worth auditing are the ones that could edit
+ *   the log.
+ * - `kind` is **not** constrained to a CHECK list. The union lives in
+ *   `shared/src/auth-types.ts` where both the writer and the reader see it; a CHECK
+ *   here would have to be migrated for every new kind while adding nothing the
+ *   type does not already say, and a rejected INSERT would fail the action being
+ *   audited rather than just its record.
+ * - Both user columns are `ON DELETE SET NULL`, like every other user reference in
+ *   this schema. The trail is the record of what happened; deleting an account must
+ *   cost the attribution, not the entry. Accounts are disabled rather than deleted
+ *   anyway, and disabling touches nothing here.
+ * - `email` is stored *as well as* `target_user_id` because a failed login has no
+ *   user to point at — the address somebody tried is the only identity the attempt
+ *   has, and it is the whole content of "who was being targeted".
+ * - `ip` is nullable, matching `clientIp`'s contract that there may be no address
+ *   to record rather than a placeholder standing in for one.
+ *
+ * The index is on `id DESC` in effect (SQLite walks the primary key backwards for
+ * free), so the one query this table serves — newest first, capped, optionally
+ * before a cursor — needs no index of its own. `at` gets one because "what happened
+ * around this time" is the other question anyone asks of an audit log, and it is
+ * the one the primary key cannot answer.
+ */
+const v10: Migration = (db) => {
+  db.exec(`
+CREATE TABLE auth_events (
+  id             INTEGER PRIMARY KEY,
+  at             TEXT NOT NULL,
+  kind           TEXT NOT NULL,
+  actor_user_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  target_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  email          TEXT,
+  ip             TEXT,
+  detail         TEXT
+);
+
+CREATE INDEX auth_events_at ON auth_events (at);
+`)
+}
+
+const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5, v6, v7, v8, v9, v10]
 
 /** The version a fully migrated database reports. */
 export const SCHEMA_VERSION = MIGRATIONS.length

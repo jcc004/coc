@@ -45,10 +45,12 @@ interface Harness {
   db: ReturnType<typeof openDatabase>
 }
 
-function createHarness(databasePath = ':memory:'): Harness {
+// Async because seeding hashes two passwords, and scrypt is async now — see
+// `auth/passwords.ts` for why a synchronous derivation was a denial of service.
+async function createHarness(databasePath = ':memory:'): Promise<Harness> {
   const db = openDatabase(databasePath)
   const auth = createAuthStore(db)
-  bootstrapAdmin(auth, {
+  await bootstrapAdmin(auth, {
     ADMIN_EMAIL: ADMIN.email,
     ADMIN_PASSWORD: ADMIN.password,
     ADMIN_DISPLAY_NAME: ADMIN_NAME,
@@ -56,7 +58,7 @@ function createHarness(databasePath = ':memory:'): Harness {
   // Tolerated rather than asserted, because the restart test boots the same file
   // twice and the second boot finds the account the first one made.
   try {
-    auth.createUser({
+    await auth.createUser({
       email: SECOND.email,
       displayName: SECOND_NAME,
       password: SECOND.password,
@@ -170,7 +172,7 @@ async function readOne(harness: Harness, cookie: string, tag: string): Promise<B
 
 describe('the card inventory is shared, not per-user', () => {
   it("shows user A's counts to user B, attributed and timestamped", async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const a = await signIn(harness, ADMIN)
     const b = await signIn(harness, SECOND)
 
@@ -194,7 +196,7 @@ describe('the card inventory is shared, not per-user', () => {
   })
 
   it('reports the second writer as the one who last touched it', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const a = await signIn(harness, ADMIN)
     const b = await signIn(harness, SECOND)
     // B owns the base; the admin writes it anyway, which admins may.
@@ -211,7 +213,7 @@ describe('the card inventory is shared, not per-user', () => {
   })
 
   it('canonicalises the tag, so #abc and %23ABC are one base', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     await save(harness, cookie, '2gcj2qpu', [{ cardId: 1, count: 2 }])
@@ -225,7 +227,7 @@ describe('the card inventory is shared, not per-user', () => {
   })
 
   it('answers for a base nobody has entered with an empty inventory, not a 404', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     const base = await readOne(harness, cookie, BASE_C)
@@ -236,14 +238,14 @@ describe('the card inventory is shared, not per-user', () => {
   })
 
   it('lists nothing at all before anyone has entered a count', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
     assert.deepEqual(await readAll(harness, cookie), [])
     harness.db.close()
   })
 
   it('survives disabling the account that entered the counts', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const admin = await signIn(harness, ADMIN)
     const member = await signIn(harness, SECOND)
     await assignBase(harness, admin, BASE_A, idOf(harness, SECOND.email))
@@ -294,7 +296,7 @@ describe('only the base’s owner writes its counts', () => {
   }
 
   it('lets the owner write the base assigned to them', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const admin = await signIn(harness, ADMIN)
     const member = await signIn(harness, SECOND)
     await assignBase(harness, admin, BASE_A, idOf(harness, SECOND.email))
@@ -305,7 +307,7 @@ describe('only the base’s owner writes its counts', () => {
   })
 
   it('refuses a member on somebody else’s base, and names the owner', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const admin = await signIn(harness, ADMIN)
     const member = await signIn(harness, SECOND)
     // The admin owns A; the member tries to write it.
@@ -318,7 +320,7 @@ describe('only the base’s owner writes its counts', () => {
   })
 
   it('lets an admin write a base somebody else owns', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const admin = await signIn(harness, ADMIN)
     await signIn(harness, SECOND)
     await assignBase(harness, admin, BASE_A, idOf(harness, SECOND.email))
@@ -332,7 +334,7 @@ describe('only the base’s owner writes its counts', () => {
   })
 
   it('lets an admin write a base nobody owns, and refuses a member the same base', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const admin = await signIn(harness, ADMIN)
     const member = await signIn(harness, SECOND)
 
@@ -343,7 +345,7 @@ describe('only the base’s owner writes its counts', () => {
   })
 
   it('grants nobody but admins the write when the owner is an unlinked name', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const admin = await signIn(harness, ADMIN)
     const member = await signIn(harness, SECOND)
 
@@ -363,7 +365,7 @@ describe('only the base’s owner writes its counts', () => {
   })
 
   it('follows a reassignment: the new owner writes, the old one stops', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const admin = await signIn(harness, ADMIN)
     const member = await signIn(harness, SECOND)
     await assignBase(harness, admin, BASE_A, idOf(harness, SECOND.email))
@@ -383,7 +385,7 @@ describe('only the base’s owner writes its counts', () => {
   })
 
   it('refuses before it reads the body, so a bad payload is still a 403', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const admin = await signIn(harness, ADMIN)
     const member = await signIn(harness, SECOND)
     await assignBase(harness, admin, BASE_A, idOf(harness, ADMIN.email))
@@ -399,7 +401,7 @@ describe('only the base’s owner writes its counts', () => {
   })
 
   it('scopes ownership to the base, not to the member', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const admin = await signIn(harness, ADMIN)
     const member = await signIn(harness, SECOND)
     await assignBase(harness, admin, BASE_A, idOf(harness, SECOND.email))
@@ -413,7 +415,7 @@ describe('only the base’s owner writes its counts', () => {
 
 describe('a whole base is written in one request', () => {
   it('replaces the base rather than merging into it', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     await save(harness, cookie, BASE_A, [
@@ -428,7 +430,7 @@ describe('a whole base is written in one request', () => {
   })
 
   it('treats a count of 0 as deleting the row rather than storing a zero', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     await save(harness, cookie, BASE_A, [
@@ -452,7 +454,7 @@ describe('a whole base is written in one request', () => {
   })
 
   it('never stores sixty rows for a base', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     // What the entry screen holds: all sixty boxes, most of them empty.
@@ -468,7 +470,7 @@ describe('a whole base is written in one request', () => {
   })
 
   it('empties a base to zero cards but keeps its stamp', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     await save(harness, cookie, BASE_A, [{ cardId: 1, count: 2 }])
@@ -496,7 +498,7 @@ describe('a whole base is written in one request', () => {
   })
 
   it('records the stamp even when the very first save is empty', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     // Someone opened the base, found nothing worth recording, and saved. That is
@@ -511,7 +513,7 @@ describe('a whole base is written in one request', () => {
   })
 
   it('moves the stamp forward on every save, naming the latest editor', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const a = await signIn(harness, ADMIN)
     const b = await signIn(harness, SECOND)
     await assignBase(harness, a, BASE_A, idOf(harness, SECOND.email))
@@ -531,7 +533,7 @@ describe('a whole base is written in one request', () => {
   })
 
   it('keeps one stamp row per base, never one per card', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     await save(harness, cookie, BASE_A, [
@@ -550,7 +552,7 @@ describe('a whole base is written in one request', () => {
   })
 
   it('accepts an empty list, and keeps the bases either side of it', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     await save(harness, cookie, BASE_A, [{ cardId: 1, count: 2 }])
@@ -570,7 +572,7 @@ describe('a whole base is written in one request', () => {
   })
 
   it('returns the base it just wrote, so the client need not re-read', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     const response = await save(harness, cookie, BASE_A, [{ cardId: 9, count: 5 }])
@@ -583,7 +585,7 @@ describe('a whole base is written in one request', () => {
   })
 
   it('keeps bases independent of one another', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     await save(harness, cookie, BASE_A, [{ cardId: 1, count: 2 }])
@@ -620,7 +622,7 @@ describe('a bad entry rejects the whole request', () => {
   }
 
   it('refuses a count above the maximum', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
     await assertRejected(
       harness,
@@ -633,14 +635,14 @@ describe('a bad entry rejects the whole request', () => {
   })
 
   it('refuses a negative count', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
     await assertRejected(harness, cookie, [{ cardId: 1, count: -1 }], 'negative is out of range')
     harness.db.close()
   })
 
   it('refuses a card id outside 1–60', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
     for (const cardId of [0, -5, CARD_ID_MAX + 1, 999]) {
       await assertRejected(harness, cookie, [{ cardId, count: 1 }], `${cardId} is not a card`)
@@ -649,7 +651,7 @@ describe('a bad entry rejects the whole request', () => {
   })
 
   it('refuses a non-integer id or count', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
     await assertRejected(harness, cookie, [{ cardId: 1.5, count: 1 }], 'fractional id')
     await assertRejected(harness, cookie, [{ cardId: 1, count: 2.5 }], 'fractional count')
@@ -659,7 +661,7 @@ describe('a bad entry rejects the whole request', () => {
   })
 
   it('refuses a duplicated card id rather than letting the last one win', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
     await assertRejected(
       harness,
@@ -674,7 +676,7 @@ describe('a bad entry rejects the whole request', () => {
   })
 
   it('refuses a body that is not a list of entries', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
     await assertRejected(harness, cookie, undefined, 'no counts at all')
     await assertRejected(harness, cookie, 'nope', 'a string')
@@ -684,7 +686,7 @@ describe('a bad entry rejects the whole request', () => {
   })
 
   it('leaves an already-good base exactly as it was', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     await save(harness, cookie, BASE_A, [
@@ -712,7 +714,7 @@ describe('a bad entry rejects the whole request', () => {
   })
 
   it('rejects a tag that could never be a tag', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
     const response = await harness.app.request(
@@ -727,7 +729,7 @@ describe('a bad entry rejects the whole request', () => {
 
 describe('the database is the last line on the count range', () => {
   it('refuses an out-of-range count even when the route is bypassed', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const insert = harness.db.prepare(
       `INSERT INTO card_inventory (season, player_tag, card_id, count, updated_at)
        VALUES (?, ?, ?, ?, ?)`,
@@ -749,7 +751,7 @@ describe('the database is the last line on the count range', () => {
   })
 
   it('keeps one row per season, base and card', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const insert = harness.db.prepare(
       `INSERT INTO card_inventory (season, player_tag, card_id, count, updated_at)
        VALUES (?, ?, ?, ?, ?)`,
@@ -763,7 +765,7 @@ describe('the database is the last line on the count range', () => {
   })
 
   it('scopes rows to the season, so another season is a separate set', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
     await save(harness, cookie, BASE_A, [{ cardId: 1, count: 2 }])
 
@@ -786,13 +788,13 @@ describe('the database is the last line on the count range', () => {
     after(() => rmSync(dir, { recursive: true, force: true }))
     const databasePath = join(dir, 'coc.db')
 
-    const first = createHarness(databasePath)
+    const first = await createHarness(databasePath)
     const cookie = await signIn(first, ADMIN)
     await save(first, cookie, BASE_A, [{ cardId: 3, count: 6 }])
     first.db.close()
 
     // A second boot runs the migrations again and must find the same rows.
-    const second = createHarness(databasePath)
+    const second = await createHarness(databasePath)
     assert.deepEqual(second.cards.listInventory(CARD_SEASON)[0]?.counts, [{ cardId: 3, count: 6 }])
     second.db.close()
   })
@@ -800,7 +802,7 @@ describe('the database is the last line on the count range', () => {
 
 describe('the card routes need a session', () => {
   it('401s every one of them anonymously, changing nothing', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const requests: [string, RequestInit][] = [
       ['/api/cards/inventory', {}],
       [inventoryPath(BASE_A), {}],
@@ -819,7 +821,7 @@ describe('the card routes need a session', () => {
   })
 
   it('is not an admin-only area — a member reads everything and writes their own', async () => {
-    const harness = createHarness()
+    const harness = await createHarness()
     const admin = await signIn(harness, ADMIN)
     const member = await signIn(harness, SECOND)
     await assignBase(harness, admin, BASE_A, idOf(harness, SECOND.email))
