@@ -1825,6 +1825,31 @@ Players also appear inside `/locations/{id}/rankings/players`,
 those are keyed by location or league, not by tag, so you cannot ask "where does this
 player rank" directly. You would page the leaderboard and match on tag.
 
+### There is no cards endpoint. Probed, not assumed.
+
+The card event's counts are typed in by hand, and that is not a workaround for something
+we did not look for. Probed against the live API from the droplet, every candidate
+returns **404 `notFound`**:
+
+```
+/cards                      404
+/cards/                     404
+/players/{tag}/cards        404
+/clans/{tag}/cards          404
+/events                     404
+/seasons                    404
+```
+
+So there is nothing to sync from and nothing to poll. Hand entry is the design, not a
+stopgap, and the parts built around it — `updated_at` per base, save-on-blur, the
+shared-counts model, the trade suggestions computed from what people typed — are load
+bearing rather than temporary.
+
+Worth re-running if Supercell ever ships an inventory API, because it would make most of
+that unnecessary. The check is a loop over those paths with the token loaded; note that a
+`403 accessDenied.invalidIp` tells you nothing about the path, only that you ran it from
+the wrong host.
+
 ### One important caveat on tags
 
 The API returns a flat `404 notFound` for a malformed tag *and* for a tag that simply does
