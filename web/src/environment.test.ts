@@ -20,7 +20,9 @@ describe('siteEnvironment', () => {
     ]) {
       const env = siteEnvironment(host)
       assert.equal(env.kind, 'development', `${JSON.stringify(host)} should be marked`)
-      assert.equal(env.label, 'DEV SERVER')
+      // Title case, matching the app name beside it: measured, both render in the
+      // same font, and all-caps was what read as a second typeface.
+      assert.equal(env.label, 'Dev Server')
     }
   })
 

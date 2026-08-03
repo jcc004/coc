@@ -41,7 +41,17 @@ export type SiteEnvironment =
 export function siteEnvironment(hostname: string): SiteEnvironment {
   const host = hostname.trim().toLowerCase().replace(/\.$/, '')
   if (host === PRODUCTION_HOST) return { kind: 'production', label: null }
-  return { kind: 'development', label: 'DEV SERVER' }
+  /*
+   * Title case, not DEV SERVER.
+   *
+   * Both strings rasterise with the same font — confirmed by asking the renderer which
+   * face it used, not by reading the CSS. But set in capitals beside a mixed-case
+   * title, Trebuchet's caps read as a second typeface, and it was reported as one
+   * twice. Matching the title's casing is what actually makes it look like the same
+   * words in the same voice, which is the point: the marker should read as part of the
+   * app's name on this install, not as a sticker on top of it.
+   */
+  return { kind: 'development', label: 'Dev Server' }
 }
 
 /** Reads the live location. Split out so the rule above stays testable. */

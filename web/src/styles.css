@@ -285,7 +285,22 @@ select {
   margin-bottom: 20px;
 }
 
+/*
+ * A flex row holding the rosette-and-name link and, on a dev install, the marker.
+ *
+ * Flex rather than plain inline flow for one measured reason: `.topbar__home` is
+ * `inline-flex` with `align-items: center` so the rosette sits against the cap height,
+ * and an inline-flex box's synthesised baseline is not where its text actually is. A
+ * sibling `<span>` on the same line therefore rendered its text **5px lower** — read
+ * off Range rects, not eyeballed. As flex items the two boxes centre against each
+ * other, and since both carry the same font size and line height their text lands on
+ * the same line.
+ */
 .topbar__title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   font-size: 17px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -2047,7 +2062,7 @@ table.roster th button:hover {
  * this for production is the last thing to render faintly.
  */
 .topbar__env {
-  margin-left: 6px;
+  /* No margin: the heading is a flex row and supplies the gap. */
   white-space: nowrap;
 }
 
