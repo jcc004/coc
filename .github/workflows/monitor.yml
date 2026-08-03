@@ -1,0 +1,175 @@
+# Watches the live site from outside it.
+#
+# **Why this is not on the droplet.** A box cannot credibly monitor itself: the
+# failures worth catching are the ones where it is off, unreachable, or its Nginx is
+# not answering, and in every one of those a local check is down too. This runs on
+# GitHub's runners, which is the one piece of infrastructure this project already has
+# that is somewhere else.
+#
+# **It is deliberately not a substitute for an uptime service.** The repository is
+# private, so Actions minutes are metered — a five-minute check is ~8,600 minutes a
+# month against a 2,000 free allowance, which is why liveness here runs every 30
+# minutes and not more often. A free uptime service checks every minute for nothing
+# and pages a phone; see deploy/README.md. What this does that such a service
+# generally does not is the certificate arithmetic below, and that is the half worth
+# having in the repository.
+#
+# **Noise is the failure mode to design against.** This project already deleted a
+# workflow that failed on every push and emailed each time — "noise that trains you to
+# ignore the one signal this workflow is for". So: liveness retries before it
+# concludes anything, because a runner's network blips and a single failed curl is not
+# an outage; and the certificate check runs once a day rather than every 30 minutes,
+# because an expiry warning that arrives 48 times a day is an expiry warning nobody
+# reads.
+#
+# A failed scheduled run emails the repository owner. That is the whole alerting
+# mechanism, and it is known to work here.
+#
+# One caveat to know rather than discover: **GitHub disables scheduled workflows after
+# 60 days of repository inactivity**, and scheduled runs can be delayed by tens of
+# minutes when the platform is busy. Neither is acceptable for a paging alert, both are
+# fine for "tell me before the users do".
+
+name: Monitor
+
+on:
+  schedule:
+    # Liveness. Every 30 minutes ≈ 1,440 minutes a month, which fits the free private
+    # allowance alongside the verify workflow. Raise the frequency only if you know
+    # what your Actions budget looks like.
+    - cron: '*/30 * * * *'
+    # The certificate, once a day at 07:12 UTC. Off the hour on purpose: scheduled
+    # jobs on the hour queue behind everybody else's.
+    - cron: '12 7 * * *'
+  workflow_dispatch:
+
+# Never queue these behind each other — a monitor that reports a stale minute is worse
+# than one that skipped a beat.
+concurrency:
+  group: monitor
+  cancel-in-progress: true
+
+env:
+  SITE: https://coc.jcciv.com
+
+jobs:
+  liveness:
+    name: Is the site up
+    # Not on the daily certificate schedule: that run has its own job, and doubling up
+    # would only mean two emails for one outage.
+    if: github.event.schedule != '12 7 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Health endpoint answers
+        run: |
+          # /api/health is public precisely so a probe can reach it, and it answers
+          # {"ok":true} without a session — the cache size is only added for a
+          # signed-in caller. So the body is a fixed string and worth asserting: a 200
+          # from something that is not this app is not the app being up.
+          #
+          # Three attempts, 20s apart. One failed curl from a shared runner is not an
+          # outage, and treating it as one is how this workflow would earn itself a
+          # filter rule.
+          for attempt in 1 2 3; do
+            body="$(curl -fsS --max-time 15 "$SITE/api/health" 2>/dev/null || true)"
+            if [ "$body" = '{"ok":true}' ]; then
+              echo "attempt $attempt: ok"
+              exit 0
+            fi
+            echo "attempt $attempt failed (got: ${body:-<no response>})"
+            [ "$attempt" -lt 3 ] && sleep 20
+          done
+
+          echo "::error::$SITE/api/health did not answer {\"ok\":true} in three attempts over ~40s."
+          cat <<'DIAG'
+          On the droplet:
+            systemctl status coc --no-pager -l
+            journalctl -u coc -n 50 --no-pager
+            curl -fsS http://127.0.0.1:8787/api/health
+
+          If the app answers on 127.0.0.1 but not through the hostname, it is Nginx or
+          the certificate rather than the app. If it answers neither, the service is
+          down — and note the unit stops retrying after 5 failures in 60s, so it may
+          need: sudo systemctl reset-failed coc && sudo systemctl start coc
+          DIAG
+          exit 1
+
+      - name: The app itself is being served, not just the API
+        run: |
+          # The SPA and the API are different things behind one hostname: Nginx serves
+          # web/dist itself and only proxies /api. So a healthy API says nothing about
+          # whether anybody can load the page.
+          #
+          # Nginx falls back to index.html for any path it cannot find, which means a
+          # status check proves very little here — hence looking for the bundle
+          # reference that only a real build puts in the markup.
+          html="$(curl -fsS --max-time 15 "$SITE/" || true)"
+          if printf '%s' "$html" | grep -qE 'assets/index-[A-Za-z0-9_-]+\.js'; then
+            echo "serving $(printf '%s' "$html" | grep -oE 'assets/index-[A-Za-z0-9_-]+\.js' | head -1)"
+          else
+            echo "::error::$SITE/ did not return a page referencing a built JS bundle."
+            echo "That is Nginx serving the wrong root, or an empty web/dist. Check:"
+            echo "  grep -n root /etc/nginx/sites-enabled/coc   # expect /srv/coc/web/dist"
+            echo "  ls /srv/coc/web/dist/assets/"
+            exit 1
+          fi
+
+      - name: TLS is valid
+        run: |
+          # No -k anywhere in this file, so every curl above already fails on an
+          # invalid certificate. This step exists to say so explicitly rather than
+          # leaving it as a side effect somebody could helpfully "fix" with -k.
+          curl -fsS --max-time 15 -o /dev/null "$SITE/api/health"
+          echo "certificate accepted without -k"
+
+  certificate:
+    name: How long the certificate has left
+    # Daily only. The point is lead time, and lead time reported 48 times a day is
+    # noise rather than lead time.
+    if: github.event.schedule == '12 7 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Warn well before it expires
+        run: |
+          # This is the half a generic uptime service does not give you, and it is a
+          # documented failure mode of this deployment rather than a hypothetical one:
+          # HTTP-01 renewal needs port 80 reachable, and a blocked port 80 turns into
+          # an expired certificate roughly 60 days later — silently, because nothing
+          # is wrong today. certbot's own timer is what should renew it; this is the
+          # check that notices when it has not.
+          host="$(printf '%s' "$SITE" | sed -E 's#^https?://##; s#/.*$##')"
+
+          end="$(printf '' \
+            | openssl s_client -connect "$host:443" -servername "$host" 2>/dev/null \
+            | openssl x509 -noout -enddate 2>/dev/null \
+            | cut -d= -f2)"
+
+          if [ -z "$end" ]; then
+            echo "::error::Could not read the certificate for $host at all."
+            echo "That is usually the site being down, which the liveness job will also say."
+            exit 1
+          fi
+
+          end_epoch="$(date -u -d "$end" +%s)"
+          days=$(( (end_epoch - $(date -u +%s)) / 86400 ))
+          echo "certificate for $host expires in $days day(s) — $end"
+
+          # Let's Encrypt issues for 90 days and certbot renews at 30 remaining. So 21
+          # is comfortably *after* renewal should have happened and comfortably before
+          # anything breaks: it means the renewal did not run, and there are three
+          # weeks to fix it. 7 is the same message with the urgency it has earned.
+          if [ "$days" -lt 7 ]; then
+            echo "::error::Only $days day(s) of certificate left. Renewal has not run."
+            echo "  sudo certbot renew --dry-run    # then: sudo certbot renew"
+            echo "  sudo systemctl reload nginx     # Nginx keeps serving the old cert otherwise"
+            exit 1
+          elif [ "$days" -lt 21 ]; then
+            echo "::error::$days day(s) of certificate left, which means renewal has not run."
+            echo "certbot renews at 30 days remaining, so this is already overdue."
+            echo "Two things break it silently: port 80 unreachable (HTTP-01 needs it),"
+            echo "and Nginx not reloading after a successful renewal."
+            echo "  sudo certbot renew --dry-run"
+            exit 1
+          fi
+
+          echo "Nothing to do — certbot is keeping up."

@@ -480,25 +480,64 @@ reason to stop shipping, and dying at that point would leave the tree pulled and
 service un-restarted. The backup contains password hashes, so send it somewhere you
 would be comfortable storing those, and `chmod 700` the destination.
 
-### Monitoring is still the open gap
+### Monitoring
 
-Nothing here notices that the site is down. The timer logs to the journal, and a
-crash-looping service or a failed deploy surfaces when somebody opens the app.
-`Restart=on-failure` with `StartLimitBurst=5` at least stops a crash loop burying
-the real error under thousands of journal lines.
+Nothing on the droplet notices that the droplet is down, and nothing can: the failures
+worth catching are the ones where it is off, unreachable, or its Nginx is not
+answering, and a local check is down in every one of them. So monitoring lives
+somewhere else, in two halves.
 
-This is the one item on the list that cannot be fixed from inside the droplet: a
-box cannot credibly monitor itself. The proportionate answer for a ten-person app is
-an external check on `https://coc.jcciv.com/api/health` — a free uptime service, or
-a cron job on any other machine you own:
+**`.github/workflows/monitor.yml`, which is in this repository and needs nothing set
+up.** It runs on GitHub's runners — the one piece of infrastructure this project
+already has that is not the droplet.
+
+| | when | what it does |
+| --- | --- | --- |
+| `liveness` | every 30 min | `/api/health` must answer exactly `{"ok":true}`, the page must reference a built JS bundle, and every request is made without `-k` so an invalid certificate fails it. Three attempts 20s apart before it concludes anything. |
+| `certificate` | daily, 07:12 UTC | Fails at **under 21 days** remaining, and again more urgently under 7. |
+
+The certificate half is the reason this is worth having in the repo rather than only
+in an uptime service. It is a documented failure mode here rather than a hypothesis:
+HTTP-01 renewal needs port 80 reachable, so a blocked port 80 becomes an expired
+certificate about 60 days later — silently, because nothing is wrong today. certbot
+renews at 30 days remaining, so 21 means the renewal *did not run* and there are three
+weeks to find out why.
+
+Two constraints shaped it, and both are worth knowing before changing the cadence:
+
+- **This repository is private, so Actions minutes are metered.** A five-minute check
+  is roughly 8,600 minutes a month against a 2,000 free allowance. 30 minutes is
+  ~1,440, which fits alongside the verify workflow. That is the only reason liveness is
+  not more frequent.
+- **Noise is the failure mode.** This project already deleted a workflow that failed
+  on every push and emailed each time — noise that trains you to ignore the one signal
+  the workflow exists for. Hence the retries, and hence the certificate check running
+  daily: an expiry warning delivered 48 times a day is not lead time, it is a filter
+  rule waiting to happen.
+
+Also know: **GitHub disables scheduled workflows after 60 days of repository
+inactivity**, and scheduled runs can be delayed by tens of minutes when the platform
+is busy. Fine for "tell me before the users do"; not a pager.
+
+**The second half is a free uptime service, and it is the one to add if you only do
+one thing.** A minute-by-minute check that pages a phone is what Actions cannot be at
+this budget, and it takes about two minutes to set up: point any of the free tiers at
+`https://coc.jcciv.com/api/health`, expect HTTP 200 containing `ok`, and send alerts
+wherever you actually look. Nothing needs to change on the droplet — `/api/health` is
+public precisely so a probe can reach it, and it answers without a session (the cache
+size is only added for a signed-in caller).
+
+A dead-man's switch is the third option and catches a class the other two do not — the
+droplet being powered off, or off the network entirely, rather than merely answering
+wrongly. It inverts the direction: the droplet pings a URL on a timer and the service
+alerts when the pings *stop*. Worth it only if you have been bitten by that specific
+failure.
+
+Run either job by hand from the Actions tab, or:
 
 ```bash
-*/5 * * * * curl -fsS --max-time 10 https://coc.jcciv.com/api/health >/dev/null || \
-  echo "coc is down at $(date -Is)" | mail -s 'coc down' you@example.com
+gh workflow run monitor.yml        # runs liveness and the certificate check together
 ```
-
-`/api/health` is public precisely so a probe can reach it, and it answers `{"ok":
-true}` without a session — the cache size is only added for a signed-in caller.
 
 ## Automating it
 
