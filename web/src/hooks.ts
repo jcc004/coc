@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ApiError } from './api.ts'
+import { baseScopeFor, baseScopeKey, type BaseScope } from './base-scope.ts'
 import {
   clanTargetTag,
   hashTarget,
@@ -258,6 +259,55 @@ export function useLastClan(userId: number | null): string | null {
   }, [userId])
 
   return tag
+}
+
+/* ---------- Mine / All on the card page ---------- */
+
+/**
+ * The card page's base filter, remembered per account.
+ *
+ * Every rule is in `base-scope.ts`; what is here is the timing, which is the part
+ * a pure function cannot own. The default depends on whether this account owns a
+ * base, and that answer arrives from the server — so resolving it eagerly would
+ * read "owns nothing" from an empty first snapshot and open on `All` for everybody.
+ * `ready` is the caller saying the owner list has actually landed; until then the
+ * filter reads `All`, which shows every base rather than an empty list.
+ *
+ * Resolved exactly once. After that the state is the user's, and a later change to
+ * who owns what must not move a control they are looking at.
+ */
+export function useBaseScope(
+  userId: number,
+  ownsAny: boolean,
+  ready: boolean,
+): [BaseScope, (next: BaseScope) => void] {
+  /* The account is held alongside the choice rather than being reset by a second
+     effect: signing in as somebody else must not carry the previous person's filter
+     over, and a state that names whose it is answers that without an ordering
+     dependency between two effects. */
+  const [chosen, setChosen] = useState<{ userId: number; scope: BaseScope } | null>(null)
+
+  useEffect(() => {
+    if (!ready) return
+    setChosen((current) =>
+      current?.userId === userId
+        ? current
+        : { userId, scope: baseScopeFor(localStorage.getItem(baseScopeKey(userId)), ownsAny) },
+    )
+    // `ownsAny` is deliberately not a dependency: it seeds the first value only,
+    // and re-running on it would overwrite a choice already made.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, ready])
+
+  const choose = useCallback(
+    (next: BaseScope) => {
+      setChosen({ userId, scope: next })
+      localStorage.setItem(baseScopeKey(userId), next)
+    },
+    [userId],
+  )
+
+  return [chosen?.userId === userId ? chosen.scope : 'all', choose]
 }
 
 /* ---------- recent lookups ---------- */

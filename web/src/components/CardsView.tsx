@@ -1,22 +1,30 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CARD_SEASON, type BaseInventory, type SessionUser } from '@coc/shared'
+import type { BaseInventory, SessionUser } from '@coc/shared'
 import { api } from '../api.ts'
 import { baseOptions } from '../base-names.ts'
+import { activeTag, ownsAnyBase, tagsInScope, type BaseScope } from '../base-scope.ts'
 import { baseOwnerOf } from '../card-entry.ts'
 import { inventoryFor, useCardInventoryState } from '../card-inventory.ts'
+import {
+  baseStandings,
+  cardTotals,
+  cardsInGridOrder,
+  type BaseStanding,
+  type CardTotal,
+} from '../card-standings.ts'
 import {
   groupTradesByPair,
   suggestTrades,
   tradeProposalMessage,
   type TradeSuggestion,
 } from '../card-trades.ts'
-import { cardById, categoryOfCard } from '../cards.ts'
+import { cardById, categoryOfCard, deckSlug } from '../cards.ts'
 import { requestChatDraft } from '../chat-draft.ts'
-import { hrefFor } from '../hooks.ts'
-import { ownerRecordFor, useOwners } from '../owners.ts'
+import { hrefFor, useBaseScope } from '../hooks.ts'
+import { ownerRecordFor, useOwners, useOwnersState } from '../owners.ts'
 import { useSavedClans } from '../saved-clans.ts'
 import { BaseCardEditor } from './BaseCardEditor.tsx'
-import { ErrorPanel, GameIcon, Loading } from './primitives.tsx'
+import { ErrorPanel, GameIcon, Loading, Meter } from './primitives.tsx'
 
 /**
  * The card-collecting event: who holds what, and who should trade with whom.
@@ -26,11 +34,16 @@ import { ErrorPanel, GameIcon, Loading } from './primitives.tsx'
  * shown beside every base because the owner is the person who would do the
  * trading; a tag on its own tells you nothing about who to message.
  *
- * All the rules live in `card-trades.ts` and all the card shaping in `cards.ts`,
- * both pure and both tested. This file is the base picker, the trade panel, and
- * reporting failures at the control that caused them; the 60-tile grid and its
- * entry form are `BaseCardEditor`, shared with the player page, which shows the
- * same grid for the one base it is already about.
+ * All the rules live in pure modules — the trade rules in `card-trades.ts`, the
+ * card shaping in `cards.ts`, the leaderboard order and the group totals in
+ * `card-standings.ts`, and the base filter in `base-scope.ts`. This file is the
+ * controls, the panels, and reporting failures at the control that caused them; the
+ * 60-tile grid and its entry form are `BaseCardEditor`, shared with the player
+ * page, which shows the same grid for the one base it is already about.
+ *
+ * **The page narrows as it goes down.** The picker and the grid are the one base
+ * you can act on; everything below is the whole clan and is deliberately *not*
+ * filtered by the picker's Mine/All choice — see the note on each section.
  */
 
 /** One side of a suggested swap: the card, named, with its picture if we have it. */
@@ -86,15 +99,21 @@ function ProposeButton({
 /**
  * Every swap the current counts allow, grouped by the pair of bases involved.
  *
- * The rules are entirely in `suggestTrades`; this only renders them, and names
- * the owners, because "#2GCJ2QPU should talk to #AAABBB" is not actionable until
- * you know that means Jared should talk to Sam.
+ * The rules are entirely in `suggestTrades`; this only renders them, and names both
+ * the **member** and the **owner**, because "#2GCJ2QPU should talk to #AAABBB" is
+ * not actionable until you know that means Jared should talk to Sam.
+ *
+ * Group-wide on purpose: it takes the whole inventory rather than the filtered
+ * picker list, because a trade has two sides and half of them are somebody else's
+ * bases by definition.
  */
 function TradeSuggestions({
   bases,
+  labelOf,
   ownerOf,
 }: {
   bases: BaseInventory[]
+  labelOf: (tag: string) => string
   ownerOf: (tag: string) => string | undefined
 }) {
   const pairs = useMemo(
@@ -122,9 +141,11 @@ function TradeSuggestions({
         <table className="roster roster--stack" role="table">
           <thead role="rowgroup">
             <tr role="row">
-              <th role="columnheader">Base</th>
+              {/* "Member", not "Base": the cell now reads as a person, which is who
+                  you go and talk to. The tag is still under it. */}
+              <th role="columnheader">Member</th>
               <th role="columnheader">Gives</th>
-              <th role="columnheader">Base</th>
+              <th role="columnheader">Member</th>
               <th role="columnheader">Gives</th>
               <th role="columnheader">Category</th>
               <th role="columnheader" />
@@ -139,7 +160,7 @@ function TradeSuggestions({
                   /*
                    * Marks where one pair's block of options begins, so the wide
                    * table can rule a line above it. Without that, a continuation
-                   * row's empty Base cells read as missing data rather than as
+                   * row's empty Member cells read as missing data rather than as
                    * "same two bases as above" — seen in a screenshot, where the
                    * second option rendered as a bare "Minion / Hog Rider" row
                    * with nobody's name on it.
@@ -151,21 +172,39 @@ function TradeSuggestions({
                       how the stacked layout knows to drop the line rather than
                       print a blank one. */}
                   <td className="stack-title" role="cell">
-                    {index === 0 ? <BaseLabel tag={pair.baseA} owner={ownerOf(pair.baseA)} /> : null}
+                    {index === 0 ? (
+                      <BaseLabel
+                        tag={pair.baseA}
+                        label={labelOf(pair.baseA)}
+                        owner={ownerOf(pair.baseA)}
+                      />
+                    ) : null}
                   </td>
                   {/*
                    * Stacked, a row is its own card, so a later option in a pair has
                    * no base named above it and two bare "Gives" lines would not say
-                   * whose. Those rows name the base in the label instead; the first
-                   * does not need to, because the base is the line above it.
+                   * whose. Those rows name the member in the label instead; the
+                   * first does not need to, because the member is the line above it.
                    */}
-                  <td role="cell" data-label={index === 0 ? 'Gives' : `${pair.baseA} gives`}>
+                  <td
+                    role="cell"
+                    data-label={index === 0 ? 'Gives' : `${labelOf(pair.baseA)} gives`}
+                  >
                     <TradeCard cardId={trade.cardFromA} />
                   </td>
                   <td className="stack-title" role="cell">
-                    {index === 0 ? <BaseLabel tag={pair.baseB} owner={ownerOf(pair.baseB)} /> : null}
+                    {index === 0 ? (
+                      <BaseLabel
+                        tag={pair.baseB}
+                        label={labelOf(pair.baseB)}
+                        owner={ownerOf(pair.baseB)}
+                      />
+                    ) : null}
                   </td>
-                  <td role="cell" data-label={index === 0 ? 'Gives' : `${pair.baseB} gives`}>
+                  <td
+                    role="cell"
+                    data-label={index === 0 ? 'Gives' : `${labelOf(pair.baseB)} gives`}
+                  >
                     <TradeCard cardId={trade.cardFromB} />
                   </td>
                   <td className="card-meta" role="cell" data-label="Category">
@@ -190,13 +229,194 @@ function TradeSuggestions({
   )
 }
 
-function BaseLabel({ tag, owner }: { tag: string; owner: string | undefined }) {
+/**
+ * A base, as a person: the member name over the tag and the owner.
+ *
+ * The name is the link, because the name is what somebody recognises. **The tag
+ * stays on screen** underneath — it is the identity the counts, the trades and the
+ * routes are all keyed on, and a name alone is not enough to go and find a player
+ * in the game. It is dropped only when it *is* the label, i.e. when no roster we
+ * can see names the base, which is the same rule the grid's header uses.
+ */
+function BaseLabel({
+  tag,
+  label,
+  owner,
+}: {
+  tag: string
+  label: string
+  owner: string | undefined
+}) {
   return (
     <>
-      <a href={hrefFor({ view: 'player', tag })}>{tag}</a>
+      <a href={hrefFor({ view: 'player', tag })}>{label}</a>
       <br />
-      <span className="card-meta">{owner ?? 'no owner set'}</span>
+      <span className="card-meta">
+        {label === tag ? null : <>{tag} · </>}
+        {owner ?? 'no owner set'}
+      </span>
     </>
+  )
+}
+
+/**
+ * How far every tracked base has got, best first.
+ *
+ * **Group-wide, never filtered by the picker.** It is about the whole clan's
+ * progress; narrowed to one person's bases it would be a leaderboard of one and
+ * would answer nothing. It sits directly above the trade suggestions because "who
+ * is furthest ahead" and "who should trade with whom" are the same question asked
+ * two ways — the base near the top with spares is the one worth messaging.
+ *
+ * The order is `baseStandings`', not this component's: distinct descending, then
+ * copies descending, then member name and tag. Ties are the *normal* case early in
+ * an event, which is why the comparator is total and lives somewhere tested.
+ */
+function Leaderboard({ rows }: { rows: BaseStanding[] }) {
+  if (rows.length === 0) return null
+
+  return (
+    <div className="table-wrap">
+      {/*
+       * Named with `aria-label` rather than pointed at the section's own `<h2>`.
+       * `.section-title` is `text-transform: uppercase`, and Chrome computes an
+       * accessible name from the *transformed* text — read back off the computed
+       * tree, `aria-labelledby` gave this table the name "COLLECTION LEADERBOARD".
+       * The visible heading is the same words, so label-in-name still holds.
+       */}
+      <table className="roster roster--stack" role="table" aria-label="Collection leaderboard">
+        <thead role="rowgroup">
+          <tr role="row">
+            <th className="num" role="columnheader">
+              Rank
+            </th>
+            <th role="columnheader">Member</th>
+            <th role="columnheader">Owner</th>
+            <th className="num" role="columnheader">
+              Cards
+            </th>
+            <th className="num" role="columnheader">
+              Copies
+            </th>
+          </tr>
+        </thead>
+        <tbody role="rowgroup">
+          {rows.map((row) => (
+            <tr key={row.tag} role="row">
+              <td className="num" role="cell" data-label="Rank">
+                {row.rank}
+              </td>
+              <td className="stack-title" role="cell">
+                <a href={hrefFor({ view: 'player', tag: row.tag })}>{row.label}</a>
+                {/* The tag, again as secondary text rather than as the heading. */}
+                {row.label === row.tag ? null : (
+                  <>
+                    <br />
+                    <span className="card-meta">{row.tag}</span>
+                  </>
+                )}
+              </td>
+              <td role="cell" data-label="Owner">
+                {row.owner ?? <span className="role-pill">no owner set</span>}
+              </td>
+              <td className="num" role="cell" data-label="Cards">
+                {/*
+                 * A base nobody has ever saved is not a base holding zero of
+                 * everything — the same distinction the grid's attribution line
+                 * draws — so it says so in words instead of printing `0/60`.
+                 */}
+                {row.recorded ? (
+                  <div className="donation-cell">
+                    <span>
+                      {row.distinct}/{row.size}
+                    </span>
+                    <Meter
+                      value={row.distinct}
+                      max={row.size}
+                      label={`${row.label} holds ${row.distinct} of ${row.size} cards`}
+                    />
+                  </div>
+                ) : (
+                  <span className="card-meta">Nothing recorded yet</span>
+                )}
+              </td>
+              <td className="num" role="cell" data-label="Copies">
+                {row.recorded ? row.total : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/**
+ * Every card, and how many copies the whole group holds between them.
+ *
+ * **The order is the grid's, fixed, and never the counts'.** It comes from
+ * `cardsInGridOrder()` — the same `cardCategoriesInOrder()` then
+ * `cardsInCategory()` the tiles above are drawn from — so this list can be scanned
+ * card-for-card against them. Sorting it by count would make it a different list
+ * that happened to hold the same numbers, and the one thing it is for would be gone.
+ *
+ * **The zeroes are the point.** A card no base holds cannot be obtained by trading
+ * at all, however the counts move around, so those are marked *in place*: the words
+ * `None held`, a rule down the left of the row, and the row exactly where it was.
+ * Nothing moves to the top.
+ *
+ * Group-wide, like the leaderboard, and including the bases whose owner is still
+ * only a text label — most of them are — because their cards are as tradeable as
+ * anyone's and leaving them out would undercount the group by more than half.
+ */
+function CardTotalsList({ totals }: { totals: CardTotal[] }) {
+  /* Grouped by deck exactly as the grid is: `display: contents`, so the rows stay
+     direct children of the one grid, named by a hidden heading. Its ids are its
+     own — `BaseCardEditor` is mounted on this page too and carries `card-deck-*`. */
+  const decks: { category: string; slug: string; entries: CardTotal[] }[] = []
+  for (const entry of totals) {
+    const last = decks[decks.length - 1]
+    if (last?.category === entry.card.category) last.entries.push(entry)
+    else
+      decks.push({
+        category: entry.card.category,
+        slug: deckSlug(entry.card.category),
+        entries: [entry],
+      })
+  }
+
+  return (
+    <div className="meter-grid">
+      {decks.map((deck) => {
+        const headingId = `card-total-deck-${deck.slug}`
+        return (
+          <div key={deck.category} className="card-deck" role="group" aria-labelledby={headingId}>
+            <h4 id={headingId} className="visually-hidden">
+              {deck.category}
+            </h4>
+            {deck.entries.map(({ card, total, absent }) => (
+              <div
+                key={card.id}
+                className={absent ? 'meter-row card-total card-total--absent' : 'meter-row card-total'}
+              >
+                <div className="meter-row__name">
+                  <GameIcon src={card.image} className="art-icon" />
+                  {card.name}
+                </div>
+                <div className="meter-row__level">
+                  {absent ? (
+                    /* Words, never the rule down the side alone. */
+                    <span className="card-total__none">None held</span>
+                  ) : (
+                    `${total} cop${total === 1 ? 'y' : 'ies'}`
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -266,6 +486,7 @@ function useMemberNames(baseTags: string[]): Map<string, string> {
 export function CardsView({ user }: { user: SessionUser }) {
   const state = useCardInventoryState()
   const bases = state.entries
+  const ownersState = useOwnersState()
   const owners = useOwners()
 
   /*
@@ -287,48 +508,129 @@ export function CardsView({ user }: { user: SessionUser }) {
   }, [owners])
 
   /* The list the Base select offers: member names, ordered by name, with a tag
-     appended only where two bases would otherwise read identically. */
+     appended only where two bases would otherwise read identically. Computed over
+     **every** tracked base, not the filtered subset, for two reasons: the labels
+     have to read the same in the group-wide panels below, and a name shared by two
+     bases must still be disambiguated when the filter happens to offer only one of
+     them. */
   const memberNames = useMemberNames(tags)
-  const options = useMemo(
+  const allOptions = useMemo(
     () => baseOptions(tags.map((tag) => ({ tag, name: memberNames.get(tag) }))),
     [tags, memberNames],
   )
   const labelOf = useMemo(() => {
-    const byTag = new Map(options.map((option) => [option.tag, option.label]))
+    const byTag = new Map(allOptions.map((option) => [option.tag, option.label]))
     return (tag: string) => byTag.get(tag) ?? tag
-  }, [options])
+  }, [allOptions])
+
+  /*
+   * Mine / All. Every rule is in `base-scope.ts`; the only decision here is when
+   * the default may be worked out, which is once the owner list has actually
+   * landed — an empty first snapshot would say this account owns nothing and open
+   * on `All` for everybody. An error counts as landed: we will not learn any more,
+   * and `All` is the answer that shows something.
+   */
+  const ownersReady = ownersState.status === 'ready' || ownersState.status === 'error'
+  const scopedBases = useMemo(
+    () => owners.map((entry) => ({ tag: entry.tag, ownerUserId: entry.ownerUserId ?? null })),
+    [owners],
+  )
+  const ownsAny = useMemo(() => ownsAnyBase(scopedBases, user.id), [scopedBases, user.id])
+  const [scope, setScope] = useBaseScope(user.id, ownsAny, ownersReady)
+
+  const options = useMemo(() => {
+    if (scope === 'all') return allOptions
+    const mine = new Set(tagsInScope(scopedBases, 'mine', user.id))
+    return allOptions.filter((option) => mine.has(option.tag))
+  }, [allOptions, scope, scopedBases, user.id])
 
   const [selected, setSelected] = useState<string | null>(null)
-  /* Default to the first base once the lists arrive, without pinning the choice
-     if the user has already made one. `options[0]`, not `tags[0]`: the list is
-     ordered by member name, and defaulting by tag would leave the select showing
-     its second or third entry as the chosen one. */
-  const active =
-    selected !== null && tags.includes(selected) ? selected : (options[0]?.tag ?? null)
+  /*
+   * `activeTag` is both the default and the repair: it keeps the chosen base while
+   * the filtered list still offers it and otherwise falls to the head of that list.
+   * That is what moves the selection when switching to `Mine` while looking at
+   * somebody else's base — the editor below follows it rather than being left
+   * showing counts the picker no longer offers. `options[0]`, not `tags[0]`: the
+   * list is ordered by member name, so defaulting by tag would leave the select
+   * showing its second or third entry as the chosen one.
+   */
+  const active = activeTag(options, selected)
+
+  /* Group-wide, both of them, whatever the filter says — narrowed to one person's
+     bases they would stop meaning anything. `tags` and `bases`, never `options`. */
+  const standings = useMemo(
+    () =>
+      baseStandings(
+        tags.map((tag) => ({ tag, label: labelOf(tag), owner: ownerOf(tag) ?? null })),
+        bases,
+      ),
+    [tags, labelOf, ownerOf, bases],
+  )
+  const totals = useMemo(() => cardTotals(bases, cardsInGridOrder()), [bases])
+  const absentCount = useMemo(() => totals.filter((entry) => entry.absent).length, [totals])
+
+  const emptyMine = scope === 'mine' && options.length === 0 && tags.length > 0
 
   return (
     <>
       <section className="card">
         <div className="card-header">
           <h2 className="section-title" style={{ margin: 0 }}>
-            Card collection · {CARD_SEASON}
+            Clash of Cards
           </h2>
           <div className="card-header__tools">
             {tags.length > 0 ? (
-              <label className="row-limit" htmlFor="cards-base">
-                Base
-                <select
-                  id="cards-base"
-                  value={active ?? ''}
-                  onChange={(event) => setSelected(event.target.value)}
-                >
-                  {options.map((option) => (
-                    <option key={option.tag} value={option.tag}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <>
+                {/* Left of the picker, because it decides what the picker offers.
+                    A select rather than a pair of buttons: it is the control beside
+                    it, it shows its own state without being opened, and it already
+                    has a 44px target and a 16px font on a phone. */}
+                <label className="row-limit" htmlFor="cards-scope">
+                  Show
+                  <select
+                    id="cards-scope"
+                    value={scope}
+                    onChange={(event) => {
+                      /*
+                       * Carries the base currently on screen across the filter
+                       * change. Widening to `All` must not bump you off the base you
+                       * were reading, and it would: until the picker has been used,
+                       * nothing is *chosen* and the active base is just "the first
+                       * one offered", which is a different base in the longer list.
+                       * Narrowing to `Mine` carries it too, and then `activeTag`
+                       * drops it — but only if it genuinely is not yours.
+                       *
+                       * Done here rather than by remembering whatever went active:
+                       * the offered list is ordered by member *name*, and those
+                       * arrive after the tags do, so anything that latched the
+                       * first-offered base early would pin the tag-alphabetical one
+                       * for good.
+                       */
+                      setSelected(active)
+                      setScope(event.target.value as BaseScope)
+                    }}
+                  >
+                    <option value="mine">Mine</option>
+                    <option value="all">All</option>
+                  </select>
+                </label>
+                {options.length > 0 ? (
+                  <label className="row-limit" htmlFor="cards-base">
+                    Base
+                    <select
+                      id="cards-base"
+                      value={active ?? ''}
+                      onChange={(event) => setSelected(event.target.value)}
+                    >
+                      {options.map((option) => (
+                        <option key={option.tag} value={option.tag}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </>
             ) : null}
           </div>
         </div>
@@ -341,6 +643,18 @@ export function CardsView({ user }: { user: SessionUser }) {
           <p className="empty-hint">
             No bases to track yet. Card counts hang off the <strong>owner assignments</strong> —
             open a clan and set an owner on a member, and that base appears here.
+          </p>
+        ) : null}
+
+        {/* An empty dropdown would say nothing. Ownership is assigned by an admin,
+            so that is the actual next step, and `All` is one control away. */}
+        {emptyMine ? (
+          <p className="empty-hint">
+            None of the {tags.length} tracked base{tags.length === 1 ? '' : 's'} is yours. A base
+            becomes yours when an <strong>admin assigns it to your account</strong> on the clan
+            page — ask one to do that. Meanwhile, switch <strong>Show</strong> to{' '}
+            <strong>All</strong> to read everybody's counts; the leaderboard and the card totals
+            below cover the whole clan either way.
           </p>
         ) : null}
       </section>
@@ -364,9 +678,49 @@ export function CardsView({ user }: { user: SessionUser }) {
         </section>
       ) : null}
 
+      {/* Directly under the grid it mirrors, and collapsed, so it costs nothing
+          until it is opened and then puts the two lists in the same scroll. */}
+      <section className="card">
+        <h2 className="section-title">Cards across the clan</h2>
+        <details className="group">
+          <summary>
+            All {totals.length} cards, in grid order
+            <span
+              className={
+                absentCount > 0 ? 'card-panel__trades card-total__none' : 'card-panel__trades card-meta'
+              }
+            >
+              {' · '}
+              {absentCount > 0
+                ? `${absentCount} nobody holds`
+                : 'every card is held by somebody'}
+            </span>
+          </summary>
+          <div className="group__body">
+            <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+              Copies held across <strong>every</strong> tracked base, linked to an account or not.
+              The order is the grid's above and never changes with the counts, so the two can be
+              read side by side. A card marked <strong>None held</strong> is one nobody in the clan
+              has — it cannot be got by trading, only from the game.
+            </p>
+            <CardTotalsList totals={totals} />
+          </div>
+        </details>
+      </section>
+
+      <section className="card">
+        <h2 className="section-title">Collection leaderboard</h2>
+        <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+          Every tracked base, by <strong>distinct cards out of {totals.length}</strong>. Level on
+          that, more copies goes first; level on both, alphabetically — so the order never
+          reshuffles. Not affected by <strong>Show</strong>: this is the whole clan.
+        </p>
+        <Leaderboard rows={standings} />
+      </section>
+
       <section className="card">
         <h2 className="section-title">Trade suggestions</h2>
-        <TradeSuggestions bases={bases} ownerOf={ownerOf} />
+        <TradeSuggestions bases={bases} labelOf={labelOf} ownerOf={ownerOf} />
       </section>
     </>
   )

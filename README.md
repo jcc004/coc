@@ -410,7 +410,10 @@ tests point — `wiki-art.ts` for the second, `cards.ts` for the third.
 Anything with rules in it is a pure module in `web/src/` with its own tests, never inline in a
 component: `saved-table.ts` (sorting, paging), `base-names.ts` (how a base is written),
 `card-trades.ts` (the four swap rules), `card-summary.ts` (per-deck counts and "is a trade
-waiting"), `deck-progress.ts` (those counts as the four progress plaques), `last-route.ts` (what to
+waiting"), `deck-progress.ts` (those counts as the four progress plaques),
+`card-standings.ts` (the leaderboard's order, and the group's total of each card in the grid's
+fixed order), `base-scope.ts` (the card page's Mine/All filter — what "mine" means, which way to
+default, and where the selection goes when the filter drops it), `last-route.ts` (what to
 restore, and which clan the topbar's Clan button opens).
 Components that are shown in more than one place are shared rather than copied — `BaseCardEditor`
 is the one 60-tile card grid, rendered by both the card page and a player page, and `DeckPlaques`
@@ -996,7 +999,21 @@ is intended: these are options to choose between, not a plan.
 
 ### The UI
 
-`#/cards`, linked from the topbar. The bases are the **owner assignments** — the set of player
+`#/cards`, titled **Clash of Cards** — the event's own name in the game, and the same heading the
+card panel on a player page carries, so the two pages no longer word it differently. `CARD_SEASON`
+is not shown in either title; it still scopes every stored row and is still returned by every
+route, it is simply not chrome.
+
+The page **narrows as it goes down**. The picker and the grid are the one base you can act on;
+the three panels under them are the whole clan and are deliberately *not* filtered by the picker:
+
+1. the base picker, with the **Mine / All** filter to its left, and the 60-tile grid for the base
+   it chooses;
+2. **Cards across the clan** — an expandable total of every card, in the grid's order;
+3. **Collection leaderboard** — every tracked base, furthest along first;
+4. **Trade suggestions** — who should swap what with whom.
+
+The bases are the **owner assignments** — the set of player
 tags the group already tracks — so there is no second list of bases to curate and drift. A base
 that somehow has counts but no owner assignment is still listed, so its rows are never orphaned.
 The **owner is named on every trade suggestion**, because the owner is who would do the trading.
@@ -1050,8 +1067,110 @@ option are two people's names in one label, and the reader cannot tell which is 
 - **Last updated and who** is shown above the grid for the selected base.
 - **A failed write is reported at the Save button**, with the typed counts left exactly as they
   are so nothing has to be re-entered. `Saved` never appears unless the request succeeded.
-- **Trade suggestions** are a third panel, driven entirely by the pure module and grouped by the
-  pair of bases involved, with both owners named.
+- **Trade suggestions** are the last panel, driven entirely by the pure module and grouped by the
+  pair of bases involved. Its two identity columns are headed **Member** and print the **member
+  name** as the link — a tag is not who you go and talk to — with the **tag and the owner** on a
+  second line beneath it. The tag is not dropped anywhere: it is the identity the counts, the
+  routes and the trades are all keyed on, and it is omitted only where it *is* the name, i.e. for
+  a base no visible roster names. The names come from the same `baseOptions()` the picker uses, so
+  there is one resolver, not two. Stacked on a phone, a pair's later options label themselves
+  `darek gives` / `Zack gives` rather than repeating the tags.
+
+### The collection leaderboard
+
+Every tracked base, ranked by how far it has got, directly above the trade suggestions — because
+"who is furthest ahead" and "who should trade with whom" are the same question asked two ways, and
+the base near the top with spares is the one worth messaging. Member name, tag, owner, cards and
+copies; the `17/60` is printed and a `.meter` bar on the sequential blue ramp is a second telling
+of it, never the only one.
+
+**The measure is distinct cards out of 60**, because the event rewards collecting the sixty rather
+than hoarding copies. The order, in `baseStandings()` in `card-standings.ts`:
+
+> **distinct descending, then total copies descending, then member name, then tag.**
+
+The last two are not merit. They are there to make the order **total**: early in an event nearly
+everybody holds a handful, so ties on distinct are the *normal* case, and a comparator that
+stopped at the first key would leave the tied rows in whatever order the array happened to arrive
+in — a list that reshuffles itself between renders. There is a test that runs the same bases in
+reversed input order and asserts an identical result.
+
+The **rank number** is shared on a genuine tie and then skips (1, 2, 2, 4). Tied means level on
+*distinct and copies*, not on the whole sort key: two bases separated by nothing but their names
+have not out-collected one another and must not print as 4th and 5th.
+
+A base **nobody has ever saved** stays on the board, last, and says `Nothing recorded yet` rather
+than printing `0/60` — the same distinction the grid's attribution line draws. Sixty zeroes
+presented as data would be a claim nobody made.
+
+It is **group-wide and not filtered by Mine/All**. A leaderboard of one base answers nothing.
+
+### Cards across the clan
+
+An expandable panel directly beneath the grid: for each of the 60 cards, the copies held across
+**every** tracked base. Collapsed by default, and its summary line carries the headline —
+`All 60 cards, in grid order · 41 nobody holds`.
+
+**The order is fixed by design and never changes with the counts.** It comes from
+`cardsInGridOrder()`, which is literally the grid's own two calls — `cardCategoriesInOrder()` then
+`cardsInCategory()` — rather than a second ordering that agrees with it today and drifts the next
+time the manifest is regenerated. The whole reason the panel earns its place is that it can be
+scanned card-for-card against the tiles above it, so **nothing here sorts by count, in any mode**.
+That is asserted directly: a test puts all the copies on the *last* card and none on the first and
+checks the output order still matches the input's.
+
+**Every tracked base is counted, linked to an account or not.** Most assignments in this install
+are still free-text labels; their cards are as tradeable as anyone's, and excluding them would
+undercount the group by more than half rather than describe a smaller one.
+
+**The zeroes are the point, and they are marked in place.** A card no base holds cannot be
+obtained by trading at all — it has to come from the game — which makes it the only entry on the
+list worth interrupting a scan for. Such a row prints **`None held`** in words, in `--critical`,
+with a matching rule down its left edge, and it **does not move**: the rule is an `inset` shadow
+over padding that every row reserves, so a marked row occupies exactly the same box as an unmarked
+one and the column of names stays straight. Measured in a browser — the left edge of the name is
+identical across marked and unmarked rows at every breakpoint.
+
+Rows are `.meter-row`s inside a `.meter-grid`, the same two-column row a player page uses for
+troop levels, and each deck is a `role="group"` labelled by a `.visually-hidden` heading exactly
+as the grid's `.card-deck` is. No bar: these totals have no denominator to draw one against, and
+the number *is* the value.
+
+### Mine / All on the base picker
+
+A `Show` select to the **left** of the `Base` picker, filtering what the picker offers. A select
+rather than a pair of buttons: it is the same control as the one beside it, it shows its own state
+without being opened, and the phone rules already give it a 44px target and a 16px font. Its
+accessible name, read off the computed accessibility tree, is `Show`.
+
+**`Mine` means `ownerUserId`, never the owner label.** It is the same field the write rule
+(`cardEntryAccess`) uses, so "mine" on the picker and "mine" on the grid cannot come apart — and
+a free-text owner name that happens to match yours is a note about a person, not a base you may
+write.
+
+Four things it has to get right, all of them in `base-scope.ts` with tests:
+
+- **the selection cannot point outside the list.** `activeTag()` keeps the chosen base while the
+  filtered list still offers it and otherwise falls to the head of that list — so switching to
+  `Mine` while reading somebody else's base moves the editor to your own first base rather than
+  leaving counts on screen that the picker no longer offers. It is deliberately the *same* rule as
+  the initial default, so there is one definition of "a valid selection" rather than a default and
+  a repair that could disagree. Widening back to `All` carries the base you were reading with it.
+- **`Mine` is the default only when the account actually owns a base**, otherwise `All`. Most
+  accounts here own nothing, and defaulting blindly would open them on an empty dropdown over an
+  empty editor. The check waits for the owner list to land first: an empty first snapshot would
+  say everybody owns nothing.
+- **an empty `Mine` says so in words**, naming the actual next step — a base becomes yours when an
+  **admin assigns it to your account** — and pointing at `All`. The `Base` select is not rendered
+  at all in that state rather than rendered empty. A stored `Mine` is honoured even by an account
+  that owns nothing, which is what keeps that message reachable: they asked for it.
+- **the choice is persisted per account**, at `coc:baseScope:<userId>`, for the reason
+  `coc:lastClan:<id>` is: one browser is shared, and one person's `Mine` is the other person's
+  empty list. Verified in a browser — with `coc:baseScope:1` holding `all`, a second account
+  signing in on the same profile still defaults to `Mine` and does not touch the first key.
+
+**The leaderboard and the card totals ignore this filter entirely.** They are about the whole
+clan's progress; narrowed to one person's bases they would stop meaning anything.
 
 ### Deck progress plaques
 
@@ -1062,7 +1181,7 @@ the left, **the fraction printed on the bar** — `Elixir Cards 7/19`.
 
 **Where they are.** Two placements, both showing the same four numbers:
 
-- **a player page**, full width, immediately under the panel's `Event cards · 2026-08` title and
+- **a player page**, full width, immediately under the panel's `Clash of Cards` title and
   **above** the `<details>` that holds the grid — so they are readable whether the grid is open or
   shut, which is the whole point of them. Deliberately *not* inside the `<summary>`: a summary's
   accessible name is its own contents, so four progressbars in there would rename the disclosure

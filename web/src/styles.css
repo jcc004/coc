@@ -1363,6 +1363,44 @@ details.group > .group__body {
   font-weight: 600;
 }
 
+/*
+ * One card's total across the whole clan, in the expandable list under the grid.
+ *
+ * It is a `.meter-row` — name and art on the left, the value right-aligned in its
+ * own column — because that row already exists for exactly this shape, and reusing
+ * it means the list picks up the same 32px art box, the same rules between rows and
+ * the same wrap behaviour as the troop levels on a player page. No bar: the totals
+ * have no denominator to draw one against, and the number *is* the value.
+ *
+ * The left inset is on **every** row, not only the marked ones, so marking a card
+ * cannot shift it sideways. That is the whole point of the marker: the list's order
+ * is the grid's and must stay scannable card-for-card against it, so a zero is
+ * called out where it stands and never promoted to the top.
+ */
+.card-total {
+  /* Room for the rule, reserved on held rows too — see above. */
+  padding-left: 10px;
+}
+
+/*
+ * A card nobody in the clan holds. `--critical` because it is the one entry on the
+ * list you cannot fix by trading — it has to come from the game — which makes it
+ * the only thing here worth interrupting a scan for. It is **never** the only
+ * carrier: the row prints `None held` in words, which is what `.card-total__none`
+ * colours, and the rule is a second telling of that.
+ *
+ * `inset` shadow rather than a border, so a marked row occupies exactly the same box
+ * as an unmarked one and the column of names stays straight.
+ */
+.card-total--absent {
+  box-shadow: inset 2px 0 0 var(--critical);
+}
+
+.card-total__none {
+  color: var(--critical);
+  font-weight: 600;
+}
+
 /* ---------- deck progress plaques ---------- */
 
 /*

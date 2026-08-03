@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { CARD_SEASON, type SessionUser } from '@coc/shared'
+import type { SessionUser } from '@coc/shared'
 import { baseOwnerOf } from '../card-entry.ts'
 import { inventoryFor, useCardInventoryState } from '../card-inventory.ts'
 import { summariseBase } from '../card-summary.ts'
@@ -77,7 +77,7 @@ export function PlayerCardPanel({
 
   return (
     <section className="card">
-      <h2 className="section-title">Event cards · {CARD_SEASON}</h2>
+      <h2 className="section-title">Clash of Cards</h2>
 
       {/*
        * Four `0/19` bars for a base nobody has entered would be a claim nobody
