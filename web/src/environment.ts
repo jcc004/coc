@@ -1,8 +1,9 @@
 /**
  * Which instance you are looking at, and what to say about it.
  *
- * The banner is gold on production and steel with a **DEV SERVER** marker anywhere
- * else. It exists because the two are otherwise indistinguishable: the same app, the
+ * The banner is bright gold on production, and the same gold tarnished with a
+ * **DEV SERVER** marker anywhere else. It exists because the two are otherwise
+ * indistinguishable: the same app, the
  * same shared-looking data, the same controls that delete a saved clan "for
  * everyone". Typing into the wrong one is a mistake with no undo, and the only cue
  * was the address bar.

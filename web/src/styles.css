@@ -45,18 +45,23 @@
   --gold-edge: #8a5a08;
 
   /*
-   * The dev banner: the same plate in steel instead of gold.
+   * The dev banner: **tarnished gold**, not a different metal.
    *
-   * A separate role rather than a filter on the gold, because it has to stay legible
-   * on its own terms — `--on-dev` is checked against the gradient's midpoint the way
-   * `--on-gold` is, not inherited and hoped for. Desaturated on purpose: it should
-   * read as "not the real thing" at a glance, from the corner of your eye, without
-   * being alarming. Nothing has gone wrong on a dev box.
+   * This was a grey steel first, which measured ΔE 80 from the production plate in
+   * Lab — far enough that it read as a foreign component rather than as the same
+   * banner in another state. These values are the same hue at lower value and chroma:
+   * ΔE 19 light and 15 dark, which is "a deliberate sibling" rather than "a different
+   * colour". Gold that has not been polished, which is what a dev box is.
+   *
+   * A separate role rather than a filter on the gold, because the ink has to be
+   * checked against this plate on its own terms. It was: `--on-dev` at the obvious
+   * `#33240f` measured 4.43:1, just under the floor, so it is deepened to clear it at
+   * 5.10 light and 5.66 dark.
    */
-  --dev: #8f9ba8;
-  --dev-deep: #67737f;
-  --dev-edge: #3d4650;
-  --on-dev: #161a1f;
+  --dev: #c99a2e;
+  --dev-deep: #96700f;
+  --dev-edge: #5c3c05;
+  --on-dev: #241905;
   /* Display numerals only. Deep gold here — bright gold on parchment is ~1.9:1. */
   --display: #8a5a08;
   --on-gold: #33240f;
@@ -115,11 +120,11 @@
     --gold: #f5c04a;
     --gold-deep: #c9930f;
     --gold-edge: #6b4708;
-    /* Lifted like the gold is, so the steel reads as a plate rather than a hole. */
-    --dev: #9aa7b4;
-    --dev-deep: #6c7885;
-    --dev-edge: #2b323a;
-    --on-dev: #14181d;
+    /* Lifted like the gold is, so it reads as a plate rather than a hole. */
+    --dev: #d0a337;
+    --dev-deep: #9e7815;
+    --dev-edge: #4a3004;
+    --on-dev: #241905;
     /* Bright gold clears 9:1 on dark wood, so the display numerals can sing. */
     --display: #f5c04a;
     --on-gold: #241d14;
@@ -155,10 +160,10 @@
   --gold: #f5c04a;
   --gold-deep: #c9930f;
   --gold-edge: #6b4708;
-  --dev: #9aa7b4;
-  --dev-deep: #6c7885;
-  --dev-edge: #2b323a;
-  --on-dev: #14181d;
+  --dev: #d0a337;
+  --dev-deep: #9e7815;
+  --dev-edge: #4a3004;
+  --on-dev: #241905;
   --display: #f5c04a;
   --on-gold: #241d14;
   --deck-elixir: #f385f6;
@@ -2002,12 +2007,12 @@ table.roster th button:hover {
  * when the cursor is over it.
  */
 /*
- * The same plate in steel, for any install that is not the live host.
+ * The same plate, tarnished, for any install that is not the live host.
  *
  * Only the four colour roles change — the geometry, bevels and shadow are the gold
- * rule's, so it reads as the same object in a different material rather than as a
- * different component. The white wash on the buttons is untouched: it lifts against
- * steel exactly as it does against gold, which is the whole reason it is white and
+ * rule's, so it reads as the same object in a duller finish rather than as a different
+ * component. The white wash on the buttons is untouched: it lifts against tarnished
+ * gold exactly as it does against bright, which is the whole reason it is white and
  * not a theme token.
  */
 .topbar--dev {
@@ -2025,28 +2030,25 @@ table.roster th button:hover {
   color: var(--on-dev);
 }
 /*
- * The marker beside the title. Uppercase and letter-spaced so it reads as a label
- * rather than as part of the app's name, and `nowrap` so "DEV SERVER" never breaks
- * across two lines on a phone — a lone "SERVER" under the title would look like a
- * rendering fault.
+ * The marker beside the title.
+ *
+ * **It inherits everything.** Family, size, weight, ink and the title's emboss all
+ * come from `.topbar__title`, so it sits on the same baseline in the same type — it is
+ * part of the heading, not an annotation pinned next to it. It began at 13px with its
+ * own letter-spacing, which put it in a visibly different face on a visibly different
+ * line, and looked like a mistake rather than a decision.
+ *
+ * That leaves two declarations. `nowrap`, so "DEV SERVER" never breaks across lines on
+ * a phone — a lone "SERVER" beneath the title would read as a rendering fault. And the
+ * gap.
+ *
+ * No `opacity`: it was 0.75 to read as secondary, which measured 3.4:1 light and
+ * 3.8:1 dark against the plate. A label whose whole purpose is to stop you mistaking
+ * this for production is the last thing to render faintly.
  */
 .topbar__env {
-  margin-left: 8px;
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  margin-left: 6px;
   white-space: nowrap;
-  /*
-   * Full plate ink, no opacity.
-   *
-   * This began at `opacity: 0.75` to read as secondary to the title. Measured, that
-   * put it at 3.4:1 in light and 3.8:1 in dark against the plate — below 4.5:1, and
-   * 13px bold is not large text by WCAG's definition, so the exemption does not
-   * apply. A label whose entire purpose is to stop you mistaking this for production
-   * is the last thing to render faintly. The uppercase and the letter-spacing already
-   * separate it from the title without spending legibility to do it.
-   */
 }
 
 .topbar .icon-button,
@@ -2062,14 +2064,16 @@ table.roster th button:hover {
 }
 
 /*
- * The same buttons on the steel plate.
+ * The same buttons on the tarnished plate.
  *
  * **After** the gold rules above, deliberately: `.topbar--dev .icon-button` and
  * `.topbar .icon-button` have identical specificity, so whichever comes last wins.
- * Declared first, this lost, and the Cards button kept a gold edge on a steel banner —
- * which reads as a bug, not as a decision. The white hover wash is inherited
- * untouched; it lifts against steel as well as it does against gold, which is why it
- * is white rather than a theme token.
+ * Declared first this lost, and the Cards button kept a bright gold edge on a dulled
+ * banner — which reads as a bug rather than as a decision.
+ *
+ * The white hover wash is inherited untouched: it lifts against the dull plate as well
+ * as against the bright one, which is the whole reason it is white and not a theme
+ * token.
  */
 .topbar--dev .icon-button,
 .topbar--dev .user-menu__button {
