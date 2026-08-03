@@ -172,8 +172,15 @@ The three traps, in the order they are likely:
    or local edits blocking the merge. The build then succeeds against old sources.
 
 3. **A build with no art.** `web/public/coc/` is gitignored, so a fresh clone has none of
-   it and `npm run build` copies nothing into `dist`. A complete tree is ~10 MB in 288
-   files, from three different sources:
+   it and `npm run build` copies nothing into `dist`. The directory does not exist at all
+   on a fresh clone — git cannot track an empty one, which is why `web/public/.gitkeep`
+   is tracked — so the copy has somewhere to land:
+
+   ```bash
+   mkdir -p /srv/coc/web/public          # only needed on a clone that predates .gitkeep
+   ```
+
+   A complete tree is ~10 MB in 288 files, from three different sources:
 
    ```bash
    npm run assets:coc     # clan badges, league icons, labels — needs a working token

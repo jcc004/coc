@@ -1,0 +1,9 @@
+Tracked only so that web/public/ survives a clone.
+
+Git cannot track an empty directory, and the one thing that lives here — coc/, the
+game art — is gitignored, so without this file a fresh clone has no web/public at
+all. A deploy then fails at the point where the art is copied in, with a bare
+"No such file" from scp and nothing to say why.
+
+What belongs in coc/, where each part comes from, and why none of it is in the
+repository: see deploy/README.md.
