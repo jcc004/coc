@@ -25,6 +25,28 @@ export interface Session {
   signOut: () => void
 }
 
+/**
+ * Empties the module-level caches of the shared lists.
+ *
+ * They are module state, so they outlive every component and every session in this
+ * tab: without this the next person to sign in on a shared machine would see the
+ * previous one's lists until their own first fetch landed.
+ *
+ * How much that matters depends on the exit. On a deliberate sign-out, quite a lot —
+ * somebody else is expected to be standing there. On a 401 it is close to nothing,
+ * because this data is **install-wide shared rather than per-user**: the owners, the
+ * saved clans, the card inventory and the trades are the same rows whoever is looking,
+ * so the stale snapshot the next sign-in would briefly show is the snapshot they were
+ * going to be given anyway. It is done on both paths for consistency, not because the
+ * 401 path was leaking anything.
+ */
+function dropSharedCaches(): void {
+  resetOwners()
+  resetSavedClans()
+  resetCardInventory()
+  resetTrades()
+}
+
 export function useSession(): Session {
   const [state, setState] = useState<SessionState>({ status: 'loading' })
 
@@ -48,7 +70,13 @@ export function useSession(): Session {
   // One place turns any 401 anywhere in the app into the login screen, so an
   // expiry mid-session cannot land as a puzzling error inside a data panel.
   useEffect(() => {
-    setUnauthorizedHandler(() => setState({ status: 'anonymous' }))
+    setUnauthorizedHandler(() => {
+      // The same two steps as `signOut`, in the same order, because this *is* a sign
+      // out — it just was not asked for. See `dropSharedCaches` for why the caches
+      // barely matter on this path and are dropped anyway.
+      dropSharedCaches()
+      setState({ status: 'anonymous' })
+    })
     return () => setUnauthorizedHandler(null)
   }, [])
 
@@ -75,13 +103,7 @@ export function useSession(): Session {
     // Drop the local state whatever the server says: if the call failed because
     // the session was already dead, signed-out is still the correct end state.
     void api.logout().catch(() => undefined)
-    // The shared lists are cached in module state, so they have to go too —
-    // otherwise the next person to sign in on this machine sees them before their
-    // own first fetch lands.
-    resetOwners()
-    resetSavedClans()
-    resetCardInventory()
-    resetTrades()
+    dropSharedCaches()
     setState({ status: 'anonymous' })
   }, [])
 

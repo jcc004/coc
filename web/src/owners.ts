@@ -166,9 +166,17 @@ export async function applyOwners(rows: OwnerBulkRow[]): Promise<OwnerBulkRespon
  * Deliberately *not* what the picker offers. Suggesting the labels already in use
  * would keep proposing the unlinked ones, so the picker's options come from
  * `GET /api/admin/users` through `ownerOptions()` in `owner-picker.ts`.
+ *
+ * Takes the records, for the same reason `ownerRecordFor` does: this used to read
+ * `store.peek()` and take no arguments, which made it a function whose answer
+ * changed with nothing its caller could name. The roster memoised it against the
+ * snapshot anyway — `useMemo(() => knownOwners(), [owners])` — and got the right
+ * answer, but only because the dependency it declared happened to be the hidden read
+ * it was standing in for. `exhaustive-deps` called that dependency unnecessary, and
+ * on what it could see it was right. Passing the records makes it true.
  */
-export function knownOwners(): string[] {
-  return [...new Set(store.peek().map((entry) => entry.owner))].sort()
+export function knownOwners(records: readonly OwnerAssignment[]): string[] {
+  return [...new Set(records.map((entry) => entry.owner))].sort()
 }
 
 export function reloadOwners(): Promise<void> {

@@ -24,7 +24,9 @@ import { ErrorPanel, Loading, PasswordField } from './primitives.tsx'
  *
  * Recovery is admin-mediated throughout: there is no mail infrastructure, so an
  * admin correcting an address or reading out a temporary password is the whole
- * story. See the README for why a public reset route is deliberately absent.
+ * story. See `docs/authentication.md` — "Password recovery is admin-mediated, and
+ * there is deliberately no email reset" — for why a public reset route is absent.
+ * (That was in the README until it was split into `docs/`.)
  */
 
 /**
@@ -61,7 +63,17 @@ function NewUserForm({ onCreated }: { onCreated: () => void }) {
     event.preventDefault()
     if (busy) return
 
-    // Checked here as well as server-side, so a typo does not cost a round trip.
+    /*
+     * A backstop, and only that — not the round-trip saving this comment used to
+     * claim. The input below is `type="email"`, whose native constraint validation
+     * is *stricter* than `isValidEmail` and refuses to submit the form at all, so
+     * nothing reachable through the UI gets this far having failed it. Found by
+     * writing a test for this branch that could not be made to fail.
+     *
+     * It stays because it is what holds if the input type changes, or if the form is
+     * ever submitted programmatically — both of which would otherwise send a
+     * malformed address and surface the server's 400 instead of this sentence.
+     */
     if (!isValidEmail(email)) {
       setProblem('That is not an email address — one @, no spaces.')
       return
@@ -85,7 +97,7 @@ function NewUserForm({ onCreated }: { onCreated: () => void }) {
 
   return (
     <>
-      <form className="search" onSubmit={submit}>
+      <form className="search" onSubmit={(event) => void submit(event)}>
         <input
           type="email"
           value={email}
@@ -123,9 +135,18 @@ function NewUserForm({ onCreated }: { onCreated: () => void }) {
         </button>
       </form>
       {problem ? <p className="notice__hint">{problem}</p> : null}
+      {/*
+       * The password this form takes is a **hand-over**, not the account's password:
+       * the server flags every admin-created account `mustChangePassword`, so it is
+       * spent the moment it is used and the account picks its own before it can reach
+       * anything else. The copy used to say they "can change it here once signed in",
+       * which read as optional — and an admin who believes it is optional has no
+       * reason not to reuse one password across every account they create.
+       */}
       <p className="lookup-preview">
         They sign in with this email address. A blank display name uses the part before the @.
-        Tell them the initial password out of band; they can change it here once signed in.
+        Tell them the initial password out of band: it gets them in once, and then they are
+        asked to choose their own password before they can use anything else.
       </p>
     </>
   )
@@ -266,7 +287,7 @@ function NameCell({
 
   return (
     <td className="stack-title" role="cell">
-      <form className="row-edit" onSubmit={submit}>
+      <form className="row-edit" onSubmit={(event) => void submit(event)}>
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -310,7 +331,9 @@ function EmailCell({
     event.preventDefault()
     if (busy) return
 
-    // Checked here as well as server-side so a typo costs no round trip.
+    // A backstop, for the reason spelled out on the same check in NewUserForm: the
+    // input is `type="email"`, so native validation already refuses to submit
+    // anything this would catch. It is not the round-trip saving it once claimed.
     if (!isValidEmail(draft)) {
       onProblem(user.id, 'That is not an email address — one @, no spaces.')
       return
@@ -354,7 +377,7 @@ function EmailCell({
 
   return (
     <td role="cell" data-label="Email">
-      <form className="row-edit" onSubmit={submit}>
+      <form className="row-edit" onSubmit={(event) => void submit(event)}>
         <input
           type="email"
           value={draft}
