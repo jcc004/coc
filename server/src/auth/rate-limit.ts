@@ -34,7 +34,14 @@ export interface LimitVerdict {
 export interface LoginLimiter {
   check(keys: LimiterKeys): LimitVerdict
   recordFailure(keys: LimiterKeys): void
-  /** Called on a successful login, so a near-miss streak does not linger. */
+  /**
+   * Called on a successful login. Clears the *email* bucket, so a near-miss streak
+   * by the legitimate owner does not linger and lock them out later in the session.
+   * The IP bucket is deliberately left standing: one correct password proves nothing
+   * about the failures around it, and clearing the loose 30-failure brake here would
+   * hand someone spraying that host a free reset every time they guessed an account
+   * right — which is the exact case that bucket exists to survive.
+   */
   recordSuccess(keys: LimiterKeys): void
 }
 
@@ -117,6 +124,7 @@ export function createLoginLimiter(options: LimiterOptions = {}): LoginLimiter {
     },
 
     recordSuccess({ email }) {
+      // Email bucket only; `ip` is left out on purpose — see `LoginLimiter` above.
       buckets.delete(userKey(email))
     },
   }
