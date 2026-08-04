@@ -15,6 +15,16 @@
  * Dark values are declared twice on purpose: the media query covers the OS
  * setting, the [data-theme] scope covers the in-app toggle, and the :not() guard
  * lets an explicit light choice beat OS dark.
+ *
+ * Seven roles per theme are written as `var(--user-…-<theme>, <shipped>)`. That is
+ * the user's colour scheme, and the shape is the whole of the promise it makes:
+ * **the value in the fallback is the theme, unchanged.** Nothing writes the
+ * `--user-…` names unless somebody has chosen a colour on the account page, so a
+ * fresh browser, a cleared storage and a Reset all render the same bytes this file
+ * rendered before the feature existed. The names are set on the root element by
+ * `useColorScheme` (`hooks.ts`) from `schemeVariables` (`color-scheme.ts`), which
+ * is also where the contrast guard lives — the shade is fitted per theme, so the
+ * light and dark names hold *different* values derived from one choice.
  */
 :root {
   color-scheme: light;
@@ -30,9 +40,9 @@
   --hover: rgba(51, 36, 15, 0.06);
 
   /* sequential blue: fill = step 450, track = step 100 */
-  --accent: #1f6cb0;
-  --accent-hover: #17558f;
-  --track: #cfe0f2;
+  --accent: var(--user-accent-light, #1f6cb0);
+  --accent-hover: var(--user-accent-hover-light, #17558f);
+  --track: var(--user-track-light, #cfe0f2);
 
   --good: #3f9e28;
   --good-text: #2f7a1c;
@@ -40,9 +50,9 @@
   --critical: #c4342c;
 
   /* chrome: gold plating for panel edges and buttons */
-  --gold: #f2b431;
-  --gold-deep: #d1900f;
-  --gold-edge: #8a5a08;
+  --gold: var(--user-gold-light, #f2b431);
+  --gold-deep: var(--user-gold-deep-light, #d1900f);
+  --gold-edge: var(--user-gold-edge-light, #8a5a08);
 
   /*
    * The dev banner: **tarnished gold**, not a different metal.
@@ -63,7 +73,7 @@
   --dev-edge: #5c3c05;
   --on-dev: #241905;
   /* Display numerals only. Deep gold here — bright gold on parchment is ~1.9:1. */
-  --display: #8a5a08;
+  --display: var(--user-display-light, #8a5a08);
   --on-gold: #33240f;
 
   /*
@@ -110,23 +120,23 @@
     --baseline: #4a3c28;
     --border: rgba(244, 233, 208, 0.14);
     --hover: rgba(244, 233, 208, 0.07);
-    --accent: #66aeee;
-    --accent-hover: #8cc4f4;
-    --track: #16304d;
+    --accent: var(--user-accent-dark, #66aeee);
+    --accent-hover: var(--user-accent-hover-dark, #8cc4f4);
+    --track: var(--user-track-dark, #16304d);
     --good: #4fb332;
     --good-text: #6cc74a;
     --warning: #f0b03c;
     --critical: #e2564c;
-    --gold: #f5c04a;
-    --gold-deep: #c9930f;
-    --gold-edge: #6b4708;
+    --gold: var(--user-gold-dark, #f5c04a);
+    --gold-deep: var(--user-gold-deep-dark, #c9930f);
+    --gold-edge: var(--user-gold-edge-dark, #6b4708);
     /* Lifted like the gold is, so it reads as a plate rather than a hole. */
     --dev: #d0a337;
     --dev-deep: #9e7815;
     --dev-edge: #4a3004;
     --on-dev: #241905;
     /* Bright gold clears 9:1 on dark wood, so the display numerals can sing. */
-    --display: #f5c04a;
+    --display: var(--user-display-dark, #f5c04a);
     --on-gold: #241d14;
     /* Lightened for dark wood — #6d1e92 in particular vanishes against it. */
     --deck-elixir: #f385f6;
@@ -150,21 +160,21 @@
   --baseline: #4a3c28;
   --border: rgba(244, 233, 208, 0.14);
   --hover: rgba(244, 233, 208, 0.07);
-  --accent: #66aeee;
-  --accent-hover: #8cc4f4;
-  --track: #16304d;
+  --accent: var(--user-accent-dark, #66aeee);
+  --accent-hover: var(--user-accent-hover-dark, #8cc4f4);
+  --track: var(--user-track-dark, #16304d);
   --good: #4fb332;
   --good-text: #6cc74a;
   --warning: #f0b03c;
   --critical: #e2564c;
-  --gold: #f5c04a;
-  --gold-deep: #c9930f;
-  --gold-edge: #6b4708;
+  --gold: var(--user-gold-dark, #f5c04a);
+  --gold-deep: var(--user-gold-deep-dark, #c9930f);
+  --gold-edge: var(--user-gold-edge-dark, #6b4708);
   --dev: #d0a337;
   --dev-deep: #9e7815;
   --dev-edge: #4a3004;
   --on-dev: #241905;
-  --display: #f5c04a;
+  --display: var(--user-display-dark, #f5c04a);
   --on-gold: #241d14;
   --deck-elixir: #f385f6;
   --deck-dark-elixir: #a855d0;
@@ -2786,6 +2796,123 @@ table.roster--pairs th,
 table.roster--pairs td {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* ---------- the colour picker, on the account page ---------- */
+
+/*
+ * One block per role — accent, then the plate. A rule between them rather than a
+ * second card: they are two settings of one thing, and two cards would read as two
+ * unrelated features.
+ */
+.scheme-role + .scheme-role {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--grid);
+}
+
+.scheme-role__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+.scheme-role__note {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin: 2px 0 10px;
+}
+
+.scheme-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/*
+ * A swatch draws its colour with an SVG `fill` attribute, not a style attribute — see
+ * `ColorSchemeCard.tsx`. So this rule is the box and never the colour, which is also
+ * why there is no per-preset class here to drift from the list in `color-scheme.ts`.
+ */
+.scheme-swatch {
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--baseline);
+  border-radius: var(--radius);
+  cursor: pointer;
+  line-height: 0;
+  box-shadow: inset 0 1px 0 var(--bevel-light);
+}
+.scheme-swatch:hover {
+  background: var(--hover);
+}
+/* Chosen. A ring *and* the pressed state on the button, so the selection is not
+   carried by colour alone. */
+.scheme-swatch[aria-pressed='true'] {
+  border-color: var(--ink-2);
+  box-shadow: 0 0 0 2px var(--ink-2);
+}
+
+.scheme-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.scheme-custom input[type='color'] {
+  width: 46px;
+  height: 34px;
+  padding: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/*
+ * What the guard did, and why. Never absent: a picker that adjusts a colour silently
+ * is as bad as one that refuses it silently.
+ */
+.scheme-outcome {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+/* A refusal carries the word "Not available" in its text — the colour is the second
+   cue, never the only one. */
+.scheme-outcome--refused {
+  color: var(--critical);
+}
+
+.scheme-shades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 8px;
+}
+.scheme-shade {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.scheme-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--grid);
 }
 
 /* ==========================================================================

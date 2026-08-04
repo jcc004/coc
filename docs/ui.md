@@ -152,6 +152,11 @@ the root element.
 not get back to following it without clearing storage. An unrecognised stored value — an older
 build's, or one somebody edited — lands on `system`, the one answer that is never wrong.
 
+**Colours** sits under Appearance and is a link, not a cycler: the choice is a colour, which needs
+a picker and room to show what the guard did with it. Its value line reads `Default`, `Custom
+accent`, `Custom plate` or `Custom`, so "why does this look like this" has an answer without
+opening the page. See [Choosing colours](#choosing-colours).
+
 Hand-rolled ARIA, because there is no menu library here and one glyph is not worth a dependency:
 `aria-haspopup="menu"` and `aria-expanded` on the button, `role="menu"` / `role="menuitem"` on the
 panel and its items, **Escape closes it and returns focus to the button** (closing without moving
@@ -161,6 +166,50 @@ that has moved. All four verified in a browser, including `aria-controls` matchi
 
 The silhouette itself is inline SVG in `web/src/components/UserMenu.tsx`, a circle and a clipped
 half-capsule in `currentColor`, for the same reason the rosette is.
+
+## Choosing colours
+
+`ColorSchemeCard` on `#/account` hands the user **two** colours: the **accent** (links, focus
+ring, meter fills, progress bars) and the **plate** (the banner, panel edges, committing buttons
+and the display numerals). Nothing else moves. The neutrals are what every contrast figure is
+measured against, the status palette and the deck colours carry meaning, and `--dev` exists to be
+unmistakable — a user who could restyle the tarnished plate could hide it.
+
+**The shipped light and dark themes are untouched.** Seven roles per theme are written in
+`styles.css` as `var(--user-…-<theme>, <shipped>)`, and nothing writes the `--user-…` names until
+somebody chooses something, so a fresh browser, a cleared storage and a Reset all render exactly
+what the file rendered before the feature existed. `useColorScheme` (`web/src/hooks.ts`) sets them
+on the root element and clears them from a fixed list, keyed `coc:colors:<id>` like
+`coc:lastRoute:<id>` — one browser is shared and a scheme belongs to the person, not the machine.
+
+**A choice names a hue; the shade is not the user's to pick.** It is fitted to each theme
+separately against the ground it will sit on, which is why the picker almost never has to refuse
+anything: the blue that reads at 4.5:1 on parchment is invisible on dark wood, and no single value
+could have satisfied both. The rules, and the ratios, are `web/src/color-scheme.ts` and
+`web/src/color-contrast.ts` — pure, with 91 tests, because a guard that decides whether the site
+is readable is not a `useMemo`.
+
+| Relationship | Floor |
+| --- | --- |
+| accent against `--surface` **and** `--plane` | 4.5:1 (it is link text, at body size, on both) |
+| meter fill against its `--track` | 3:1 (a graphical object, WCAG 1.4.11) |
+| `--on-gold` against **both** stops of the plate gradient | 4.5:1 (the topbar's controls are 13px) |
+| `--display` against `--surface` | 4.5:1 (`.section-title` is 12px, not a 48px numeral) |
+
+Contrast is computed from WCAG relative luminance, not an averaged brightness: `#0000ff` and
+`#00ff00` are 8.59:1 and 1.37:1 on white, and a model that calls them equally bright would pass an
+invisible link. **Hue distance is not the guard** and cannot be — two colours 180° apart can be
+identically light, which is white-on-white with a colour cast. It is kept as a third constraint,
+after ΔE in ordinary vision and ΔE under simulated red-green colour blindness, and only between
+colours that mean different things: the accent against `--good` (`.meter__fill` beside
+`.meter__fill--max`) and against `--critical` (`.notice` beside `.notice--error`). Those two are
+the only refusals the module can produce, and each names what it collided with and offers the
+nearest hue that would have worked.
+
+The plate is restricted rather than checked: it stays above 0.45 lightness, because the white
+bevel, the white button wash and the emboss under the title all assume a light one. Fitting the
+shipped gold rediscovers the two decisions `styles.css` made by hand — deep gold for `--display`
+on parchment, the bright plate itself on dark wood.
 
 ## In-app help
 

@@ -9,6 +9,15 @@ import {
 import { ApiError } from './api.ts'
 import { baseScopeFor, baseScopeKey, type BaseScope } from './base-scope.ts'
 import { DEFAULT_CARD_COLUMNS, resolveCardColumns } from './card-scale.ts'
+import {
+  colorSchemeKey,
+  DEFAULT_SCHEME,
+  parseScheme,
+  SCHEME_VARIABLES,
+  schemeVariables,
+  serialiseScheme,
+  type ColorScheme,
+} from './color-scheme.ts'
 import { helpHref, helpSection, type HelpSectionId } from './help.ts'
 import {
   clanTargetTag,
@@ -249,6 +258,100 @@ export function useTheme(): [Theme, (next: Theme) => void] {
   }, [theme])
 
   return [theme, setTheme]
+}
+
+/* ---------- the user's colours ---------- */
+
+/**
+ * A store rather than a `useState`, because two components read the scheme: the picker
+ * on the account page and the account menu, which shows whether anything is
+ * customised. `useSyncExternalStore` over `localStorage` is the shape this file
+ * already uses for the hash.
+ */
+const schemeListeners = new Set<() => void>()
+
+const schemeCache = new Map<string, { raw: string | null; scheme: ColorScheme }>()
+
+/**
+ * Parsed at most once per stored value. `useSyncExternalStore` compares snapshots by
+ * identity and re-renders whenever they differ, so a fresh object on every read would
+ * loop forever — and a single-slot cache would do the same the moment two callers read
+ * two different keys, which is why this is a map and not three module variables.
+ */
+function readScheme(key: string): ColorScheme {
+  const raw = localStorage.getItem(key)
+  const cached = schemeCache.get(key)
+  if (cached && cached.raw === raw) return cached.scheme
+
+  const scheme = parseScheme(raw)
+  schemeCache.set(key, { raw, scheme })
+  return scheme
+}
+
+function subscribeToScheme(onChange: () => void): () => void {
+  schemeListeners.add(onChange)
+  /* `storage` fires in the *other* tabs, which is exactly the case a same-tab
+     notification cannot cover: the account page in one tab, the app in another. */
+  window.addEventListener('storage', onChange)
+  return () => {
+    schemeListeners.delete(onChange)
+    window.removeEventListener('storage', onChange)
+  }
+}
+
+/**
+ * The chosen accent and plate: applied to the root element, remembered per account.
+ *
+ * Sits beside `useTheme` because it is the same kind of thing — an appearance
+ * preference that lives in this browser — but it is keyed by account where the theme
+ * is not, following `coc:lastRoute:<id>` and `coc:baseScope:<id>`. A theme is about
+ * the room you are in; a colour scheme is somebody's own, and two people sharing a
+ * laptop should not repaint each other's app.
+ *
+ * The parse is deliberately forgiving — see `parseScheme`. A stored value that is not
+ * JSON, is an older shape, or names a colour the guard would now refuse falls back to
+ * the shipped theme rather than throwing during render, and the shipped theme is
+ * exactly what the stylesheet renders when nothing is written at all.
+ *
+ * **The effect has no cleanup on unmount, deliberately.** Two components hold this
+ * hook, and one of them unmounting is not a reason to repaint the app — a cleanup
+ * would strip the variables when the account page closes and leave the menu, which
+ * still holds the scheme, with no effect scheduled to put them back. The cost is that
+ * signing out leaves the last scheme on screen until the next load; the sign-in
+ * screen names nobody, and the next account's own effect overwrites all fourteen
+ * variables on mount.
+ */
+export function useColorScheme(userId: number): [ColorScheme, (next: ColorScheme) => void] {
+  const key = colorSchemeKey(userId)
+
+  const scheme = useSyncExternalStore(
+    subscribeToScheme,
+    () => readScheme(key),
+    () => DEFAULT_SCHEME,
+  )
+
+  useEffect(() => {
+    const root = document.documentElement
+    const variables = schemeVariables(scheme)
+    /* Cleared from the full list, not from the keys being written: a Reset writes
+       nothing at all, and anything left behind would be a colour nobody can now
+       change. */
+    for (const name of SCHEME_VARIABLES) {
+      const value = variables[name]
+      if (value === undefined) root.style.removeProperty(name)
+      else root.style.setProperty(name, value)
+    }
+  }, [scheme])
+
+  const choose = useCallback(
+    (next: ColorScheme) => {
+      localStorage.setItem(key, serialiseScheme(next))
+      for (const listener of schemeListeners) listener()
+    },
+    [key],
+  )
+
+  return [scheme, choose]
 }
 
 /* ---------- last visited route ---------- */

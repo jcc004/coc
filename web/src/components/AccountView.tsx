@@ -2,11 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { MIN_PASSWORD_LENGTH, type SessionUser } from '@coc/shared'
 import { api, describe } from '../api.ts'
 import { formatDateTime } from '../format.ts'
+import { ColorSchemeCard } from './ColorSchemeCard.tsx'
 import { PasswordField } from './primitives.tsx'
 
 /**
- * Your own account: who the server thinks you are, and the form to change your
- * password. Nothing on this page is about anybody else.
+ * Your own account: who the server thinks you are, the colours you have chosen, and
+ * the form to change your password. Nothing on this page is about anybody else.
  *
  * Managing *other* accounts moved to `AdminView` and `#/admin`. What used to be here
  * was two pages sharing one URL — a member saw two cards, an admin saw those two plus
@@ -151,6 +152,9 @@ export function AccountView({ user }: { user: SessionUser }) {
   return (
     <>
       <IdentityCard user={user} />
+      {/* Above the password form on purpose: it is the thing on this page somebody
+          comes back to, where changing a password is a once-a-year errand. */}
+      <ColorSchemeCard user={user} />
       <PasswordCard />
     </>
   )
