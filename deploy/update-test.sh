@@ -24,9 +24,21 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SB="${TMPDIR:-/tmp}/coc-update-test.$$"
 trap 'rm -rf "$SB"' EXIT
+# Normalised, because a TMPDIR with a trailing slash leaves $SB with a doubled one and
+# the paths update.sh reports have all been through `cd && pwd`. Comparing the two
+# then fails on a slash, which is a waste of everybody's afternoon.
+mkdir -p "$SB"
+SB="$(cd "$SB" && pwd)"
 
 HOST="$SB/coc"
 DEV="$SB/dev"
+
+# update.sh copies itself into $TMPDIR and re-execs from there, so point TMPDIR at the
+# sandbox: the copies land somewhere countable, and "did it clean up after itself" is
+# a question about an empty directory rather than about /tmp on a shared machine.
+# Set after SB, which is derived from the real TMPDIR on purpose.
+mkdir -p "$SB/tmp"
+export TMPDIR="$SB/tmp"
 
 # ------------------------------------------------------------------- the stubs
 
@@ -173,6 +185,39 @@ kept_its_backup() {
   if [[ -n "$f" && -f "$f" ]]; then echo yes; else echo no; fi
 }
 
+# ------------------------------------------------- the re-exec, seen from outside
+#
+# update.sh copies itself out of the tree and re-execs bash on the copy, so that the
+# `git merge` half way down cannot rewrite the file bash is reading. These read that
+# back out of its own log; sections 20 and 21 prove the mechanism itself.
+
+# How many times a run announced that it was running from a copy. Must be exactly 1 for
+# anything that touches git — 0 means the protection is not there, 2 means the copy
+# re-execed itself and the next number would be 3.
+reexec_count() { grep -c 'running from a temporary copy' "$1" | tr -d ' '; }
+# The path it copied itself to.
+copy_path() { grep -oE '/[^ ]*/coc-update\.[A-Za-z0-9]+' "$1" | head -1; }
+# Is that copy gone? A run that leaves them behind fills $TMPDIR one deploy at a time.
+copy_cleaned() {
+  local p; p="$(copy_path "$1")"
+  if [[ -z "$p" ]]; then echo "no copy in the log"
+  elif [[ -e "$p" ]]; then echo "still there"
+  else echo gone; fi
+}
+# The copy must not be under the checkout: that is the one directory git rewrites.
+copy_is_inside() {
+  local p; p="$(copy_path "$1")"
+  case "$p" in
+    "$2"/*) echo inside ;;
+    *)      echo outside ;;
+  esac
+}
+# Where the script decided the checkout is, after the exec moved it to /tmp.
+logged_root() { grep -E '^ +repo /' "$1" | head -1 | sed 's#^ *repo ##'; }
+# Nothing at all left in TMPDIR. Checked after most runs rather than once at the end,
+# so that whichever run leaks is the one that fails.
+temp_left() { ls "$TMPDIR" 2>/dev/null | wc -l | tr -d ' '; }
+
 # =================================== the tests ==================================
 
 banner "1. first deploy"
@@ -183,6 +228,15 @@ check "last-good recorded" "$(cat .deploy-last-good-sha 2>/dev/null)" "$good_sha
 check "offsite copy attempted" "$(grep -c rsync rsync.log 2>/dev/null || echo 0)" "1"
 check "one backup taken" "$(backups)" "1"
 check "and it is still there" "$(kept_its_backup "$SB/d1.log")" "yes"
+# The re-exec, on the path that matters: a run that is about to merge.
+check "ran from a copy of itself" "$(reexec_count "$SB/d1.log")" "1"
+check "the copy lives outside the checkout" "$(copy_is_inside "$SB/d1.log" "$HOST")" "outside"
+check "ROOT survived the exec" "$(logged_root "$SB/d1.log")" "$HOST"
+check "the copy was deleted on the way out" "$(copy_cleaned "$SB/d1.log")" "gone"
+check "nothing left in TMPDIR" "$(temp_left)" "0"
+# --force reached the other side of the exec, or this run would have found local ==
+# remote on a fresh clone and exited before building anything.
+grep -q "Building the front end" "$SB/d1.log"; check "--force survived the re-exec" "$?" "0"
 
 banner "2. a bad commit lands upstream, and the host picks it up"
 push_upstream v2-broken "bad commit two"
@@ -209,6 +263,11 @@ check "backed up before touching anything" "$(kept_its_backup "$SB/d3.log")" "ye
 check "hold written" "$([[ -f .deploy-hold ]] && echo yes || echo no)" "yes"
 check "last-good untouched by a rollback" "$(cat .deploy-last-good-sha)" "$good_sha"
 grep -q "Rolled back to" "$SB/d3.log"; check "says so" "$?" "0"
+# --rollback runs `git reset --hard`, which rewrites this script exactly as a merge
+# does, so it gets the same protection — and the argument has to survive the exec for
+# any of the above to have happened at all.
+check "--rollback ran from a copy too" "$(reexec_count "$SB/d3.log")" "1"
+check "and the copy is gone" "$(copy_cleaned "$SB/d3.log")" "gone"
 
 banner "4. the timer fires again while held — must do nothing at all"
 held_backups="$(backup_list)"
@@ -221,6 +280,12 @@ grep -q "Fetching origin" "$SB/d4.log"; check "did not even fetch" "$?" "1"
 # Not a count: a held run must not take a backup AND must not rotate one away, and
 # only comparing the directory itself catches the second half.
 check "no backup churn while held" "$(backup_list)" "$held_backups"
+# A held run re-execs even though it exits before touching git. That is the deliberate
+# choice recorded in update.sh: whether a host is held is state, not an argument, and
+# one answer to "is this host held" is worth more than a saved file copy. Asserted so
+# that moving the hold check above the re-exec is a decision somebody makes on purpose.
+check "a held run still re-execs" "$(reexec_count "$SB/d4.log")" "1"
+check "and still tidies up" "$(copy_cleaned "$SB/d4.log")" "gone"
 
 banner "5. the fix is pushed, then --resume"
 push_upstream v3-fixed "fix commit three"
@@ -286,12 +351,48 @@ grep -q "still up" "$SB/d11.log"; check "says the site is unaffected" "$?" "0"
 grep -q "Restarting" "$SB/d11.log"; check "never got as far as restarting" "$?" "1"
 check "the served build is untouched" "$(cmp -s web/dist/index.html "$SB/dist-before.html" && echo same || echo changed)" "same"
 check "HEAD is where it was" "$(git rev-parse HEAD)" "$before_sha"
+# A run that dies still has to take its copy with it, and this one dies a long way from
+# the end. `rm -f` on the EXIT trap rather than on the last line is what makes that so.
+check "the copy is removed on the failure path too" "$(copy_cleaned "$SB/d11.log")" "gone"
+check "no copies left behind by any run so far" "$(temp_left)" "0"
 
 mv "$SB/bin/npm.real" "$SB/bin/npm"
 
 banner "8. an unknown option is rejected rather than ignored"
 ./deploy/update.sh --nonsense > "$SB/d10.log" 2>&1
 check "exit 2" "$?" "2"
+# It exits before the re-exec, so it neither copies itself nor has anything to clean up.
+check "did not copy itself first" "$(reexec_count "$SB/d10.log")" "0"
+check "and left nothing in TMPDIR" "$(temp_left)" "0"
+
+banner "17. if it cannot copy itself it refuses, rather than deploying unprotected"
+# The whole point of the copy is that the deploy is about to rewrite this file. Falling
+# back to running the original would be choosing the hazard at the exact moment
+# something else is already wrong with the disk.
+before_sha="$(git rev-parse HEAD)"
+TMPDIR="$SB/no-such-directory" ./deploy/update.sh --force > "$SB/d12.log" 2>&1
+check "exits nonzero" "$?" "1"
+grep -q "Refusing to deploy" "$SB/d12.log"; check "says it is refusing" "$?" "0"
+grep -q "Fetching origin" "$SB/d12.log";    check "never got as far as fetching" "$?" "1"
+check "HEAD is where it was" "$(git rev-parse HEAD)" "$before_sha"
+
+banner "18. the copy refuses to guess where the checkout is"
+# COC_UPDATE_ROOT is the whole of what survives the exec. If it is missing or wrong the
+# copy has no idea which tree to deploy, and /tmp is not a plausible answer.
+COC_UPDATE_REEXEC="$TMPDIR/coc-update.ZZZZZZ" COC_UPDATE_ROOT="$SB/not-a-directory" \
+  ./deploy/update.sh > "$SB/d13.log" 2>&1
+check "exits nonzero" "$?" "1"
+grep -q "not a directory" "$SB/d13.log"; check "says what it was given" "$?" "0"
+grep -q "Fetching origin" "$SB/d13.log";  check "and did nothing" "$?" "1"
+
+# The copy deletes the path it is handed, so it checks the shape of that path first: a
+# stale COC_UPDATE_REEXEC in somebody's shell must not turn this into an rm.
+: > "$SB/precious"
+COC_UPDATE_REEXEC="$SB/precious" COC_UPDATE_ROOT="$HOST" ./deploy/update.sh > "$SB/d14.log" 2>&1
+check "exits nonzero" "$?" "1"
+check "did not delete a file it never created" \
+  "$([[ -f "$SB/precious" ]] && echo there || echo gone)" "there"
+grep -q "not a path this script" "$SB/d14.log"; check "says why" "$?" "0"
 
 # ============================== backup retention ================================
 #
@@ -334,6 +435,11 @@ fake_dir "$R" \
 touch "$R/coc-20260504-100000.db"
 ./deploy/update.sh --prune-backups "$R" > "$SB/r1.log" 2>&1
 check "exit 0" "$?" "0"
+# The one mode that deliberately skips the re-exec: it runs no git command, so there is
+# nothing to protect it from, and copying itself would only give housekeeping a new way
+# to fail. It must still work, which is what the rest of this section is about.
+check "--prune-backups does not re-exec" "$(reexec_count "$SB/r1.log")" "0"
+check "and leaves TMPDIR alone" "$(temp_left)" "0"
 check "survivors" "$(listing "$R")" \
   "coc-20260630-235959.db coc-20260724-174500.db coc-20260728-081600.db coc-20260803-210533.db coc-20260804-091244.db "
 grep -q "coc-20260630-235959.db monthly" "$SB/r1.log"; check "names the monthly" "$?" "0"
@@ -404,6 +510,119 @@ check "exits nonzero" "$?" "1"
 grep -q "is not a directory" "$SB/r8.log"; check "says why" "$?" "0"
 ./deploy/update.sh --prune-backups > "$SB/r9.log" 2>&1
 check "and refuses no directory at all" "$?" "1"
+
+# ====================== the hazard the re-exec exists for =======================
+#
+# Everything above checks that update.sh runs from a copy. This checks that it needed
+# to, by doing the thing to a throwaway script and watching it happen.
+#
+# The mechanism. Bash does not read a script into memory first. It reads a bufferful —
+# min(file size, 8172) bytes — and keeps a byte offset into the open file. Rewrite that
+# file in place while it is running and the next bufferful comes back from the *new*
+# content at the *old* offset, which is almost never the start of a statement.
+#
+# The replacement below is one 30 kB comment line whose tail is `; printf FRAGMENT-RAN`,
+# then a statement of its own. Nothing can print FRAGMENT-RAN by running either version
+# of the script from the top: in the replacement that text is inside a comment. It can
+# only appear if execution resumed part way into a line. And 30 kB of it on one line
+# means the assertion does not depend on knowing exactly where bash resumed — every
+# offset the victim script can reach is inside that comment.
+#
+# Why this has never actually happened, which is worth writing down next to the test
+# that says it could: git does not rewrite in place. `merge --ff-only` and `reset
+# --hard` unlink the file and create a new one — checked on git 2.50.1, where a 12 kB
+# self-rewriting script pulled through a real merge still ran its last line, because
+# the unlinked inode stays alive for as long as bash holds it open. Everything else
+# that puts a file over another one on this host does truncate: `cp`, `scp`, `rsync
+# --inplace`, a plain `>`. `sudo cp` is how deploy/README.md installs things. So the
+# simulation below is the truncating case, which is the one that is not a promise
+# anybody has made.
+
+HZ="$SB/hazard"
+mkdir -p "$HZ/deploy"
+
+# One enormous comment line, then a line of its own.
+{
+  printf '#!/usr/bin/env bash\n'
+  printf '#'
+  head -c 30000 /dev/zero | tr '\0' 'z'
+  printf ' ; printf %s\n' "'FRAGMENT-RAN\n'"
+  printf 'printf %s\n' "'REPLACEMENT-FROM-THE-TOP\n'"
+} > "$HZ/replacement"
+
+# build_victim <preamble-file|""> — writes $HZ/deploy/demo.sh.
+#
+# The body is identical either way; the only difference is whether update.sh's re-exec
+# preamble is spliced in front of it. It announces its arguments and its ROOT, prints
+# ONE, replaces its own file on disk with the 30 kB replacement, and then has 12 kB of
+# padding to walk through before printing TWO. Padding, because the whole question is
+# what happens when bash needs a second bufferful.
+# The single quotes below are the point: this writes the text of another script, so
+# nothing in it may expand here.
+# shellcheck disable=SC2016
+build_victim() {
+  local preamble="${1:-}"
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'set -uo pipefail\n'
+    printf 'info() { printf %s "$*"; }\n' "'    %s\n'"
+    printf 'die()  { printf %s "$*" >&2; exit 1; }\n' "'!!! %s\n'"
+    printf 'PRUNE_ONLY=0\n'
+    if [[ -n "$preamble" ]]; then
+      cat "$preamble"
+    else
+      printf 'ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"\n'
+    fi
+    printf 'cd "$ROOT"\n'
+    printf 'printf %s "$*"\n'   "'ARGS[%s]\n'"
+    printf 'printf %s "$ROOT"\n' "'ROOT[%s]\n'"
+    printf 'printf %s\n' "'ONE\n'"
+    printf 'cat "$ROOT/replacement" > "$ROOT/deploy/demo.sh"\n'
+    awk 'BEGIN{for(i=0;i<180;i++) printf "# padding %04d ------------------------------------------------\n", i}'
+    printf 'printf %s\n' "'TWO\n'"
+  } > "$HZ/deploy/demo.sh"
+  chmod +x "$HZ/deploy/demo.sh"
+}
+
+banner "20. a script rewritten under bash resumes mid-statement"
+build_victim ""
+check "the victim is bigger than one bufferful" \
+  "$([[ "$(wc -c < "$HZ/deploy/demo.sh")" -gt 8172 ]] && echo yes || echo no)" "yes"
+"$HZ/deploy/demo.sh" > "$SB/h1.log" 2>&1
+hz_exit=$?
+grep -q '^ONE$' "$SB/h1.log";                check "it started as itself" "$?" "0"
+grep -q '^FRAGMENT-RAN$' "$SB/h1.log";       check "then ran a fragment of a comment in the new file" "$?" "0"
+grep -q '^TWO$' "$SB/h1.log";                check "and never reached its own last line" "$?" "1"
+check "having reported success" "$hz_exit" "0"
+
+banner "21. the same rewrite, with update.sh's re-exec preamble in front of it"
+# Extracted from update.sh rather than retyped: a paraphrase of the preamble would test
+# the paraphrase. If the markers ever go, the check below fails rather than the section
+# quietly passing against an empty file.
+awk '/^# >>> re-exec preamble/{f=1; next} /^# <<< re-exec preamble/{f=0} f' \
+  "$REPO/deploy/update.sh" > "$SB/preamble.sh"
+# shellcheck disable=SC2016   # a literal to match, not an expression to expand
+grep -qF 'exec "${BASH:-bash}"' "$SB/preamble.sh"
+check "extracted the real preamble out of update.sh" "$?" "0"
+
+build_victim "$SB/preamble.sh"
+"$HZ/deploy/demo.sh" --force spare-arg > "$SB/h2.log" 2>&1
+hz_exit=$?
+check "exit 0" "$hz_exit" "0"
+check "it re-execed, once" "$(reexec_count "$SB/h2.log")" "1"
+grep -q '^ONE$' "$SB/h2.log";          check "started" "$?" "0"
+grep -q '^TWO$' "$SB/h2.log";          check "and finished, through the same rewrite" "$?" "0"
+grep -q 'FRAGMENT-RAN' "$SB/h2.log";   check "no fragment of the replacement ran" "$?" "1"
+grep -q 'REPLACEMENT-FROM-THE-TOP' "$SB/h2.log"
+check "and it did not restart into the replacement either" "$?" "1"
+check "arguments came through the exec intact" \
+  "$(grep -o 'ARGS\[.*\]' "$SB/h2.log")" "ARGS[--force spare-arg]"
+check "ROOT is the tree, not the copy" "$(grep -o 'ROOT\[.*\]' "$SB/h2.log")" "ROOT[$HZ]"
+check "the copy was cleaned up" "$(copy_cleaned "$SB/h2.log")" "gone"
+check "and the file on disk really was replaced under it" \
+  "$(grep -c 'REPLACEMENT-FROM-THE-TOP' "$HZ/deploy/demo.sh" | tr -d ' ')" "1"
+
+check "nothing left in TMPDIR at the end" "$(temp_left)" "0"
 
 printf '\n---------------------------------------\n%d passed, %d failed\n' "$pass" "$fail"
 [[ "$fail" == 0 ]]

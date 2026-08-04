@@ -66,7 +66,7 @@ session cookies cross the network in clear text.
   `npm`, `curl` and `rsync` stubbed. Run it before changing the deploy script:
 
   ```bash
-  ./deploy/update-test.sh      # 70 checks, touches nothing real
+  ./deploy/update-test.sh      # 113 checks, touches nothing real
   ```
 
 - `nginx-test.sh` — serves `nginx-coc.conf` for real in a container and checks what
@@ -563,6 +563,44 @@ cd /srv/coc && ./deploy/update.sh --resume   # clear the hold a rollback left
 Safe to run repeatedly: with nothing new upstream it prints one line and exits 0,
 which is what makes it usable on a timer.
 
+### It deploys from a copy of itself
+
+The first thing `update.sh` does is copy itself into `$TMPDIR` and re-exec `bash` on the
+copy, passing your arguments through. Every run except `--prune-backups` does it, and
+the log says so:
+
+```
+    running from a temporary copy, so the pull cannot rewrite it: /tmp/coc-update.hT9wKx
+```
+
+The reason is that the deploy rewrites `deploy/update.sh` — that is what pulling a
+commit which touched the deploy script *means* — and bash does not read a script into
+memory before running it. It reads a bufferful at a time and keeps a byte offset into
+the open file. Replace the file underneath a running bash and the next bufferful comes
+back from the new content at the old offset, which is the middle of some unrelated
+statement. The script then runs fragments of itself, or reaches the end early and exits
+0 having skipped the build and the restart entirely. Serving old code while reporting
+success is the one outcome this script is written to prevent, so it does not leave that
+to chance.
+
+Practical notes:
+
+- The copy is deleted when the run ends, including when it fails. Under systemd it
+  lands in the unit's `PrivateTmp` namespace, which nothing else on the host can see
+  and which systemd discards when the unit finishes.
+- If the copy cannot be made, the deploy **refuses**. It does not fall back to running
+  from the checkout.
+- `--prune-backups` skips it. That mode runs no git command, so there is nothing to
+  protect it from.
+- This also covers you when *you* are the one replacing the file: `cp`, `scp` or
+  `rsync --inplace` of a new `update.sh` onto the droplet truncates the existing file
+  rather than replacing it, and the five-minute timer does not know you are mid-copy.
+
+`update-test.sh` proves the mechanism rather than arguing about it: it builds a
+throwaway script that rewrites itself part way through, shows it executing a fragment
+of the replacement and never reaching its own last line, and then shows the same script
+completing normally with `update.sh`'s re-exec preamble in front of it.
+
 ### Rolling back
 
 Until recently there was no rollback, and recovery from a bad commit was another
@@ -617,6 +655,7 @@ anything** if:
 - the tree has uncommitted changes, so the deploy could not be reproduced from the commit
 - the card art is not exactly 60 images, or an art directory is missing
 - `main` has diverged from the remote (`--ff-only`, so it never writes a merge commit on the server)
+- it cannot copy itself into `$TMPDIR` first — see "It deploys from a copy of itself" above
 
 **One exception, and only one.** A locally modified `package-lock.json` is restored rather
 than treated as a blocker. `npm ci` never writes that file, so a modified one can only

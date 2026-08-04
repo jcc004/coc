@@ -23,6 +23,10 @@
 #   - the bundle was React's development build, because NODE_ENV was inherited
 #   - the artwork was absent, so the build shipped sixty broken tiles
 #   - the API token was minted for the wrong address
+#   - the deploy rewrote *this file* while bash was part-way through reading it, and
+#     execution carried on at the old byte offset in the new one — mid-statement. The
+#     only entry here caught before production rather than after; "run from a copy of
+#     this script" below has the measurements and says what it would take to fire.
 #
 # So this script checks the *outcome*, not the exit codes: which branch, which
 # commit, art present before building, and finally that the bundle the site serves
@@ -35,6 +39,12 @@ set -euo pipefail
 # directory exits the script silently — which is the one behaviour this whole file
 # exists to prevent, and it did it. Found by testing the guard, not by reading it.
 shopt -s nullglob
+
+# Defined here rather than further down because the re-exec below needs to be able to
+# refuse loudly, and it has to run before anything else does.
+say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
+info() { printf '    %s\n' "$*"; }
+die()  { printf '\n\033[31m!!! %s\033[0m\n' "$*" >&2; exit 1; }
 
 FORCE=0
 ROLLBACK=0
@@ -50,7 +60,146 @@ case "${1:-}" in
   *)                printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
 esac
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# ----------------------------------------------- run from a copy of this script
+#
+# Bash does not read a script into memory before running it. It reads a bufferful at a
+# time — min(file size, 8172) bytes — and keeps a byte offset into the open file. Every
+# time it needs the next bufferful it reads from that offset, out of whatever is at the
+# path *now*. This file is several bufferfuls long, and the deploy rewrites
+# deploy/update.sh part way down it. If the running script is the
+# same file the deploy rewrote, the second read returns the new content at the old
+# offset — which is almost never the start of a statement. The deploy then executes
+# fragments: half a command, the tail of a heredoc, or nothing at all when the new file
+# is shorter, in which case bash reaches EOF and exits 0 having skipped the build, the
+# restart and every check below.
+#
+# That last shape is why this sits at the top of the file rather than on a list. A
+# deploy that reports success while serving old code is the fault this whole script
+# exists to prevent, and this produces it out of nothing but a commit that changed the
+# script's length.
+#
+# **Why it has not happened yet, measured rather than assumed.** Whether it fires turns
+# on one detail: does the writer truncate the existing file, or unlink it and create a
+# new one? Truncating keeps the inode, so the fd bash is holding sees the new bytes.
+# Unlinking does not: the old inode stays alive for as long as bash has it open, and
+# the script runs to the end as written. Today's git unlinks — checked on git 2.50.1,
+# where both `merge --ff-only` and `reset --hard` give the file a new inode, and a
+# 12 kB self-rewriting script pulled through a real merge still ran its last line. So
+# the exposure has always been a promise git does not make. Everything else that puts
+# a file on this host in place of another one does truncate: `cp`, `scp`, `rsync
+# --inplace`, `>`. `sudo cp` is how deploy/README.md tells you to install things, and
+# an operator copying a fixed update.sh onto the droplet while the five-minute timer
+# happens to be mid-run is not an exotic scenario. The cost of not depending on any of
+# this is one file copy per deploy.
+#
+# The fix is to make "the script bash is reading" and "the file git rewrites" two
+# different files: copy ourselves out of the tree and exec bash on the copy, passing
+# the arguments straight through. COC_UPDATE_REEXEC marks the copy, so it does not do
+# it again, and carries the path so the copy can delete itself on the way out.
+#
+# The decisions inside that, since none of them are forced:
+#
+#   - **Where the copy lives.** Wherever mktemp puts it, which under systemd is not
+#     the /tmp you would expect: coc-update.service sets PrivateTmp=true, so /tmp is
+#     a per-service tmpfs nothing else on the host can see, and systemd tears it down
+#     when the unit finishes. The copy cannot collide with another run, cannot be read
+#     by anything else, and does not survive even a SIGKILL that skips the trap. Run
+#     by hand it lands in the real $TMPDIR and the trap is what removes it. What it
+#     must never be is somewhere under $ROOT: that is the directory git is about to
+#     rewrite, which is the entire problem.
+#   - **`exec bash "$copy"`, not `exec "$copy"`.** /tmp is mounted noexec on plenty of
+#     hardened hosts, and the deploy should not start depending on that.
+#   - **--prune-backups does not re-exec.** It runs no git command at all, so there is
+#     nothing to protect it from, and re-execing it would give a pure housekeeping run
+#     a new way to fail. An unknown option has already exited above, for the same
+#     reason. Everything else re-execs, --rollback included: `git reset --hard`
+#     rewrites this file exactly the way a merge does.
+#   - **A held host re-execs anyway**, even though it is about to exit before touching
+#     git. Whether a host is held is state read further down, not something the
+#     arguments say, and hoisting that decision up here would put two answers to "is
+#     this host held" in one file. One file copy every five minutes is the cheaper
+#     mistake.
+#   - **If the copy cannot be made, refuse.** Carrying on would mean running the
+#     original, which is the exact situation being fixed, and doing it in the one case
+#     where something is already wrong with the disk.
+#
+# ROOT is the part of this most likely to break, so it is handled explicitly rather
+# than left to work out. After the exec, BASH_SOURCE names the copy in /tmp, and
+# deriving ROOT from it the way this file always has would silently point the whole
+# deploy — checkout, build, backup, verify — at a temporary directory. So the original
+# resolves ROOT while it still can and hands it over in the environment; the copy takes
+# it from there and never consults BASH_SOURCE at all.
+#
+# >>> re-exec preamble: update-test.sh extracts everything between these two markers
+#     verbatim, puts it in front of a throwaway script, and has that script rewrite
+#     itself part way through. Keep the markers, or that test silently tests nothing.
+SELF_COPY=""
+if [[ -n "${COC_UPDATE_REEXEC:-}" ]]; then
+  # We are the copy.
+  SELF_COPY="$COC_UPDATE_REEXEC"
+
+  # This branch is about to arrange for `rm` to run on a path that arrived in the
+  # environment, so it checks the shape of it first. Nothing but the exec below ever
+  # sets COC_UPDATE_REEXEC, and it always sets it to an mktemp name, so anything else
+  # means the variable is stale in somebody's shell or another script is calling this
+  # one — neither of which is a reason to delete a file that is not ours.
+  case "${SELF_COPY##*/}" in
+    coc-update.??????) ;;
+    *) die "COC_UPDATE_REEXEC is set to '$SELF_COPY', which is not a path this script
+would have created. It is set by the re-exec inside this file and by nothing else.
+Refusing rather than deleting a file that is not ours: unset it, then run
+./deploy/update.sh from the checkout." ;;
+  esac
+
+  # However this run ends — success, a die(), a `set -e` trip — the copy goes with it.
+  # The three signal traps are there so that a systemd stop or a Ctrl-C reaches the
+  # EXIT trap at all: bash would otherwise take the default action and die on the
+  # signal without running it.
+  trap 'rm -f -- "$SELF_COPY"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
+
+  ROOT="${COC_UPDATE_ROOT:-}"
+  [[ -n "$ROOT" && -d "$ROOT" ]] || die "This is the temporary copy at $SELF_COPY, but
+COC_UPDATE_ROOT is '${COC_UPDATE_ROOT:-}', which is not a directory — so there is no
+way to tell where the checkout is. Nothing has been fetched, pulled or restarted.
+Run ./deploy/update.sh from the checkout, with neither COC_UPDATE_REEXEC nor
+COC_UPDATE_ROOT set in the environment."
+  info "running from a temporary copy, so the pull cannot rewrite it: $SELF_COPY"
+else
+  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+  if [[ "$PRUNE_ONLY" == 0 ]]; then
+    SELF_COPY="$(mktemp "${TMPDIR:-/tmp}/coc-update.XXXXXX")" || die "Could not create a
+temporary file in ${TMPDIR:-/tmp} to copy this script into. Refusing to deploy: this
+script is about to be rewritten by the pull, and running it from the checkout while
+that happens resumes bash mid-statement. Nothing has been fetched or pulled. Check the
+free space and the permissions on ${TMPDIR:-/tmp}."
+    cp "${BASH_SOURCE[0]}" "$SELF_COPY" || { rm -f -- "$SELF_COPY"; die "Could not copy
+${BASH_SOURCE[0]} to $SELF_COPY. Refusing to deploy from the checkout — see above.
+Nothing has been fetched or pulled."; }
+
+    # The outcome, not the exit code: cp exits 0 on a short write often enough, and a
+    # truncated copy is a script that stops half way through the deploy and says
+    # nothing. Byte counts, because that is the property that matters here.
+    self_bytes="$(wc -c < "${BASH_SOURCE[0]}")"
+    copy_bytes="$(wc -c < "$SELF_COPY")"
+    if (( copy_bytes != self_bytes )); then
+      rm -f -- "$SELF_COPY"
+      die "The copy of this script came out at $copy_bytes bytes, not $self_bytes.
+Refusing to deploy: a truncated copy would run part of the deploy and stop without
+saying why. Nothing has been fetched or pulled. Check the free space on ${TMPDIR:-/tmp}."
+    fi
+
+    # bash, not the copy directly, so a noexec /tmp is not a deploy outage. The copy
+    # deletes itself; there is nothing left for this process to clean up, and there is
+    # no this process after the next line.
+    COC_UPDATE_REEXEC="$SELF_COPY" COC_UPDATE_ROOT="$ROOT" exec "${BASH:-bash}" "$SELF_COPY" "$@"
+  fi
+fi
+# <<< re-exec preamble
+
 cd "$ROOT"
 
 BRANCH=main
@@ -76,10 +225,6 @@ LAST_GOOD="$ROOT/.deploy-last-good-sha"
 # was just rolled back, five minutes later — which is the failure mode that makes a
 # rollback feel like it did not work.
 HOLD="$ROOT/.deploy-hold"
-
-say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
-info() { printf '    %s\n' "$*"; }
-die()  { printf '\n\033[31m!!! %s\033[0m\n' "$*" >&2; exit 1; }
 
 # -------------------------------------------------------------- backup retention
 
@@ -395,6 +540,11 @@ fi
 # ---------------------------------------------------------------- preconditions
 
 say "Checking preconditions"
+
+# Printed because after the re-exec above this script is running out of /tmp, and the
+# question "which tree is it actually working on" stops having an obvious answer. If
+# this ever names a temporary directory, ROOT was lost across the exec.
+info "repo $ROOT"
 
 [[ -d .git ]] || die "$ROOT is not a git checkout."
 
