@@ -38,8 +38,15 @@ mode is not a version error — it is a database call that behaves one way local
 on the host, so the suite is green here and the deploy is broken there, or the reverse, and
 nothing in the symptom points at Node. Install the pinned version (`nvm install` in the repo root
 reads `.nvmrc`; `fnm` and `asdf` read it too) and check `node --version` says `v22.23.2` before
-trusting a green run. `package.json`'s `engines` floor of `>=22.5.0` is where `node:sqlite`
-arrives; it is not a statement about what to develop on.
+trusting a green run.
+
+`package.json`'s `engines` is `>=22.23.2 <23`, which is the same pin stated a third time rather
+than a floor for `node:sqlite`'s arrival — the range excludes 23 and 24 deliberately, because
+those are the majors whose sqlite API differs. On its own that would only be a warning: npm treats
+`engines` as advisory and installs anyway, which is exactly how a checkout ends up running the
+suite on a major the droplet has never seen. `.npmrc` sets `engine-strict=true` to make it
+binding, so `npm install` and `npm ci` refuse outside the range instead of proceeding. A failed
+install naming your Node version is that working; install 22.23.2 rather than dropping the flag.
 
 ### The IP binding
 
