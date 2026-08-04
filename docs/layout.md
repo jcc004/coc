@@ -45,7 +45,11 @@ which way to default, and where the selection goes when the filter drops it), `l
 (what to restore, and which clan the topbar's Clan button opens), `card-refresh.ts` (whether the
 card pages' background re-read is due: the interval, the tab's visibility, a save in flight and
 the gap that stops a focus event repeating a poll — the interval and the listeners themselves are
-`use-card-refresh.ts`, which is the hook the two card pages mount).
+`use-card-refresh.ts`, which is the hook the two card pages mount), `changelog.ts` (what
+`#/whats-new` lists: the `git log` record format, the committer-date choice, the three-workspace
+filter and the newest-first order). `changelog.ts` is the one pure module `vite.config.ts` also
+imports, so the build that writes the list and the browser that reads it back share one format
+and one set of tests.
 Components that are shown in more than one place are shared rather than copied — `BaseCardEditor`
 is the one 60-tile card grid, rendered by both the card page and a player page; `CardTile` is the
 one card tile, rendered by that grid and by the card page's clan-totals grid; `TradeSuggestions` is

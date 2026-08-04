@@ -26,7 +26,7 @@ import type { Route, Theme } from './hooks.ts'
 
 export interface MenuItem {
   /** Stable id, for keys and for tests to assert on without matching prose. */
-  id: 'help' | 'account' | 'admin' | 'signOut'
+  id: 'help' | 'whatsNew' | 'account' | 'admin' | 'signOut'
   label: string
   /** Where it goes, or `null` for the action item (Sign out). */
   route: Route | null
@@ -35,8 +35,8 @@ export interface MenuItem {
 }
 
 /**
- * The menu, in order: help, your own password, then the admin panel if it is yours,
- * then Sign out.
+ * The menu, in order: help, what's new, your own password, then the admin panel if
+ * it is yours, then Sign out.
  *
  * Sign out is **last and on its own**, because it is the one item that discards
  * state — putting it between two navigation items is how it gets pressed by
@@ -48,6 +48,15 @@ export interface MenuItem {
  * there is no version of it that is not theirs — a help page hidden from members
  * would be hidden from exactly the people who need it. Nothing on it depends on the
  * account reading it, so there is no rule here to get wrong, only an order.
+ *
+ * **What's new sits directly under it**, because it is the other page that is about
+ * the app rather than about the account, and the two are found by the same impulse —
+ * "where is the page that explains this". It is on the menu *as well as* under the
+ * footer's date, and the pair is deliberate: the stamp catches somebody who is
+ * already looking at a date and wondering, the menu catches somebody looking for the
+ * page without knowing the stamp is a link. It is not first, because help answers
+ * "how does this work" and that is the question people arrive with; a changelog
+ * answers a question they only have once they already know.
  */
 export function userMenuItems(user: Pick<SessionUser, 'role'>): MenuItem[] {
   const items: MenuItem[] = [
@@ -58,6 +67,12 @@ export function userMenuItems(user: Pick<SessionUser, 'role'>): MenuItem[] {
          into a section; arriving from here you have not said which part you want. */
       route: { view: 'help', section: null },
       hint: 'Cards, owners, trades and how the board scores',
+    },
+    {
+      id: 'whatsNew',
+      label: "What's new",
+      route: { view: 'whats-new' },
+      hint: 'Every change to the app, newest first',
     },
     {
       id: 'account',

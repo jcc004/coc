@@ -2479,6 +2479,101 @@ table.roster th button:hover {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- what's new ---------- */
+
+/*
+ * The changelog on `#/whats-new`: one entry per commit, newest first.
+ *
+ * Divided by a rule per row rather than drawn as cards, following `.help-contents`
+ * and `.result-list` above — eighty plaques stacked would be eighty gold edges and
+ * a page that reads as an inventory rather than as a history. An `<ol>` because the
+ * order is the content; the numbers themselves are not, so the marker goes.
+ */
+.changelog {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.changelog__entry {
+  padding: 16px 0;
+  border-top: 1px solid var(--grid);
+}
+.changelog__entry:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.changelog__entry:last-child {
+  padding-bottom: 0;
+}
+
+/*
+ * The timestamp, above the subject and quieter than it. Tabular figures so the
+ * column of dates lines up down the page, which is what makes it scannable as a
+ * timeline rather than as eighty unrelated stamps.
+ */
+.changelog__when {
+  margin: 0 0 2px;
+  font-size: 12px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The subject line. An `<h2>` for the outline — this is a list of headings — but
+ * sized as a sentence, because that is what it is. Left at the browser's default it
+ * would be a 24px bold run of gold-adjacent text eighty times over.
+ */
+.changelog__subject {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+/*
+ * The disclosure holding the message body. `details.group` is the app's collapsed
+ * idiom and brings the caret and the summary treatment with it; what is overridden
+ * is its separator, because that class is written for a disclosure that follows a
+ * panel and here the entry already has a rule above it.
+ */
+.changelog__more {
+  border-top: none;
+  margin-top: 4px;
+  padding-top: 0;
+}
+.changelog__more > .group__body {
+  padding-top: 6px;
+}
+
+/*
+ * The message, printed exactly as it was written.
+ *
+ * `pre-wrap` rather than reflowed paragraphs: these bodies carry bullet lists with
+ * hanging indents and indented literal blocks — a table of paths against short
+ * hashes, a `git show` invocation — and joining their hard-wrapped lines to make
+ * paragraphs would run both together into nonsense. `pre-wrap` keeps every break the
+ * author made *and* still wraps at the container edge, so a phone gets a taller
+ * column and never a sideways scroll.
+ *
+ * No measure is imposed, because the messages already have one: they are wrapped by
+ * hand at about eighty columns, so the paragraph sets its own width wherever there is
+ * room for it. The `max-width` is only a backstop for the occasional line that was
+ * left long, and sits above eighty so it never adds a wrap to a line that has one.
+ *
+ * `overflow-wrap: anywhere` is for the token that cannot wrap at all — a URL, a long
+ * path — which is the one thing `pre-wrap` would otherwise push past the card edge.
+ */
+.changelog__body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 88ch;
+}
+
 /* ==========================================================================
    Clash of Clans chrome
    --------------------------------------------------------------------------
@@ -3390,6 +3485,24 @@ table.roster--pairs td {
      narrower than the words on them, with a bar too short to read. */
   .deck-plaques {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /*
+   * The changelog gives back the vertical padding it takes on a desktop, because on a
+   * phone every entry is already several lines tall and the rules between them are
+   * doing the separating on their own. The subject drops a point for the same reason
+   * `.section-title` does: a 15px sentence and a 12px date is a wider gap than a
+   * 320px column wants at the top of every entry.
+   *
+   * The body is left at 13px on purpose. Shrinking it would buy a couple of
+   * characters per line against text that is already the smallest thing on the page,
+   * and `pre-wrap` has no overflow to rescue it from — the lines simply wrap.
+   */
+  .changelog__entry {
+    padding: 12px 0;
+  }
+  .changelog__subject {
+    font-size: 14px;
   }
 
   /*

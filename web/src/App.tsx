@@ -13,6 +13,7 @@ import { SavedClansView } from './components/SavedClansView.tsx'
 import { SearchBar } from './components/SearchBar.tsx'
 import { UserMenu } from './components/UserMenu.tsx'
 import { WarView } from './components/WarView.tsx'
+import { WhatsNewView } from './components/WhatsNewView.tsx'
 import {
   hrefFor,
   useLastClan,
@@ -101,7 +102,15 @@ function CompassRosette() {
  * Rendered as `null` when the build knew nothing at all, rather than as a placeholder:
  * a line that says something vacuous where a real date goes is how people learn to stop
  * reading it.
+ *
+ * **The date is a link to `#/whats-new`**, which is the list of what changed. It goes
+ * here because this line is where the question gets asked: somebody reading a date is
+ * already wondering what happened on it. The stamp still says what it always said when
+ * the page cannot be usefully filled — a build with no history renders a list that
+ * explains itself rather than a dead link.
  */
+const WHATS_NEW_HREF = hrefFor({ view: 'whats-new' })
+
 function BuildStamp({ isAdmin }: { isAdmin: boolean }) {
   const line = buildLine(
     buildInfo(),
@@ -131,8 +140,14 @@ function BuildStamp({ isAdmin }: { isAdmin: boolean }) {
   return (
     <p className="site-footer__build">
       {/* `title` carries the exact timestamp, which is a convenience for a pointer and
-          never the only place anything is stated — the readable date is on screen. */}
-      <span title={line.exact ?? undefined}>{line.updated}</span>
+          never the only place anything is stated — the readable date is on screen.
+          The visually-hidden tail is the link's destination in words: "Updated 4 Aug
+          2026, 13:26" is a fine label for a date and says nothing at all about where
+          pressing it goes. */}
+      <a href={WHATS_NEW_HREF} title={line.exact ?? undefined}>
+        {line.updated}
+        <span className="visually-hidden"> — see what changed</span>
+      </a>
       {line.detail === null ? null : (
         <>
           {' · '}
@@ -316,6 +331,10 @@ export function App() {
             nothing on it depends on who is reading. The section comes off the
             route rather than out of a fragment; see the note in `help.ts`. */}
         {route.view === 'help' ? <HelpView section={route.section} /> : null}
+
+        {/* Also everybody's, and also takes no user: the list is baked into the
+            bundle, so it is the same page whoever opens it. */}
+        {route.view === 'whats-new' ? <WhatsNewView /> : null}
 
         {/* Both carry a card grid, and only a base's owner may type into it, so
             each needs to know who is signed in. Passed down rather than read from

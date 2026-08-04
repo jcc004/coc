@@ -30,6 +30,7 @@ const ROUTES: readonly Route[] = [
   { view: 'account' },
   { view: 'admin' },
   { view: 'cards' },
+  { view: 'whats-new' },
   { view: 'help', section: null },
   { view: 'help', section: 'trades' },
 ]
@@ -39,6 +40,15 @@ describe('parseHash — the views that take no parameter', () => {
     assert.deepEqual(parseHash('#/account'), { view: 'account' })
     assert.deepEqual(parseHash('#/admin'), { view: 'admin' })
     assert.deepEqual(parseHash('#/cards'), { view: 'cards' })
+    assert.deepEqual(parseHash('#/whats-new'), { view: 'whats-new' })
+  })
+
+  it('reads the hyphenated one as a single segment, not as two', () => {
+    // `parseHash` splits on `/`, so the hyphen is ordinary text in the view name —
+    // which is what lets the view name and the hash segment stay the same string.
+    assert.deepEqual(parseHash('#/whats-new/anything'), { view: 'whats-new' })
+    assert.deepEqual(parseHash('#/whats'), { view: 'home' })
+    assert.deepEqual(parseHash('#/whats/new'), { view: 'home' })
   })
 
   it('accepts the hash with or without its leading slash', () => {

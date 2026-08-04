@@ -154,7 +154,8 @@ saved-clans list stays one click away on the title.
 ### The account menu
 
 One silhouette button on the right, holding everything about *you*: the appearance switch, **Help**,
-a link to your password page, the **admin panel** if you are an admin, and **Sign out**.
+**What's new**, a link to your password page, the **admin panel** if you are an admin, and
+**Sign out**.
 
 It replaced three separate topbar controls — a theme cycler labeled with the current theme, the
 display name as a link, and a Sign out button. At 390px those competed with Clan and Cards for a
@@ -177,6 +178,11 @@ the people most likely to need it. It is first because it is the only item someb
 for while *confused* rather than while administering something. It points at the whole page, never at
 a section: arriving from the menu nobody has said which part they want, and landing mid-page looks
 broken. See [In-app help](#in-app-help).
+
+**What's new is directly under it**, because it is the other item that is about the app rather than
+about the account, and both are found by the same impulse. It is second rather than first because
+help answers "how does this work", which is the question people arrive with; a changelog answers
+one they only have once they already know. See [What's new](#whats-new).
 
 **Appearance stays a cycler, not three radio items.** It is the only item pressed repeatedly, it has
 to visit all three states, and as a cycler it can be pressed without the menu closing underneath it
@@ -376,6 +382,74 @@ On a touch screen the **target** grows without the drawing changing: an absolute
 pseudo-element centered on the glyph takes the press, since growing the box would push the line height
 of every panel header it sits in around. Nothing adjacent to it is interactive, so the overhang costs
 nothing.
+
+## What's new
+
+`#/whats-new` lists every change to the app, newest first, with the date and time. `WhatsNewView`
+in `web/src/components/WhatsNewView.tsx`; every rule behind it is `web/src/changelog.ts`, tested.
+
+**Two entry points, doing two different jobs.** The footer's "Updated …" stamp is the link, because
+that is the moment somebody is looking at a date and wondering what happened on it; and **What's
+new** sits directly under **Help** on the account menu, for somebody looking for the page without
+knowing the stamp is a link. It is deliberately *not* on the help page (all six sections are
+feature topics and a changelog there is filler), not in the topbar (five controls already, wrapping
+at 390px), and there is **no "new since you last looked" dot** — most commits change nothing a
+reader can see, so a badge on every deploy would be wrong more often than right, and it would need
+per-account last-seen state to be wrong with.
+
+### The timestamp is the committer date
+
+The ask was for the merge date. **This repository has no merge commits and never has** —
+`deploy/update.sh` fast-forwards (`git merge --ff-only`) and work lands directly on `main`, so
+every commit is linear and carries an author date and a committer date instead. The committer date
+is the honest reading of "merge date" here: it is when the change became the thing on `main` that
+the next timer run deploys. An author date can predate that by days across a rebase or an amend,
+which would put an entry below one that reached the site first. It is also `%cI`, the same field
+`BUILD_INFO.commitDate` uses, so the newest entry on the page and the footer stamp that links to it
+cannot disagree.
+
+### It is baked in, like the build stamp
+
+The browser cannot read git. `vite.config.ts` runs one `git log` at build time and substitutes the
+result through `define` as `__BUILD_CHANGES__`, exactly as it already does for the commit, the
+commit date and the build time — no fourth machine-written file, and nothing for anyone to
+hand-edit. It rides on the same `gitValue` helper, so it degrades the same way: a tarball deploy, a
+shallow clone or an image without git yields `''`, which `parseGitLog` turns into an empty list,
+and the page says the build was made without its history rather than rendering blank.
+
+The record format is worth knowing before reading the parser. Fields are separated by `\x1f` (ASCII unit
+separator) and records by `\x1e` (record separator), because a commit body here contains blank lines, bullets, indented blocks and
+every printable punctuation mark, so those two control bytes are the only delimiters git will never
+emit. The record separator **leads** each record rather than terminating it: `--name-only` prints
+the changed paths *after* the formatted record, so with the separator in front the paths are simply
+the fifth field. Any other arrangement is unparseable, because a body has newlines of its own.
+
+Parsing and filtering happen in the config, not the browser, so only the kept entries ship — the
+changed-path lists the filter runs on stay on the build machine.
+
+### Which commits are listed, and which are not
+
+**A commit is listed if it changed a file in one of the three npm workspaces: `shared/`, `server/`
+or `web/`.** That is the entire rule — no curated list to rot, no keyword in a subject line for
+somebody to forget. What it drops (documentation, `deploy/`, CI workflows) changed nothing about
+the app the reader is looking at, which is what the page claims to describe; 24 of the first 81
+commits were exactly that. The rule is anchored to the workspaces because those are declared in
+`package.json` and named in `docs/layout.md`, so it is not a private notion of "app code".
+
+### Long messages: subject always, body behind a disclosure
+
+Messages here run to twenty lines of reasoning. Eighty of those stacked is not a page anybody
+reads, so the subject line is always visible and the rest sits behind a `details.group` labeled
+**Why** — the collapsed idiom this app already uses under the trade panels and the raid weekends,
+which also means it already clears 44px as a tap target.
+
+The body is printed **verbatim**, with `white-space: pre-wrap`. Nothing is reflowed and nothing is
+truncated. Reflowing was considered and rejected on the corpus: these bodies carry bullet lists
+with hanging indents and indented literal blocks — a table of paths against short hashes, a
+`git show` invocation — and joining their hard-wrapped lines would run both together into
+nonsense. `pre-wrap` keeps every break the author made and still wraps at the container edge, so a
+phone gets a taller column and never a sideways scroll. No measure is imposed either, because the
+messages already have one: they are wrapped by hand at about eighty columns.
 
 ## Looking a player or clan up
 

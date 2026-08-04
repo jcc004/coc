@@ -117,6 +117,15 @@ export type Route =
    * `null` is the whole page, from the top.
    */
   | { view: 'help'; section: HelpSectionId | null }
+  /**
+   * What changed and when, newest first — the page the footer's "Updated …" stamp
+   * links to.
+   *
+   * A route rather than an expander in the footer, for the reason `admin` and `help`
+   * are routes: it has to be linkable, and it is on the account menu as well as under
+   * the stamp. The view name is the hash segment, as every other route here spells it.
+   */
+  | { view: 'whats-new' }
 
 /**
  * Percent-decodes the segment when it can and hands the raw one back when it cannot.
@@ -152,6 +161,7 @@ export function parseHash(hash: string): Route {
 
   if (view === 'account') return { view: 'account' }
   if (view === 'admin') return { view: 'admin' }
+  if (view === 'whats-new') return { view: 'whats-new' }
   // An unknown section is `null` rather than a miss, so an old link still opens
   // the page. The whole scheme is in `help.ts`, tested there.
   if (view === 'help') return { view: 'help', section: helpSection(decoded) }
@@ -181,6 +191,8 @@ export function hrefFor(route: Route): string {
       return '#/admin'
     case 'cards':
       return '#/cards'
+    case 'whats-new':
+      return '#/whats-new'
     case 'help':
       return helpHref(route.section)
     case 'home':

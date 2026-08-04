@@ -16,12 +16,12 @@ const admin: Pick<SessionUser, 'role'> = { role: 'admin' }
 const ids = (user: Pick<SessionUser, 'role'>) => userMenuItems(user).map((item) => item.id)
 
 describe('userMenuItems', () => {
-  it('gives a member help, their own password and Sign out, and nothing else', () => {
-    assert.deepEqual(ids(member), ['help', 'account', 'signOut'])
+  it('gives a member help, what is new, their own password and Sign out, and nothing else', () => {
+    assert.deepEqual(ids(member), ['help', 'whatsNew', 'account', 'signOut'])
   })
 
   it('adds the admin panel for an admin', () => {
-    assert.deepEqual(ids(admin), ['help', 'account', 'admin', 'signOut'])
+    assert.deepEqual(ids(admin), ['help', 'whatsNew', 'account', 'admin', 'signOut'])
   })
 
   it('offers help to a member as well as an admin, unlike the admin panel', () => {
@@ -47,6 +47,22 @@ describe('userMenuItems', () => {
     assert.deepEqual(
       userMenuItems(member).find((item) => item.id === 'help')?.route,
       { view: 'help', section: null },
+    )
+  })
+
+  it('offers what is new to everybody too, and keeps it beside help', () => {
+    // The other page that is about the app rather than about the account. Adjacent to
+    // help, not down beside Sign out, which is where actions live.
+    for (const user of [member, admin]) {
+      const order = ids(user)
+      assert.equal(order.indexOf('whatsNew'), order.indexOf('help') + 1, `for ${user.role}`)
+    }
+  })
+
+  it('points what is new at its own page', () => {
+    assert.deepEqual(
+      userMenuItems(member).find((item) => item.id === 'whatsNew')?.route,
+      { view: 'whats-new' },
     )
   })
 
@@ -93,7 +109,7 @@ describe('userMenuItems', () => {
   it('does not mutate a shared array between calls', () => {
     const first = userMenuItems(admin)
     first.length = 0
-    assert.equal(userMenuItems(admin).length, 4)
+    assert.equal(userMenuItems(admin).length, 5)
   })
 })
 
