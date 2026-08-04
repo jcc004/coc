@@ -21,7 +21,7 @@ import type { TradeProposal, TradeStore } from './trades-store.ts'
  * `createApp` and none of these paths is on the public list, so every route is
  * reachable only with a session and `currentUser(c)` cannot be null.
  *
- * The authorisation, in one place so it can be read at a glance:
+ * The authorization, in one place so it can be read at a glance:
  *
  * | route | who |
  * | --- | --- |
@@ -37,7 +37,7 @@ import type { TradeProposal, TradeStore } from './trades-store.ts'
  * Note the **inversion** against the inventory route: there, ownership is checked
  * before the body is even parsed, because whether you may write a base has nothing
  * to do with your payload. Here the body *names the two bases*, so it has to be
- * parsed and validated before there is anything to authorise against. A malformed
+ * parsed and validated before there is anything to authorize against. A malformed
  * proposal is therefore a 400, not a 403.
  *
  * The season is **not** taken from the request. It is `CARD_SEASON`, one constant

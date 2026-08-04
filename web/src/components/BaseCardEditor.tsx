@@ -20,7 +20,7 @@ import {
 import { DEFAULT_CARD_COLUMNS } from '../card-scale.ts'
 import { decksPresent, searchCards } from '../card-search.ts'
 import { cardsInGridOrder } from '../card-standings.ts'
-import { summariseBase } from '../card-summary.ts'
+import { summarizeBase } from '../card-summary.ts'
 import {
   ALL_CARDS,
   cardCategoriesInOrder,
@@ -46,7 +46,7 @@ import { HelpLink } from './primitives.tsx'
  * page, which picks the base from a select, and a player's own page, which *is* a
  * base and so needs no select. That is the whole reason for the split — a second
  * copy of sixty tiles and their save logic would be two things to keep in step, and
- * the greyscale, the badges, the deck groups and the clamping would drift apart the
+ * the grayscale, the badges, the deck groups and the clamping would drift apart the
  * first time one of them was touched.
  *
  * Choosing the base is deliberately **not** this component's job: it takes a tag
@@ -148,7 +148,7 @@ function StepButton({
 /**
  * One card, with the row you set its count in: `−`, the number, `+`.
  *
- * The picture, the frame, the deck colour and the desaturation are all `CardTile`,
+ * The picture, the frame, the deck color and the desaturation are all `CardTile`,
  * shared with the clan-totals grid on the card page. What is added here is that row
  * and the one thing that has to be said at a tile: a save that did not happen.
  *
@@ -177,7 +177,7 @@ function StepButton({
  *   nothing else — the deck and the range are not what a stepper needs to say.
  * - the box keeps the full **`Barbarian, Elixir — copies held, 0 to 10`**. It is the
  *   control the whole cell is about, so it is the one that spells out the deck (the
- *   tiles carry no heading and the frame colour is the only *visible* grouping) and
+ *   tiles carry no heading and the frame color is the only *visible* grouping) and
  *   the range.
  *
  * The card's name is therefore said three times per cell and everything else once,
@@ -192,7 +192,7 @@ function StepButton({
  * The tile itself is still given **no** `label`. The controls inside it are the named
  * things; naming the container as well would announce every card a fourth time.
  *
- * Held-vs-not is still not carried by colour alone. `--locked` desaturates the art,
+ * Held-vs-not is still not carried by color alone. `--locked` desaturates the art,
  * and the **number box** says it independently: 0 for a card the base lacks, n for
  * one it holds. That box is visible at every breakpoint, which is why the `Have n` /
  * `None` line that used to repeat it a third time has gone — and why, where a tile is
@@ -233,7 +233,7 @@ function CardEntryTile({
       // is why this is the caller's decision and not the tile's.
       badge={count > 1 ? `×${count}` : undefined}
       // Names the tile for a pointer now that no text does. The category rides
-      // along because the decks draw no heading any more, leaving the frame colour
+      // along because the decks draw no heading any more, leaving the frame color
       // as the only visible grouping.
       title={`${card.name} · ${card.category}`}
       className={failed ? 'card-tile--failed' : undefined}
@@ -545,7 +545,7 @@ export function BaseCardEditor({
   /*
    * The plaques, read off the *draft* rather than the stored record so they agree
    * with the `10/60 cards` count printed directly above them while somebody is
-   * typing. Nothing is recounted here: it is `summariseBase` — the same function the
+   * typing. Nothing is recounted here: it is `summarizeBase` — the same function the
    * player page's plaques come from — handed this base as it currently stands on
    * screen, exactly as `inventorySummary` is handed it above. The real `updatedAt`
    * rides along so a base entered once and then cleared back to zero still reads as
@@ -560,7 +560,7 @@ export function BaseCardEditor({
       counts: toCardCounts(draft),
       ...(base?.updatedAt === undefined ? {} : { updatedAt: base.updatedAt }),
     }
-    const stand = summariseBase(canonical, [onScreen], categoryOfCard, cardCategoriesInOrder())
+    const stand = summarizeBase(canonical, [onScreen], categoryOfCard, cardCategoriesInOrder())
     if (!stand.recorded) return []
     return deckProgress(stand.byCategory, (category) => sizes.get(category))
   }, [showDeckProgress, tag, draft, base?.updatedAt, sizes])
@@ -631,7 +631,7 @@ export function BaseCardEditor({
 
       {/*
        * One grid for all sixty, not one per deck. Still in deck order, so each
-       * type arrives as an unbroken run of tiles wearing its own frame colour —
+       * type arrives as an unbroken run of tiles wearing its own frame color —
        * which is now the only *visible* thing separating them, the drawn headings
        * and the gaps between them having gone. A single grid is the point: per-deck
        * grids broke the row wherever a deck ran out mid-line.
@@ -644,7 +644,7 @@ export function BaseCardEditor({
        *
        * **Filtering removes tiles; it never reorders them.** A filtered grid is the
        * same layout with rows missing, so a card stays where you last saw it relative
-       * to its neighbours. See `card-search.ts`.
+       * to its neighbors. See `card-search.ts`.
        */}
       <div className="card-grid" style={{ '--card-columns': columns } as CSSProperties}>
         {visibleDecks.map((category) => {
@@ -657,8 +657,8 @@ export function BaseCardEditor({
              * is with no wrapper at all — measured, not assumed.
              *
              * It exists because the deck stopped being visible when the headings
-             * went: the frame colour is the only thing left drawing the boundary,
-             * and colour is not a cue this app leans on alone anywhere else. The
+             * went: the frame color is the only thing left drawing the boundary,
+             * and color is not a cue this app leans on alone anywhere else. The
              * heading is the `.visually-hidden` recipe, so it names the group, it
              * is reachable by heading navigation, and it draws nothing.
              */

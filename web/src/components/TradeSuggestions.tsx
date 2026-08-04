@@ -146,7 +146,7 @@ function ProposeButton({
 /**
  * A base, as a person: the member name over the tag and the owner.
  *
- * The name is the link, because the name is what somebody recognises. **The tag
+ * The name is the link, because the name is what somebody recognizes. **The tag
  * stays on screen** underneath — it is the identity the counts, the trades and the
  * routes are all keyed on, and a name alone is not enough to go and find a player
  * in the game. It is dropped only when it *is* the label, i.e. when no roster we
@@ -205,7 +205,7 @@ function pairsInvolving(pairs: TradePair[], tag: string): TradePair[] {
  * bases as above" (the failure the `data-pair-start` note below is about). Paging
  * by pair also makes "5" mean five *decisions to make*, which is what somebody
  * working down this list is actually counting. Both controls therefore say pairs —
- * the limit is labelled `Pairs` and the pager counts pairs — so the numbers on
+ * the limit is labeled `Pairs` and the pager counts pairs — so the numbers on
  * screen can never disagree with the rows under them. The limit is remembered under
  * one key for both pages, on purpose: it is a reading preference about this table,
  * not about a route.
@@ -215,7 +215,7 @@ function pairsInvolving(pairs: TradePair[], tag: string): TradePair[] {
  * player page the four deck plaques directly above make the deck the unit of
  * progress — so "which deck does this swap move" is the column that says whether a
  * given option is worth taking. It costs nothing at 390px either, where the table
- * stacks into one labelled card per swap and the deck becomes a line rather than a
+ * stacks into one labeled card per swap and the deck becomes a line rather than a
  * column competing for width.
  */
 export function TradeSuggestions({
@@ -317,7 +317,7 @@ export function TradeSuggestions({
        * between — with a single owner in the whole list they could only ever narrow it to
        * everything or nothing.
        *
-       * Labelled "Involving" and "and" rather than by column, because that is what they
+       * Labeled "Involving" and "and" rather than by column, because that is what they
        * do: the pair of selections is matched as a set against the pair of owners, in
        * either order. Naming them for the columns would promise something the table
        * cannot deliver, since which side an owner lands on is decided by their base's tag.
@@ -460,7 +460,7 @@ function SuggestionTable({
   return (
     <>
       <div className="table-wrap">
-        {/* Stacks into one labelled card per swap on a phone; the explicit roles
+        {/* Stacks into one labeled card per swap on a phone; the explicit roles
             keep it a table for assistive tech once `display` changes. Nothing
             sorts, so the header row is hidden there rather than kept — see the
             note in styles.css.

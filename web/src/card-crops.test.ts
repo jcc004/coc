@@ -103,7 +103,7 @@ describe('faceCrop', () => {
   })
 
   it('pulls a window back inside the picture rather than showing empty frame', () => {
-    // At zoom 2 the window is half the picture, so its centre cannot go nearer an
+    // At zoom 2 the window is half the picture, so its center cannot go nearer an
     // edge than 25% without part of the frame falling outside the image.
     assert.deepEqual(faceCrop(0, 0, 2), { kind: 'face', x: 25, y: 25, zoom: 2 })
     assert.deepEqual(faceCrop(100, 100, 2), { kind: 'face', x: 75, y: 75, zoom: 2 })
@@ -115,7 +115,7 @@ describe('faceCrop', () => {
     assert.deepEqual(faceCrop(10, 5, 4), { kind: 'face', x: 12.5, y: 12.5, zoom: 4 })
   })
 
-  it('collapses to the centre at zoom 1, where the window is the whole picture', () => {
+  it('collapses to the center at zoom 1, where the window is the whole picture', () => {
     assert.deepEqual(faceCrop(20, 80, 1), { kind: 'face', x: 50, y: 50, zoom: 1 })
   })
 })

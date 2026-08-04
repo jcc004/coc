@@ -7,7 +7,7 @@ import {
   deltaE76,
   distinguishable,
   formatHex,
-  GREY_SATURATION,
+  GRAY_SATURATION,
   hslToRgb,
   hueDistance,
   linearizeChannel,
@@ -27,7 +27,7 @@ import {
  *
  * Every ratio below is one that can be looked up or derived by hand from the WCAG
  * definition — 21:1 for black on white, 4.54:1 for the well-known smallest passing
- * grey, 8.59:1 for blue on white — so these tests fail if the formula is wrong even
+ * gray, 8.59:1 for blue on white — so these tests fail if the formula is wrong even
  * where the implementation is self-consistent. The pair that matters most is blue and
  * green: any brightness-average model calls them equally light, and the real answers
  * are 8.59:1 and 1.37:1.
@@ -54,11 +54,11 @@ describe('parseHex', () => {
     assert.deepEqual(parseHex('  #F2B431 '), parseHex('#f2b431'))
   })
 
-  it('refuses everything that is not a hex colour, rather than guessing', () => {
+  it('refuses everything that is not a hex color, rather than guessing', () => {
     // The callers are a localStorage read and an <input> value: a string somebody
     // could have edited, or one an older build wrote.
     for (const value of ['', 'red', '#', '#12', '#12345', '#1234567', '#gggggg', 'f2b431']) {
-      assert.equal(parseHex(value), null, `${JSON.stringify(value)} is not a colour`)
+      assert.equal(parseHex(value), null, `${JSON.stringify(value)} is not a color`)
     }
   })
 
@@ -69,7 +69,7 @@ describe('parseHex', () => {
   })
 
   it('round-trips through formatHex in the six-digit lowercase form', () => {
-    // So that two equal colours compare equal as strings, which the picker relies on.
+    // So that two equal colors compare equal as strings, which the picker relies on.
     assert.equal(formatHex(rgb('#ABC')), '#aabbcc')
     assert.equal(formatHex(rgb('#f2b431')), '#f2b431')
   })
@@ -110,18 +110,18 @@ describe('contrastRatio', () => {
     assert.equal(ratio('#000000', '#ffffff').toFixed(4), '21.0000')
   })
 
-  it('is 1:1 for a colour against itself', () => {
+  it('is 1:1 for a color against itself', () => {
     for (const hex of ['#000000', '#ffffff', '#1f6cb0', '#f2b431']) {
       assert.equal(ratio(hex, hex), 1)
     }
   })
 
-  it('does not care which way round the two colours are given', () => {
+  it('does not care which way round the two colors are given', () => {
     assert.equal(ratio('#1f6cb0', '#f6efdc'), ratio('#f6efdc', '#1f6cb0'))
   })
 
-  it('agrees with the published figures for the standard greys', () => {
-    // #767676 is the smallest grey that passes 4.5:1 on white, and #777777 the one
+  it('agrees with the published figures for the standard grays', () => {
+    // #767676 is the smallest gray that passes 4.5:1 on white, and #777777 the one
     // just below it — the pair every contrast checker is calibrated on.
     assert.equal(ratio('#767676', '#ffffff').toFixed(2), '4.54')
     assert.equal(ratio('#777777', '#ffffff').toFixed(2), '4.48')
@@ -130,7 +130,7 @@ describe('contrastRatio', () => {
   })
 
   it('gives blue and green wildly different answers on the same ground', () => {
-    // The whole reason for the sRGB linearisation and the CIE weights. A naive
+    // The whole reason for the sRGB linearization and the CIE weights. A naive
     // brightness average calls #0000ff and #00ff00 equally bright; against white they
     // are 8.59:1 — a usable link — and 1.37:1, which is invisible.
     const blue = ratio('#0000ff', '#ffffff')
@@ -168,11 +168,11 @@ describe('rgbToHsl and hslToRgb', () => {
     }
   })
 
-  it('reports a grey as having no saturation', () => {
+  it('reports a gray as having no saturation', () => {
     assert.equal(rgbToHsl(rgb('#808080')).s, 0)
   })
 
-  it('moves lightness while holding hue, which is how a colour is clamped', () => {
+  it('moves lightness while holding hue, which is how a color is clamped', () => {
     const darker = withLightness(rgb('#1f6cb0'), 0.2)
     assert.ok(Math.abs(rgbToHsl(darker).h - rgbToHsl(rgb('#1f6cb0')).h) < 2)
     assert.ok(relativeLuminance(darker) < relativeLuminance(rgb('#1f6cb0')))
@@ -228,11 +228,11 @@ describe('rgbToLab and deltaE76', () => {
     assert.equal(rgbToLab(rgb('#000000')).l.toFixed(3), '0.000')
   })
 
-  it('puts mid grey at L*53.6, not at 50 — Lab is perceptual, sRGB is not', () => {
+  it('puts mid gray at L*53.6, not at 50 — Lab is perceptual, sRGB is not', () => {
     assert.equal(rgbToLab(rgb('#808080')).l.toFixed(1), '53.6')
   })
 
-  it('is 0 for a colour against itself and 100 for black against white', () => {
+  it('is 0 for a color against itself and 100 for black against white', () => {
     assert.equal(deltaE76(rgb('#1f6cb0'), rgb('#1f6cb0')), 0)
     assert.equal(deltaE76(rgb('#000000'), rgb('#ffffff')).toFixed(3), '100.000')
   })
@@ -246,14 +246,14 @@ describe('hueDistance', () => {
     assert.ok(hueDistance(hslToRgb({ h: 350, s: 0.8, l: 0.5 }), hslToRgb({ h: 10, s: 0.8, l: 0.5 })) < 21)
   })
 
-  it('calls a near-grey maximally distant, because a grey has no hue', () => {
-    assert.ok(rgbToHsl(rgb('#3a3a3a')).s < GREY_SATURATION)
+  it('calls a near-gray maximally distant, because a gray has no hue', () => {
+    assert.ok(rgbToHsl(rgb('#3a3a3a')).s < GRAY_SATURATION)
     assert.equal(hueDistance(rgb('#3a3a3a'), rgb('#00ff00')), 180)
   })
 
   it('cannot see the failure it is usually invoked for', () => {
     // The point the brief asks to be made explicit. These two are 164° apart in hue
-    // and 1.07:1 in contrast: as far apart as colours get on the wheel, and one
+    // and 1.07:1 in contrast: as far apart as colors get on the wheel, and one
     // invisible on the other. Hue distance is a *secondary* constraint here; contrast
     // is the guard.
     const pale = rgb('#dceaf6')
@@ -268,7 +268,7 @@ describe('simulateVision', () => {
     // Both become yellows; what is left of the difference is lightness.
     const red = simulateVision(rgb('#ff0000'), 'deuteranopia')
     const green = simulateVision(rgb('#00ff00'), 'deuteranopia')
-    assert.equal(red.r, red.g, 'red and green channels equalise')
+    assert.equal(red.r, red.g, 'red and green channels equalize')
     assert.equal(green.r, green.g)
     assert.ok(deltaE76(red, green) < deltaE76(rgb('#ff0000'), rgb('#00ff00')) / 4)
   })
@@ -279,37 +279,37 @@ describe('simulateVision', () => {
     assert.ok(after > before * 0.9, `${after} should be close to ${before}`)
   })
 
-  it('leaves a grey a grey', () => {
-    const grey = simulateVision(rgb('#808080'), 'protanopia')
-    assert.ok(Math.abs(grey.r - grey.b) <= 2 && Math.abs(grey.r - grey.g) <= 2)
+  it('leaves a gray a gray', () => {
+    const gray = simulateVision(rgb('#808080'), 'protanopia')
+    assert.ok(Math.abs(gray.r - gray.b) <= 2 && Math.abs(gray.r - gray.g) <= 2)
   })
 })
 
 describe('distinguishable', () => {
-  it('accepts the shipped accent against the shipped status colours', () => {
+  it('accepts the shipped accent against the shipped status colors', () => {
     for (const status of ['#3f9e28', '#c4342c', '#e8a022']) {
       assert.equal(distinguishable(rgb('#1f6cb0'), rgb(status)).ok, true, status)
     }
   })
 
-  it('refuses a colour against itself, and says the reason is similarity', () => {
+  it('refuses a color against itself, and says the reason is similarity', () => {
     const same = distinguishable(rgb('#1f6cb0'), rgb('#1f6cb0'))
     assert.equal(same.ok, false)
     assert.equal(same.reason, 'too-similar')
     assert.equal(same.deltaE, 0)
   })
 
-  it('refuses two colours that only a colour-blind reader would confuse', () => {
+  it('refuses two colors that only a color-blind reader would confuse', () => {
     // The app's own green and red: 107 ΔE apart in ordinary vision and 8 apart under
     // deuteranopia. It is recorded here rather than fixed, because those two are not
-    // the user's to change and the app never leans on the colour alone — every status
+    // the user's to change and the app never leans on the color alone — every status
     // in this UI carries a word as well. What it does mean is that a user-chosen
     // accent has to clear this bar, which is what the scheme module enforces.
     const pair = distinguishable(rgb('#3f9e28'), rgb('#c4342c'))
     assert.equal(pair.ok, false)
-    assert.equal(pair.reason, 'too-similar-colour-blind')
+    assert.equal(pair.reason, 'too-similar-color-blind')
     assert.ok(pair.deltaE > 100, 'far apart for most readers')
-    assert.ok(pair.colorBlindDeltaE < 10, 'and nearly the same colour for some')
+    assert.ok(pair.colorBlindDeltaE < 10, 'and nearly the same color for some')
   })
 
   it('refuses a hue that is barely turned, even when the shades differ a little', () => {

@@ -151,7 +151,7 @@ export function trustProxyFromEnv(env: Record<string, string | undefined>): bool
 }
 
 /**
- * `SameSite=Lax` is the CSRF defence: the browser withholds the cookie on
+ * `SameSite=Lax` is the CSRF defense: the browser withholds the cookie on
  * cross-site POSTs, which is every state-changing route here. `HttpOnly` keeps
  * the token away from JavaScript, so an XSS bug cannot exfiltrate a session.
  */

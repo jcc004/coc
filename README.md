@@ -62,7 +62,7 @@ TLS, the systemd units — is [`deploy/README.md`](deploy/README.md).
   update units, and what CI does and does not do. Kept beside the deployment rather than here,
   and maintained with it.
 
-## Licence
+## License
 
 [MIT](LICENSE), for the code. It does not cover the game art, the league and label icons, or
 anything else originating with Supercell or the community wiki — none of that is the author's to

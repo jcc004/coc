@@ -6,29 +6,29 @@ import { cardCategoriesInOrder, cardsInCategory, deckSlug } from './cards.ts'
  * One deck's collection progress, shaped for the plaques the event itself draws.
  *
  * Two pages show the same four plaques — a player's own page and the card page —
- * so the join between "what this base holds" (`summariseBase`) and "how big the
+ * so the join between "what this base holds" (`summarizeBase`) and "how big the
  * deck is" (`cardsInCategory`) lives here rather than in either component. It was
  * already duplicated as a local `deckSizes()` in the player panel; a second copy
  * on the card page would be the third place a `7/19` could be assembled and the
  * first place it could disagree.
  *
  * Nothing is recounted here. The numerator arrives as `CategoryHolding.distinct`,
- * already computed by `summariseBase` against the same rules the grid draws with,
+ * already computed by `summarizeBase` against the same rules the grid draws with,
  * and the denominator arrives through `sizeOf` — injected, like the category
- * resolver `summariseBase` takes, so the tests can use a three-card toy deck
+ * resolver `summarizeBase` takes, so the tests can use a three-card toy deck
  * instead of the event's sixty.
  */
 
 export interface DeckProgress {
   category: CardCategory
-  /** `data-deck` attribute value, so CSS picks the deck's colour off it. */
+  /** `data-deck` attribute value, so CSS picks the deck's color off it. */
   slug: string
   /** Distinct cards held — the numerator. */
   held: number
   /** How many cards the deck holds — the denominator. */
   size: number
   /**
-   * `7/19`, printed on the bar. **Always** rendered: the bar's length and colour
+   * `7/19`, printed on the bar. **Always** rendered: the bar's length and color
    * are a second telling of this, never the only one.
    */
   fraction: string

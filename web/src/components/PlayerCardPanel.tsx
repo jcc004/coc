@@ -3,7 +3,7 @@ import type { SessionUser } from '@coc/shared'
 import { useBaseLabels } from '../base-labels.ts'
 import { baseOwnerOf } from '../card-entry.ts'
 import { inventoryFor, useCardInventoryState } from '../card-inventory.ts'
-import { summariseBase } from '../card-summary.ts'
+import { summarizeBase } from '../card-summary.ts'
 import { cardCategoriesInOrder, categoryOfCard } from '../cards.ts'
 import { deckProgress, deckSizes } from '../deck-progress.ts'
 import { ownerRecordFor, useOwners } from '../owners.ts'
@@ -98,11 +98,11 @@ export function PlayerCardPanel({
   }, [owners])
 
   const summary = useMemo(
-    () => summariseBase(tag, state.entries, categoryOfCard, categories),
+    () => summarizeBase(tag, state.entries, categoryOfCard, categories),
     [tag, state.entries, categories],
   )
 
-  /* The plaques' numbers. `summariseBase` has already counted; this only pairs each
+  /* The plaques' numbers. `summarizeBase` has already counted; this only pairs each
      deck's `distinct` with its size and shapes the label. */
   const decks = useMemo(
     () => deckProgress(summary.byCategory, (category) => sizes.get(category)),

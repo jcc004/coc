@@ -16,7 +16,7 @@ import type { BaseOwnership, BaseWriter } from './write-access.ts'
  *
  * The consequence worth saying out loud: **completing a trade writes to two
  * bases, one of which the resolver very likely does not own.** That is inherent
- * in a mutual agreement, so the authorisation for those two writes is the *trade
+ * in a mutual agreement, so the authorization for those two writes is the *trade
  * record*, not the per-base owner rule — see the comment on
  * `TradeStore.complete`. This module is where that is decided, deliberately, once.
  *

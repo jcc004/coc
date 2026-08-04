@@ -6,7 +6,7 @@ import { ColorSchemeCard } from './ColorSchemeCard.tsx'
 import { PasswordField } from './primitives.tsx'
 
 /**
- * Your own account: who the server thinks you are, the colours you have chosen, and
+ * Your own account: who the server thinks you are, the colors you have chosen, and
  * the form to change your password. Nothing on this page is about anybody else.
  *
  * Managing *other* accounts moved to `AdminView` and `#/admin`. What used to be here

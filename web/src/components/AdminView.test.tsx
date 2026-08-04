@@ -14,7 +14,7 @@ import { AdminView } from './AdminView.tsx'
  *
  * So the assertions are about which call went out with which arguments, and about what
  * the screen does and does not still hold afterwards — never about markup. The one
- * exception is the create form's copy, where the words *are* the behaviour: they are
+ * exception is the create form's copy, where the words *are* the behavior: they are
  * what an admin acts on when they decide how to hand the password over.
  */
 

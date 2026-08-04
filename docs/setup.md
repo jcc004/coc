@@ -133,7 +133,7 @@ that is no longer how a tile is framed — see [The tiles are framed whole](card
 
 `assets:wiki` needs `COC_API_TOKEN` as well, because it asks the CoC API which units exist
 before it goes looking for their pictures. It takes about a minute on a cold run (requests are
-serialised and paced) and a few seconds when the files are already on disk.
+serialized and paced) and a few seconds when the files are already on disk.
 
 ## Scripts
 

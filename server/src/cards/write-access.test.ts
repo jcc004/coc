@@ -55,7 +55,7 @@ describe('who may write a base’s card counts', () => {
   })
 
   it('refuses a disabled account, whatever it owns and whatever its role', () => {
-    // Sessions are revoked when an account is disabled, so this is defence in
+    // Sessions are revoked when an account is disabled, so this is defense in
     // depth — but the rule must not depend on that happening.
     for (const writer of [
       { ...OWNER, disabled: true },

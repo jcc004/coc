@@ -10,7 +10,7 @@ import type { SavedClan } from './saved-clans.ts'
 /**
  * Blank and unknown values sort last in *both* directions — reversing a column
  * should not drag a wall of dashes to the top. Both comparators are exported so
- * every table shares this one behaviour instead of reimplementing it.
+ * every table shares this one behavior instead of reimplementing it.
  */
 export function textCompare(
   a: string | undefined,

@@ -23,7 +23,7 @@ describe('rememberedBaseTag — what came back out of storage', () => {
     assert.equal(rememberedBaseTag('#2GCJ2QPU'), '#2GCJ2QPU')
   })
 
-  it('canonicalises a tag written by hand, so it can match the picker’s options', () => {
+  it('canonicalizes a tag written by hand, so it can match the picker’s options', () => {
     assert.equal(rememberedBaseTag('2gcj2qpu'), '#2GCJ2QPU')
   })
 

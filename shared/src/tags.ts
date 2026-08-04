@@ -1,7 +1,7 @@
 /**
  * Supercell documents tags as base-14 over this alphabet — note the letter O is
  * absent, since it uses zero. People transcribing a tag off a screen mix the two
- * up constantly, so normalisation fixes that.
+ * up constantly, so normalization fixes that.
  */
 const CANONICAL_ALPHABET = '0289PYLQGRJCUV'
 

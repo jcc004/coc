@@ -212,7 +212,7 @@ describe('the card inventory is shared, not per-user', () => {
     harness.db.close()
   })
 
-  it('canonicalises the tag, so #abc and %23ABC are one base', async () => {
+  it('canonicalizes the tag, so #abc and %23ABC are one base', async () => {
     const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
@@ -406,7 +406,7 @@ describe('only the base’s owner writes its counts', () => {
     const member = await signIn(harness, SECOND)
     await assignBase(harness, admin, BASE_A, idOf(harness, SECOND.email))
 
-    // Owning one base is not a licence for the next one along.
+    // Owning one base is not a license for the next one along.
     assert.equal((await save(harness, member, BASE_A, [{ cardId: 1, count: 2 }])).status, 200)
     await assertRefused(harness, member, BASE_B, [/no owner/])
     harness.db.close()

@@ -30,7 +30,7 @@
       "automerge": false
     },
     {
-      "description": "Majors stay one PR each, unlabelled by any group. A major is a change to read on its own, and it is the case where an unreviewed deploy would actually hurt.",
+      "description": "Majors stay one PR each, unlabeled by any group. A major is a change to read on its own, and it is the case where an unreviewed deploy would actually hurt.",
       "matchUpdateTypes": ["major"],
       "automerge": false
     },

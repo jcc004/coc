@@ -65,7 +65,7 @@ were written, and a test asserts each one 401s anonymously.
 
 ### Who may assign an owner, and who may write a base
 
-Three rules, and they are the whole authorisation model:
+Three rules, and they are the whole authorization model:
 
 1. **Everyone signed in reads everything.** Every base, every owner, every card count. That was
    the reason this data moved to the server and it has not changed.
@@ -208,7 +208,7 @@ differ because the lists do:
 | Trade suggestions | 5 | 5 / 10 / 20 / All | `coc:tradePairLimit` |
 | Collection leaderboard | 5 | 5 / 10 / 20 / 50 | `coc:cardStandingLimit` |
 
-The trade suggestions' select is labelled **Pairs**, not **Rows**, because that list pages by pair —
+The trade suggestions' select is labeled **Pairs**, not **Rows**, because that list pages by pair —
 see [Row counts on the trade suggestions](cards-ui.md#row-counts-on-the-trade-suggestions).
 
 ## Owners live on the clan page
@@ -273,7 +273,7 @@ use, so repeat entries are one keystroke.
 Every column of both tables sorts, and blank or unknown values stay at the bottom in **both**
 directions — reversing a column should not bring a wall of dashes to the top. The two
 comparators that do that are exported from `web/src/saved-table.ts` so each table shares the
-one behaviour rather than reimplementing it.
+one behavior rather than reimplementing it.
 
 Comparators, ordering, paging, and the approval partitioning all live in
 `web/src/saved-table.ts`, apart from the components, and are covered by `npm test`.

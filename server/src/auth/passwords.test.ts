@@ -112,7 +112,7 @@ describe('the miss path still burns the same work as the hit path', () => {
     assert.deepEqual(order, ['loop', 'scrypt'], 'the loop must stay free while scrypt runs')
   })
 
-  it('serialises a flood rather than allocating for all of it at once', async () => {
+  it('serializes a flood rather than allocating for all of it at once', async () => {
     /*
      * Twenty simultaneous derivations at 32 MiB each would be 640 MiB if they all ran
      * together, which is how async scrypt on its own turns an event-loop stall into

@@ -27,7 +27,7 @@ import { countMap } from './cards.ts'
 export interface CardHolder {
   /** Canonical `#TAG` — the identity, as everywhere else. */
   tag: string
-  /** What to print for the base, from the caller's labeller. */
+  /** What to print for the base, from the caller's labeler. */
   label: string
   /** Copies of this one card. At least 1: a base holding none is not a holder. */
   count: number
@@ -46,7 +46,7 @@ export interface CardHolder {
  *
  * Then by label, then by tag, which is not merit: it makes the order *total*, so two
  * bases on the same count render in the same sequence on every re-render instead of
- * swapping places. A base no roster names is labelled with its tag and so sorts under
+ * swapping places. A base no roster names is labeled with its tag and so sorts under
  * `#`, exactly as the leaderboard's comparator leaves it — the picker's "unnamed
  * last" rule belongs to `baseOptions`, which is choosing what to offer rather than
  * reporting what is held.

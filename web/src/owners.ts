@@ -68,7 +68,7 @@ export function migrateLegacySaved(rawJson: string | null): OwnerAssignment[] {
     try {
       canonical = normalizeTag(tag)
     } catch {
-      // A tag that cannot be normalised could never be looked up, so an owner
+      // A tag that cannot be normalized could never be looked up, so an owner
       // attached to it has nothing to annotate.
       continue
     }
@@ -169,7 +169,7 @@ export async function applyOwners(rows: OwnerBulkRow[]): Promise<OwnerBulkRespon
  *
  * Takes the records, for the same reason `ownerRecordFor` does: this used to read
  * `store.peek()` and take no arguments, which made it a function whose answer
- * changed with nothing its caller could name. The roster memoised it against the
+ * changed with nothing its caller could name. The roster memoized it against the
  * snapshot anyway — `useMemo(() => knownOwners(), [owners])` — and got the right
  * answer, but only because the dependency it declared happened to be the hidden read
  * it was standing in for. `exhaustive-deps` called that dependency unnecessary, and

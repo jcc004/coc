@@ -331,7 +331,7 @@ describe('the bulk owner apply has a maximum row count', () => {
     harness.db.close()
   })
 
-  it('leaves a non-array body to the existing behaviour rather than 400ing on size', async () => {
+  it('leaves a non-array body to the existing behavior rather than 400ing on size', async () => {
     const harness = await createHarness()
     const cookie = await signIn(harness, ADMIN)
 
@@ -348,7 +348,7 @@ describe('the bulk owner apply has a maximum row count', () => {
     const cookie = await signIn(harness, MEMBER)
 
     // A member gets the 403 they always got, and never learns the limit; an
-    // oversized body from an unauthorised caller is not a validation problem.
+    // oversized body from an unauthorized caller is not a validation problem.
     const response = await harness.app.request(
       ...send('POST', '/api/owners/bulk', { rows: rows(MAX_BULK_ROWS + 1) }, cookie),
     )

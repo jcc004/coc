@@ -461,7 +461,7 @@ describe('rosterColumnLabel / clanColumnLabel', () => {
   })
 
   /* The stacked phone layout prints these instead of a column head, so every
-     column must resolve — a missing one would leave a cell unlabelled. */
+     column must resolve — a missing one would leave a cell unlabeled. */
   it('covers every column both tables declare', () => {
     for (const column of ROSTER_COLUMNS) {
       assert.equal(rosterColumnLabel(column.key), column.label)

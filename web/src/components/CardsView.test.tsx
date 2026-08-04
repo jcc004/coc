@@ -13,7 +13,7 @@ import { CardsView } from './CardsView.tsx'
  * and **what is the whole clan doing** (the leaderboard and the totals, which are
  * deliberately *not* narrowed by that filter).
  *
- * The scoring curve, the base filter's rules and the labelling are pure and tested in
+ * The scoring curve, the base filter's rules and the labeling are pure and tested in
  * `card-standings.ts`, `base-scope.ts` and `base-names.ts`. What is here is the wiring
  * between them, which is the part that has no test anywhere else.
  */
@@ -207,12 +207,12 @@ describe('the collection leaderboard', () => {
 })
 
 describe('the clan-wide card totals', () => {
-  it('says in words that nobody holds a card, rather than only greying the tile', async () => {
+  it('says in words that nobody holds a card, rather than only graying the tile', async () => {
     await cards([{ tag: '#AAA', owner: 'Rae', ownerUserId: RAE.id }], [
       inventory('#AAA', [{ cardId: 1, count: 3 }]),
     ])
 
-    // A colour cue and a *missing* badge cannot be the whole story, so the zero is in
+    // A color cue and a *missing* badge cannot be the whole story, so the zero is in
     // the tile's own accessible name.
     await screen.findByLabelText('Barbarian, Elixir — 3 held across the clan')
     assert.ok(screen.getByLabelText('Archer, Elixir — none held across the clan'))
@@ -263,7 +263,7 @@ describe('who holds a card', () => {
     assert.equal(within(table).queryByText('Brix'), null)
   })
 
-  it('marks the pressed tile, so which card the table is about is not colour alone', async () => {
+  it('marks the pressed tile, so which card the table is about is not color alone', async () => {
     const user = await cards(OWNERS, [inventory('#AAA', [{ cardId: 1, count: 3 }])])
     await openTotals(user)
     const barbarian = tile('Barbarian, Elixir — 3 held across the clan')
@@ -394,7 +394,7 @@ describe('who holds a card', () => {
     for (const cell of within(table).getAllByRole('cell')) {
       assert.ok(
         cell.classList.contains('stack-title') || cell.hasAttribute('data-label'),
-        `unlabelled cell: ${cell.textContent}`,
+        `unlabeled cell: ${cell.textContent}`,
       )
     }
   })

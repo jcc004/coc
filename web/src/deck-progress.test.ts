@@ -100,7 +100,7 @@ describe('deckProgress — what a screen reader is given', () => {
     assert.ok(deck?.label.toLowerCase().includes('super troop'))
   })
 
-  it('hands CSS the deck as a slug, so no colour is set from data', () => {
+  it('hands CSS the deck as a slug, so no color is set from data', () => {
     const decks = deckProgress(
       CARD_CATEGORIES.map((category) => holding(category, 1)),
       sizeOf,

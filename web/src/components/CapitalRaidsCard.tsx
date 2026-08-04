@@ -44,7 +44,7 @@ function MemberBreakdown({ season }: { season: CapitalRaidSeason }) {
           <p className="empty-hint">Nobody has attacked yet this weekend.</p>
         ) : (
           <div className="table-wrap">
-            {/* Stacks into one labelled card per member on a phone; the roles keep
+            {/* Stacks into one labeled card per member on a phone; the roles keep
                 it a table for assistive tech once `display` changes. */}
             <table className="roster roster--stack" role="table">
               <thead role="rowgroup">

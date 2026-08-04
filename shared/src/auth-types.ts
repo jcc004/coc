@@ -21,7 +21,7 @@ export interface SessionUser {
   /** Human label. Free text, shown in the topbar and used to attribute edits. */
   displayName: string
   /**
-   * The login credential, normalised to lowercase. `null` only for a legacy row
+   * The login credential, normalized to lowercase. `null` only for a legacy row
    * the migration could not derive one for — **an account with a null email
    * cannot authenticate at all** until `ADMIN_EMAIL` or an admin fills it in.
    */

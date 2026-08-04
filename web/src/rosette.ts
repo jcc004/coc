@@ -30,14 +30,14 @@ export const ROSETTE_CARDINAL_PATH =
 export const ROSETTE_DIAGONAL_PATH =
   'M17.3 6.7 14.2 12 17.3 17.3 12 14.2 6.7 17.3 9.8 12 6.7 6.7 12 9.8Z'
 
-/** `opacity`, not a second colour, so the topbar mark stays single-`currentColor`. */
+/** `opacity`, not a second color, so the topbar mark stays single-`currentColor`. */
 export const ROSETTE_DIAGONAL_OPACITY = 0.45
 export const ROSETTE_RING_OPACITY = 0.5
 export const ROSETTE_RING_RADIUS = 10.75
 export const ROSETTE_RING_WIDTH = 1.25
 
 /*
- * The favicon's three colours are the *light* values of the tokens the topbar
+ * The favicon's three colors are the *light* values of the tokens the topbar
  * plate already uses — `--gold`, `--gold-edge` and `--on-gold`. They are literals
  * here because a favicon has no CSS context to inherit from: `currentColor` and
  * `var()` both resolve to nothing in a document icon. A gold disc is legible on a

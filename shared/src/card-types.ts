@@ -44,7 +44,7 @@ export const CARD_CATEGORIES: readonly CardCategory[] = [
 ]
 
 /**
- * The frame colour each deck draws its cards in — the border that tells two
+ * The frame color each deck draws its cards in — the border that tells two
  * cards sharing one piece of art apart (the home and Builder Base Baby Dragons
  * use the same picture but sit in the pink and blue decks respectively).
  *

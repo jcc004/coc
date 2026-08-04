@@ -843,7 +843,7 @@ describe('email as the login credential', () => {
     harness.db.close()
   })
 
-  it('stores the address normalised, whatever case it was created with', async () => {
+  it('stores the address normalized, whatever case it was created with', async () => {
     const harness = await createHarness()
     const cookie = await loggedIn(harness)
     const id = await addUser(harness, cookie, {
@@ -1500,7 +1500,7 @@ async function meStatus(harness: Harness, cookie: string): Promise<number> {
 }
 
 describe('an admin can change a user’s email', () => {
-  it('normalises the new address and reports the updated row', async () => {
+  it('normalizes the new address and reports the updated row', async () => {
     const harness = await createHarness()
     const { admin, memberId } = await withMember(harness)
 
@@ -2299,7 +2299,7 @@ describe('session tokens are not stored in plaintext', () => {
     })
     assert.equal(replayed.status, 401, 'the digest authenticates nobody')
 
-    // The real cookie still does, so this is a stolen-file defence and not a bug.
+    // The real cookie still does, so this is a stolen-file defense and not a bug.
     assert.equal(
       (await harness.app.request('/api/auth/me', { headers: { cookie } })).status,
       200,
@@ -2876,8 +2876,8 @@ describe('an upstream limit is bounded before it is forwarded or cached', () => 
     harness.db.close()
   })
 
-  it('still ignores a malformed limit in favour of the route’s default', async () => {
-    // Unchanged behaviour, deliberately: a nonsense value has always been ignored
+  it('still ignores a malformed limit in favor of the route’s default', async () => {
+    // Unchanged behavior, deliberately: a nonsense value has always been ignored
     // rather than answered with a 400, and bounding it must not change that.
     const harness = await createHarness()
     const cookie = await loggedIn(harness)

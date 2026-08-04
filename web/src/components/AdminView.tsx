@@ -546,7 +546,7 @@ function UsersCard({ currentUserId }: { currentUserId: number }) {
 
       {state.status === 'ready' ? (
         <div className="table-wrap">
-          {/* One labelled card per user on a phone; nothing sorts, so the header
+          {/* One labeled card per user on a phone; nothing sorts, so the header
               row is hidden rather than kept — see the note in styles.css. */}
           <table className="roster roster--stack" role="table">
             <thead role="rowgroup">
@@ -588,7 +588,7 @@ function UsersCard({ currentUserId }: { currentUserId: number }) {
                   <td role="cell" data-label="Added">
                     {formatDateTime(new Date(user.createdAt))}
                   </td>
-                  {/* Words, not a colour: disabled has to be legible on its own. */}
+                  {/* Words, not a color: disabled has to be legible on its own. */}
                   <td role="cell" data-label="Status">
                     {user.disabledAt ? 'Disabled' : 'Active'}
                     {user.mustChangePassword ? (

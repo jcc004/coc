@@ -18,7 +18,7 @@ function base(tag: string, counts: [number, number][]): BaseInventory {
   return { tag, counts: counts.map(([cardId, count]) => ({ cardId, count })) }
 }
 
-/** Names bases the way the page's labeller does, and falls back to the tag as it does. */
+/** Names bases the way the page's labeler does, and falls back to the tag as it does. */
 const NAMES: Record<string, string> = { '#AAA': 'Alda', '#BBB': 'Brix', '#CCC': 'Cyd' }
 const labelOf = (tag: string) => NAMES[tag] ?? tag
 
@@ -96,7 +96,7 @@ describe('cardHolders', () => {
     )
   })
 
-  it('names every base through the labeller it is given', () => {
+  it('names every base through the labeler it is given', () => {
     const rows = cardHolders([base('#AAA', [[BARBARIAN, 1]])], BARBARIAN, labelOf)
 
     assert.equal(rows[0]?.label, 'Alda')

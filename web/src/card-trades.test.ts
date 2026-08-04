@@ -104,7 +104,7 @@ describe('suggestTrades — categories', () => {
     assert.deepEqual(shape(trades), ['#AAA:1 <-> #BBB:2 (Elixir)'])
   })
 
-  it('drops a card id it cannot categorise rather than pairing it arbitrarily', () => {
+  it('drops a card id it cannot categorize rather than pairing it arbitrarily', () => {
     const trades = suggestTrades(
       [base('#AAA', { 99: 2 }), base('#BBB', { 98: 2 })],
       categoryOf,

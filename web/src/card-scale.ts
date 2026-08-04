@@ -29,7 +29,7 @@ export const DEFAULT_CARD_COLUMNS = 6
  *
  * 64 rather than the ~48px that six columns yields on a small phone: this is a floor
  * on choices the user opts into, and a denser view is only worth having if the art is
- * still recognisable and the count box still typeable. The mandated six-column
+ * still recognizable and the count box still typeable. The mandated six-column
  * baseline is deliberately not held to it — see the module note.
  */
 export const MIN_OPTIONAL_TILE = 64
@@ -65,7 +65,7 @@ export function cardScaleIsUseful(contentWidth: number, gap: number): boolean {
  * A choice made on a desktop follows the account to a phone, where it may no longer
  * be offered. Clamping to the nearest *available* step keeps the intent — the user
  * asked for dense — without producing a width the tiles cannot survive. Anything
- * unrecognisable falls back to the default rather than being coerced: `Number('')` is
+ * unrecognizable falls back to the default rather than being coerced: `Number('')` is
  * 0, and a zero-column grid is not a layout.
  */
 export function resolveCardColumns(stored: unknown, contentWidth: number, gap: number): number {

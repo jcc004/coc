@@ -14,7 +14,7 @@ import {
  * filters, sort key, direction, page, bulk owner, note, busy, problem — and the
  * transitions between them were spread across six event handlers and two async
  * functions. Nothing was wrong with any single `setX`; what was wrong is that
- * "clearing the selection also drops the pending approvals, but cancelling the
+ * "clearing the selection also drops the pending approvals, but canceling the
  * approvals does *not* drop the selection" was a fact you could only establish by
  * reading every handler and holding ten variables in your head.
  *

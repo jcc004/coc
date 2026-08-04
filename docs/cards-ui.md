@@ -51,33 +51,33 @@ option are two people's names in one label, and the reader cannot tell which is 
 - **The grid** is one continuous grid of all 60 in deck order — nothing drawn between one deck and
   the next, so a deck that runs out mid-row does not leave a ragged line. Each deck is still a
   **named group** in the markup: a `.card-deck` wrapper carrying `role="group"` and a
-  `.visually-hidden` `<h3>` it is labelled by. The wrapper is `display: contents`, which is what
+  `.visually-hidden` `<h3>` it is labeled by. The wrapper is `display: contents`, which is what
   keeps it out of the layout — the tiles stay direct grid items of the one grid, so the grouping
   costs no box, no gap and no change to the column alignment. Anything other than `contents` there
   splits the sixty tiles back into four grids and the seams reappear.
-  Tiles are **picture only**: no card name. A card the base holds renders in colour; one it lacks
+  Tiles are **picture only**: no card name. A card the base holds renders in color; one it lacks
   renders the same file under `grayscale(1)`. That is **never the only cue** — the number box under
   the art reads 0 for a card the base lacks and n for one it holds, at every breakpoint, so
-  held-vs-not survives with no colour vision at all. The name is on the tile's `title` and in the
+  held-vs-not survives with no color vision at all. The name is on the tile's `title` and in the
   accessible name of every control in the cell, so nothing that reads the page aloud has lost it.
   The cost is real and worth knowing: the card art is gitignored, so on a checkout with no art a
   tile is an empty frame over a count.
 - **The count badge** sits in the art's lower right and appears **only past one copy**: `×1` on
   fifty tiles would be noise, where a spare is the fact worth spotting. The clan-totals grid makes
   the opposite call and badges every count — see [Cards across the clan](#cards-across-the-clan).
-- **The tile border carries the deck**, in the event's own frame colours —
+- **The tile border carries the deck**, in the event's own frame colors —
   `--deck-elixir`, `--deck-dark-elixir`, `--deck-builder-base`, `--deck-super-troop`, declared
   in all three theme scopes and lightened for dark mode, where the deep purple would otherwise
-  vanish. Categorical colour on a border only, never on text. With the drawn headings and the names
+  vanish. Categorical color on a border only, never on text. With the drawn headings and the names
   gone it is the only *visible* cue to deck, which is a real narrowing — the fallbacks are that
-  the cards stay in deck order so each colour arrives as one unbroken run, that each run is a
+  the cards stay in deck order so each color arrives as one unbroken run, that each run is a
   named group with a hidden heading, and that every tile's `title` and its box's accessible name
-  spell the deck out in words. **Colour is never the only carrier**, which is the rule this page
+  spell the deck out in words. **Color is never the only carrier**, which is the rule this page
   would otherwise have been the first to break. It also settles the one case
   where two cards share a picture, since the home and Builder Base Baby Dragons sit in different
   decks; with the names gone, that pair is otherwise indistinguishable. The nominal
   values are recorded in `CARD_CATEGORY_BORDER` in `shared/src/card-types.ts`; what the page
-  paints is the CSS token, because a colour that must work on parchment *and* dark wood is a
+  paints is the CSS token, because a color that must work on parchment *and* dark wood is a
   theme decision.
 - **Entry** is a **count row under each frame** — `−`, a capped 0–10 number box, `+` — kept in a
   local draft so typing sixty boxes is one write, not sixty. The draft re-seeds when the base
@@ -221,7 +221,7 @@ zoom, and three browser default font sizes. Clipping is read off the box's `scro
 | **1280px, 12 cols** | **74.7px** | **yes, 24×24** | **22.7×30.5** |
 
 **No horizontal overflow at any width, in either theme; no row overflowing its tile; no clipped
-`10` anywhere the steppers are drawn**; the deck frame colours untouched.
+`10` anywhere the steppers are drawn**; the deck frame colors untouched.
 
 The **densest view is the tightest case in the app** and the reason the gaps are 2px and the box has
 no inline padding: twelve across at 1280px is 74.7px of tile against a 72.8px threshold, 1.9px of
@@ -255,7 +255,7 @@ here: fifteen pairs can be nineteen rows, because a pair with several options is
 member named once and its options listed beneath. Paging by row would put a row with two empty
 Member cells at the top of page 2 — which reads as missing data rather than as "the same two bases
 as above", the exact failure the wide table's `data-pair-start` rule exists to prevent — and would
-also make "5" mean something other than five decisions to make. So the control is labelled `Pairs`,
+also make "5" mean something other than five decisions to make. So the control is labeled `Pairs`,
 the pager reads `Showing 1–5 of 15 pairs`, and the note underneath adds `7 options on this page`
 whenever there is more than one page. Verified in a browser: at the default, `Showing 1–5 of 15
 pairs` over 5 pair-blocks and 7 rows; `Next` gives `Showing 6–10 of 15 pairs` over 5 and 5; `All`
@@ -333,7 +333,7 @@ the table says whom to message, which is the only reason to be reading this pane
 readable against the tiles above, because "the same picture in the same place" needs no
 translation. That is not a claim about two similar components: `CardTile` in
 `web/src/components/CardTile.tsx` **is** the tile, and `BaseCardEditor`'s entry grid and this one
-are its two callers — same art, same framing, same deck-coloured frame, same greyscale.
+are its two callers — same art, same framing, same deck-colored frame, same grayscale.
 Re-measured in Chrome against the real stylesheet, at the six columns the grid is fixed to: both
 render **191.3px tiles over a 175.3×219.2 (4:5) frame at 1280px**, 87.7px tiles at 600px and 52.7px
 at 390px, tile for tile the same width in both grids at every one of them. (An earlier note here
@@ -371,8 +371,8 @@ holds is one of the more interesting things on the page.
 are still free-text labels; their cards are as tradeable as anyone's, and excluding them would
 undercount the group by more than half rather than describe a smaller one.
 
-**A card nobody holds is greyscale with no badge, and the words carry it.** That visual state is a
-colour cue plus a *missing* cue, which is not enough on its own, so every tile has an explicit
+**A card nobody holds is grayscale with no badge, and the words carry it.** That visual state is a
+color cue plus a *missing* cue, which is not enough on its own, so every tile has an explicit
 accessible name — the tile is a `role="img"` with an `aria-label`, since nothing *inside* it is a
 control that could carry one:
 
@@ -388,7 +388,7 @@ in the component tests, which find each tile as `button` / `Archer, Elixir — 3
 clan`, and the pressed state rides on `aria-pressed` beside it. The tile **does not move**: card 1
 is the first tile in grid order and nobody holds it, and it stays first.
 
-Each deck is a `role="group"` labelled by a `.visually-hidden` heading exactly as the entry grid's
+Each deck is a `role="group"` labeled by a `.visually-hidden` heading exactly as the entry grid's
 `.card-deck` is, with its own `card-total-deck-*` ids — both grids are mounted on this page at once,
 so the ids cannot be shared.
 
@@ -456,9 +456,9 @@ the control that opened it, so it is the one somebody reaches for to put it away
 table could only ever be swapped for another card's. `aria-pressed` rather than `aria-expanded`
 because there is *one* table and the sixty tiles take turns owning it — sixty independent
 disclosures is not what this is — and only the pressed tile carries `aria-controls`, since on the
-other fifty-nine there is no `#card-holders` to point at. The selection is **never colour alone**:
-the ring on the tile is `--accent` as a `box-shadow` *outside* the tile (recolouring the border
-would cost the deck colour, which is the only visible cue to which deck a card is in), the state is
+other fifty-nine there is no `#card-holders` to point at. The selection is **never color alone**:
+the ring on the tile is `--accent` as a `box-shadow` *outside* the tile (recoloring the border
+would cost the deck color, which is the only visible cue to which deck a card is in), the state is
 on `aria-pressed`, and the card is named in words with its art directly below.
 
 The selection **survives the panel being collapsed and reopened**, deliberately: coming back to
@@ -498,7 +498,7 @@ Four things it has to get right, all of them in `base-scope.ts` with tests:
   say everybody owns nothing.
 - **an empty `Mine` says so in words**, naming the actual next step — a base becomes yours when an
   **admin assigns it to your account** — and pointing at `All`. The `Base` select is not rendered
-  at all in that state rather than rendered empty. A stored `Mine` is honoured even by an account
+  at all in that state rather than rendered empty. A stored `Mine` is honored even by an account
   that owns nothing, which is what keeps that message reachable: they asked for it.
 - **the choice is persisted per account**, at `coc:baseScope:<userId>`, for the reason
   `coc:lastClan:<id>` is: one browser is shared, and one person's `Mine` is the other person's
@@ -511,7 +511,7 @@ clan's progress; narrowed to one person's bases they would stop meaning anything
 ## Deck progress plaques
 
 How far a base has got in each of the four decks, drawn the way the event itself draws it across
-the top of its own panel: one rounded plaque per deck, in that deck's colour with a full-strength
+the top of its own panel: one rounded plaque per deck, in that deck's color with a full-strength
 rim, the deck named across the top in bold, and beneath it a bar — dark track, fill growing from
 the left, **the fraction printed on the bar** — `Elixir Cards 7/19`.
 
@@ -538,20 +538,20 @@ overflow anywhere.
 **The bar fill is the sequential blue ramp, not the game's gold.** The game fills these bars gold;
 gold in this app is chrome — panel edges, buttons, the two display numerals — and has never encoded
 a value. A gold bar whose length meant something would be the first, and it would spend the one
-signal the palette has for "this is furniture, not data". The deck's own colour was the other
+signal the palette has for "this is furniture, not data". The deck's own color was the other
 candidate and is out for the mirror-image reason: `--deck-*` is *categorical*, it already says
 which deck on the plaque wrapped around the bar, and reusing it for the bar would leave four bars
-whose colours differ for a reason that has nothing to do with their lengths. So the plaque keeps
-the deck colour, the bar keeps `--accent` on `--track` like every other meter here, and **the
+whose colors differ for a reason that has nothing to do with their lengths. So the plaque keeps
+the deck color, the bar keeps `--accent` on `--track` like every other meter here, and **the
 fraction is printed either way** — progress is never carried by a length or a hue alone. That last
-part is the non-negotiable one; the choice between the three colours is a judgement call and this
+part is the non-negotiable one; the choice between the three colors is a judgment call and this
 is where it is recorded, alongside the same note in `DeckPlaques.tsx`.
 
-The plaque is a *tint* of the deck colour rather than a solid fill like the game's, because the
-four tokens run from bright magenta to deep purple and no single text colour clears 4.5:1 on all
+The plaque is a *tint* of the deck color rather than a solid fill like the game's, because the
+four tokens run from bright magenta to deep purple and no single text color clears 4.5:1 on all
 four; tinting keeps the name and the fraction in `--ink`. The fraction sits over bare track on an
 empty deck and over full-strength `--accent` on a complete one, so it carries a `--surface` ring
-in `text-shadow` — the panel colour `--ink` is already designed to be read on, in both themes.
+in `text-shadow` — the panel color `--ink` is already designed to be read on, in both themes.
 The game outlines its numerals for the same reason.
 
 **No resource icon** at the right end, unlike the game. The event's elixir, dark-elixir,
@@ -562,7 +562,7 @@ resource would be a picture saying something untrue. The space goes to the fract
 **A base with nothing recorded gets no plaques at all**, on either page: four `0/19` bars for a
 base nobody has entered would be a claim nobody made. A base entered once and then **cleared back
 to zero** does show four empty bars, because that is a base somebody checked. Same distinction the
-card page's attribution line draws, and it comes from the same place — `summariseBase().recorded`.
+card page's attribution line draws, and it comes from the same place — `summarizeBase().recorded`.
 
 Each plaque's bar is a real `role="progressbar"` with `aria-valuemin` / `max` / `now` set and an
 `aria-valuetext` of `7 of 19` (not `7/19`, which is read out as "seven slash nineteen"). Its
@@ -571,7 +571,7 @@ accessible name, read back off Chrome's computed accessibility tree, is
 bar.
 
 The shape is `deckProgress()` in `web/src/deck-progress.ts`, pure and tested: it pairs each deck's
-`distinct` from `summariseBase()` with its size from `cardsInCategory()`, clamps the bar, and
+`distinct` from `summarizeBase()` with its size from `cardsInCategory()`, clamps the bar, and
 builds the two strings. It **recounts nothing** — that was the point of extracting it, since the
 denominators had already been assembled once in the player panel and a second copy on the card
 page would have been the third place a `7/19` could be built and the first place it could disagree.
@@ -592,7 +592,7 @@ EVENT CARDS · 2026-08
 
 - **how far each deck has got**, as the plaques above;
 - **whether a swap is waiting**, in words, with the status green as a second carrier and never
-  the only one — `No trades available` reads the same with no colour vision at all.
+  the only one — `No trades available` reads the same with no color vision at all.
 
 A base nobody has entered shows **no plaques** and reads
 **`Nothing recorded yet — open to enter counts`**, not sixty zeroes dressed as data. That is the
@@ -601,7 +601,7 @@ a base has a record at all rather than off its totals: a base saved and then cle
 keeps its stamp and reads as recorded-and-empty.
 
 **Opened it is the card page's grid, with no base selector** — the base is the player whose page
-it is. Same tiles, same greyscale, same deck-coloured frames, same `×n` badges, same
+it is. Same tiles, same grayscale, same deck-colored frames, same `×n` badges, same
 [count rows](#the-count-row), same one-request save, same 4 named deck groups. That is not a claim
 about two similar components: `BaseCardEditor` in `web/src/components/BaseCardEditor.tsx` **is** the
 grid, and `CardsView` and the player page are its two callers, and one tile of it is `CardTile`,
@@ -609,7 +609,7 @@ shared in turn with the clan-totals grid. Measured at 1280px, six columns of 191
 gap and a 175.3×219.2 frame per tile; 87.7px tiles at 600px and 52.7px at 390px. The one thing that
 can differ is the *column count*, and only because the card page has a density control and this page
 does not: the player page renders `DEFAULT_CARD_COLUMNS`, which is the six both are built around.
-Duplicating sixty tiles and their draft-and-save logic was the thing to avoid — the greyscale, the
+Duplicating sixty tiles and their draft-and-save logic was the thing to avoid — the grayscale, the
 badges and the clamping would have drifted apart the first time either copy was touched. Choosing
 the base is deliberately not the shared component's job; each page keeps its own idea of which base
 it is about.
@@ -624,7 +624,7 @@ module-level `card-inventory.ts` store the card page uses, so the player page co
 `GET /api/cards/inventory` for every base — never one per base and never one per card — and it is
 already warm if you arrived from the card page.
 
-The counting and the predicate are one pure, tested function, `summariseBase()` in
+The counting and the predicate are one pure, tested function, `summarizeBase()` in
 `web/src/card-summary.ts`. It does not re-implement the trade rules: it **calls `suggestTrades`**,
 one pair at a time (the whole-list call is quadratic and computes every pair the panel will never
 mention), so the hint cannot drift from the list on the card page. Its tests cover no cards, cards
@@ -674,7 +674,7 @@ heading is the same words, so label-in-name still holds.
 swap is legal *because* they share a deck, and on a player page the four deck plaques directly above
 make the deck the unit of progress — so "which deck does this swap move" is the column that says
 whether an option is worth taking. It costs nothing at 390px either, where the table stacks into one
-labelled card per swap and the deck becomes a line rather than a column competing for width.
+labeled card per swap and the deck becomes a line rather than a column competing for width.
 
 ## Staying current without a reload
 

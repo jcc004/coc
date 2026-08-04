@@ -52,7 +52,7 @@ function SideRoster({ side, war }: { side: WarClan; war: CurrentWar }) {
   const perMember = war.attacksPerMember ?? 2
 
   return (
-    /* `roster--stack` gives one labelled card per member on a phone; the explicit
+    /* `roster--stack` gives one labeled card per member on a phone; the explicit
        roles are what keeps it a table for assistive tech once `display` changes.
        Nothing here sorts, so the header row is hidden rather than kept. */
     <div className="table-wrap">

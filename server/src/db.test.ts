@@ -130,7 +130,7 @@ describe('migration from a v1 database', () => {
 
     const [user] = store.listUsers()
     assert.ok(user)
-    // Normalised on the way in, and the display name still keeps the raw label.
+    // Normalized on the way in, and the display name still keeps the raw label.
     assert.equal(user.email, 'someone@example.com')
     assert.equal(user.displayName, 'Someone@Example.COM')
 
@@ -141,7 +141,7 @@ describe('migration from a v1 database', () => {
 
   it('leaves the second of two usernames that collide as one email without one', async () => {
     const path = join(tempDir(), 'coc.db')
-    // COLLATE NOCASE made these two distinct usernames; they normalise to one email.
+    // COLLATE NOCASE made these two distinct usernames; they normalize to one email.
     await createV1Database(path, [{ username: 'dup@example.com' }, { username: 'DUP@example.com  ' }])
 
     const db = openDatabase(path)
@@ -964,7 +964,7 @@ CREATE INDEX chat_messages_user_id ON chat_messages (user_id);
     db.close()
   })
 
-  it('is the last line on a trade that could not be honoured', async () => {
+  it('is the last line on a trade that could not be honored', async () => {
     const path = join(tempDir(), 'coc.db')
     await createV6Database(path)
     const db = openDatabase(path)

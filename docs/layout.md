@@ -2,7 +2,7 @@
 
 ```
 shared/   types for the CoC API, the auth payloads and the shared data, + tag
-          parsing, email normalisation and CARD_SEASON
+          parsing, email normalization and CARD_SEASON
 server/   Hono API, upstream client, TTL cache, auth (src/auth/), the shared
           saved clans and owners (src/shared-data/), the card inventory
           (src/cards/), migrations (src/db.ts)

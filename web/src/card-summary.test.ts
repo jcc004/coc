@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { BaseInventory, CardCategory } from '@coc/shared'
-import { summariseBase } from './card-summary.ts'
+import { summarizeBase } from './card-summary.ts'
 
 /*
  * The same toy deck `card-trades.test.ts` uses, for the same reason: the rules are
@@ -31,15 +31,15 @@ function base(
 }
 
 /** `Elixir 2/3` style, so a whole summary line can be asserted in one string. */
-function decks(summary: ReturnType<typeof summariseBase>): string[] {
+function decks(summary: ReturnType<typeof summarizeBase>): string[] {
   return summary.byCategory.map(
     (entry) => `${entry.category} ${entry.distinct}/${entry.total}/${entry.spares}`,
   )
 }
 
-describe('summariseBase — a base with nothing recorded', () => {
+describe('summarizeBase — a base with nothing recorded', () => {
   it('reads as unrecorded when no base row exists, not as zeroes', () => {
-    const summary = summariseBase('#AAA', [base('#BBB', { 1: 2 })], categoryOf)
+    const summary = summarizeBase('#AAA', [base('#BBB', { 1: 2 })], categoryOf)
 
     assert.equal(summary.recorded, false)
     assert.equal(summary.total, 0)
@@ -58,23 +58,23 @@ describe('summariseBase — a base with nothing recorded', () => {
   it('reads as recorded when a base was saved and then cleared to zero', () => {
     // No count rows survive a clear-out, but the stamp does — somebody checked
     // this base, which is a different fact from nobody ever having entered it.
-    const summary = summariseBase('#AAA', [base('#AAA', {}, '2026-08-01T00:00:00Z')], categoryOf)
+    const summary = summarizeBase('#AAA', [base('#AAA', {}, '2026-08-01T00:00:00Z')], categoryOf)
 
     assert.equal(summary.recorded, true)
     assert.equal(summary.total, 0)
   })
 
   it('reads as unrecorded for a tag that could never name a base', () => {
-    const summary = summariseBase('!!', [base('#AAA', { 1: 2 })], categoryOf)
+    const summary = summarizeBase('!!', [base('#AAA', { 1: 2 })], categoryOf)
 
     assert.equal(summary.recorded, false)
     assert.deepEqual(summary.tradePartners, [])
   })
 })
 
-describe('summariseBase — counting per deck', () => {
+describe('summarizeBase — counting per deck', () => {
   it('counts cards, copies and spares in the deck each card belongs to', () => {
-    const summary = summariseBase(
+    const summary = summarizeBase(
       '#AAA',
       [base('#AAA', { 1: 3, 2: 1, 3: 2, 5: 4 })],
       categoryOf,
@@ -93,7 +93,7 @@ describe('summariseBase — counting per deck', () => {
   })
 
   it('leaves the other decks at zero when only one deck is held', () => {
-    const summary = summariseBase('#AAA', [base('#AAA', { 3: 2, 4: 1 })], categoryOf)
+    const summary = summarizeBase('#AAA', [base('#AAA', { 3: 2, 4: 1 })], categoryOf)
 
     assert.deepEqual(decks(summary), [
       'Elixir 0/0/0',
@@ -106,7 +106,7 @@ describe('summariseBase — counting per deck', () => {
   })
 
   it('reports the decks asked for, in the order asked for', () => {
-    const summary = summariseBase('#AAA', [base('#AAA', { 1: 2 })], categoryOf, [
+    const summary = summarizeBase('#AAA', [base('#AAA', { 1: 2 })], categoryOf, [
       'Super Troop',
       'Elixir',
     ])
@@ -115,7 +115,7 @@ describe('summariseBase — counting per deck', () => {
   })
 
   it('ignores counts that cannot mean a holding, and cards it cannot place', () => {
-    const summary = summariseBase(
+    const summary = summarizeBase(
       '#AAA',
       [{ tag: '#AAA', counts: [
         { cardId: 1, count: 0 },
@@ -140,17 +140,17 @@ describe('summariseBase — counting per deck', () => {
   })
 
   it('matches a tag however it was written in the URL', () => {
-    const summary = summariseBase('2gcj2qpu', [base('#2GCJ2QPU', { 1: 2 })], categoryOf)
+    const summary = summarizeBase('2gcj2qpu', [base('#2GCJ2QPU', { 1: 2 })], categoryOf)
     assert.equal(summary.recorded, true)
     assert.equal(summary.total, 2)
   })
 })
 
-describe('summariseBase — whether a trade is waiting', () => {
+describe('summarizeBase — whether a trade is waiting', () => {
   it('finds no trade for a base holding spares with no counterpart', () => {
     // #AAA has two Elixir spares, but #BBB holds one of each already (rule 2)
     // and its own spare is in another deck (rule 3).
-    const summary = summariseBase(
+    const summary = summarizeBase(
       '#AAA',
       [base('#AAA', { 1: 2, 2: 3 }), base('#BBB', { 1: 1, 2: 1, 3: 2 })],
       categoryOf,
@@ -162,7 +162,7 @@ describe('summariseBase — whether a trade is waiting', () => {
   })
 
   it('finds no trade for a base whose only copies are its last ones', () => {
-    const summary = summariseBase(
+    const summary = summarizeBase(
       '#AAA',
       [base('#AAA', { 1: 1 }), base('#BBB', { 2: 2 })],
       categoryOf,
@@ -172,7 +172,7 @@ describe('summariseBase — whether a trade is waiting', () => {
   })
 
   it('finds the trade when a genuine swap exists, and names the partner', () => {
-    const summary = summariseBase(
+    const summary = summarizeBase(
       '#AAA',
       [
         base('#AAA', { 1: 2 }),
@@ -189,7 +189,7 @@ describe('summariseBase — whether a trade is waiting', () => {
   })
 
   it('lists every partner once, in tag order, however the bases arrived', () => {
-    const summary = summariseBase(
+    const summary = summarizeBase(
       '#BBB',
       [base('#CCC', { 2: 2 }), base('#BBB', { 1: 2 }), base('#AAA', { 2: 4 })],
       categoryOf,
@@ -199,7 +199,7 @@ describe('summariseBase — whether a trade is waiting', () => {
   })
 
   it('never counts the base itself as its own partner', () => {
-    const summary = summariseBase(
+    const summary = summarizeBase(
       '#AAA',
       // The same tag twice is one base, however it got into the list.
       [base('#AAA', { 1: 2 }), base('#AAA', { 2: 2 })],
@@ -210,7 +210,7 @@ describe('summariseBase — whether a trade is waiting', () => {
   })
 
   it('will not cross decks to make a trade', () => {
-    const summary = summariseBase(
+    const summary = summarizeBase(
       '#AAA',
       [base('#AAA', { 1: 2 }), base('#BBB', { 3: 2 })],
       categoryOf,

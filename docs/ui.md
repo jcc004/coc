@@ -83,7 +83,7 @@ It is **inline SVG written by hand** in `web/src/App.tsx` — no dependency, no 
 icon font. Everything else drawn in this app is either game art from the API and the wiki or it
 is CSS, and one 24-pixel glyph is not a reason to add a package. Both stars paint in
 `currentColor`, so the mark takes whatever ink the banner uses (`--on-banner`, which differs
-between the themes) and needs no colour of its own; `opacity` rather than a second colour is what
+between the themes) and needs no color of its own; `opacity` rather than a second color is what
 separates the two stars, for the same reason.
 
 The chain that makes that work is four links long and every one of them matters: `.topbar` sets
@@ -101,13 +101,13 @@ It navigates to the homepage, which is the saved-clans list.
 
 ### The Clan button
 
-Labelled **Clan**, and it goes to **the last clan this account opened** — not to the saved-clans
+Labeled **Clan**, and it goes to **the last clan this account opened** — not to the saved-clans
 list. Coming back to a clan is the common move, and it used to cost a trip through the list.
 
 The tag is persisted per account under `coc:lastClan:<id>`, exactly as `coc:lastRoute:<id>`
 already is, because a browser can be shared and handing one person another person's clan would be
 worse than having no shortcut at all. It is written by `useLastClan` in `web/src/hooks.ts` on
-every hash change, canonicalised on the way in, and only `#/clan/<tag>` counts — a war page is
+every hash change, canonicalized on the way in, and only `#/clan/<tag>` counts — a war page is
 *about* a clan but is not the clan.
 
 **Before any clan has been opened it goes to the saved-clans list**, which is where you pick one.
@@ -125,7 +125,7 @@ saved-clans list stays one click away on the title.
 One silhouette button on the right, holding everything about *you*: the appearance switch, **Help**,
 a link to your password page, the **admin panel** if you are an admin, and **Sign out**.
 
-It replaced three separate topbar controls — a theme cycler labelled with the current theme, the
+It replaced three separate topbar controls — a theme cycler labeled with the current theme, the
 display name as a link, and a Sign out button. At 390px those competed with Clan and Cards for a
 bar barely wide enough for the title, and "my settings" is a thing people look for behind their own
 avatar rather than spread across a toolbar.
@@ -135,7 +135,7 @@ because a silhouette says nothing about *who* is signed in, and on a shared brow
 thing worth being able to check. The panel repeats it in words, with the email, for a sighted user
 who cannot hear the label.
 
-**The admin entry is absent for a member, not disabled.** A greyed-out "Admin panel" tells somebody
+**The admin entry is absent for a member, not disabled.** A grayed-out "Admin panel" tells somebody
 their account is lacking; an absent one says the feature is not theirs. `userMenuItems()` in
 `web/src/user-menu.ts` decides it, pure and tested, and **Sign out is last** so it is never between
 two navigation items where it can be pressed by accident.
@@ -155,14 +155,14 @@ or signs out, and those close the menu. Read back in a browser: four presses gav
 the root element.
 
 `system` is **in** the cycle and is the default. Without it, anybody whose OS switches at dusk could
-not get back to following it without clearing storage. An unrecognised stored value — an older
+not get back to following it without clearing storage. An unrecognized stored value — an older
 build's, or one somebody edited — lands on `system`, the one answer that is never wrong.
 
-**Colours** sits under Appearance and is a link, not a cycler: the choice is a colour, which needs
+**Colors** sits under Appearance and is a link, not a cycler: the choice is a color, which needs
 a picker and room to show what the guard did with it. Its value line names the one role that was
 changed — `Default`, `Custom accent`, `Custom plate`, `Custom banner` — and says `Custom` once
 two or more are, so "why does this look like this" has an answer without opening the page. See
-[Choosing colours](#choosing-colours).
+[Choosing colors](#choosing-colors).
 
 Hand-rolled ARIA, because there is no menu library here and one glyph is not worth a dependency:
 `aria-haspopup="menu"` and `aria-expanded` on the button, `role="menu"` / `role="menuitem"` on the
@@ -174,13 +174,13 @@ that has moved. All four verified in a browser, including `aria-controls` matchi
 The silhouette itself is inline SVG in `web/src/components/UserMenu.tsx`, a circle and a clipped
 half-capsule in `currentColor`, for the same reason the rosette is.
 
-## Choosing colours
+## Choosing colors
 
-`ColorSchemeCard` on `#/account` hands the user **three** colours: the **accent** (links, focus
+`ColorSchemeCard` on `#/account` hands the user **three** colors: the **accent** (links, focus
 ring, meter fills, progress bars), the **plate** (panel edges, committing buttons, the card badge
 and the display numerals) and the **banner** (the bar across the top, and nothing else). Nothing
 else moves. The neutrals are what every contrast figure is measured against, the status palette
-and the deck colours carry meaning, and `--dev` exists to be unmistakable — a user who could
+and the deck colors carry meaning, and `--dev` exists to be unmistakable — a user who could
 restyle the tarnished plate could hide it.
 
 **The banner used to be part of the plate.** `.topbar` was painted straight out of `--gold`, so
@@ -228,10 +228,10 @@ measuring the bare stops is the stricter test — which is a claim, so `blend` e
 
 Contrast is computed from WCAG relative luminance, not an averaged brightness: `#0000ff` and
 `#00ff00` are 8.59:1 and 1.37:1 on white, and a model that calls them equally bright would pass an
-invisible link. **Hue distance is not the guard** and cannot be — two colours 180° apart can be
-identically light, which is white-on-white with a colour cast. It is kept as a third constraint,
-after ΔE in ordinary vision and ΔE under simulated red-green colour blindness, and only between
-colours that mean different things: the accent against `--good` (`.meter__fill` beside
+invisible link. **Hue distance is not the guard** and cannot be — two colors 180° apart can be
+identically light, which is white-on-white with a color cast. It is kept as a third constraint,
+after ΔE in ordinary vision and ΔE under simulated red-green color blindness, and only between
+colors that mean different things: the accent against `--good` (`.meter__fill` beside
 `.meter__fill--max`) and against `--critical` (`.notice` beside `.notice--error`). Those two are
 the only refusals the module can produce, and each names what it collided with and offers the
 nearest hue that would have worked.
@@ -311,11 +311,11 @@ fire. Of the two remaining shapes — a query (`#/help?section=owners`) and a pa
 hands the second segment to the view, exactly as `#/player/<tag>` does. A query would have taught
 `parseHash` a second syntax for one route.
 
-The cost is that `HelpView` scrolls itself, in one effect. That buys something the native behaviour
+The cost is that `HelpView` scrolls itself, in one effect. That buys something the native behavior
 does not: the ids stay ordinary element ids, so the in-page contents list uses the same hrefs the `?`
 marks do. The effect also **moves focus** to the heading (`tabIndex={-1}`, `preventScroll` so it does
 not fight the smooth scroll) — a link that scrolls the page but leaves the caret in the topbar sends a
-keyboard user back through the whole page to reach what they clicked for. An unrecognised section is
+keyboard user back through the whole page to reach what they clicked for. An unrecognized section is
 **not** an error: it falls back to the top of the page, because somebody following an old link should
 get the help page rather than a 404 for a heading that was renamed.
 
@@ -334,13 +334,13 @@ compass rosette and the account-menu silhouette, for the same reason: six links 
 "question mark" tell a screen reader user nothing, six times.
 
 It is deliberately the quietest control in the app — an 18px outlined circle in `--ink-muted`, no
-fill, no gold, no new colour role. It sits beside something the reader has already found and is only
+fill, no gold, no new color role. It sits beside something the reader has already found and is only
 worth noticing when they are stuck. On the card grid it goes beside the *status* line rather than the
 heading, because that heading is a person's name and a `?` after somebody's name reads as a question
 about them.
 
 On a touch screen the **target** grows without the drawing changing: an absolutely positioned 44px
-pseudo-element centred on the glyph takes the press, since growing the box would push the line height
+pseudo-element centered on the glyph takes the press, since growing the box would push the line height
 of every panel header it sits in around. Nothing adjacent to it is interactive, so the overhang costs
 nothing.
 
@@ -383,7 +383,7 @@ same flat 404 for a malformed tag as for an unknown one and is the only authorit
 
 `#/war/<clanTag>` shows the current war and the war log together, fetched independently so
 one failing does not blank the other. Head-to-head star score, destruction, attack usage
-meters, and both rosters with per-member stars, best hit, attacks used, and best defence
+meters, and both rosters with per-member stars, best hit, attacks used, and best defense
 against them.
 
 ## Capital raid weekends

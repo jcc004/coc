@@ -436,7 +436,7 @@ scope because they are only valid in the `http` context, and this file is includ
 from inside it — a detail that is either right or the whole config is rejected.
 
 That much has been checked: `./deploy/nginx-test.sh` serves this config unedited
-against nginx 1.30.4 and asserts the behaviour, not just the syntax. It measured one
+against nginx 1.30.4 and asserts the behavior, not just the syntax. It measured one
 thing worth knowing — `burst=5` admits **six** attempts back to back, not five,
 because nginx allows the burst plus the one the rate itself permits. `nginx -t` on
 the droplet is still the gate, because the droplet's nginx version and the real
@@ -550,7 +550,7 @@ gh workflow run monitor.yml        # runs liveness and the certificate check tog
 ## Automating it
 
 `deploy/update.sh` **is** the deploy. Run it by hand, from a timer, or from CI — it
-behaves identically, because all the judgement lives in the script rather than in
+behaves identically, because all the judgment lives in the script rather than in
 whatever triggered it.
 
 ```bash

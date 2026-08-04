@@ -84,7 +84,7 @@ const BUILD_INFO = {
 export default defineConfig({
   plugins: [react(), rosetteFavicon()],
   /*
-   * Serialised as JSON so the values arrive as string literals rather than as
+   * Serialized as JSON so the values arrive as string literals rather than as
    * identifiers Vite would try to resolve.
    */
   define: {

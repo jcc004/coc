@@ -2,7 +2,7 @@ import type { DeckProgress } from '../deck-progress.ts'
 
 /**
  * The four deck-progress plaques, as the event draws them across the top of its
- * own panel: a rounded plaque per deck in that deck's colour, the deck named
+ * own panel: a rounded plaque per deck in that deck's color, the deck named
  * along the top, and a bar beneath with the fraction printed on it.
  *
  * **The fraction is the encoding; the bar is a second telling of it.** That is the
@@ -15,11 +15,11 @@ import type { DeckProgress } from '../deck-progress.ts'
  * panel edges, buttons and the two display numerals, and it has never encoded a
  * value (see the note at the top of styles.css). A gold bar whose length meant
  * something would be the first, and it would put the app's one "this is furniture,
- * not data" signal to work as data. The deck's own colour was the other candidate
+ * not data" signal to work as data. The deck's own color was the other candidate
  * and is rejected for the mirror-image reason: `--deck-*` is a *categorical* role,
  * it already says which deck on the plaque around the bar, and reusing it for the
- * bar would leave four bars whose colours differ for a reason unrelated to their
- * lengths. So the plaque keeps the deck colour, the bar keeps the magnitude ramp
+ * bar would leave four bars whose colors differ for a reason unrelated to their
+ * lengths. So the plaque keeps the deck color, the bar keeps the magnitude ramp
  * every other meter in the app uses, and the fraction is printed either way.
  *
  * There is **no resource icon** at the right end, unlike the game. The event's
@@ -41,8 +41,8 @@ export function DeckPlaques({
   return (
     <div className={className ? `deck-plaques ${className}` : 'deck-plaques'}>
       {decks.map((deck) => (
-        /* The deck's colour is picked in CSS off `data-deck`, like the card tiles'
-           frames, so no colour is ever set inline from data. */
+        /* The deck's color is picked in CSS off `data-deck`, like the card tiles'
+           frames, so no color is ever set inline from data. */
         <div key={deck.category} className="deck-plaque" data-deck={deck.slug}>
           <span className="deck-plaque__name">{deck.category} Cards</span>
           {/*

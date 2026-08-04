@@ -5,7 +5,7 @@ import { hrefFor, navigate, useColorScheme, type Route, type Theme } from '../ho
 import { menuButtonLabel, nextTheme, themeLabel, userMenuItems } from '../user-menu.ts'
 
 /** The picker lives on the account page; this is the entry point to it. */
-const COLOURS_ROUTE: Route = { view: 'account' }
+const COLORS_ROUTE: Route = { view: 'account' }
 
 /**
  * The account menu: a silhouette in the topbar, holding the theme switch, the
@@ -119,7 +119,7 @@ export function UserMenu({
 
           {/* Not a `menuitem`: it is a button that changes a setting in place rather
               than an item that dismisses the menu, and calling it a menu item would
-              promise the closing behaviour of the three below it. */}
+              promise the closing behavior of the three below it. */}
           <button
             type="button"
             className="user-menu__theme"
@@ -131,25 +131,25 @@ export function UserMenu({
           </button>
 
           {/*
-            Colours sits directly under Appearance because it is the other half of the
+            Colors sits directly under Appearance because it is the other half of the
             same setting, and it is a *link* rather than a cycler because there is no
-            sensible cycle: the choice is a colour, which needs a picker and the room to
-            show what the guard did with it. It shows whether anything is customised, so
+            sensible cycle: the choice is a color, which needs a picker and the room to
+            show what the guard did with it. It shows whether anything is customized, so
             "why does this look like this" has an answer without opening the page.
             `menuitem`, like the entries below it, since it navigates and closes.
           */}
           <a
             className="user-menu__theme"
             role="menuitem"
-            href={hrefFor(COLOURS_ROUTE)}
+            href={hrefFor(COLORS_ROUTE)}
             title="Pick the accent and the plate"
             onClick={(event) => {
               event.preventDefault()
               setOpen(false)
-              navigate(COLOURS_ROUTE)
+              navigate(COLORS_ROUTE)
             }}
           >
-            <span>Colours</span>
+            <span>Colors</span>
             <span className="user-menu__theme-value">{schemeSummary(scheme)}</span>
           </a>
 

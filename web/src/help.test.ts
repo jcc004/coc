@@ -32,7 +32,7 @@ describe('HELP_SECTIONS', () => {
     assert.equal(new Set(ids).size, ids.length)
   })
 
-  it('titles and summarises every section, so the contents list is never a bare id', () => {
+  it('titles and summarizes every section, so the contents list is never a bare id', () => {
     for (const section of HELP_SECTIONS) {
       assert.ok(section.title.length > 0, `${section.id} needs a title`)
       assert.ok(section.summary.length > 0, `${section.id} needs a summary`)

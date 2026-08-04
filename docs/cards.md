@@ -5,7 +5,7 @@ manual entry of the counts, and the trades those counts make possible.
 
 **There is no API for any of this.** Supercell exposes nothing about the event, so every number
 is typed in by hand. That single fact shapes the rest of the design — there is nothing to
-refresh from, so what is stored is whatever a person last entered, and the only defence against
+refresh from, so what is stored is whatever a person last entered, and the only defense against
 a wrong number is that everyone can see it and see who entered it.
 
 ## The card list is generated and committed
@@ -67,7 +67,7 @@ should stay a table of numbers rather than a rewrite:
 - `faceCrop(x, y, zoom)` is exported and carries the clamp that keeps a window inside its picture.
   It is tested **directly**, because an empty table would make the old per-entry assertions pass
   vacuously — a crop at zoom 2 clamps to 25–75%, at zoom 4 to 12.5–87.5%, and at zoom 1 collapses
-  to dead centre.
+  to dead center.
 - the per-entry guard rails (ids must name real cards, windows must stay inside the picture, zoom
   in 1–3) are still there and still run, so the table cannot be refilled wrongly unnoticed.
 
@@ -75,7 +75,7 @@ should stay a table of numbers rather than a rewrite:
 opaque edge to edge — measured by decoding the PNGs properly, filters reconstructed, not by reading
 raw scanlines). Where a background is transparent the tile's own `--surface` shows through:
 parchment in light mode, dark wood in dark. Looked at on both themes and all four deck frames, that
-reads as a cut-out figure on the card and matches the game's own treatment, so **no backing colour
+reads as a cut-out figure on the card and matches the game's own treatment, so **no backing color
 is painted** — one would only re-introduce a box edge the art was cut out to avoid.
 
 ## The data model, and why inventory is shared

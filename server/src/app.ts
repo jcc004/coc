@@ -67,7 +67,7 @@ export interface AppDeps {
  * clamping changes no real answer.
  *
  * Out of range is clamped rather than rejected, which keeps the existing contract: a
- * malformed value has always been ignored in favour of the route's default, and a
+ * malformed value has always been ignored in favor of the route's default, and a
  * caller asking for more than exists has always got everything there was.
  */
 const MAX_QUERY_INT = 100

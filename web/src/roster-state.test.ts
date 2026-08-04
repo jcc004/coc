@@ -218,7 +218,7 @@ describe('approving overwrites', () => {
     assert.deepEqual(tags(rosterReducer(all, { type: 'approvalsToggled' }).approved), [])
   })
 
-  it('keeps the selection when the approvals are cancelled, so it can be retried', () => {
+  it('keeps the selection when the approvals are canceled, so it can be retried', () => {
     const state = after(
       { type: 'rowPicked', tag: '#A' },
       withConflicts,

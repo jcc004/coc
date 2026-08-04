@@ -1,6 +1,6 @@
 /**
  * Looks up vendored wiki artwork for the names the CoC API hands back. The map
- * itself is generated (`wiki-art.generated.ts`); the normalisation and lookup
+ * itself is generated (`wiki-art.generated.ts`); the normalization and lookup
  * below are hand-written because they are the part that silently rots when
  * Supercell renames a unit, so they carry tests.
  *
@@ -31,10 +31,10 @@ export type ArtKind = 'hero' | 'equipment' | 'troop' | 'spell' | 'townHall'
  * `"Builder's Workshop"` to `buildersworkshop`. Accents are stripped via NFD so a
  * decorated spelling still lands on the plain key.
  *
- * Must stay in step with `normalise` in scripts/fetch-wiki-art.mjs, which writes
+ * Must stay in step with `normalize` in scripts/fetch-wiki-art.mjs, which writes
  * the other half of the same key.
  */
-export function normaliseArtName(name: string): string {
+export function normalizeArtName(name: string): string {
   return name
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -48,7 +48,7 @@ export function normaliseArtName(name: string): string {
  * substitute something similar.
  */
 export function artFor(kind: ArtKind, name: string): string | undefined {
-  return WIKI_ART[`${kind}:${normaliseArtName(name)}`]
+  return WIKI_ART[`${kind}:${normalizeArtName(name)}`]
 }
 
 /** Town Hall badge art for a level, or `undefined` outside the vendored range. */

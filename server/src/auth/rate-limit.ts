@@ -19,7 +19,7 @@
  */
 
 export interface LimiterKeys {
-  /** Normalised login credential. Lowercased again here so the bucket is stable. */
+  /** Normalized login credential. Lowercased again here so the bucket is stable. */
   email: string
   /** `''` when it cannot be determined; the IP bucket is then not used. */
   ip: string

@@ -15,7 +15,7 @@ import {
   parseScheme,
   SCHEME_VARIABLES,
   schemeVariables,
-  serialiseScheme,
+  serializeScheme,
   type ColorScheme,
 } from './color-scheme.ts'
 import { helpHref, helpSection, type HelpSectionId } from './help.ts'
@@ -129,7 +129,7 @@ export type Route =
  * an ordinary thing to be sent one of.
  *
  * The raw segment rather than the home route, because the line below already settles
- * the question the other way: an unrecognised help section is `null` and still opens
+ * the question the other way: an unrecognized help section is `null` and still opens
  * the help page, on the grounds that somebody following a mangled link should land
  * where it was aimed. So `#/player/%zz` opens the player page carrying the literal
  * `%zz`, where `normalizeTag` refuses it and the view says so — naming the tag it
@@ -260,12 +260,12 @@ export function useTheme(): [Theme, (next: Theme) => void] {
   return [theme, setTheme]
 }
 
-/* ---------- the user's colours ---------- */
+/* ---------- the user's colors ---------- */
 
 /**
  * A store rather than a `useState`, because two components read the scheme: the picker
  * on the account page and the account menu, which shows whether anything is
- * customised. `useSyncExternalStore` over `localStorage` is the shape this file
+ * customized. `useSyncExternalStore` over `localStorage` is the shape this file
  * already uses for the hash.
  */
 const schemeListeners = new Set<() => void>()
@@ -306,11 +306,11 @@ function subscribeToScheme(onChange: () => void): () => void {
  * Sits beside `useTheme` because it is the same kind of thing — an appearance
  * preference that lives in this browser — but it is keyed by account where the theme
  * is not, following `coc:lastRoute:<id>` and `coc:baseScope:<id>`. A theme is about
- * the room you are in; a colour scheme is somebody's own, and two people sharing a
+ * the room you are in; a color scheme is somebody's own, and two people sharing a
  * laptop should not repaint each other's app.
  *
  * The parse is deliberately forgiving — see `parseScheme`. A stored value that is not
- * JSON, is an older shape, or names a colour the guard would now refuse falls back to
+ * JSON, is an older shape, or names a color the guard would now refuse falls back to
  * the shipped theme rather than throwing during render, and the shipped theme is
  * exactly what the stylesheet renders when nothing is written at all.
  *
@@ -335,7 +335,7 @@ export function useColorScheme(userId: number): [ColorScheme, (next: ColorScheme
     const root = document.documentElement
     const variables = schemeVariables(scheme)
     /* Cleared from the full list, not from the keys being written: a Reset writes
-       nothing at all, and anything left behind would be a colour nobody can now
+       nothing at all, and anything left behind would be a color nobody can now
        change. */
     for (const name of SCHEME_VARIABLES) {
       const value = variables[name]
@@ -346,7 +346,7 @@ export function useColorScheme(userId: number): [ColorScheme, (next: ColorScheme
 
   const choose = useCallback(
     (next: ColorScheme) => {
-      localStorage.setItem(key, serialiseScheme(next))
+      localStorage.setItem(key, serializeScheme(next))
       for (const listener of schemeListeners) listener()
     },
     [key],
@@ -511,7 +511,7 @@ export function useRecents(): [Recent[], (entry: Recent) => void] {
 /**
  * The width an element actually occupies, kept current as it changes.
  *
- * Measured rather than modelled. The alternative is deriving the content width from
+ * Measured rather than modeled. The alternative is deriving the content width from
  * `window.innerWidth` minus the shell's padding minus the card's padding, which is
  * three constants duplicated from the stylesheet and silently wrong the first time any
  * of them is edited. A `ResizeObserver` on the element that is actually laid out

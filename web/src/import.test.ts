@@ -10,7 +10,7 @@ import { buildImportPayload, describeImport, isImportEmpty } from './import.ts'
  */
 
 describe('buildImportPayload', () => {
-  it('carries owners and clans across, canonicalising tags', () => {
+  it('carries owners and clans across, canonicalizing tags', () => {
     const owners = JSON.stringify([{ tag: 'g88cyqp', owner: '  Jared  ' }])
     const clans = JSON.stringify([
       {

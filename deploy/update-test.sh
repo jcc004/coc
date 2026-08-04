@@ -17,14 +17,14 @@
 # Commits are made in a SECOND clone standing in for the developer's machine and
 # pushed to origin; the host clone only ever runs update.sh. That distinction turned
 # out to matter while writing this — committing on the host made every "deploy" a
-# no-op, because local already equalled origin, and three tests passed for the wrong
+# no-op, because local already equaled origin, and three tests passed for the wrong
 # reason.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SB="${TMPDIR:-/tmp}/coc-update-test.$$"
 trap 'rm -rf "$SB"' EXIT
-# Normalised, because a TMPDIR with a trailing slash leaves $SB with a doubled one and
+# Normalized, because a TMPDIR with a trailing slash leaves $SB with a doubled one and
 # the paths update.sh reports have all been through `cd && pwd`. Comparing the two
 # then fails on a slash, which is a waste of everybody's afternoon.
 mkdir -p "$SB"
@@ -56,7 +56,7 @@ cat > "$SB/bin/npm" <<'STUB'
 if [[ "${1:-}" == "ci" ]]; then
   # A real `npm ci` here installs tsx and vite, and update.sh now asserts both are
   # on disk afterwards — because a bare `npm ci` under NODE_ENV=production silently
-  # prunes them, which took the site down once. Honour --include=dev the way npm
+  # prunes them, which took the site down once. Honor --include=dev the way npm
   # does: without it, pretend the prune happened, so the guard can be tested.
   mkdir -p node_modules/.bin
   for a in "$@"; do [[ "$a" == "--include=dev" ]] && include_dev=1; done

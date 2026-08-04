@@ -87,7 +87,7 @@ CREATE INDEX IF NOT EXISTS chat_messages_user_id ON chat_messages (user_id);
  * - `guid`: a fresh v4 UUID per row. Nothing derived from the username, so it
  *   carries no information about the account.
  * - `display_name`: the old username. It was the only human label there was, and
- *   it is what everyone in the app already recognises each other by.
+ *   it is what everyone in the app already recognizes each other by.
  * - `email`: adopted from the username **only if the username contains `@`** —
  *   someone who signed up with their address should not have to re-enter it.
  *   Otherwise left NULL, because inventing an address would either be wrong or
@@ -128,7 +128,7 @@ CREATE TABLE users_v2 (
     const username = typeof row['username'] === 'string' ? row['username'] : ''
     const candidate = normalizeEmail(username)
     // A duplicate would violate the UNIQUE index and abort the whole migration,
-    // so a second row that normalises to the same address keeps a NULL email and
+    // so a second row that normalizes to the same address keeps a NULL email and
     // goes through the ADMIN_EMAIL escape hatch instead.
     const email = isValidEmail(candidate) && !taken.has(candidate) ? candidate : null
     if (email) taken.add(email)

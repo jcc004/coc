@@ -15,7 +15,7 @@ import type { CardInventoryStore } from './store.ts'
  *
  * It lives beside the inventory store rather than in a directory of its own
  * because **completing a trade is one transaction over two tables**: the status
- * change and the four count changes it authorises have to land together or not at
+ * change and the four count changes it authorizes have to land together or not at
  * all. A half-applied trade — cards moved, status still pending; or status
  * complete, cards where they were — is the worst outcome available, because the
  * only record of what should have happened is the row that now disagrees with the
@@ -26,7 +26,7 @@ import type { CardInventoryStore } from './store.ts'
  *
  * 1. **Counts are re-read at completion.** The proposal is not trusted. Between
  *    proposing and completing, somebody re-enters a base's counts — that is the
- *    normal way this data changes — and the swap may no longer be honourable.
+ *    normal way this data changes — and the swap may no longer be honorable.
  * 2. **A base never gives away its last copy** (`MIN_TRADEABLE_COUNT`). If the
  *    giver is down to one, completing would destroy a card its owner still needs,
  *    so the trade is refused with what changed, and nothing is written.
@@ -51,7 +51,7 @@ export type TradeResolution =
   | { ok: false; reason: 'notFound' }
   /** Someone else resolved it first; `trade` is its real current state. */
   | { ok: false; reason: 'alreadyResolved'; trade: TradeRecord }
-  /** The current counts can no longer honour it; `message` says what changed. */
+  /** The current counts can no longer honor it; `message` says what changed. */
   | { ok: false; reason: 'countsChanged'; trade: TradeRecord; message: string }
 
 export interface TradeStore {
@@ -84,7 +84,7 @@ export interface TradeStore {
    *
    * **This writes two bases the resolver may not own.** That is not a hole in the
    * owner rule, it is what a mutual agreement means: the *trade record* is the
-   * authorisation for both writes, and `mayResolveTrade` is what decides the
+   * authorization for both writes, and `mayResolveTrade` is what decides the
    * record may be resolved at all. A per-base check here would make every real
    * trade impossible, since no single account owns both sides.
    *
@@ -248,13 +248,13 @@ export function createTradeStore(db: DatabaseSync, cards: CardInventoryStore): T
   }
 
   /**
-   * Why the current counts cannot honour this trade, or `undefined` if they can.
+   * Why the current counts cannot honor this trade, or `undefined` if they can.
    *
    * The message names the base, the card and the number found now, because "the
    * counts changed" on its own leaves someone staring at a button that does
    * nothing: the useful sentence is which side moved and to what.
    */
-  function whyNotHonourable(season: string, trade: TradeRecord): string | undefined {
+  function whyNotHonorable(season: string, trade: TradeRecord): string | undefined {
     const legs: Leg[] = [
       { from: trade.baseA, to: trade.baseB, cardId: trade.cardFromA },
       { from: trade.baseB, to: trade.baseA, cardId: trade.cardFromB },
@@ -389,7 +389,7 @@ export function createTradeStore(db: DatabaseSync, cards: CardInventoryStore): T
       return resolve(season, id, userId, 'complete', (trade, now) => {
         // Re-validated here, inside the transaction, against the counts as they
         // are *now* — never against the proposal, which may be days old.
-        const problem = whyNotHonourable(season, trade)
+        const problem = whyNotHonorable(season, trade)
         if (problem) return problem
 
         const legs: Leg[] = [

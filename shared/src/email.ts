@@ -1,6 +1,6 @@
 /**
- * Email is the login credential, so its normalisation has to be identical on
- * both sides: the server stores and compares the normalised form, and the login
+ * Email is the login credential, so its normalization has to be identical on
+ * both sides: the server stores and compares the normalized form, and the login
  * form has to send something that will match. One declaration here rather than a
  * regex copied into each.
  *

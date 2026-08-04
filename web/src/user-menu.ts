@@ -13,7 +13,7 @@ import type { Route, Theme } from './hooks.ts'
  * wrong answer that a screenshot would not catch: **the admin panel is on it only
  * for admins.** A member who can see the entry, click it and be refused has been
  * shown a door that was never theirs; and the entry has to *disappear*, not be
- * disabled, because a greyed-out "Admin panel" tells a member their account is
+ * disabled, because a grayed-out "Admin panel" tells a member their account is
  * lacking rather than that the feature is not for them.
  *
  * The theme part is here for the smaller reason that the cycle must visit all three
@@ -105,7 +105,7 @@ export function themeLabel(theme: Theme): string {
 /** The next theme in the cycle, wrapping — so every state is reachable by clicking. */
 export function nextTheme(theme: Theme): Theme {
   const at = THEME_CYCLE.indexOf(theme)
-  /* An unrecognised stored value lands on `system`, which is the default and the one
+  /* An unrecognized stored value lands on `system`, which is the default and the one
      answer that is never wrong. */
   if (at === -1) return 'system'
   return THEME_CYCLE[(at + 1) % THEME_CYCLE.length] as Theme

@@ -50,7 +50,7 @@ describe('normalizeTag accepts the shapes people actually send', () => {
     assert.equal(normalizeTag('a'.repeat(12)), `#${'A'.repeat(12)}`)
   })
 
-  it('is idempotent — normalising its own output changes nothing', () => {
+  it('is idempotent — normalizing its own output changes nothing', () => {
     const once = normalizeTag('#2ppojccLV')
     assert.equal(normalizeTag(once), once)
   })
@@ -127,7 +127,7 @@ describe('usesCanonicalAlphabet is advisory, not a gate', () => {
     assert.equal(usesCanonicalAlphabet('2gcj2qpu'), true)
   })
 
-  it('accepts a tag written with O, because normalisation folds it to zero first', () => {
+  it('accepts a tag written with O, because normalization folds it to zero first', () => {
     assert.equal(usesCanonicalAlphabet('#2PPOJCCLV'), true)
   })
 
@@ -151,7 +151,7 @@ describe('encodeTagForPath produces a path segment', () => {
     assert.equal(encodeTagForPath('2pp0jccLV'), '%232PP0JCCLV')
   })
 
-  it('normalises before encoding, so two spellings give one path', () => {
+  it('normalizes before encoding, so two spellings give one path', () => {
     assert.equal(encodeTagForPath('%23abc 123'), encodeTagForPath('#ABC123'))
   })
 

@@ -26,13 +26,13 @@ import { CARD_ID_MAX, CARD_ID_MIN } from '@coc/shared'
  *
  * `.card-tile__frame` has `overflow: hidden`. The image inside it is scaled by
  * `--card-zoom` and then slid so that one nominated point of the *image* lands at
- * the *centre of the frame*:
+ * the *center of the frame*:
  *
  * - **`zoom`** — the image's height as a multiple of the frame's height. The frame
  *   therefore shows `1 / zoom` of the picture's height: `2` is the top-or-middle
  *   half, `2.3` is about 43%, `1` is the whole thing. Bigger zoom = tighter crop.
  * - **`y`** — the height of the image, in per-cent of its own height, that sits at
- *   the frame's vertical centre. For a face crop this is the middle of the head.
+ *   the frame's vertical center. For a face crop this is the middle of the head.
  * - **`x`** — the same horizontally. `50` is the middle of the picture.
  *
  * To crop one card, add an entry to {@link FACE_CROPS} and nudge a number:
@@ -44,7 +44,7 @@ import { CARD_ID_MAX, CARD_ID_MIN } from '@coc/shared'
  * - the face sits off to one side → move `x` towards it.
  *
  * Then look at the tile. `y` and `zoom` interact: the window is `1/zoom` tall and
- * centred on `y`, so `y` must be at least `50/zoom` or the window runs off the top
+ * centered on `y`, so `y` must be at least `50/zoom` or the window runs off the top
  * of the picture and the tile shows empty frame. {@link faceCrop} clamps it, and
  * `card-crops.test.ts` pins that clamp — which is how the path stays tested while
  * the table is empty.
@@ -62,9 +62,9 @@ import { CARD_ID_MAX, CARD_ID_MIN } from '@coc/shared'
 /** A face crop: a window on the picture, in per-cent of the picture's own size. */
 export interface CardFaceCrop {
   kind: 'face'
-  /** Per-cent of the image's width held at the frame's horizontal centre. */
+  /** Per-cent of the image's width held at the frame's horizontal center. */
   x: number
-  /** Per-cent of its height held at the frame's vertical centre. */
+  /** Per-cent of its height held at the frame's vertical center. */
   y: number
   /** Image height as a multiple of the frame's height. See the note above. */
   zoom: number
@@ -99,7 +99,7 @@ export const WHOLE_FRAMING: CardWholeFraming = { kind: 'whole' }
 const FACE_CROPS: Readonly<Record<number, Omit<CardFaceCrop, 'kind'>>> = {}
 
 /** Keeps a window inside the picture, so a tile can never show empty frame. */
-function clampCentre(value: number, zoom: number): number {
+function clampCenter(value: number, zoom: number): number {
   const half = 50 / zoom
   return Math.min(Math.max(value, half), 100 - half)
 }
@@ -112,7 +112,7 @@ function clampCentre(value: number, zoom: number): number {
  * the machinery still works rather than asserting it vacuously over no entries.
  */
 export function faceCrop(x: number, y: number, zoom: number): CardFaceCrop {
-  return { kind: 'face', zoom, x: clampCentre(x, zoom), y: clampCentre(y, zoom) }
+  return { kind: 'face', zoom, x: clampCenter(x, zoom), y: clampCenter(y, zoom) }
 }
 
 /**

@@ -130,7 +130,7 @@ describe('what a screen reader hears at one card', () => {
     assert.equal(screen.queryByRole('img', { name: /Barbarian/ }), null)
   })
 
-  it('carries the count in the box, not only in the greyed art', () => {
+  it('carries the count in the box, not only in the grayed art', () => {
     editor({ base: inventory([{ cardId: 1, count: 3 }]) })
 
     assert.equal((box('Barbarian, Elixir — copies held, 0 to 10') as HTMLInputElement).value, '3')

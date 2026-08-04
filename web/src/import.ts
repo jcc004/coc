@@ -166,15 +166,15 @@ export function useOneTimeImport(signedIn: boolean): {
   useEffect(() => {
     if (!signedIn) return
 
-    let cancelled = false
+    let canceled = false
     runOneTimeImport().then(
       (result) => {
-        if (!cancelled && result) setSummary(describeImport(result))
+        if (!canceled && result) setSummary(describeImport(result))
       },
       (cause: unknown) => {
         // Worth saying out loud: the flag is not set, so it will try again, but
         // meanwhile this browser's data is not on the server yet.
-        if (!cancelled) {
+        if (!canceled) {
           setSummary(
             `Could not import this browser's saved data (${
               (cause as Error)?.message ?? 'request failed'
@@ -185,7 +185,7 @@ export function useOneTimeImport(signedIn: boolean): {
     )
 
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [signedIn])
 

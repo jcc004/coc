@@ -95,7 +95,7 @@ describe('parseRecents', () => {
     }
   })
 
-  it('drops entries that are not recognisable visits', () => {
+  it('drops entries that are not recognizable visits', () => {
     const stored = JSON.stringify([
       player('#GOOD'),
       { kind: 'player', tag: 123, name: 'numeric tag' },
@@ -124,7 +124,7 @@ describe('lastClanKey', () => {
 })
 
 describe('clanTargetTag', () => {
-  it('gives back the stored clan, canonicalised', () => {
+  it('gives back the stored clan, canonicalized', () => {
     assert.equal(clanTargetTag('#G88CYQP'), '#G88CYQP')
     assert.equal(clanTargetTag('g88cyqp'), '#G88CYQP')
     assert.equal(clanTargetTag('%23G88CYQP'), '#G88CYQP')

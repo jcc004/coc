@@ -15,7 +15,7 @@ here is not a login form for decoration; it is what protects the token.
   refresh-token dance and no key rotation to get wrong.
 - **Cookie**: `HttpOnly` (JavaScript cannot read the token, so an XSS bug cannot exfiltrate a
   session), `SameSite=Lax` (the browser withholds it on cross-site POSTs, which is the CSRF
-  defence for every state-changing route), `Path=/`, and `Secure` whenever
+  defense for every state-changing route), `Path=/`, and `Secure` whenever
   `NODE_ENV=production` or `COOKIE_SECURE=true` — conditional only so plain-http localhost
   still receives it.
 - **Expiry** is 30 days, slid forward on every authenticated request. An expired session is
@@ -162,7 +162,7 @@ been told no, not merely shown less.
 
 **Every password field** in the app — login, change-password, the new-user form, the forced
 change screen — is the one `PasswordField` component in `web/src/components/primitives.tsx`, so
-the behaviour cannot drift between them. It defaults to `type="password"` and only the toggle
+the behavior cannot drift between them. It defaults to `type="password"` and only the toggle
 switches it to `text`; the toggle's accessible label names the action *and* the field and
 changes with the state (`Show password` / `Hide password`), with `aria-pressed` carrying the
 state itself. `autoComplete` is a required prop rather than an optional one, because the wrong
@@ -249,10 +249,10 @@ Backfill, per row:
 
 - `guid` — a fresh v4 UUID. Nothing derived from the username, so it carries no information.
 - `display_name` — the old username. It was the only human label there was.
-- `email` — **the old username if it contains an `@`**, normalised; otherwise **null**.
+- `email` — **the old username if it contains an `@`**, normalized; otherwise **null**.
   Somebody who signed up with their address should not have to re-enter it, and inventing one
   for everybody else would either be wrong or would hand a login credential to whoever guessed
-  the pattern. (If two legacy usernames normalise to the same address, the first keeps it and
+  the pattern. (If two legacy usernames normalize to the same address, the first keeps it and
   the second is left null rather than aborting the migration on the UNIQUE index.)
 
 **The escape hatch.** A row left with a null email cannot sign in — which, for a database whose

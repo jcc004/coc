@@ -14,13 +14,13 @@
  * Each card ships one picture: `color`. A card the base holds renders it as-is;
  * a card it lacks renders the same image under a CSS `grayscale(1)` filter
  * (`.card-tile--locked` in styles.css). The art is now sourced from the vendored
- * wiki unit thumbnails rather than the greyscale event screenshots, so a real
- * greyscale render is no longer available anyway — desaturating the colour one is
+ * wiki unit thumbnails rather than the grayscale event screenshots, so a real
+ * grayscale render is no longer available anyway — desaturating the color one is
  * exactly equivalent, and halves the files the grid has to ship and load.
  *
  * The manifest also carries `confidence`, `collected` and `art_source`. Those
  * are the author's notes about sourcing each *image*, not inventory:
- * `collected` means "did we manage to source a colour version of this picture",
+ * `collected` means "did we manage to source a color version of this picture",
  * nothing to do with who holds which card. They are deliberately not carried
  * across — inventory lives in `card_inventory`, entered by hand, per base.
  *
@@ -67,10 +67,10 @@ const webPath = (value) => `/${String(value).replace(/^\/+/, '')}`
 
 for (const [index, entry] of manifest.entries()) {
   const where = `entry ${index}`
-  const { id, category, name, color } = entry ?? {}
+  const { id, category, name, color: colorKey } = entry ?? {}
   // `file` was the single-image key an earlier manifest used. Accepted as an
-  // alias for the colour art so this script works against either shape.
-  const colour = color ?? entry?.file
+  // alias for the color art so this script works against either shape.
+  const color = colorKey ?? entry?.file
 
   if (!Number.isInteger(id) || id < 1) problems.push(`${where}: id ${JSON.stringify(id)}`)
   else if (seen.has(id)) problems.push(`${where}: duplicate id ${id}`)
@@ -78,13 +78,13 @@ for (const [index, entry] of manifest.entries()) {
 
   if (!CATEGORIES.includes(category)) problems.push(`${where}: category ${JSON.stringify(category)}`)
   if (typeof name !== 'string' || !name.trim()) problems.push(`${where}: name ${JSON.stringify(name)}`)
-  if (typeof colour !== 'string' || !colour.trim()) problems.push(`${where}: color ${JSON.stringify(colour)}`)
+  if (typeof color !== 'string' || !color.trim()) problems.push(`${where}: color ${JSON.stringify(color)}`)
 
   cards.push({
     id,
     category,
     name: String(name).trim(),
-    image: webPath(colour),
+    image: webPath(color),
   })
 }
 
@@ -121,9 +121,9 @@ await writeFile(
  * Run \`npm run cards:generate\` after changing web/public/coc/cards/manifest.json.
  *
  * The sixty cards of the collecting event: id, category, name, and the path to
- * the one vendored picture of each. A held card shows it in colour; a card the
- * base lacks shows the same image under a CSS greyscale filter, so there is a
- * single file per card rather than a colour/greyscale pair.
+ * the one vendored picture of each. A held card shows it in color; a card the
+ * base lacks shows the same image under a CSS grayscale filter, so there is a
+ * single file per card rather than a color/grayscale pair.
  *
  * This module is **tracked**, unlike the art it points at. web/public/coc/ is
  * gitignored, so a fresh clone — and any host that has not been given the images
@@ -151,8 +151,8 @@ export interface GeneratedCard {
   readonly category: CardCategory
   readonly name: string
   /**
-   * The card's art. Shown in colour when the base holds at least one, and under a
-   * CSS greyscale filter when it holds none. May not exist on disk.
+   * The card's art. Shown in color when the base holds at least one, and under a
+   * CSS grayscale filter when it holds none. May not exist on disk.
    */
   readonly image: string
 }

@@ -3,9 +3,9 @@
  * Run `npm run cards:generate` after changing web/public/coc/cards/manifest.json.
  *
  * The sixty cards of the collecting event: id, category, name, and the path to
- * the one vendored picture of each. A held card shows it in colour; a card the
- * base lacks shows the same image under a CSS greyscale filter, so there is a
- * single file per card rather than a colour/greyscale pair.
+ * the one vendored picture of each. A held card shows it in color; a card the
+ * base lacks shows the same image under a CSS grayscale filter, so there is a
+ * single file per card rather than a color/grayscale pair.
  *
  * This module is **tracked**, unlike the art it points at. web/public/coc/ is
  * gitignored, so a fresh clone — and any host that has not been given the images
@@ -33,8 +33,8 @@ export interface GeneratedCard {
   readonly category: CardCategory
   readonly name: string
   /**
-   * The card's art. Shown in colour when the base holds at least one, and under a
-   * CSS greyscale filter when it holds none. May not exist on disk.
+   * The card's art. Shown in color when the base holds at least one, and under a
+   * CSS grayscale filter when it holds none. May not exist on disk.
    */
   readonly image: string
 }

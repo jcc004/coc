@@ -46,7 +46,7 @@ migration v7, so "already proposed" means the same thing on both sides of the wi
 **Either party, or an admin.** A trade belongs to *both* bases, which makes its rule different from
 the per-base card write: card counts belong to one owner, an agreement does not. The consequence
 worth saying out loud is that **completing a trade writes to two bases, one of which the person
-clicking very likely does not own** — so the authorisation for those two writes is the *trade
+clicking very likely does not own** — so the authorization for those two writes is the *trade
 record*, not the owner rule, and `server/src/cards/trade-access.ts` is where that is decided once.
 
 A base carrying only a legacy text label grants nobody anything, exactly as for card entry: the

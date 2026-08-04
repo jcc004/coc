@@ -46,7 +46,7 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
 
 - **Card counts are stored sparsely.** Absent means zero; a count of 0 deletes the row. Never
   store a 0. Sixty rows per base would be sixty times the writes to say almost nothing.
-- **Authorisation lives in one pure function.** `mayWriteBaseCounts`,
+- **Authorization lives in one pure function.** `mayWriteBaseCounts`,
   `server/src/cards/write-access.ts:63`, is the only interesting auth decision in the app. Do not
   reimplement it inline in a handler.
 - **Rules live in pure modules with adjacent tests**, never inline in a component — see

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { WIKI_ART } from './wiki-art.generated.ts'
-import { artFor, normaliseArtName, townHallArt } from './wiki-art.ts'
+import { artFor, normalizeArtName, townHallArt } from './wiki-art.ts'
 
 /*
  * The map in wiki-art.generated.ts is machine-written from the wiki; the lookup
@@ -14,42 +14,42 @@ import { artFor, normaliseArtName, townHallArt } from './wiki-art.ts'
  *    shows a confidently wrong troop icon — worse than a missing one.
  *
  * The names asserted below have been in the game since launch, so a failure here
- * is a real regression and not the wiki reorganising this week's content.
+ * is a real regression and not the wiki reorganizing this week's content.
  */
 
-describe('normaliseArtName', () => {
+describe('normalizeArtName', () => {
   it('folds case', () => {
-    assert.equal(normaliseArtName('Barbarian King'), 'barbarianking')
-    assert.equal(normaliseArtName('BARBARIAN KING'), 'barbarianking')
-    assert.equal(normaliseArtName('barbarian king'), 'barbarianking')
+    assert.equal(normalizeArtName('Barbarian King'), 'barbarianking')
+    assert.equal(normalizeArtName('BARBARIAN KING'), 'barbarianking')
+    assert.equal(normalizeArtName('barbarian king'), 'barbarianking')
   })
 
   it('drops the punctuation the API and the wiki disagree about', () => {
     // The API ships these with dots; nothing else in the pipeline needs to care.
-    assert.equal(normaliseArtName('P.E.K.K.A'), 'pekka')
-    assert.equal(normaliseArtName('L.A.S.S.I'), 'lassi')
-    assert.equal(normaliseArtName('C.O.O.K.I.E'), 'cookie')
+    assert.equal(normalizeArtName('P.E.K.K.A'), 'pekka')
+    assert.equal(normalizeArtName('L.A.S.S.I'), 'lassi')
+    assert.equal(normalizeArtName('C.O.O.K.I.E'), 'cookie')
   })
 
   it('treats spacing and hyphenation as noise', () => {
-    assert.equal(normaliseArtName('Super  Barbarian'), 'superbarbarian')
-    assert.equal(normaliseArtName('  Super Barbarian  '), 'superbarbarian')
-    assert.equal(normaliseArtName('Super-Barbarian'), 'superbarbarian')
-    assert.equal(normaliseArtName('SuperBarbarian'), 'superbarbarian')
+    assert.equal(normalizeArtName('Super  Barbarian'), 'superbarbarian')
+    assert.equal(normalizeArtName('  Super Barbarian  '), 'superbarbarian')
+    assert.equal(normalizeArtName('Super-Barbarian'), 'superbarbarian')
+    assert.equal(normalizeArtName('SuperBarbarian'), 'superbarbarian')
   })
 
   it('folds both apostrophe glyphs to the same key', () => {
-    assert.equal(normaliseArtName("Builder's Workshop"), normaliseArtName('Builder’s Workshop'))
+    assert.equal(normalizeArtName("Builder's Workshop"), normalizeArtName('Builder’s Workshop'))
   })
 
   it('strips accents, so a decorated spelling still lands on the plain key', () => {
-    assert.equal(normaliseArtName('Bàrbarian'), 'barbarian')
-    assert.equal(normaliseArtName('Valkýrie'), 'valkyrie')
+    assert.equal(normalizeArtName('Bàrbarian'), 'barbarian')
+    assert.equal(normalizeArtName('Valkýrie'), 'valkyrie')
   })
 
   it('collapses a name with nothing to key on to the empty string', () => {
-    assert.equal(normaliseArtName(''), '')
-    assert.equal(normaliseArtName('  ...  '), '')
+    assert.equal(normalizeArtName(''), '')
+    assert.equal(normalizeArtName('  ...  '), '')
   })
 })
 

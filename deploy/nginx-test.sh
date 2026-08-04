@@ -7,7 +7,7 @@
 #
 # Why bother, when `nginx -t` on the droplet is the real gate: `nginx -t` proves the
 # file parses, and nothing about what it does. The things most worth being sure of
-# here are behavioural — that the login throttle fires, that it does NOT fire during
+# here are behavioral — that the login throttle fires, that it does NOT fire during
 # an ordinary page render, and that the security headers reach API responses and not
 # just the SPA. Getting the login throttle wrong locks everyone out of the app; that
 # is worth more than a syntax check.

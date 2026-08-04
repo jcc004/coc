@@ -9,7 +9,7 @@ import { ColorSchemeCard } from './ColorSchemeCard.tsx'
 /**
  * The rules are tested in `color-scheme.test.ts`; what is left for the component is
  * the part a pure test cannot see — that a choice reaches storage *and* the root
- * element, that a refused colour reaches neither but does reach the screen, and that
+ * element, that a refused color reaches neither but does reach the screen, and that
  * Reset takes the variables back off.
  */
 
@@ -26,7 +26,7 @@ function card() {
   return userEvent.setup()
 }
 
-describe('choosing a colour', () => {
+describe('choosing a color', () => {
   it('writes the choice to this account and paints the root element', async () => {
     const user = card()
 
@@ -109,11 +109,11 @@ describe('choosing a colour', () => {
   })
 })
 
-describe('a colour the app cannot lend out', () => {
+describe('a color the app cannot lend out', () => {
   it('says why, and does not store it', () => {
     card()
 
-    fireEvent.change(screen.getByLabelText('Accent: choose any colour'), {
+    fireEvent.change(screen.getByLabelText('Accent: choose any color'), {
       target: { value: '#00ff00' },
     })
 
@@ -123,10 +123,10 @@ describe('a colour the app cannot lend out', () => {
     assert.equal(rootValue('--user-accent-light'), '')
   })
 
-  it('offers the nearest colour that works, and applies it when pressed', async () => {
+  it('offers the nearest color that works, and applies it when pressed', async () => {
     const user = card()
 
-    fireEvent.change(screen.getByLabelText('Accent: choose any colour'), {
+    fireEvent.change(screen.getByLabelText('Accent: choose any color'), {
       target: { value: '#00ff00' },
     })
     await user.click(screen.getByRole('button', { name: /Use #/ }))
@@ -162,7 +162,7 @@ describe('reset', () => {
     await user.click(screen.getByRole('button', { name: 'Banner: Clay' }))
     await user.click(screen.getByRole('button', { name: /Reset/ }))
 
-    // Not just the ones the last scheme wrote: a leftover variable would be a colour
+    // Not just the ones the last scheme wrote: a leftover variable would be a color
     // nobody can change again.
     for (const name of [
       '--user-accent-light',

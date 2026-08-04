@@ -44,7 +44,7 @@ export function siteEnvironment(hostname: string): SiteEnvironment {
   /*
    * Title case, not DEV SERVER.
    *
-   * Both strings rasterise with the same font — confirmed by asking the renderer which
+   * Both strings rasterize with the same font — confirmed by asking the renderer which
    * face it used, not by reading the CSS. But set in capitals beside a mixed-case
    * title, Trebuchet's caps read as a second typeface, and it was reported as one
    * twice. Matching the title's casing is what actually makes it look like the same

@@ -88,7 +88,7 @@ await writeFile(
  *
  * Which league and label icons are vendored under web/public/coc. Anything not
  * in these sets (a league or label added after the last run) falls back to the
- * CDN URL the API supplied, so a stale set degrades to the old behaviour rather
+ * CDN URL the API supplied, so a stale set degrades to the old behavior rather
  * than a broken image.
  */
 

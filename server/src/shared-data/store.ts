@@ -84,7 +84,7 @@ function toOwner(row: Record<string, unknown>): OwnerRecord {
   }
 }
 
-/** A tag that cannot be normalised could never be looked up, so it is dropped. */
+/** A tag that cannot be normalized could never be looked up, so it is dropped. */
 function canonical(tag: string): string | undefined {
   try {
     return normalizeTag(tag)

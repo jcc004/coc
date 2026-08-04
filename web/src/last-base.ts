@@ -44,7 +44,7 @@ export function lastBaseKey(userId: number): string {
  * `parseHash` had to be fixed for, on a value that is even easier to write by hand,
  * so the refusal is caught here and reads as absence.
  *
- * Canonicalised rather than compared raw, so a tag typed into storage in lower case
+ * Canonicalized rather than compared raw, so a tag typed into storage in lower case
  * still matches the picker's options, which carry the server's canonical form.
  */
 export function rememberedBaseTag(stored: string | null): string | null {

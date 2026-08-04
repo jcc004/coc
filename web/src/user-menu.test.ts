@@ -51,7 +51,7 @@ describe('userMenuItems', () => {
   })
 
   it('omits the admin entry for a member rather than including it disabled', () => {
-    // A greyed-out "Admin panel" tells a member their account is lacking; an absent
+    // A grayed-out "Admin panel" tells a member their account is lacking; an absent
     // one says the feature is not theirs. The route is also refused on the page and
     // every /api/admin/* call is gated on the server — this is only the door.
     assert.equal(
@@ -119,7 +119,7 @@ describe('nextTheme', () => {
     }
   })
 
-  it('lands on system for a value it does not recognise', () => {
+  it('lands on system for a value it does not recognize', () => {
     // Storage is a string somebody could have edited, or a value an older build wrote.
     assert.equal(nextTheme('sepia' as Theme), 'system')
   })

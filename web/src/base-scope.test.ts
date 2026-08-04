@@ -36,12 +36,12 @@ describe('baseScopeFor — which filter to open on', () => {
     assert.equal(baseScopeFor(null, false), 'all')
   })
 
-  it('honours a stored choice either way', () => {
+  it('honors a stored choice either way', () => {
     assert.equal(baseScopeFor('all', true), 'all')
     assert.equal(baseScopeFor('mine', true), 'mine')
   })
 
-  it('honours a stored Mine even for an account that now owns nothing', () => {
+  it('honors a stored Mine even for an account that now owns nothing', () => {
     // They asked for it, and the empty list says so in words. Overriding a choice
     // somebody made would leave the empty-Mine message unreachable.
     assert.equal(baseScopeFor('mine', false), 'mine')

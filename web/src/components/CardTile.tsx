@@ -34,8 +34,8 @@ import { GameIcon } from './primitives.tsx'
  *   frame are the named things and the tile needs no name of its own — three of them
  *   already say which card this is, and a name on the container would be a fourth. In
  *   the totals grid the tile holds no control, so `label` names the tile and is the
- *   only place "nobody holds this" is stated in words — greyscale with no badge would
- *   otherwise be colour alone.
+ *   only place "nobody holds this" is stated in words — grayscale with no badge would
+ *   otherwise be color alone.
  *
  * **Nothing here is clickable, and that is a decision rather than an omission.** The
  * totals grid does make its tiles pressable — a press lists the bases holding that
@@ -62,7 +62,7 @@ export function CardTile({
   children,
 }: {
   card: GeneratedCard
-  /** Drives the desaturation: a card that is not held shows the same art in grey. */
+  /** Drives the desaturation: a card that is not held shows the same art in gray. */
   held: boolean
   /** Corner badge text, lower right over the art. Omit for no badge at all. */
   badge?: string
@@ -99,7 +99,7 @@ export function CardTile({
   return (
     <div
       className={classes.join(' ')}
-      // The deck's frame colour is picked in CSS off this, so the palette stays
+      // The deck's frame color is picked in CSS off this, so the palette stays
       // in styles.css with the rest of the theme rather than inline here.
       data-deck={deckSlug(card.category)}
       title={title}

@@ -55,7 +55,7 @@ function TradeCard({ cardId }: { cardId: number }) {
  * A base as a person: the member name links to the base, the tag stays underneath.
  *
  * Same treatment as the suggestions table, and for the same reason — the name is
- * what somebody recognises, the tag is the identity everything is keyed on. The tag
+ * what somebody recognizes, the tag is the identity everything is keyed on. The tag
  * is dropped only when it *is* the label, i.e. when no roster we can see names it.
  */
 function BaseLabel({ tag, label }: { tag: string; label: string }) {
@@ -318,7 +318,7 @@ function TrackerTable({
   return (
     <>
       <div className="table-wrap">
-        {/* Stacks into one labelled card per trade on a phone, with the explicit
+        {/* Stacks into one labeled card per trade on a phone, with the explicit
             roles that keep it a table for assistive tech once `display` changes.
             `aria-label`, never `aria-labelledby` the heading above: that heading is
             a `.section-title`, which is uppercased in CSS, and Chrome computes the

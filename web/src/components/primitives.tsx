@@ -109,7 +109,7 @@ export function TileRow({ children }: { children: ReactNode }) {
 
 /**
  * Magnitude bar on the single sequential ramp. A maxed value switches to the
- * status "good" step — never colour alone, so the level text says `80/80` too.
+ * status "good" step — never color alone, so the level text says `80/80` too.
  */
 export function Meter({
   value,
@@ -222,7 +222,7 @@ export function RowLimitSelect({
    * What the control says it counts. `Rows` for a table where a row is a record;
    * overridden by the trade suggestions, which page by **pair** because a pair's
    * options are one block that must not be split across a page boundary — and a
-   * control labelled `Rows` beside a pager counting pairs would be a lie about
+   * control labeled `Rows` beside a pager counting pairs would be a lie about
    * which of the two numbers the limit applies to.
    */
   label?: string
@@ -258,7 +258,7 @@ export function RowLimitSelect({
  *
  * The column heads still exist in the (visually hidden) header row, so the table
  * keeps real `columnheader` cells and its `aria-sort` for assistive tech; this
- * is the visible affordance only, which is why the select is labelled "Sort by"
+ * is the visible affordance only, which is why the select is labeled "Sort by"
  * rather than repeating the column names as headings.
  */
 export function SortControl<K extends string>({
@@ -272,7 +272,7 @@ export function SortControl<K extends string>({
   columns: TableColumn<K>[]
   sortKey: K
   ascending: boolean
-  /** Same handler the column heads use, so both routes share one behaviour. */
+  /** Same handler the column heads use, so both routes share one behavior. */
   onSort: (key: K) => void
 }) {
   const current = columns.find((column) => column.key === sortKey)
@@ -360,7 +360,7 @@ export function Pager({
 
 /**
  * A password input with a reveal toggle. Every password field in the app uses
- * this one, so the behaviour cannot drift between the login form, the
+ * this one, so the behavior cannot drift between the login form, the
  * change-password form and the admin forms.
  *
  * It starts as `type="password"` and only the toggle changes that, so nothing is

@@ -306,7 +306,7 @@ describe('proposing a trade', () => {
     const { trade } = (await response.json()) as { trade: TradeRecord }
 
     // One agreement is one row, in the canonical orientation, with each card still
-    // travelling from the base that gives it.
+    // traveling from the base that gives it.
     assert.equal(trade.baseA, BASE_A)
     assert.equal(trade.cardFromA, CARD_A)
     assert.equal(trade.baseB, BASE_B)
@@ -425,7 +425,7 @@ describe('proposing a trade', () => {
     harness.db.close()
   })
 
-  it('canonicalises the tags, so a lowercase proposal is the same trade', async () => {
+  it('canonicalizes the tags, so a lowercase proposal is the same trade', async () => {
     const harness = await createHarness()
     const { a } = await seeded(harness)
     await proposed(harness, a)
@@ -593,7 +593,7 @@ describe('completing a trade moves the cards', () => {
     const id = await proposed(harness, a)
 
     // The count that made the trade possible has since been re-entered: A really
-    // only has one. Honouring the trade would take away a card A still needs.
+    // only has one. Honoring the trade would take away a card A still needs.
     await saveCounts(harness, a, BASE_A, [{ cardId: CARD_A, count: 1 }])
     const before = totalCards(harness)
 

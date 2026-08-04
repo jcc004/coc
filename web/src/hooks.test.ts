@@ -98,7 +98,7 @@ describe('parseHash — the help page', () => {
    * heading that has since been renamed should land on the help page, not on home
    * wondering what they clicked.
    */
-  it('still opens the page for a section it does not recognise', () => {
+  it('still opens the page for a section it does not recognize', () => {
     assert.deepEqual(parseHash('#/help/renamed-last-year'), { view: 'help', section: null })
   })
 })
@@ -282,7 +282,7 @@ describe('useAsync — overlapping calls', () => {
     })
 
     assert.equal(signals.length, 2, 'a changed dependency has to start a new call')
-    assert.equal(signals[0]?.aborted, true, 'the superseded request must be cancelled')
+    assert.equal(signals[0]?.aborted, true, 'the superseded request must be canceled')
     assert.equal(signals[1]?.aborted, false)
   })
 
@@ -320,7 +320,7 @@ describe('useAsync — overlapping calls', () => {
       first.reject(new ApiError(404, 'notFound', 'No such clan.'))
     })
 
-    // A cancelled request failing is not news, and showing its error over a panel
+    // A canceled request failing is not news, and showing its error over a panel
     // that has already loaded is worse than not showing it.
     assert.deepEqual(result.current, { status: 'ready', data: 'the clan that was asked for' })
   })

@@ -63,7 +63,7 @@ candidate file titles from the API's own `name` string and takes the first that
 exists; a name that matches nothing stays unmapped and is listed in the coverage
 report the script prints. That matters because a confidently wrong troop icon is
 worse than a missing one — `"Super Goblin"` must not borrow the Goblin's picture.
-Coverage is currently 166/166. `web/src/wiki-art.ts` holds the normalisation and
+Coverage is currently 166/166. `web/src/wiki-art.ts` holds the normalization and
 lookup (case-, punctuation- and accent-insensitive, so `P.E.K.K.A` → `pekka`) and is
 unit tested in `web/src/wiki-art.test.ts`; `web/src/wiki-art.generated.ts` holds only
 the machine-written map.
@@ -106,9 +106,9 @@ thing, publishing is another. So, plainly:
   licensing decision, not a housekeeping one. Do not commit the art to make deployment
   easier — run the fetch scripts on the host instead.
 
-One thing to be clear about: Fandom's text is CC BY-SA, and **that licence does not
+One thing to be clear about: Fandom's text is CC BY-SA, and **that license does not
 extend to these images**. They are user-uploaded game rips. Crediting the wiki as the
-source (the footer does) is honest attribution; it is not a licence, and no licence is
+source (the footer does) is honest attribution; it is not a license, and no license is
 available — the art is Supercell's, used under their fan policy or not at all.
 
 ## Not covered

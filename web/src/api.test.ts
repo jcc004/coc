@@ -281,7 +281,7 @@ describe('the request itself', () => {
     assert.deepEqual([bounced, prompted], [0, 0])
   })
 
-  it('normalises and encodes a tag into the path', async () => {
+  it('normalizes and encodes a tag into the path', async () => {
     const sent = serving(answer(200, { tag: '#G88CYQP' }))
 
     await api.player(' g88cyqp ')
@@ -304,7 +304,7 @@ describe('the request itself', () => {
     assert.deepEqual(init?.headers, { Accept: 'application/json' })
   })
 
-  it('serialises a body and declares it', async () => {
+  it('serializes a body and declares it', async () => {
     const sent = serving(answer(200, { ok: true }))
 
     await api.logout()

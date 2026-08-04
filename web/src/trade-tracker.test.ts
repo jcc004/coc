@@ -28,7 +28,7 @@ const held = (tag: string, userId: number, label: string) => ({
   ownerLabel: label,
 })
 /** A side carrying only legacy free text — a note about a person, not a permission. */
-const labelled = (tag: string, label: string) => ({
+const labeled = (tag: string, label: string) => ({
   tag,
   ownerUserId: null,
   ownerLabel: label,
@@ -73,7 +73,7 @@ describe('sidesOfTrade', () => {
   it('resolves each tag against the owner list', () => {
     const resolved = sidesOfTrade(trade(), owners)
     assert.deepEqual(resolved.baseA, held('#AAA', ANNA, 'Anna'))
-    assert.deepEqual(resolved.baseB, labelled('#BBB', 'legacy name'))
+    assert.deepEqual(resolved.baseB, labeled('#BBB', 'legacy name'))
   })
 
   it('reports a tag with no owner row as unowned rather than throwing', () => {
@@ -116,7 +116,7 @@ describe('tradeProposeAccess', () => {
   it('grants a legacy text label nothing, whoever the text names', () => {
     // The same rule as `cardEntryAccess`: a label is a note, not a permission. Only
     // an admin can act until the base is linked to an account.
-    const withLabel = sides(labelled('#AAA', 'Anna'), held('#BBB', BERT, 'Bert'))
+    const withLabel = sides(labeled('#AAA', 'Anna'), held('#BBB', BERT, 'Bert'))
     const decision = tradeProposeAccess(member(ANNA), withLabel)
     assert.equal(decision.allowed, false, 'the account named by the label is still not a party')
     assert.equal(tradeProposeAccess(member(BERT), withLabel).allowed, true)

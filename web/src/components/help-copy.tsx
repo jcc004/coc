@@ -33,12 +33,12 @@ export function CardEntryRules() {
         The event ships <strong>{ALL_CARDS.length} cards in four decks</strong>. Supercell's API
         exposes nothing at all about it, so <strong>every count here is typed in by hand</strong>{' '}
         off somebody's own screen. There is nothing to refresh from: what is stored is whatever a
-        person last entered, and the only defence against a wrong number is that everybody can see
+        person last entered, and the only defense against a wrong number is that everybody can see
         it and see who entered it.
       </p>
       <p className="empty-hint">
-        A tile shows its picture in colour when the base holds at least one, and the same picture
-        in grey when it holds none — but that is never the only cue: the box under the art reads 0
+        A tile shows its picture in color when the base holds at least one, and the same picture
+        in gray when it holds none — but that is never the only cue: the box under the art reads 0
         or the number held at every screen width. A <strong>×n badge</strong> appears in the art's
         corner only past one copy, because a spare is the fact worth spotting and ×1 on fifty tiles
         would be noise.
@@ -144,7 +144,7 @@ export function TradeResolutionRules() {
       <p className="empty-hint">
         <strong>Either owner, or an admin, can complete or decline it.</strong> A trade belongs to
         both bases, so it is not the per-base owner rule: completing one writes to two bases, and
-        the authorisation for both writes is the trade record itself. A base carrying only an
+        the authorization for both writes is the trade record itself. A base carrying only an
         unlinked text label is an admin's to resolve until an admin links it to an account.
       </p>
       <p className="empty-hint">

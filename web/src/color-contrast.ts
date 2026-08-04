@@ -1,8 +1,8 @@
 /**
- * Colour maths: WCAG contrast, and whether two colours can still be told apart.
+ * Color maths: WCAG contrast, and whether two colors can still be told apart.
  *
  * This is the arithmetic half of the user-chosen scheme. Nothing in here knows what
- * a role is or which colour the app uses for what — `color-scheme.ts` does that, and
+ * a role is or which color the app uses for what — `color-scheme.ts` does that, and
  * this file is the part that has to be *right* rather than the part that has to be
  * agreed. It is a module with its own tests for the reason every rule in this repo is:
  * a guard that decides whether somebody can read the site is not a `useMemo`.
@@ -10,12 +10,12 @@
  * Two things it deliberately does not do.
  *
  * **No averaged brightness.** Contrast is computed from WCAG relative luminance —
- * each channel linearised out of sRGB's transfer curve, then weighted 0.2126 /
+ * each channel linearized out of sRGB's transfer curve, then weighted 0.2126 /
  * 0.7152 / 0.0722. The naive `(r + g + b) / 3` model calls `#0000ff` and `#00ff00`
  * equally bright; against white they are 8.59:1 and 1.37:1, which is the difference
  * between a readable link and an invisible one. The tests pin both numbers.
  *
- * **No colour library.** Everything here is ~200 lines of published formulae, and the
+ * **No color library.** Everything here is ~200 lines of published formulae, and the
  * repo's rule is that a dependency has to earn itself. The Lab conversion is here
  * because the stylesheet already reasons in ΔE — see the `--dev` note in `styles.css`,
  * which records the tarnished-gold plate as "ΔE 19 light and 15 dark" — so a
@@ -23,7 +23,7 @@
  * taken.
  */
 
-/** An sRGB colour. Channels are 0–255 and always whole numbers. */
+/** An sRGB color. Channels are 0–255 and always whole numbers. */
 export interface Rgb {
   readonly r: number
   readonly g: number
@@ -80,7 +80,7 @@ function channelHex(channel: number): string {
   return Math.round(clamp(channel, 0, 255)).toString(16).padStart(2, '0')
 }
 
-/** Always the six-digit lowercase form, so two equal colours compare equal as strings. */
+/** Always the six-digit lowercase form, so two equal colors compare equal as strings. */
 export function formatHex(rgb: Rgb): string {
   return `#${channelHex(rgb.r)}${channelHex(rgb.g)}${channelHex(rgb.b)}`
 }
@@ -98,7 +98,7 @@ function clamp(value: number, low: number, high: number): number {
  * **0.04045**; the WCAG figure is a rounding of an early draft that was never
  * corrected. It cannot matter here and the test says so: at 8 bits the channel either
  * side of the pair is 10/255 = 0.03922 and 11/255 = 0.04314, so no representable
- * colour falls between the two thresholds.
+ * color falls between the two thresholds.
  */
 const SRGB_KNEE = 0.04045
 const SRGB_SLOPE = 12.92
@@ -197,7 +197,7 @@ export function hslToRgb(hsl: Hsl): Rgb {
   }
 }
 
-/** The same hue and saturation at another lightness. This is how a colour is clamped. */
+/** The same hue and saturation at another lightness. This is how a color is clamped. */
 export function withLightness(rgb: Rgb, lightness: number): Rgb {
   const hsl = rgbToHsl(rgb)
   return hslToRgb({ h: hsl.h, s: hsl.s, l: clamp(lightness, 0, 1) })
@@ -267,22 +267,22 @@ export function deltaE76(a: Rgb, b: Rgb): number {
 /**
  * The shorter way round the hue circle, in degrees, 0–180.
  *
- * A colour with almost no chroma has no meaningful hue — `#3a3a3a` is not "red at 0°"
- * — so a near-grey is reported as maximally distant rather than as accidentally
+ * A color with almost no chroma has no meaningful hue — `#3a3a3a` is not "red at 0°"
+ * — so a near-gray is reported as maximally distant rather than as accidentally
  * adjacent to whatever hue the arithmetic fell out at. Distance in hue is the *weak*
  * test here anyway; see `distinguishable` below.
  */
-export const GREY_SATURATION = 0.08
+export const GRAY_SATURATION = 0.08
 
 export function hueDistance(a: Rgb, b: Rgb): number {
   const first = rgbToHsl(a)
   const second = rgbToHsl(b)
-  if (first.s < GREY_SATURATION || second.s < GREY_SATURATION) return 180
+  if (first.s < GRAY_SATURATION || second.s < GRAY_SATURATION) return 180
   const raw = Math.abs(first.h - second.h) % 360
   return raw > 180 ? 360 - raw : raw
 }
 
-/* ---------- colour vision deficiency ---------- */
+/* ---------- color vision deficiency ---------- */
 
 export type ColorVision = 'deuteranopia' | 'protanopia'
 
@@ -295,7 +295,7 @@ export type ColorVision = 'deuteranopia' | 'protanopia'
  * would add a third matrix and no decision.
  *
  * This is a simulation, not a diagnosis: it answers "would these two still be two
- * colours" well enough to refuse a genuinely bad pair, which is all it is asked.
+ * colors" well enough to refuse a genuinely bad pair, which is all it is asked.
  */
 const VISION_MATRIX: Record<ColorVision, readonly number[]> = {
   // prettier-ignore
@@ -325,10 +325,10 @@ export function simulateVision(rgb: Rgb, vision: ColorVision): Rgb {
   }
 }
 
-/* ---------- "still two colours" ---------- */
+/* ---------- "still two colors" ---------- */
 
 /**
- * ΔE between two colours as somebody with red-green colour blindness would see them.
+ * ΔE between two colors as somebody with red-green color blindness would see them.
  * The worse of the two simulations, because passing one and failing the other is
  * failing.
  */
@@ -343,7 +343,7 @@ export function colorBlindDelta(a: Rgb, b: Rgb): number {
  * Why a pair was refused, or `null` when it was not. The string is shown to the user,
  * so it says which test failed rather than "invalid".
  */
-export type ClashReason = 'too-similar' | 'too-similar-colour-blind' | 'too-close-in-hue'
+export type ClashReason = 'too-similar' | 'too-similar-color-blind' | 'too-close-in-hue'
 
 export interface Distinguishability {
   readonly ok: boolean
@@ -354,20 +354,20 @@ export interface Distinguishability {
 }
 
 /**
- * Whether two colours that *mean different things* can still be read as two colours.
+ * Whether two colors that *mean different things* can still be read as two colors.
  *
  * Three tests, and the order they are written in is the order they matter in:
  *
  *  1. **ΔE in ordinary vision.** The real one. It moves with lightness, chroma and
- *     hue together, which is what "different colour" actually means.
- *  2. **ΔE under red-green colour blindness.** A blue/green pair can be 60 apart for
+ *     hue together, which is what "different color" actually means.
+ *  2. **ΔE under red-green color blindness.** A blue/green pair can be 60 apart for
  *     most people and 6 apart for a deuteranope. Lower bar than (1) because the
  *     simulation flattens every pair somewhat, including ones nobody confuses.
  *  3. **Hue separation.** The weakest of the three and the one the brief asked for by
- *     name. It is here as an *extra* constraint, never as the guard: two colours can
+ *     name. It is here as an *extra* constraint, never as the guard: two colors can
  *     sit 180° apart in hue and be the same lightness, which is white-on-white with a
- *     colour cast. It earns its place for a different job — keeping a pair that
- *     encodes *category* reading as two colours rather than as two shades of one.
+ *     color cast. It earns its place for a different job — keeping a pair that
+ *     encodes *category* reading as two colors rather than as two shades of one.
  */
 export const MIN_DELTA_E = 25
 export const MIN_COLOR_BLIND_DELTA_E = 15
@@ -382,7 +382,7 @@ export function distinguishable(a: Rgb, b: Rgb): Distinguishability {
     deltaE < MIN_DELTA_E
       ? 'too-similar'
       : blind < MIN_COLOR_BLIND_DELTA_E
-        ? 'too-similar-colour-blind'
+        ? 'too-similar-color-blind'
         : hue < MIN_HUE_DEGREES
           ? 'too-close-in-hue'
           : null

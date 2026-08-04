@@ -36,7 +36,7 @@
 set -euo pipefail
 # An unmatched glob must expand to nothing rather than to itself, so counting files
 # with an array is exact. Without this, `set -e` plus a failing `ls` on a missing
-# directory exits the script silently — which is the one behaviour this whole file
+# directory exits the script silently — which is the one behavior this whole file
 # exists to prevent, and it did it. Found by testing the guard, not by reading it.
 shopt -s nullglob
 
@@ -306,7 +306,7 @@ rotate_backups() {
     return 0
   fi
 
-  local recognised=() strange=()
+  local recognized=() strange=()
   local f base y m d hh mi ss
   for f in "${all[@]}"; do
     base="${f##*/}"
@@ -319,7 +319,7 @@ rotate_backups() {
       # not a plausible date is treated as unparseable, and unparseable means keep.
       if (( 10#$y >= 1970 && 10#$m >= 1 && 10#$m <= 12 && 10#$d >= 1 && 10#$d <= 31 )) \
          && (( 10#$hh <= 23 && 10#$mi <= 59 && 10#$ss <= 60 )); then
-        recognised+=("$base")
+        recognized+=("$base")
         continue
       fi
     fi
@@ -332,7 +332,7 @@ rotate_backups() {
     for base in "${strange[@]}"; do info "      $base"; done
   fi
 
-  if (( ${#recognised[@]} == 0 )); then
+  if (( ${#recognized[@]} == 0 )); then
     info "retention: no stamped backups in $dir — nothing to rotate"
     return 0
   fi
@@ -343,7 +343,7 @@ rotate_backups() {
   local sorted=() line
   while IFS= read -r line; do
     sorted+=("$line")
-  done < <(printf '%s\n' "${recognised[@]}" | LC_ALL=C sort -r)
+  done < <(printf '%s\n' "${recognized[@]}" | LC_ALL=C sort -r)
 
   local n=${#sorted[@]} i
   local dayk=() weekk=() monthk=() epochday
@@ -568,7 +568,7 @@ dirty="$(git status --porcelain --untracked-files=no)"
 # whose local edits are npm's rather than anyone's.
 #
 # It matters that this happens *before* `npm ci`: that command installs from the
-# lockfile as it exists on disk, so a modified one would be silently honoured.
+# lockfile as it exists on disk, so a modified one would be silently honored.
 if [[ "$dirty" == " M package-lock.json" ]]; then
   info "package-lock.json was modified locally — restoring the committed version"
   info "(npm ci never writes it, so this came from a manual npm install)"

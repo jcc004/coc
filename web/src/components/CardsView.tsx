@@ -255,7 +255,7 @@ function heldAcrossTheClan(total: number): string {
  * A grid rather than the list of `.meter-row`s this was: the two are meant to be
  * read against each other, and the only way to do that reliably is for them to
  * look the same and sit in the same order, tile for tile. It is literally the same
- * `CardTile`, so the art, the crop, the deck frame and the greyscale cannot drift
+ * `CardTile`, so the art, the crop, the deck frame and the grayscale cannot drift
  * from the grid's; what differs is the badge and where the name comes from.
  *
  * **The order is the grid's, fixed, and never the counts'.** It comes from
@@ -269,7 +269,7 @@ function heldAcrossTheClan(total: number): string {
  * card exactly one person in the clan holds is one of the more interesting things
  * on the page.
  *
- * **A card nobody holds is greyscale with no badge** — which is a colour cue and a
+ * **A card nobody holds is grayscale with no badge** — which is a color cue and a
  * missing cue, so it cannot be the whole story. The words are in the tile's own
  * accessible name (`Barbarian, Elixir — none held across the clan`) and in its
  * `title`, and the disclosure line above counts them. The tile stays exactly where
@@ -480,7 +480,7 @@ function CardHolders({
           <p className="card-holders__note">{holdersLine(holders)}</p>
           <div className="table-wrap">
             {/*
-             * Stacks into one labelled card per base on a phone, like every other table
+             * Stacks into one labeled card per base on a phone, like every other table
              * here, with the explicit roles that keep it a table for assistive tech once
              * `display` changes. Named with `aria-label` rather than `aria-labelledby`
              * the `h3` above it — not for the uppercase reason the other two carry, but
@@ -550,7 +550,7 @@ function CardHolders({
  * The selection lives here rather than in `CardsView` because the grid and the table
  * are one thing — the table is the grid's answer — and nothing else on the page reads
  * it. It survives the disclosure being collapsed and reopened on purpose: coming back
- * to the panel you were reading and finding your card still chosen is the behaviour
+ * to the panel you were reading and finding your card still chosen is the behavior
  * that costs nobody anything, and clearing it would be a second way to close the
  * table that the tile's own toggle already covers.
  */
@@ -977,7 +977,7 @@ export function CardsView({ user }: { user: SessionUser }) {
               The same grid as above, with the copies held across <strong>every</strong> tracked
               base — linked to an account or not — as the badge in each tile's corner. The order is
               the grid's and never changes with the counts, so the two can be read tile for tile. A
-              tile in <strong>grey with no badge</strong> is a card nobody in the clan holds; it
+              tile in <strong>gray with no badge</strong> is a card nobody in the clan holds; it
               cannot be got by trading, only from the game. <strong>Choose a card</strong> to list
               the bases holding it below.
             </p>

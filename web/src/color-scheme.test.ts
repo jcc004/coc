@@ -29,7 +29,7 @@ import {
   SCHEME_VARIABLES,
   schemeSummary,
   schemeVariables,
-  serialiseScheme,
+  serializeScheme,
   SHIPPED,
   THEME_BACKDROP,
   washedControlGround,
@@ -103,7 +103,7 @@ describe('the shipped themes', () => {
   })
 
   it('never writes a name the applier does not know how to clear', () => {
-    // A variable missing from SCHEME_VARIABLES would survive a Reset as a colour
+    // A variable missing from SCHEME_VARIABLES would survive a Reset as a color
     // nobody can change again.
     const chosen = { accent: '#12867f', chrome: '#e08a4c', banner: '#a9cbe8' }
     for (const name of Object.keys(schemeVariables(chosen))) {
@@ -131,7 +131,7 @@ describe('the shipped themes', () => {
     assert.equal(written.length, 6, written.join(', '))
   })
 
-  it('leaves a stored colour the guard would now refuse out of the variables', () => {
+  it('leaves a stored color the guard would now refuse out of the variables', () => {
     assert.deepEqual(schemeVariables(scheme({ accent: '#00ff00' })), {})
   })
 })
@@ -248,7 +248,7 @@ describe('fitting the accent', () => {
 
   it('keeps the hover shade at least as readable as the resting one', () => {
     // Hover moves *away* from the page, so it can never be the state that fails a
-    // ratio the resting colour passed.
+    // ratio the resting color passed.
     for (const preset of ACCENT_PRESETS) {
       for (const theme of SCHEME_THEMES) {
         const roles = accentIn(preset.hex, theme)
@@ -275,15 +275,15 @@ describe('fitting the accent', () => {
   })
 
   it('builds the groove out of the accent, not out of the parchment', () => {
-    // A wash into the surface gave a blue accent a green-grey groove, because the
+    // A wash into the surface gave a blue accent a green-gray groove, because the
     // parchment carries its own hue. The shipped light track is #cfe0f2.
     const track = accentIn('#1f6cb0', 'light').track
     assert.ok(hueGap(track, '#1f6cb0') < 12, `${track} should still be the accent's hue`)
   })
 
-  it('fits the same colour differently in the two themes', () => {
+  it('fits the same color differently in the two themes', () => {
     // The reason a single stored hex is not enough, and the reason a picker that
-    // refused colours failing on both grounds at once would refuse nearly everything.
+    // refused colors failing on both grounds at once would refuse nearly everything.
     const light = accentIn('#7a4fd0', 'light').accent
     const dark = accentIn('#7a4fd0', 'dark').accent
     assert.notEqual(light, dark)
@@ -300,7 +300,7 @@ describe('fitting the accent', () => {
     assert.ok(ratio(fitted.light.roles.accent, THEME_BACKDROP.light.plane) >= BODY_TEXT_RATIO)
   })
 
-  it('stays near the colour that was asked for', () => {
+  it('stays near the color that was asked for', () => {
     // Fitting is a nudge along one axis, not a substitution: hue and saturation are
     // the user's, and only lightness is the guard's.
     for (const preset of ACCENT_PRESETS) {
@@ -311,7 +311,7 @@ describe('fitting the accent', () => {
   })
 
   it('clamps white and black instead of refusing them', () => {
-    // Neither is a sensible accent and neither is an error. White becomes a dark grey
+    // Neither is a sensible accent and neither is an error. White becomes a dark gray
     // on parchment and stays near-white on wood, which is what the user asked for as
     // closely as the ground allows.
     for (const extreme of ['#ffffff', '#000000']) {
@@ -324,7 +324,7 @@ describe('fitting the accent', () => {
     }
   })
 
-  it('rescues a colour that is invisible on the ground it was picked against', () => {
+  it('rescues a color that is invisible on the ground it was picked against', () => {
     // #dceaf6 is 1.07:1 on parchment — the white-on-white case, with a hue 164° away
     // to prove hue distance would not have caught it.
     assert.ok(ratio('#dceaf6', THEME_BACKDROP.light.surface) < 1.1)
@@ -344,8 +344,8 @@ describe('fitting the accent', () => {
     }
   })
 
-  it('refuses a colour it cannot read at all', () => {
-    assert.equal(fitAccent('not-a-colour').status, 'invalid')
+  it('refuses a color it cannot read at all', () => {
+    assert.equal(fitAccent('not-a-color').status, 'invalid')
     assert.equal(fitChrome('#zzzzzz').status, 'invalid')
   })
 
@@ -354,7 +354,7 @@ describe('fitting the accent', () => {
   })
 })
 
-describe('the accent against the colours that mean something', () => {
+describe('the accent against the colors that mean something', () => {
   it('refuses a green, because the maxed meter is green', () => {
     // `.meter__fill` is the accent and `.meter__fill--max` is --good, in the same
     // list. An accent that matched it would delete the distinction.
@@ -371,17 +371,17 @@ describe('the accent against the colours that mean something', () => {
     assert.ok(fit.against === 'critical' || fit.against === 'good')
   })
 
-  it('refuses a colour only a colour-blind reader would confuse with the green', () => {
+  it('refuses a color only a color-blind reader would confuse with the green', () => {
     // Pure red against the maxed green is 170 ΔE for most readers and 8 for a
     // deuteranope. This is the case hue distance and plain ΔE both wave through.
     const fit = fitAccent('#ff0000')
     assert.equal(fit.status, 'clash')
     if (fit.status !== 'clash') return
-    assert.equal(fit.reason, 'too-similar-colour-blind')
+    assert.equal(fit.reason, 'too-similar-color-blind')
     assert.equal(fit.against, 'good')
   })
 
-  it('keeps every fitted accent distinct from both status colours, in both themes', () => {
+  it('keeps every fitted accent distinct from both status colors, in both themes', () => {
     for (const preset of ACCENT_PRESETS) {
       for (const theme of SCHEME_THEMES) {
         const accent = accentIn(preset.hex, theme).accent
@@ -395,7 +395,7 @@ describe('the accent against the colours that mean something', () => {
 
   it('offers the nearest hue that would have worked, and that hue really works', () => {
     // "Not available" with nothing after it is the wall. The suggestion is a rotation
-    // of the same colour, so it is recognisably what was asked for.
+    // of the same color, so it is recognizably what was asked for.
     const fit = fitAccent('#00ff00')
     assert.equal(fit.status, 'clash')
     if (fit.status !== 'clash') return
@@ -405,7 +405,7 @@ describe('the accent against the colours that mean something', () => {
     assert.ok(hueGap(fit.suggestion, '#00ff00') < 90)
   })
 
-  it('returns nothing to suggest for a colour it cannot even read', () => {
+  it('returns nothing to suggest for a color it cannot even read', () => {
     assert.equal(nearestUsableAccent('nonsense'), null)
   })
 })
@@ -617,26 +617,26 @@ describe('fitting the banner', () => {
     assert.notEqual(both['--user-banner-light'], both['--user-gold-light'])
   })
 
-  it('does not derive a display color, because nothing banner-coloured sits on a card', () => {
+  it('does not derive a display color, because nothing banner-colored sits on a card', () => {
     const roles = bannerIn('#a9cbe8', 'light')
     assert.deepEqual(Object.keys(roles).sort(), ['banner', 'bannerDeep', 'bannerEdge'])
   })
 })
 
 describe('the offered swatches', () => {
-  it('offers colours for all three roles, each with an id and a label', () => {
+  it('offers colors for all three roles, each with an id and a label', () => {
     for (const role of SCHEME_ROLES) {
       const presets = presetsFor(role)
       assert.ok(presets.length >= 5, role)
       for (const preset of presets) {
         assert.match(preset.id, /^[a-z]+$/)
         assert.ok(preset.label.length > 0)
-        assert.ok(parseHex(preset.hex), `${preset.id} is a colour`)
+        assert.ok(parseHex(preset.hex), `${preset.id} is a color`)
       }
     }
   })
 
-  it('gives every swatch a distinct id and a distinct colour', () => {
+  it('gives every swatch a distinct id and a distinct color', () => {
     for (const role of SCHEME_ROLES) {
       const presets = presetsFor(role)
       assert.equal(new Set(presets.map((preset) => preset.id)).size, presets.length)
@@ -696,16 +696,16 @@ describe('what the picker says', () => {
     assert.match(describeChrome(SHIPPED.chrome, fitChrome(SHIPPED.chrome)), /both themes/)
   })
 
-  it('says why a refused colour is refused, and what it collided with', () => {
+  it('says why a refused color is refused, and what it collided with', () => {
     // A silently-refused input is the failure this message exists to prevent.
     const message = describeAccent('#00ff00', fitAccent('#00ff00'))
     assert.match(message, /Not available/)
     assert.match(message, /maxed/)
-    assert.match(message, /nearest colour that works is #/)
+    assert.match(message, /nearest color that works is #/)
   })
 
-  it('names colour blindness when that is the test that failed', () => {
-    assert.match(describeAccent('#ff0000', fitAccent('#ff0000')), /colour blindness/)
+  it('names color blindness when that is the test that failed', () => {
+    assert.match(describeAccent('#ff0000', fitAccent('#ff0000')), /color blindness/)
   })
 
   it('tells somebody who typed nonsense what to do instead', () => {
@@ -756,10 +756,10 @@ describe('storage', () => {
 
   it('round-trips a scheme through storage', () => {
     const stored = { accent: '#12867f', chrome: '#e08a4c', banner: '#a9cbe8' }
-    assert.deepEqual(parseScheme(serialiseScheme(stored)), stored)
+    assert.deepEqual(parseScheme(serializeScheme(stored)), stored)
   })
 
-  it('normalises what it stores, so two spellings of one colour are one colour', () => {
+  it('normalizes what it stores, so two spellings of one color are one color', () => {
     assert.deepEqual(
       parseScheme('{"accent":"#12867F","chrome":null,"banner":"#A9CBE8"}'),
       scheme({ accent: '#12867f', banner: '#a9cbe8' }),
@@ -802,7 +802,7 @@ describe('storage', () => {
     }
   })
 
-  it('drops a stored colour that the guard would refuse today', () => {
+  it('drops a stored color that the guard would refuse today', () => {
     // A value written by a build with a laxer rule must not survive the rule change.
     assert.deepEqual(
       parseScheme('{"accent":"#00ff00","chrome":"#7fc9a8","banner":"#a9cbe8"}'),
@@ -839,7 +839,7 @@ describe('the account menu line', () => {
     assert.equal(isDefaultScheme(DEFAULT_SCHEME), true)
   })
 
-  it('names the one customised role, and gives up at two', () => {
+  it('names the one customized role, and gives up at two', () => {
     assert.equal(schemeSummary(scheme({ accent: '#12867f' })), 'Custom accent')
     assert.equal(schemeSummary(scheme({ chrome: '#e08a4c' })), 'Custom plate')
     assert.equal(schemeSummary(scheme({ banner: '#a9cbe8' })), 'Custom banner')

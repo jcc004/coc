@@ -17,7 +17,7 @@ import type { BaseInventory, CardCategory } from './card-types.ts'
 /**
  * A trade's life: proposed, then resolved exactly once.
  *
- * There is no `cancelled` distinct from `declined`. Either party — and an admin
+ * There is no `canceled` distinct from `declined`. Either party — and an admin
  * — may resolve a trade, so "I have changed my mind" and "no thanks" are the
  * same event with the same consequence (nothing moves), and `resolvedBy` says
  * which side it came from.

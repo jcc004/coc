@@ -13,21 +13,21 @@ import {
 } from './color-contrast.ts'
 
 /**
- * The user's colour scheme: which of this app's colours they may choose, what is
+ * The user's color scheme: which of this app's colors they may choose, what is
  * derived from those choices, and what is refused.
  *
  * **The two themes are not touched.** Light and dark ship exactly as they are and are
  * what anybody who has chosen nothing gets; every value here is written as a `var()`
- * *override* with the shipped colour as the fallback (see the `--user-…` names in
+ * *override* with the shipped color as the fallback (see the `--user-…` names in
  * `styles.css`), so an empty scheme is byte-for-byte the theme that was there before.
  *
  * ## What is exposed, and why so little
  *
- * Three colours, not forty.
+ * Three colors, not forty.
  *
- *  - **Accent** — the app's one interactive/magnitude colour. Links, the focus ring,
+ *  - **Accent** — the app's one interactive/magnitude color. Links, the focus ring,
  *    the meter fill, the progress bars, the checkbox tick, the notice edge. Changing
- *    it changes every affordance at once, which is what "my colour" means.
+ *    it changes every affordance at once, which is what "my color" means.
  *  - **Chrome** — the gold plate. The panel edges, the committing buttons, the card
  *    badge, and the display numerals. It is the app's *skin*; `styles.css` says of it
  *    that "gold is chrome only … it never encodes a value", which is precisely why it
@@ -63,7 +63,7 @@ import {
  *    the text and its background and the guard has nothing left to stand on — that is
  *    the white-on-white the brief is about;
  *  - the **status palette** (`--good`, `--warning`, `--critical`) and the four **deck**
- *    colours encode meaning. They are shared vocabulary, not decoration, and a
+ *    colors encode meaning. They are shared vocabulary, not decoration, and a
  *    per-browser preference cannot be allowed to make one person's "error" another
  *    person's "fine";
  *  - `--dev`, the tarnished plate, exists to be *unmistakable* for the live host. A
@@ -71,11 +71,11 @@ import {
  *
  * ## The guard
  *
- * A chosen colour names a **hue**. The **shade is not the user's to pick**: it is
+ * A chosen color names a **hue**. The **shade is not the user's to pick**: it is
  * fitted to each theme, separately, against the background it will actually sit on.
  * That is the whole trick, and it is why this almost never has to refuse anything —
  * the same blue that reads on parchment at 4.5:1 is invisible on dark wood, so one
- * colour could not have satisfied both, and asking the user to find one that did
+ * color could not have satisfied both, and asking the user to find one that did
  * would have been the wall the brief describes.
  *
  * The ratios, and where each applies:
@@ -107,12 +107,12 @@ import {
  *
  * ## Hue is not the guard
  *
- * The brief asked that colours not be "too close in hue". Hue distance cannot prevent
- * the failure it is usually invoked for: two colours 180° apart can have identical
- * luminance, and that is white-on-white with a colour cast. **Contrast is the guard.**
- * Hue separation is kept as a *third* constraint, and only between colours that carry
+ * The brief asked that colors not be "too close in hue". Hue distance cannot prevent
+ * the failure it is usually invoked for: two colors 180° apart can have identical
+ * luminance, and that is white-on-white with a color cast. **Contrast is the guard.**
+ * Hue separation is kept as a *third* constraint, and only between colors that carry
  * different meanings — see `distinguishable` in `color-contrast.ts`, which tests ΔE in
- * ordinary vision first, ΔE under red-green colour blindness second, and hue last.
+ * ordinary vision first, ΔE under red-green color blindness second, and hue last.
  *
  * The pairs it is applied to are real ones from this stylesheet: `.meter__fill` is the
  * accent and `.meter__fill--max` is `--good`, in the same list; `.notice` is edged in
@@ -121,14 +121,14 @@ import {
  * module can produce — and it offers the nearest hue that would have worked.
  */
 
-/* ---------- the themes a colour has to survive ---------- */
+/* ---------- the themes a color has to survive ---------- */
 
 export type SchemeTheme = 'light' | 'dark'
 
 export const SCHEME_THEMES: readonly SchemeTheme[] = ['light', 'dark']
 
 /**
- * The fixed part of each theme, copied from `styles.css`. Anything a user colour is
+ * The fixed part of each theme, copied from `styles.css`. Anything a user color is
  * measured *against* lives here, which is also the list of things they cannot move.
  */
 interface Backdrop {
@@ -138,7 +138,7 @@ interface Backdrop {
   readonly plane: string
   /** The ink the gold plate carries, in this theme. */
   readonly plateInk: string
-  /** Status colours the accent has to stay distinct from. */
+  /** Status colors the accent has to stay distinct from. */
   readonly good: string
   readonly critical: string
 }
@@ -183,7 +183,7 @@ const HOVER_STEP = 0.085
  * 0.19 — so a chosen accent gets the groove the designed one has.
  *
  * A wash into the *surface* was tried first and is wrong: mixing a blue into parchment
- * gives a green-grey groove, because the parchment carries its own hue.
+ * gives a green-gray groove, because the parchment carries its own hue.
  */
 const TRACK_LIGHTNESS: Record<SchemeTheme, number> = { light: 0.88, dark: 0.19 }
 const TRACK_SATURATION = 0.82
@@ -271,7 +271,7 @@ function clamp(value: number, low: number, high: number): number {
   return Math.min(high, Math.max(low, value))
 }
 
-/** The nearest shade of this colour that clears `ratio` against every one of `grounds`. */
+/** The nearest shade of this color that clears `ratio` against every one of `grounds`. */
 function fitToGrounds(
   color: Rgb,
   grounds: readonly Rgb[],
@@ -320,7 +320,7 @@ export interface ThemeFit<T> {
   readonly moved: boolean
 }
 
-/** Which fixed colour a refused accent collided with. */
+/** Which fixed color a refused accent collided with. */
 export type ClashPartner = 'good' | 'critical'
 
 export type AccentFit =
@@ -376,8 +376,8 @@ function trackFor(accent: Rgb, theme: SchemeTheme): Rgb {
 }
 
 /**
- * Fit one accent to one theme, or say which fixed colour it could not be told apart
- * from. Contrast first: a colour is moved to a readable shade *before* it is asked
+ * Fit one accent to one theme, or say which fixed color it could not be told apart
+ * from. Contrast first: a color is moved to a readable shade *before* it is asked
  * whether it is still distinct, because the shade it will actually be drawn in is the
  * only one worth testing.
  */
@@ -427,7 +427,7 @@ function fitAccentToTheme(color: Rgb, theme: SchemeTheme): AccentAttempt {
 }
 
 /**
- * The whole accent decision for a chosen colour: a shade per theme, or a refusal that
+ * The whole accent decision for a chosen color: a shade per theme, or a refusal that
  * names what it collided with and offers the nearest hue that does not.
  */
 export function fitAccent(hex: string): AccentFit {
@@ -436,7 +436,7 @@ export function fitAccent(hex: string): AccentFit {
 
   const fit = rawFitAccent(picked)
   /* The suggestion is filled in here and not in `rawFitAccent`, because finding it
-     means fitting candidate colours — and a suggestion that suggested itself would
+     means fitting candidate colors — and a suggestion that suggested itself would
      recur forever. */
   return fit.status === 'clash' ? { ...fit, suggestion: nearestUsableAccent(hex) } : fit
 }
@@ -467,7 +467,7 @@ function rawFitAccent(picked: Rgb): AccentFit {
 /**
  * The nearest hue to the one picked that this module would accept, keeping the
  * saturation and lightness. Rotating outward one degree at a time and stopping at the
- * first that works means the offer is recognisably the colour the user asked for —
+ * first that works means the offer is recognizably the color the user asked for —
  * which is the difference between "no" and "not quite; try this".
  */
 export function nearestUsableAccent(hex: string): string | null {
@@ -502,7 +502,7 @@ function fitChromeToTheme(color: Rgb, theme: SchemeTheme): { roles: ChromeRoles;
     if (contrastRatio(ink, deep) < BODY_TEXT_RATIO) continue
 
     const edge = withLightness(plate, lightness - PLATE_EDGE_DROP)
-    /* The numerals are their own role because the plate's own colour is unreadable as
+    /* The numerals are their own role because the plate's own color is unreadable as
        text on parchment — the reason `--display` exists at all. Fitted independently,
        against the card surface, and it may end up nothing like the plate. */
     const display = fitToGrounds(plate, [surface], BODY_TEXT_RATIO, theme === 'light')
@@ -612,7 +612,7 @@ export function fitBanner(hex: string): BannerFit {
 function requireHex(hex: string): Rgb {
   const rgb = parseHex(hex)
   /* The argument is always one of this module's own constants. */
-  if (!rgb) throw new Error(`not a colour: ${hex}`)
+  if (!rgb) throw new Error(`not a color: ${hex}`)
   return rgb
 }
 
@@ -623,7 +623,7 @@ export type SchemeRole = 'accent' | 'chrome' | 'banner'
 export const SCHEME_ROLES: readonly SchemeRole[] = ['accent', 'chrome', 'banner']
 
 /**
- * What the user chose. `null` is not "no colour", it is **the shipped theme** — the
+ * What the user chose. `null` is not "no color", it is **the shipped theme** — the
  * variables are simply not written, so the stylesheet's own fallback stands.
  *
  * `banner: null` is the case worth naming, because "no banner" is not a transparent
@@ -640,7 +640,7 @@ export interface ColorScheme {
 export const DEFAULT_SCHEME: ColorScheme = { accent: null, chrome: null, banner: null }
 
 /**
- * The shipped colours, for the picker to show as the current value of a default. The
+ * The shipped colors, for the picker to show as the current value of a default. The
  * banner's is the plate's, because that is literally what the topbar is painted today.
  */
 export const SHIPPED: Record<SchemeRole, string> = {
@@ -692,8 +692,8 @@ export function colorSchemeKey(userId: number): string {
  *
  * Everything that can be wrong here has to end at the shipped theme rather than at a
  * broken page: not JSON, JSON that is not an object, an older shape, a field that is
- * not a string, a string that is not a colour, and — the one worth spelling out — a
- * colour that *was* acceptable under an earlier version of the guard and no longer is.
+ * not a string, a string that is not a color, and — the one worth spelling out — a
+ * color that *was* acceptable under an earlier version of the guard and no longer is.
  * Each field falls back on its own, so one bad half does not discard the other.
  *
  * **The two-field shape is one of those older shapes.** Everything stored before the
@@ -710,12 +710,12 @@ export function parseScheme(stored: unknown): ColorScheme {
   for (const role of SCHEME_ROLES) {
     const value = raw[role]
     if (typeof value !== 'string' || !acceptsColor(role, value)) continue
-    scheme = withSchemeColor(scheme, role, normalise(value))
+    scheme = withSchemeColor(scheme, role, normalize(value))
   }
   return scheme
 }
 
-function normalise(hex: string): string {
+function normalize(hex: string): string {
   const rgb = parseHex(hex)
   return rgb ? formatHex(rgb) : hex
 }
@@ -734,7 +734,7 @@ function tryParse(text: string): unknown {
   }
 }
 
-export function serialiseScheme(scheme: ColorScheme): string {
+export function serializeScheme(scheme: ColorScheme): string {
   return JSON.stringify({ accent: scheme.accent, chrome: scheme.chrome, banner: scheme.banner })
 }
 
@@ -742,7 +742,7 @@ export function serialiseScheme(scheme: ColorScheme): string {
 
 /**
  * Every variable this module can write, so the applier can clear the ones a scheme
- * does not set. Missing one would leave a stale colour behind after a Reset, which is
+ * does not set. Missing one would leave a stale color behind after a Reset, which is
  * the kind of bug that only shows up for the person who tried the feature.
  */
 export const SCHEME_VARIABLES: readonly string[] = [
@@ -822,10 +822,10 @@ export interface Preset {
 }
 
 /**
- * The offered colours: the constrained path, and the one most people will take.
+ * The offered colors: the constrained path, and the one most people will take.
  *
  * Every one of them is checked by the tests against the same guard the custom input
- * goes through, so a preset can never be a colour the app would have refused. They are
+ * goes through, so a preset can never be a color the app would have refused. They are
  * spread around the hue circle and deliberately avoid the bands the accent cannot use
  * — which is the difference between a picker that guides and one that punishes.
  */
@@ -892,7 +892,7 @@ const CLASH_PARTNER_NOUN: Record<ClashPartner, string> = {
 
 const CLASH_REASON_NOUN: Record<ClashReason, string> = {
   'too-similar': 'too close to',
-  'too-similar-colour-blind': 'too close, for a reader with red-green colour blindness, to',
+  'too-similar-color-blind': 'too close, for a reader with red-green color blindness, to',
   'too-close-in-hue': 'too close in hue to',
 }
 
@@ -905,11 +905,11 @@ const CLASH_REASON_NOUN: Record<ClashReason, string> = {
 export function describeAccent(hex: string, fit: AccentFit): string {
   switch (fit.status) {
     case 'invalid':
-      return `${hex} is not a colour this picker can read. Pick one of the swatches instead.`
+      return `${hex} is not a color this picker can read. Pick one of the swatches instead.`
     case 'unreadable': {
       const where = fit.theme === 'light' ? 'parchment' : 'dark wood'
       return (
-        `Not available: no shade of this colour reaches ${BODY_TEXT_RATIO}:1 against ` +
+        `Not available: no shade of this color reaches ${BODY_TEXT_RATIO}:1 against ` +
         `${where}, and links are drawn in the accent. Pick one of the swatches instead.`
       )
     }
@@ -918,7 +918,7 @@ export function describeAccent(hex: string, fit: AccentFit): string {
       const reason = CLASH_REASON_NOUN[fit.reason]
       const where = fit.theme === 'light' ? 'the light theme' : 'the dark theme'
       const offer = fit.suggestion
-        ? ` The nearest colour that works is ${fit.suggestion}.`
+        ? ` The nearest color that works is ${fit.suggestion}.`
         : ' Try a swatch instead.'
       return (
         `Not available: in ${where} this accent is ${reason} ${partner}, ` +
@@ -934,7 +934,7 @@ export function describeAccent(hex: string, fit: AccentFit): string {
 export function describeChrome(hex: string, fit: ChromeFit): string {
   switch (fit.status) {
     case 'invalid':
-      return `${hex} is not a colour this picker can read. Pick one of the swatches instead.`
+      return `${hex} is not a color this picker can read. Pick one of the swatches instead.`
     case 'fitted':
       return describeFitted('chrome', fit.light.roles.gold, fit.dark.roles.gold)
   }
@@ -961,7 +961,7 @@ export function describeBanner(hex: string, fit: BannerFit): string {
 export interface RoleOutcome {
   readonly message: string
   readonly refused: boolean
-  /** A colour to offer instead, for the one case where fitting cannot rescue a choice. */
+  /** A color to offer instead, for the one case where fitting cannot rescue a choice. */
   readonly suggestion: string | null
   /** The shade each theme was given, or `null` where there is none to show. */
   readonly light: string | null
@@ -1014,9 +1014,9 @@ function describeFitted(role: SchemeRole, light: string, dark: string): string {
 }
 
 /**
- * What the account menu shows beside "Colours".
+ * What the account menu shows beside "Colors".
  *
- * One customised role is named, because "why is this blue" then has its answer in the
+ * One customized role is named, because "why is this blue" then has its answer in the
  * menu. Two or three are just "Custom": a line reading "Custom accent and banner" would
  * be longer than the label it sits beside, and at that point the picker is the answer.
  */

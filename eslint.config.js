@@ -139,14 +139,14 @@ export default tseslint.config(
        * The two React Compiler rules below are off, and both for the same reason:
        * **this app does not run the compiler.** `@vitejs/plugin-react` is used
        * without `babel-plugin-react-compiler`, so the rules are reporting on an
-       * optimisation that never happens.
+       * optimization that never happens.
        *
        * `preserve-manual-memoization` is purely a compiler diagnostic — its message
        * is literally "Compilation Skipped". With no compiler, nothing is skipped.
        *
        * `set-state-in-effect` is a real design smell in general, and it is off
        * reluctantly. It reported six sites, all of them documented deliberate
-       * synchronisation: three copies of "the page count shrank, clamp the page
+       * synchronization: three copies of "the page count shrank, clamp the page
        * control to it" (CardsView, TradeSuggestions, TradeTracker), and three in
        * `hooks.ts` that reset state when the thing it describes goes away — a loader
        * becoming null, a sign-out, a user id changing. Each would need a genuine

@@ -16,17 +16,17 @@ import {
 import { useColorScheme } from '../hooks.ts'
 
 /**
- * The colour picker: pick the accent, the plate and the banner, see it happen, put it
+ * The color picker: pick the accent, the plate and the banner, see it happen, put it
  * back.
  *
  * Two things about the shape of it.
  *
- * **The swatches are the path.** Every offered colour is one the guard accepts —
+ * **The swatches are the path.** Every offered color is one the guard accepts —
  * asserted in `color-scheme.test.ts`, against the same code the custom input goes
  * through — so the ordinary way to use this cannot produce a message at all. The
- * free colour input is the second path, and the sentence under it always says what
- * happened: which shade each theme was given, or, for the handful of colours this app
- * cannot lend out, which of its own colours the choice collided with and the nearest
+ * free color input is the second path, and the sentence under it always says what
+ * happened: which shade each theme was given, or, for the handful of colors this app
+ * cannot lend out, which of its own colors the choice collided with and the nearest
  * hue that does not. A control that refuses without saying why is the wall this
  * codebase's messages are written to avoid.
  *
@@ -34,8 +34,8 @@ import { useColorScheme } from '../hooks.ts'
  * there is nothing to interpret from a row of chips; the two chips that are here say
  * what the *other* theme was given, which is the only part you cannot see.
  *
- * No new colour and no inline styles: the swatch is an SVG `rect` with a `fill`
- * attribute, which is how a dynamic colour is drawn here without a style attribute
+ * No new color and no inline styles: the swatch is an SVG `rect` with a `fill`
+ * attribute, which is how a dynamic color is drawn here without a style attribute
  * (`deploy/nginx-coc.conf` calls those debt) and without a per-preset CSS class that
  * could drift from the list in `color-scheme.ts`.
  */
@@ -61,12 +61,12 @@ export function ColorSchemeCard({ user }: { user: SessionUser }) {
 
   return (
     <section className="card">
-      <h2 className="section-title">Colours</h2>
+      <h2 className="section-title">Colors</h2>
       <p className="lookup-preview">
-        Three colours are yours: the accent, the gold plate, and the banner across the top.
+        Three colors are yours: the accent, the gold plate, and the banner across the top.
         Everything else — the parchment, the ink, and the green, amber and red that mean
         something — stays put, so that whatever you pick still reads. The shade is fitted to
-        each theme separately, because a colour that works on parchment can vanish on dark
+        each theme separately, because a color that works on parchment can vanish on dark
         wood.
       </p>
 
@@ -81,7 +81,7 @@ export function ColorSchemeCard({ user }: { user: SessionUser }) {
           disabled={isDefaultScheme(scheme)}
           onClick={() => choose(DEFAULT_SCHEME)}
         >
-          Reset to the shipped colours
+          Reset to the shipped colors
         </button>
         <span className="lookup-preview">
           {isDefaultScheme(scheme)
@@ -102,7 +102,7 @@ function RoleBlock({
   scheme: ColorScheme
   onChoose: (next: ColorScheme) => void
 }) {
-  /* What is in the input, which is not the same as what is stored: a colour the guard
+  /* What is in the input, which is not the same as what is stored: a color the guard
      refuses stays visible with its reason rather than disappearing on the way in. */
   const [pending, setPending] = useState<string | null>(null)
 
@@ -142,12 +142,12 @@ function RoleBlock({
       </div>
 
       <label className="scheme-custom">
-        <span>Or any colour</span>
+        <span>Or any color</span>
         <input
           type="color"
           value={shown}
           onChange={(event) => apply(event.target.value)}
-          aria-label={`${ROLE_TITLE[role]}: choose any colour`}
+          aria-label={`${ROLE_TITLE[role]}: choose any color`}
         />
         <span className="scheme-shade">{shown}</span>
       </label>
@@ -200,7 +200,7 @@ function sameColor(hex: string, other: string | null): boolean {
 }
 
 /**
- * A colour, drawn. `fill` is a presentation attribute rather than a style attribute,
+ * A color, drawn. `fill` is a presentation attribute rather than a style attribute,
  * which is what lets this be dynamic without adding to the inline-style count the CSP
  * comment tracks. `aria-hidden` — the button around it carries the name.
  */

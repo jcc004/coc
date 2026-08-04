@@ -76,7 +76,7 @@ export function mountAuthRoutes(
 ): void {
   app.post('/api/auth/login', async (c) => {
     const body = await readJson(c)
-    // Normalised before it reaches the limiter as well as the store, so `A@B.com`
+    // Normalized before it reaches the limiter as well as the store, so `A@B.com`
     // and `a@b.com` share one failure bucket instead of getting five tries each.
     const email = normalizeEmail(asString(body['email']))
     const password = asString(body['password'])

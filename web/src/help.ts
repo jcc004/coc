@@ -22,11 +22,11 @@
  *
  * The cost is that `HelpView` has to do the scrolling itself, which the browser
  * would have done for a real fragment. That is a `scrollIntoView` in one effect,
- * and it buys something the native behaviour does not give: the section ids stay
+ * and it buys something the native behavior does not give: the section ids stay
  * ordinary element ids, so they are still what a screen reader announces and what
  * the in-page contents list links to.
  *
- * An unrecognised section is **not** an error. It falls back to the top of the
+ * An unrecognized section is **not** an error. It falls back to the top of the
  * page — somebody following an old link should get the help page, not a 404 for a
  * heading that was renamed.
  */
@@ -90,7 +90,7 @@ const IDS = new Set<string>(HELP_SECTIONS.map((section) => section.id))
  * The section a `#/help/<param>` link is asking for, or `null` for the whole page.
  *
  * Case-insensitive and space-tolerant, because this is a URL somebody may have
- * typed or had mangled by a chat client. Anything still unrecognised is `null`
+ * typed or had mangled by a chat client. Anything still unrecognized is `null`
  * rather than a throw: see the note at the top about old links.
  */
 export function helpSection(param: string | null | undefined): HelpSectionId | null {

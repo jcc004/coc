@@ -4,7 +4,7 @@ import type { UserRole } from '@coc/shared'
  * The one answer to "may this user change this base's card counts".
  *
  * It is a pure function, in its own file, with its own tests, because it is the
- * only interesting authorisation decision in the app and the temptation is to
+ * only interesting authorization decision in the app and the temptation is to
  * spell it out inline in the handler. Spread across handlers it would drift: one
  * place would forget the admin case, another would treat an unowned base as fair
  * game, and nobody could state the rule without reading three files. Here it can
@@ -13,7 +13,7 @@ import type { UserRole } from '@coc/shared'
  * The rules, in the order they apply:
  *
  * 1. A disabled account writes nothing — not even an admin's. Sessions are already
- *    revoked on disable, so this is defence in depth rather than the enforcement.
+ *    revoked on disable, so this is defense in depth rather than the enforcement.
  * 2. The owning account writes its own base. That is the point of the change.
  * 3. An **admin** writes any base. Not a loophole, a deliberate decision: an admin
  *    can reassign ownership to themselves at will, so refusing them the direct

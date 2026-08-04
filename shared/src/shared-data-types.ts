@@ -38,7 +38,7 @@ export interface OwnerRecord {
    */
   owner: string
   /**
-   * The account the base belongs to, and the only thing authorisation looks at —
+   * The account the base belongs to, and the only thing authorization looks at —
    * it is what makes "only the owner may edit these card counts" answerable.
    *
    * `null` for a row whose `owner` text has never been matched to an account

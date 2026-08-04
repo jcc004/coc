@@ -40,7 +40,7 @@ export function isBaseScope(value: string | null): value is BaseScope {
 /**
  * The filter to start on.
  *
- * A stored choice is honoured as made, including `Mine` by an account that now
+ * A stored choice is honored as made, including `Mine` by an account that now
  * owns nothing — they asked for it, and the empty list says so in words. What
  * `ownsAny` decides is the case where there is nothing stored: `Mine` only when
  * the account actually holds a base, because the alternative is a first visit that

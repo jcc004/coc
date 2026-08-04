@@ -43,8 +43,8 @@ import { useSession } from './session.ts'
  *
  * Two four-point stars — long on the cardinals, short and paler on the diagonals —
  * inside a ring. Both are painted in `currentColor`, so the mark takes the
- * topbar's ink in either theme and needs no colour of its own in `styles.css`;
- * `opacity` rather than a second colour is what separates the two stars, for the
+ * topbar's ink in either theme and needs no color of its own in `styles.css`;
+ * `opacity` rather than a second color is what separates the two stars, for the
  * same reason.
  *
  * **The geometry is imported rather than written here**, because the same mark is
@@ -337,9 +337,9 @@ export function App() {
        *
        * The second paragraph now also names the community wiki, because unit art no
        * longer comes from the API. Fandom hosts those files under its CC BY-SA text
-       * licence, which does not cover the images themselves — they are game rips and
+       * license, which does not cover the images themselves — they are game rips and
        * remain Supercell's, so the attribution has to credit the source without
-       * implying a licence it cannot grant.
+       * implying a license it cannot grant.
        */}
       <footer className="site-footer">
         <p>
@@ -374,7 +374,7 @@ export function App() {
           . All game artwork remains the property of Supercell. This is a non-commercial fan
           project and does not use Supercell's assets as its own branding.
         </p>
-        {/* Last, and quieter than the notice above it: the licence text is a
+        {/* Last, and quieter than the notice above it: the license text is a
             requirement, this is a convenience. */}
         <BuildStamp isAdmin={user.role === 'admin'} />
       </footer>

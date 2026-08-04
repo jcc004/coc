@@ -96,7 +96,7 @@ function OwnerText({ cell }: { cell: OwnerCell }) {
  * unlinked label. **No owner** is the first option and clears the assignment, which
  * has to stay possible.
  *
- * A legacy row is drawn distinctly three ways at once, none of them colour alone:
+ * A legacy row is drawn distinctly three ways at once, none of them color alone:
  * its stored label sits in the select as an unchoosable option that says *not an
  * account*, the control takes a `--warning` edge, and the line beneath names it as a
  * legacy label — with the account it most likely meant, where the fold in
@@ -218,7 +218,7 @@ export function RosterTable({ members, user }: { members: ClanMember[]; user: Se
   /*
    * One state machine rather than ten `useState` calls. Every transition is named in
    * `roster-state.ts`, which is also where the awkward pairs are decided — clearing
-   * the selection drops the pending approvals, cancelling the approvals does not drop
+   * the selection drops the pending approvals, canceling the approvals does not drop
    * the selection — so they are stated once instead of being implied by the order of
    * `setX` calls in six handlers.
    */
@@ -625,7 +625,7 @@ export function RosterTable({ members, user }: { members: ClanMember[]; user: Se
       ) : null}
 
       {/*
-       * `roster--stack` turns this into one labelled card per member at tablet
+       * `roster--stack` turns this into one labeled card per member at tablet
        * width and below. Stacking changes `display`, which strips a table's
        * semantics from the accessibility tree, so every element here carries the
        * role it would have had — see the note in styles.css.

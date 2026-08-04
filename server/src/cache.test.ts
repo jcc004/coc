@@ -180,7 +180,7 @@ describe('ttlMsOverride applies to one call without disturbing the default', () 
     assert.equal(await cache.wrap('clan:#A', loader.load), 'v2', 'the default-TTL entry is intact')
   })
 
-  it('still coalesces — a shorter TTL is not a licence to skip the cache', async () => {
+  it('still coalesces — a shorter TTL is not a license to skip the cache', async () => {
     const cache = new TtlCache(60_000)
     const loader = deferredLoader()
 
@@ -267,7 +267,7 @@ describe('the entry count is bounded, oldest-first', () => {
 
   /*
    * The expiry this test needs is `a`'s, and only `a`'s — so it comes from a
-   * per-call `ttlMsOverride`, the way the neighbouring eviction test does it,
+   * per-call `ttlMsOverride`, the way the neighboring eviction test does it,
    * rather than from a cache-wide TTL.
    *
    * It was written with `new TtlCache(1, 2)`: a one-millisecond TTL for everything,

@@ -371,7 +371,7 @@ export function SavedClansView({ user }: { user: Pick<SessionUser, 'role'> }) {
             ) : null}
 
             <div className="table-wrap">
-              {/* One labelled card per clan at tablet width and below — see the
+              {/* One labeled card per clan at tablet width and below — see the
                   note in styles.css. */}
               <table className="roster roster--stack" role="table">
                 <thead role="rowgroup">

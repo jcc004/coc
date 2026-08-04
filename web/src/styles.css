@@ -17,11 +17,11 @@
  * lets an explicit light choice beat OS dark.
  *
  * Ten roles per theme are written as `var(--user-…-<theme>, <shipped>)`. That is
- * the user's colour scheme, and the shape is the whole of the promise it makes:
+ * the user's color scheme, and the shape is the whole of the promise it makes:
  * **the value in the fallback is the theme, unchanged.** The three banner roles put
  * another `var()` in the fallback rather than a literal, because "no banner chosen" is
  * not a color — it is the gold plate, which is what the topbar has always been.
- * Nothing writes the `--user-…` names unless somebody has chosen a colour on the
+ * Nothing writes the `--user-…` names unless somebody has chosen a color on the
  * account page, so a fresh browser, a cleared storage and a Reset all render the same
  * bytes this file rendered before the feature existed. The names are set on the root
  * element by `useColorScheme` (`hooks.ts`) from `schemeVariables` (`color-scheme.ts`),
@@ -59,11 +59,11 @@
   /*
    * The dev banner: **tarnished gold**, not a different metal.
    *
-   * This was a grey steel first, which measured ΔE 80 from the production plate in
+   * This was a gray steel first, which measured ΔE 80 from the production plate in
    * Lab — far enough that it read as a foreign component rather than as the same
    * banner in another state. These values are the same hue at lower value and chroma:
    * ΔE 19 light and 15 dark, which is "a deliberate sibling" rather than "a different
-   * colour". Gold that has not been polished, which is what a dev box is.
+   * color". Gold that has not been polished, which is what a dev box is.
    *
    * A separate role rather than a filter on the gold, because the ink has to be
    * checked against this plate on its own terms. It was: `--on-dev` at the obvious
@@ -107,12 +107,12 @@
    *
    * It is the only *visible* carrier of deck since the headings and the tile names
    * came off, which is the narrowest this encoding has been: what keeps it from
-   * being colour-alone is that the tiles stay in deck order so each colour is one
+   * being color-alone is that the tiles stay in deck order so each color is one
    * unbroken run, that each run is a `role="group"` named by a `.visually-hidden`
    * heading, and that every tile's `title` and its number box's accessible name
    * say the deck in words.
    *
-   * Nominal values are the event's own frame colours, recorded in
+   * Nominal values are the event's own frame colors, recorded in
    * `CARD_CATEGORY_BORDER` in shared/src/card-types.ts. Dark mode lightens them
    * because the deep purple in particular disappears against dark wood.
    */
@@ -334,9 +334,9 @@ select {
  *
  * Flex rather than plain inline flow for one measured reason: `.topbar__home` is
  * `inline-flex` with `align-items: center` so the rosette sits against the cap height,
- * and an inline-flex box's synthesised baseline is not where its text actually is. A
+ * and an inline-flex box's synthesized baseline is not where its text actually is. A
  * sibling `<span>` on the same line therefore rendered its text **5px lower** — read
- * off Range rects, not eyeballed. As flex items the two boxes centre against each
+ * off Range rects, not eyeballed. As flex items the two boxes center against each
  * other, and since both carry the same font size and line height their text lands on
  * the same line.
  */
@@ -357,7 +357,7 @@ select {
 
 /*
  * The rosette and the title are one link, so they lay out as one line box and the
- * mark can never wrap away from the words it belongs to. `inline-flex` centres it
+ * mark can never wrap away from the words it belongs to. `inline-flex` centers it
  * against the cap height rather than dropping it onto the baseline.
  */
 .topbar__home {
@@ -368,7 +368,7 @@ select {
 
 /*
  * `flex: none` so the mark keeps its size when the banner wraps at 390px, where
- * the title shares the row with four controls. It carries no colour of its own:
+ * the title shares the row with four controls. It carries no color of its own:
  * the SVG paints in `currentColor` and inherits the ink from `.topbar__title a`
  * above, which is what makes one drawing work in both themes.
  */
@@ -408,7 +408,7 @@ select {
  * so the panel hangs under the button and cannot widen the banner — which wraps, so a
  * panel in the flow would reflow the whole topbar the moment it opened.
  *
- * No new colour: the panel is a `--surface` card with the ordinary `--border`, and
+ * No new color: the panel is a `--surface` card with the ordinary `--border`, and
  * the only shadow is the two `--bevel` roles every other raised thing here uses.
  */
 .user-menu {
@@ -418,7 +418,7 @@ select {
 /*
  * Square, so a head-and-shoulders glyph is not stretched, and 40px on a side.
  *
- * **Geometry only. The colours are in the gold-banner block below**, with the other
+ * **Geometry only. The colors are in the gold-banner block below**, with the other
  * controls that sit on the plate. This rule first carried `--surface` and `--hover`,
  * which are the stone-panel roles: `--hover` is a translucent wash meant to sit *over*
  * a solid surface, so using it as the whole background dropped the fill and let the
@@ -459,7 +459,7 @@ select {
 }
 
 /* Who you are signed in as. A heading in effect, so it is separated by a rule rather
-   than by colour alone. */
+   than by color alone. */
 .user-menu__who {
   display: grid;
   gap: 2px;
@@ -994,7 +994,7 @@ td.select-cell {
   margin-top: 2px;
 }
 
-/* Result wears a status colour, but the word is always present — the label
+/* Result wears a status color, but the word is always present — the label
    carries the meaning, never the hue alone. */
 .result {
   font-weight: 600;
@@ -1099,7 +1099,7 @@ a.chip {
  * this is a fact about who plays the base, which is a different kind of claim and the
  * one people were getting wrong.
  *
- * Three states, and none of them relies on colour alone — each carries words. The
+ * Three states, and none of them relies on color alone — each carries words. The
  * legacy case takes `--warning` because it is the one that needs acting on: a name
  * with no account behind it grants nobody the write. `--critical` would overstate it;
  * nothing is broken, it is just unfinished.
@@ -1340,8 +1340,8 @@ details.group > .group__body {
  * uses, and the frame below is 4:5 to match it exactly: `contain` at the matching
  * ratio neither trims an edge nor leaves a letterbox bar.
  *
- * A card the base holds shows its picture in colour; a card it lacks shows the same
- * file desaturated, rather than shipping a second greyscale image. `grayscale(1)`
+ * A card the base holds shows its picture in color; a card it lacks shows the same
+ * file desaturated, rather than shipping a second grayscale image. `grayscale(1)`
  * plus a slight dim reads as "not collected" while keeping the art legible.
  */
 .card-tile__art {
@@ -1364,12 +1364,12 @@ details.group > .group__body {
  *   --card-zoom  the image's height as a multiple of the frame's height, so the
  *                frame shows 1/zoom of the picture. 2.3 ≈ the top 43%.
  *   --card-y     the point of the image, in per-cent of its own height, held at the
- *                frame's vertical centre — the middle of the head, for a face.
+ *                frame's vertical center — the middle of the head, for a face.
  *   --card-x     the same horizontally.
  *
  * Absolute positioning plus a per-cent translate, not `object-position`: a
  * translate per-cent resolves against the image's own box, which is what makes
- * "this point of the picture, at the centre of the frame" one subtraction rather
+ * "this point of the picture, at the center of the frame" one subtraction rather
  * than two interacting crops. `width: auto` against a definite height keeps the
  * aspect ratio, so nothing is ever stretched. No fallback values on the custom
  * properties: `CardTile` sets all three whenever it sets `data-crop="face"`, so a
@@ -1502,17 +1502,17 @@ details.group > .group__body {
 }
 
 /*
- * The deck frame: categorical colour, on a border only, never on text.
+ * The deck frame: categorical color, on a border only, never on text.
  *
  * It is now the only *visible* cue to which deck a card belongs — the headings
  * are gone and the tiles carry no names, by request. That is a real narrowing of
  * this encoding, so the fallbacks matter: the cards are still laid out in deck
- * order, so each colour arrives as one unbroken run, and every tile's `title` and
+ * order, so each color arrives as one unbroken run, and every tile's `title` and
  * its number box's accessible name both spell the deck out in words. Deck is
  * grouping, not magnitude — it never stands in for a value.
  *
  * It used to be doing a second job: under the old wiki art the home and Builder Base
- * Baby Dragons were one file, and with the tile names gone the deck colour was the
+ * Baby Dragons were one file, and with the tile names gone the deck color was the
  * only thing telling that pair apart. The purpose-made set draws all sixty
  * separately, so the border is back to meaning only "which deck".
  */
@@ -1586,8 +1586,8 @@ details.group > .group__body {
  * The `Have n` / `None` line that used to sit here has gone: the number box below
  * it showed the same figure, at every breakpoint, so it said everything twice.
  *
- * That box is now the whole non-colour half of the held-vs-not encoding, which is
- * why it is never hidden and never replaced by the badge — the greyscale filter and
+ * That box is now the whole non-color half of the held-vs-not encoding, which is
+ * why it is never hidden and never replaced by the badge — the grayscale filter and
  * the ×n badge are both decoration over a number that is always readable, and the
  * input's accessible name spells out the card and the deck in words.
  *
@@ -1599,7 +1599,7 @@ details.group > .group__body {
   font-size: 11px;
   font-weight: 600;
   color: var(--critical);
-  /* Never colour alone: the word is the message, and the tile is outlined too. */
+  /* Never color alone: the word is the message, and the tile is outlined too. */
   text-align: center;
   line-height: 1.25;
 }
@@ -1691,7 +1691,7 @@ details.group > .group__body {
    * characters — about 170px. That is the same floor `minmax(0, 1fr)` is guarding
    * against on the grid itself, and the same horizontal scroll at the end of it.
    *
-   * **No inline padding at all.** The number is centred, so inline padding is invisible
+   * **No inline padding at all.** The number is centered, so inline padding is invisible
    * at every width — and it is charged twice over in the one place there is nothing to
    * spare. It was 4px, then 2px, and each step bought a case back: at 4px `10` clipped
    * at six columns on a 600px screen, and at 2px the densest desktop view could not fit
@@ -1832,7 +1832,7 @@ details.group > .group__body {
  * The one part of that line allowed to stand out, because it is the reason to open
  * the panel. Status green, on the existing token, and **never the only carrier**:
  * the words read "Trades available" or "No trades available" either way, so the
- * state survives with no colour vision at all.
+ * state survives with no color vision at all.
  */
 .card-panel__trades--yes {
   color: var(--good-text);
@@ -1845,10 +1845,10 @@ details.group > .group__body {
  * fix by trading — those cards have to come from the game.
  *
  * It is **never** the only carrier: the line reads `41 nobody holds` in words, and
- * inside the panel each such card is a greyscale tile whose accessible name says
+ * inside the panel each such card is a grayscale tile whose accessible name says
  * `none held across the clan`. The totals grid itself carries no per-tile rule or
- * marker colour — it is the same `.card-tile` as the entry grid, so a card nobody
- * holds is exactly the greyscale-with-no-badge a card the *base* lacks is, and the
+ * marker color — it is the same `.card-tile` as the entry grid, so a card nobody
+ * holds is exactly the grayscale-with-no-badge a card the *base* lacks is, and the
  * words are what tell the two panels apart.
  */
 .card-total__none {
@@ -1890,11 +1890,11 @@ details.group > .group__body {
  * The selected state as a **ring outside the tile** rather than a change to its
  * border, and hover as the tint every other hoverable row in the app uses.
  *
- * The border is the deck colour — the only visible carrier of which deck a card is in
- * — so recolouring it would trade one encoding for another, and the selected tile
+ * The border is the deck color — the only visible carrier of which deck a card is in
+ * — so recoloring it would trade one encoding for another, and the selected tile
  * would be the one tile whose deck you could not read. A `box-shadow` spreads outside
  * the border instead and leaves it alone. `--accent` is the app's one interactive
- * colour and is declared in all three theme scopes, so this needs no colour of its own
+ * color and is declared in all three theme scopes, so this needs no color of its own
  * and holds up on parchment and on dark wood alike.
  *
  * **Never the only carrier of the selection.** The pressed tile is `aria-pressed`, and
@@ -1954,15 +1954,15 @@ details.group > .group__body {
 /* ---------- deck progress plaques ---------- */
 
 /*
- * The event's own panel header, restated: four rounded plaques in the deck colours,
+ * The event's own panel header, restated: four rounded plaques in the deck colors,
  * each naming its deck across the top with a bar beneath carrying the fraction.
  *
- * Three colour roles, kept apart on purpose:
+ * Three color roles, kept apart on purpose:
  *
  *  - the **plaque** is the deck. `--deck-*`, the same categorical token the card
- *    frames use, as a full-strength 2px rim over a wash of the same colour on the
+ *    frames use, as a full-strength 2px rim over a wash of the same color on the
  *    panel surface. Not a solid fill like the game's: the four tokens run from
- *    bright magenta to deep purple, and no single text colour clears 4.5:1 on all
+ *    bright magenta to deep purple, and no single text color clears 4.5:1 on all
  *    four of them. Tinting instead keeps the name and the fraction in `--ink`.
  *  - the **bar** is magnitude. `--accent` on `--track`, the sequential ramp
  *    `.meter` uses. The game's bar is gold; gold here is chrome and has never
@@ -2003,7 +2003,7 @@ details.group > .group__body {
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--deck, var(--surface)) 18%, var(--surface));
   /* Top highlight and a hard shade below, so it sits proud like the other plaques
-     in this skin. The shade is the neutral bevel token rather than the deck colour
+     in this skin. The shade is the neutral bevel token rather than the deck color
      taken towards ink, which only reads as *darker* in light mode. */
   box-shadow:
     inset 0 1px 0 var(--bevel-light),
@@ -2023,7 +2023,7 @@ details.group > .group__body {
 }
 
 /* The positioning context for the fill, which is absolute so the fraction stays
-   centred on the whole bar rather than on the filled part of it. */
+   centered on the whole bar rather than on the filled part of it. */
 .deck-plaque__bar {
   position: relative;
   height: 16px;
@@ -2056,7 +2056,7 @@ details.group > .group__body {
   /*
    * It sits over bare track on an empty deck and over full-strength `--accent` on a
    * complete one, and no one ink clears 4.5:1 against both ends of the ramp. So it
-   * carries its own background: a ring of `--surface`, the panel colour `--ink` is
+   * carries its own background: a ring of `--surface`, the panel color `--ink` is
    * already designed to be read on, in both themes. The game outlines its numerals
    * for the same reason.
    */
@@ -2147,14 +2147,14 @@ table.roster--divided tbody tr:not(:first-child) > td {
  * On the **fixed status palette**, not the sequential ramp: pending / complete /
  * declined is a category rather than a magnitude, so the roles already declared for
  * status carry it — `--warning`, `--good-text`, `--ink-muted`, each defined in all
- * three theme scopes — and no new colour is introduced here.
+ * three theme scopes — and no new color is introduced here.
  *
  * Declined takes the muted ink, not `--critical`: it is a legitimate outcome somebody
  * chose, not a failure, and painting it red would make the ordinary answer "no
  * thanks" read as a broken row.
  *
- * **Colour is never the only carrier.** The word is in the badge, so the state reads
- * the same in greyscale, and the audit line beside it says it again in a sentence.
+ * **Color is never the only carrier.** The word is in the badge, so the state reads
+ * the same in grayscale, and the audit line beside it says it again in a sentence.
  */
 .trade-status {
   display: inline-block;
@@ -2309,7 +2309,7 @@ table.roster th button:hover {
  * Deliberately the quietest control in the app: an outlined circle in muted ink,
  * no fill, no gold. It sits next to something somebody has already found and is
  * only worth noticing when they are stuck, so it borrows the existing `--border`
- * and `--ink-muted` rather than earning a colour of its own.
+ * and `--ink-muted` rather than earning a color of its own.
  *
  * `inline-flex` with equal width and height and no line-height inherited from the
  * heading, because a 12px uppercase `.section-title` would otherwise squash the
@@ -2491,7 +2491,7 @@ table.roster th button:hover {
 }
 
 /*
- * The base rule draws the tile grid's dividers by letting the container colour
+ * The base rule draws the tile grid's dividers by letting the container color
  * show through 1px gaps. That also fills any empty cell in a short last row, so
  * with a plaque edge behind it a six-tile row followed by two tiles left a bare
  * dark block. Painting the dividers per tile instead means unfilled cells simply
@@ -2550,7 +2550,7 @@ table.roster th button:hover {
 /*
  * The same plate, tarnished, for any install that is not the live host.
  *
- * Only the four colour roles change — the geometry, bevels and shadow are the gold
+ * Only the four color roles change — the geometry, bevels and shadow are the gold
  * rule's, so it reads as the same object in a duller finish rather than as a different
  * component. The white wash on the buttons is untouched: it lifts against tarnished
  * gold exactly as it does against bright, which is the whole reason it is white and
@@ -2770,7 +2770,7 @@ table.roster th {
   color: var(--accent);
 }
 
-/* The press travel is decoration; honour a request to sit still. */
+/* The press travel is decoration; honor a request to sit still. */
 @media (prefers-reduced-motion: reduce) {
   .icon-button:active:not(:disabled),
   .search button[type='submit']:active:not(:disabled),
@@ -2846,7 +2846,7 @@ table.roster--pairs td {
   overflow-wrap: anywhere;
 }
 
-/* ---------- the colour picker, on the account page ---------- */
+/* ---------- the color picker, on the account page ---------- */
 
 /*
  * One block per role — accent, then the plate. A rule between them rather than a
@@ -2879,8 +2879,8 @@ table.roster--pairs td {
 }
 
 /*
- * A swatch draws its colour with an SVG `fill` attribute, not a style attribute — see
- * `ColorSchemeCard.tsx`. So this rule is the box and never the colour, which is also
+ * A swatch draws its color with an SVG `fill` attribute, not a style attribute — see
+ * `ColorSchemeCard.tsx`. So this rule is the box and never the color, which is also
  * why there is no per-preset class here to drift from the list in `color-scheme.ts`.
  */
 .scheme-swatch {
@@ -2898,7 +2898,7 @@ table.roster--pairs td {
   background: var(--hover);
 }
 /* Chosen. A ring *and* the pressed state on the button, so the selection is not
-   carried by colour alone. */
+   carried by color alone. */
 .scheme-swatch[aria-pressed='true'] {
   border-color: var(--ink-2);
   box-shadow: 0 0 0 2px var(--ink-2);
@@ -2924,7 +2924,7 @@ table.roster--pairs td {
 }
 
 /*
- * What the guard did, and why. Never absent: a picker that adjusts a colour silently
+ * What the guard did, and why. Never absent: a picker that adjusts a color silently
  * is as bad as one that refuses it silently.
  */
 .scheme-outcome {
@@ -2932,7 +2932,7 @@ table.roster--pairs td {
   font-size: 13px;
   color: var(--ink-2);
 }
-/* A refusal carries the word "Not available" in its text — the colour is the second
+/* A refusal carries the word "Not available" in its text — the color is the second
    cue, never the only one. */
 .scheme-outcome--refused {
   color: var(--critical);
@@ -2992,7 +2992,7 @@ table.roster--pairs td {
 @media (max-width: 900px), (pointer: coarse) {
   /*
    * ~44px is the accepted floor for a fingertip. A <button>, <select> and
-   * <input> all centre their own content, so a min-height is the whole fix for
+   * <input> all center their own content, so a min-height is the whole fix for
    * them; the anchors and pills that merely look like buttons need padding too.
    *
    * Checkboxes are excluded because min-height outranks their explicit height
@@ -3034,7 +3034,7 @@ table.roster--pairs td {
 
   /* A sort header was a bare run of 12px text; give it the whole cell width so
      the target is the column, not the word. `inherit` keeps a numeric column
-     right-aligned, which a button's own centred default would undo. */
+     right-aligned, which a button's own centered default would undo. */
   table.roster th button {
     display: block;
     width: 100%;
@@ -3094,7 +3094,7 @@ table.roster--pairs td {
    * uppercase title and far too small for a thumb. Growing the box would push the
    * line height of every panel header it sits in around, so the **target** is
    * extended past the drawing instead: a positioned pseudo-element 44px square,
-   * centred on the glyph, takes the press. Nothing adjacent to it is interactive —
+   * centered on the glyph, takes the press. Nothing adjacent to it is interactive —
    * a status line, a heading, or the deck plaques — so the overhang costs nothing.
    */
   .help-link {
@@ -3395,7 +3395,7 @@ table.roster--pairs td {
    * Still six across — the column count is fixed at every width now. What gives here
    * is the spacing, not the shape: a 4px gap and less tile padding hand the artwork the
    * width that gaps and borders would otherwise take, which at 390px is the difference
-   * between a recognisable portrait and a smudge.
+   * between a recognizable portrait and a smudge.
    *
    * Six columns on a 390px screen is about 52px a tile. That is deliberately tight, and
    * it is why turning the phone sideways matters: landscape is ~844px, which gives each
@@ -3415,7 +3415,7 @@ table.roster--pairs td {
 /*
  * The build stamp, at the foot of every page.
  *
- * Quieter than the licence notice above it — that text is a requirement, this is a
+ * Quieter than the license notice above it — that text is a requirement, this is a
  * convenience — so it takes the muted ink and a smaller size, and it is separated by a
  * rule rather than by size alone so the grouping survives if the text scales.
  */

@@ -56,11 +56,11 @@ export function cardsInCategory(category: CardCategory): GeneratedCard[] {
 /**
  * A category as an attribute value: `'Dark Elixir'` → `'dark-elixir'`.
  *
- * The deck's frame colour is picked in CSS off `[data-deck=…]` rather than being
- * set inline from `CARD_CATEGORY_BORDER`, because a colour that has to work on
- * parchment *and* on dark wood is a theme decision, and every other colour role
+ * The deck's frame color is picked in CSS off `[data-deck=…]` rather than being
+ * set inline from `CARD_CATEGORY_BORDER`, because a color that has to work on
+ * parchment *and* on dark wood is a theme decision, and every other color role
  * in this app is declared as a custom property in all three theme scopes. The
- * constant in `shared/` stays the record of the event's nominal frame colours;
+ * constant in `shared/` stays the record of the event's nominal frame colors;
  * `--deck-*` in styles.css is what the page actually paints.
  */
 export function deckSlug(category: CardCategory): string {
@@ -77,7 +77,7 @@ export interface CardHolding {
  * Sparse counts → one entry per card, in id order.
  *
  * The grid always shows all sixty, so the absent-means-zero storage has to be
- * expanded exactly once, here. Ids the card list does not recognise are dropped:
+ * expanded exactly once, here. Ids the card list does not recognize are dropped:
  * they cannot be rendered, and inventing a tile for them would be worse.
  */
 export function holdingsFor(inventory: BaseInventory | undefined): CardHolding[] {

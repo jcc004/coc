@@ -57,7 +57,7 @@ function canonicalOrNull(tag: string): string | null {
 /**
  * Sparse wire counts → id-keyed holdings, on the same terms as `card-trades.ts`:
  * a non-positive or fractional count is an absence, and a repeated id keeps the
- * larger value. Cards the resolver does not recognise are dropped, since they
+ * larger value. Cards the resolver does not recognize are dropped, since they
  * belong to no deck and could not be shown in one.
  */
 function holdings(base: BaseInventory, categoryOf: CategoryResolver): Map<number, number> {
@@ -80,7 +80,7 @@ function holdings(base: BaseInventory, categoryOf: CategoryResolver): Map<number
  * The rules are identical either way — a pair's suggestions do not depend on who
  * else is in the list.
  */
-export function summariseBase(
+export function summarizeBase(
   tag: string,
   bases: BaseInventory[],
   categoryOf: CategoryResolver,

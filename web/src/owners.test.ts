@@ -73,7 +73,7 @@ describe('migrateLegacySaved', () => {
     assert.deepEqual(migrateLegacySaved(raw), [{ tag: '#CCC', owner: 'Sam' }])
   })
 
-  it('trims the owner and canonicalises the tag', () => {
+  it('trims the owner and canonicalizes the tag', () => {
     // Lowercase and the letter O, both of which normalizeTag corrects.
     const raw = JSON.stringify([{ tag: 'g88cyqp', owner: '  Jared  ' }])
     assert.deepEqual(migrateLegacySaved(raw), [{ tag: '#G88CYQP', owner: 'Jared' }])
