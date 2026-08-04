@@ -8,6 +8,9 @@
 #   ./deploy/update.sh --rollback # put back the last commit that deployed cleanly
 #   ./deploy/update.sh --resume   # clear the hold a rollback left, and deploy again
 #
+#   ./deploy/update.sh --prune-backups DIR   # apply the backup retention policy to
+#                                            # DIR and stop; deploys nothing
+#
 # Run as the user that owns the tree (crighjc), never with sudo: npm run as root
 # leaves root-owned files in node_modules that every later run then trips over.
 #
@@ -36,12 +39,15 @@ shopt -s nullglob
 FORCE=0
 ROLLBACK=0
 RESUME=0
+PRUNE_ONLY=0
+PRUNE_DIR=""
 case "${1:-}" in
-  --force)    FORCE=1 ;;
-  --rollback) ROLLBACK=1 ;;
-  --resume)   RESUME=1 ;;
-  '')         ;;
-  *)          printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
+  --force)          FORCE=1 ;;
+  --rollback)       ROLLBACK=1 ;;
+  --resume)         RESUME=1 ;;
+  --prune-backups)  PRUNE_ONLY=1; PRUNE_DIR="${2:-}" ;;
+  '')               ;;
+  *)                printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
 esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -52,6 +58,14 @@ SERVICE=coc
 SITE="${DEPLOY_SITE_URL:-https://coc.jcciv.com}"
 CARD_COUNT_EXPECTED=60
 BACKUP_DIR="$HOME/coc-backups"
+
+# The retention policy, in one place. See the long comment above rotate_backups().
+KEEP_DAILY=3
+KEEP_WEEKLY=1
+KEEP_MONTHLY=1
+# Most files one run may delete. Not a tuning knob — a blast-radius limit, and the
+# reason is in the rotate_backups() comment.
+KEEP_DELETE_CAP=20
 
 # Written after every deploy that passes its own health and bundle checks, and read
 # by --rollback. Gitignored: it describes this host, not the code.
@@ -66,6 +80,292 @@ HOLD="$ROOT/.deploy-hold"
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
 die()  { printf '\n\033[31m!!! %s\033[0m\n' "$*" >&2; exit 1; }
+
+# -------------------------------------------------------------- backup retention
+
+# Days since 1970-01-01 for a Gregorian date, by arithmetic alone.
+#
+# Deliberately not `date -d`: that is a GNU extension, and update-test.sh runs on a
+# developer's Mac where date is BSD and would silently parse the string as something
+# else entirely. The one thing worse than a rotation that miscounts weeks is a
+# rotation that miscounts weeks only on the machine nobody tests on.
+#
+# Standard civil-from-days algorithm, unrolled. Years here are always well past 1970,
+# so the negative-era branch the general form carries is not needed.
+days_from_civil() {
+  local y=$((10#$1)) m=$((10#$2)) d=$((10#$3))
+  local era yoe doy doe
+  if (( m <= 2 )); then y=$((y - 1)); fi
+  era=$(( y / 400 ))
+  yoe=$(( y - era * 400 ))
+  if (( m > 2 )); then
+    doy=$(( (153 * (m - 3) + 2) / 5 + d - 1 ))
+  else
+    doy=$(( (153 * (m + 9) + 2) / 5 + d - 1 ))
+  fi
+  doe=$(( yoe * 365 + yoe / 4 - yoe / 100 + doy ))
+  printf '%s\n' $(( era * 146097 + doe - 719468 ))
+}
+
+# Generational retention, replacing a flat "keep the newest twenty".
+#
+#   3 dailies   the newest backup of each of the last three days that HAVE a backup
+#   1 weekly    the newest backup of the most recent completed week no daily covers
+#   1 monthly   the newest backup of the most recent completed month nothing above covers
+#
+# The spec has real ambiguity in it. Resolved deliberately, and written down here
+# because the next person to read this will be deciding whether a missing backup is
+# a bug or the policy working:
+#
+#   - Several deploys land on one day, which is normal here. The daily is the NEWEST
+#     of that day; the earlier ones are superseded within the day and go.
+#   - A day with no deploy does not burn a slot. The window is "the last three days
+#     that produced a backup", not "the last three calendar days". The alternative
+#     lets a quiet weekend silently take a five-backup directory down to two, and a
+#     retention policy should not shrink because nothing happened.
+#   - The weekly and the monthly are PROMOTIONS of backups already on disk, not extra
+#     copies. A file kept as today's daily becomes next week's weekly by still being
+#     there. Nothing is duplicated and no state file has to be maintained, which is
+#     what makes the policy re-derivable from the directory alone.
+#   - "Completed" means "not the period the newest backup is in". The week and month
+#     in progress are the dailies' business; a weekly is chosen only once its week
+#     can no longer gain a newer member. Weeks start Monday — nothing depends on
+#     which day that is, but two runs must not disagree, so it is fixed here.
+#
+# Grouping comes out of the FILENAME, never out of the filesystem. Every backup is
+# coc-YYYYmmdd-HHMMSS.db, fixed width, so plain text order is chronological order.
+# mtime is not: an rsync back from BACKUP_REMOTE, a restore, or a `cp -R` of the
+# directory stamps every file with the moment of the copy and destroys the ordering
+# completely. The code this replaces ranked with `ls -1t`, so after any of those it
+# would have kept twenty copies of the same afternoon and deleted every older
+# generation — succeeding, quietly, at the exact opposite of its job.
+#
+# Two rules of engagement, because this runs with nobody watching and what it deletes
+# is the only copy of the accounts and the card season this host has:
+#
+#   - A file whose name this cannot parse is reported and never deleted.
+#   - When anything looks wrong — an empty keep set, the newest backup not in it —
+#     delete nothing and say so. Keeping too much costs disk. Keeping too little
+#     costs the database.
+#
+# Arguments: the directory, and the basename of the backup just taken ("" if none).
+rotate_backups() {
+  local dir="$1" fresh="${2:-}"
+
+  # Scan wider than the policy deletes. `coc*` also catches the raw coc.db /
+  # coc.db-wal the sqlite3-less fallback leaves behind, so they can be reported as
+  # outside the policy rather than sitting there unmentioned.
+  local all=("$dir"/coc*)
+  if (( ${#all[@]} == 0 )); then
+    info "retention: $dir is empty — nothing to rotate"
+    return 0
+  fi
+
+  local recognised=() strange=()
+  local f base y m d hh mi ss
+  for f in "${all[@]}"; do
+    base="${f##*/}"
+    if [[ -f "$f" && "$base" =~ ^coc-([0-9]{4})([0-9]{2})([0-9]{2})-([0-9]{2})([0-9]{2})([0-9]{2})\.db$ ]]; then
+      y="${BASH_REMATCH[1]}"; m="${BASH_REMATCH[2]}"; d="${BASH_REMATCH[3]}"
+      hh="${BASH_REMATCH[4]}"; mi="${BASH_REMATCH[5]}"; ss="${BASH_REMATCH[6]}"
+      # The shape being right does not make the date real. 20261332-994499 matches
+      # the pattern and would put a backup in a month that does not exist, which
+      # would then quietly win a slot no real backup could reach. Anything that is
+      # not a plausible date is treated as unparseable, and unparseable means keep.
+      if (( 10#$y >= 1970 && 10#$m >= 1 && 10#$m <= 12 && 10#$d >= 1 && 10#$d <= 31 )) \
+         && (( 10#$hh <= 23 && 10#$mi <= 59 && 10#$ss <= 60 )); then
+        recognised+=("$base")
+        continue
+      fi
+    fi
+    strange+=("$base")
+  done
+
+  if (( ${#strange[@]} > 0 )); then
+    info "NOTE: ${#strange[@]} file(s) here carry no coc-YYYYmmdd-HHMMSS.db stamp, so"
+    info "      the retention policy does not cover them and will never delete them:"
+    for base in "${strange[@]}"; do info "      $base"; done
+  fi
+
+  if (( ${#recognised[@]} == 0 )); then
+    info "retention: no stamped backups in $dir — nothing to rotate"
+    return 0
+  fi
+
+  # Newest first. LC_ALL=C so the ordering is byte order and not something a locale
+  # decided; the names are ASCII digits either way, but the guarantee should not
+  # depend on the environment.
+  local sorted=() line
+  while IFS= read -r line; do
+    sorted+=("$line")
+  done < <(printf '%s\n' "${recognised[@]}" | LC_ALL=C sort -r)
+
+  local n=${#sorted[@]} i
+  local dayk=() weekk=() monthk=() epochday
+  for (( i = 0; i < n; i++ )); do
+    base="${sorted[i]}"
+    y="${base:4:4}"; m="${base:8:2}"; d="${base:10:2}"
+    dayk[i]="$y$m$d"
+    monthk[i]="$y$m"
+    # 1970-01-01 was a Thursday, so +3 puts the week boundary on Monday.
+    epochday="$(days_from_civil "$y" "$m" "$d")"
+    weekk[i]=$(( (epochday + 3) / 7 ))
+  done
+
+  # Keep sets as |-delimited strings: bash 3.2 has no associative arrays and the
+  # droplet is not the only machine this runs on. Backup names cannot contain a pipe.
+  local kept="|" kept_roles="" kept_count=0 covered_weeks="|" covered_months="|"
+
+  rot_keep() {
+    local idx="$1" role="$2" name="${sorted[$1]}"
+    if [[ "$kept" == *"|$name|"* ]]; then return 0; fi
+    kept="$kept$name|"
+    kept_roles="$kept_roles$name $role"$'\n'
+    kept_count=$((kept_count + 1))
+    covered_weeks="$covered_weeks${weekk[idx]}|"
+    covered_months="$covered_months${monthk[idx]}|"
+  }
+
+  # The backup just taken, first and unconditionally. The deploy stopped to make it;
+  # nothing downstream is allowed to decide it was not worth keeping.
+  if [[ -n "$fresh" ]]; then
+    for (( i = 0; i < n; i++ )); do
+      if [[ "${sorted[i]}" == "$fresh" ]]; then rot_keep "$i" "just taken"; break; fi
+    done
+  fi
+
+  # Dailies. Walking newest first, the first file seen for a day IS that day's
+  # newest, so no second pass is needed.
+  local seen_days="|" days_taken=0
+  for (( i = 0; i < n; i++ )); do
+    if (( days_taken >= KEEP_DAILY )); then break; fi
+    if [[ "$seen_days" == *"|${dayk[i]}|"* ]]; then continue; fi
+    seen_days="$seen_days${dayk[i]}|"
+    days_taken=$((days_taken + 1))
+    rot_keep "$i" "daily"
+  done
+
+  # Weekly. Skip the week in progress, skip any week a daily already covers, take
+  # the newest file of the first week that is left. The in-progress check is
+  # redundant while KEEP_DAILY is non-zero — the newest daily is in that week by
+  # definition — but the policy should not become wrong if these numbers are edited.
+  local current_week="${weekk[0]}" weeks_taken=0
+  for (( i = 0; i < n; i++ )); do
+    if (( weeks_taken >= KEEP_WEEKLY )); then break; fi
+    if [[ "${weekk[i]}" == "$current_week" ]]; then continue; fi
+    if [[ "$covered_weeks" == *"|${weekk[i]}|"* ]]; then continue; fi
+    weeks_taken=$((weeks_taken + 1))
+    rot_keep "$i" "weekly"
+  done
+
+  # Monthly, same shape one level up. covered_months has grown to include whatever
+  # the weekly promoted, so "not already covered above" falls out of the order these
+  # three loops run in.
+  local current_month="${monthk[0]}" months_taken=0
+  for (( i = 0; i < n; i++ )); do
+    if (( months_taken >= KEEP_MONTHLY )); then break; fi
+    if [[ "${monthk[i]}" == "$current_month" ]]; then continue; fi
+    if [[ "$covered_months" == *"|${monthk[i]}|"* ]]; then continue; fi
+    months_taken=$((months_taken + 1))
+    rot_keep "$i" "monthly"
+  done
+
+  # Outcome checks, not exit codes — the premise of this whole file. Everything above
+  # is arithmetic on strings, and arithmetic on strings is exactly the kind of thing
+  # that returns a confident wrong answer. So before deleting anything, confirm the
+  # two properties that make the result survivable rather than trusting the loops.
+  if [[ "$kept" == "|" ]]; then
+    info "WARNING: retention worked out that it should keep NOTHING, from $n backups."
+    info "         That cannot be right, so nothing has been deleted. $dir is intact."
+    return 0
+  fi
+  if [[ "$kept" != *"|${sorted[0]}|"* ]]; then
+    info "WARNING: retention did not keep ${sorted[0]}, which is the newest backup on"
+    info "         disk. That cannot be right, so nothing has been deleted."
+    return 0
+  fi
+  if [[ -n "$fresh" && "$kept" != *"|$fresh|"* ]]; then
+    info "WARNING: retention did not keep $fresh, the backup this deploy just took."
+    info "         That cannot be right, so nothing has been deleted."
+    return 0
+  fi
+
+  # Oldest first, so that if the cap below bites, what survives is the newest.
+  local doomed=()
+  for (( i = n - 1; i >= 0; i-- )); do
+    if [[ "$kept" != *"|${sorted[i]}|"* ]]; then doomed+=("${sorted[i]}"); fi
+  done
+
+  # Blast-radius limit. A single run should be deleting the handful of backups this
+  # deploy superseded. Wanting to delete twenty in one go means either a first run
+  # under a new policy (the migration off "keep twenty" is exactly that, and takes
+  # two deploys instead of one — fine) or something has gone wrong with the stamps.
+  # Both are better served by trimming the oldest, saying so, and converging over the
+  # next few deploys than by emptying the directory in one unattended pass.
+  local wanted=${#doomed[@]}
+  if (( wanted > KEEP_DELETE_CAP )); then
+    doomed=("${doomed[@]:0:KEEP_DELETE_CAP}")
+    info "NOTE: $wanted backups are past retention; deleting the oldest $KEEP_DELETE_CAP this run"
+    info "      and the rest on following deploys. A run that wants to delete this many"
+    info "      is either the first under this policy or a sign the stamps are wrong."
+  fi
+
+  local role_line
+  while IFS= read -r role_line; do
+    if [[ -n "$role_line" ]]; then info "keep   $role_line"; fi
+  done <<< "$kept_roles"
+
+  local deleted=0
+  if (( ${#doomed[@]} > 0 )); then
+    for base in "${doomed[@]}"; do
+      rm -f -- "$dir/$base"
+      # rm -f reports success for a file it never had permission to unlink in more
+      # cases than is comfortable, and a backup directory that has quietly stopped
+      # being writable is a real failure dressed as a working one. Ask the disk.
+      if [[ -e "$dir/$base" ]]; then
+        info "WARNING: could not delete $base — it is still there. Check permissions on $dir."
+      else
+        deleted=$((deleted + 1))
+        info "delete $base"
+      fi
+    done
+  fi
+
+  # And confirm the directory is not empty afterwards, by looking rather than by
+  # believing the loop above. This glob is wider than the policy — it will also see
+  # anything reported as unparseable — which is what you want from a last-ditch "is
+  # there still something here" check.
+  local after=("$dir"/coc-*.db)
+  if (( ${#after[@]} == 0 )); then
+    die "Backup retention emptied $dir. It had $n backups a moment ago. Do not deploy
+again until you know why — restore from BACKUP_REMOTE first if one is configured."
+  fi
+  if [[ -n "$fresh" && ! -f "$dir/$fresh" ]]; then
+    die "Backup retention deleted $fresh, the backup this deploy had just taken.
+Nothing has been pulled or restarted, so the site is unchanged. Do not deploy again
+until you know why."
+  fi
+
+  # Counted from the keep set rather than from the directory, so the numbers stay
+  # honest when there are unparseable files sitting alongside that were never in
+  # scope. "kept 4 of 2" is what happens if you count the survivors instead.
+  info "retention: kept $kept_count of $n stamped backups (${KEEP_DAILY}d/${KEEP_WEEKLY}w/${KEEP_MONTHLY}m), deleted $deleted"
+}
+
+# --prune-backups exists so update-test.sh can exercise the rotation against a
+# directory of known stamps rather than against whatever four backups a test deploy
+# happens to produce in the same minute. It runs the same function the deploy does,
+# which is the only reason it is worth having: a second implementation for testing
+# would test the second implementation. Handled here, before the git preconditions,
+# because it has nothing to do with a checkout.
+if [[ "$PRUNE_ONLY" == 1 ]]; then
+  [[ -n "$PRUNE_DIR" ]] || die "--prune-backups needs a directory:
+  ./deploy/update.sh --prune-backups ~/coc-backups"
+  [[ -d "$PRUNE_DIR" ]] || die "$PRUNE_DIR is not a directory."
+  say "Applying backup retention to $PRUNE_DIR"
+  rotate_backups "$PRUNE_DIR" ""
+  exit 0
+fi
 
 # ------------------------------------------------------------------------- hold
 
@@ -194,29 +494,41 @@ say "Backing up the database"
 mkdir -p "$BACKUP_DIR"
 stamp="$(date +%Y%m%d-%H%M%S)"
 if [[ -f server/data/coc.db ]]; then
+  fresh_backup=""
   # .backup folds the write-ahead log into one consistent file and is safe while
   # the service is running; copying coc.db alone would leave the WAL behind.
   if command -v sqlite3 >/dev/null 2>&1; then
     sqlite3 server/data/coc.db ".backup '$BACKUP_DIR/coc-$stamp.db'"
+    # The outcome, not the exit code. sqlite3 has been known to exit 0 having written
+    # nothing when the destination is unwritable, and the retention policy below is
+    # about to decide what to delete on the strength of this file existing.
+    [[ -s "$BACKUP_DIR/coc-$stamp.db" ]] || die "sqlite3 exited 0 but $BACKUP_DIR/coc-$stamp.db
+is missing or empty. Nothing has been pulled or restarted, so the site is unchanged.
+Check the disk and the permissions on $BACKUP_DIR."
+    fresh_backup="coc-$stamp.db"
     info "$BACKUP_DIR/coc-$stamp.db"
   else
     cp server/data/coc.db* "$BACKUP_DIR/" 2>/dev/null || true
     info "copied raw db files (sqlite3 not installed, so the WAL may lag)"
+    # Those land as coc.db / coc.db-wal, with no stamp, so retention cannot place
+    # them in a generation and deliberately leaves them alone. fresh_backup stays
+    # empty and rotate_backups says as much when it lists them.
   fi
-  # Keep the last twenty; a 25 GB disk and an unbounded backup directory is a
-  # future outage with a boring cause.
-  old_backups=("$BACKUP_DIR"/coc-*.db)
-  if (( ${#old_backups[@]} > 20 )); then
-    # Newest first, drop everything past the twentieth.
-    printf '%s\n' "${old_backups[@]}" | xargs -r ls -1t | tail -n +21 | xargs -r rm -f
-  fi
+
+  # Prune to the generational policy. Everything about what survives is in the
+  # comment on rotate_backups().
+  rotate_backups "$BACKUP_DIR" "$fresh_backup"
 
   # Offsite copy, if one is configured.
   #
-  # Twenty backups on the same droplet protect against a bad migration and against
+  # Five backups on the same droplet protect against a bad migration and against
   # nothing else: losing the droplet loses the accounts and the whole card season
   # with it. BACKUP_REMOTE is any rsync destination — `user@host:path/` or a local
   # mount — and lives in /srv/coc/.env beside the rest of the host's configuration.
+  #
+  # Note that the offsite side has no retention of its own: this sends the new backup
+  # and never deletes anything there. Deleting on a host this script cannot inspect
+  # is not something it should be doing unattended.
   #
   # A failure here **warns and carries on**. An unreachable backup host is not a
   # reason to stop deploying, and dying at this point would leave the tree pulled

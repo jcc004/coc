@@ -66,7 +66,7 @@ session cookies cross the network in clear text.
   `npm`, `curl` and `rsync` stubbed. Run it before changing the deploy script:
 
   ```bash
-  ./deploy/update-test.sh      # 35 checks, touches nothing real
+  ./deploy/update-test.sh      # 70 checks, touches nothing real
   ```
 
 - `nginx-test.sh` — serves `nginx-coc.conf` for real in a container and checks what
@@ -465,10 +465,18 @@ API-supplied CDN URLs, and any league or label icon newer than the last
 
 ### Offsite backups
 
-`update.sh` keeps twenty database backups in `~/coc-backups`, which protects against
-a bad migration and against nothing else — losing the droplet loses the accounts and
-the whole card season. Set `BACKUP_REMOTE` in `/srv/coc/.env` to any rsync
-destination and each backup is copied there too:
+`update.sh` keeps a generational set of database backups in `~/coc-backups`: the three
+most recent days that have one, then a weekly and a monthly promoted out of what is
+already there. A quiet week does not burn a slot — the window is the last three days
+that *have* a backup, not the last three on the calendar — and nothing is duplicated,
+so the whole policy is re-derivable from the directory with no state file. It replaces
+a flat "keep the newest twenty", which held a fortnight of one busy period and nothing
+older. `./deploy/update.sh --prune-backups DIR` runs the same rotation against a named
+directory, which is how the test harness exercises it.
+
+That protects against a bad migration and against nothing else — losing the droplet
+loses the accounts and the whole card season. Set `BACKUP_REMOTE` in `/srv/coc/.env` to
+any rsync destination and each backup is copied there too:
 
 ```bash
 # in /srv/coc/.env
