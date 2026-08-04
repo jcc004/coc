@@ -71,6 +71,12 @@ can.
   first produced a confident, wrong answer about how the banner was styled, and that shaped a
   design decision before it was caught. Brace-depth scanning is what found the truth.
 
+  **Anchor searches with `^\s*`, not `^`.** Declarations inside a `@media` block are indented, so
+  a line-start anchor silently skips them. `.card` is declared at the top level and again inside
+  the `max-width: 600px` block roughly 3,000 lines later, changing its padding — and a `^\.card`
+  grep finds only the first. That one caught a reader on 2026-08-04 who had written this very
+  bullet hours earlier.
+
   No line numbers here on purpose. The first draft of this bullet cited them, and they were stale
   within the hour — a commit landing earlier in the file moved both. A warning about a churning
   file must not be pinned to positions in it; name the selector, which is stable.
