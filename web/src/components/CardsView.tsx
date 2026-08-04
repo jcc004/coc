@@ -869,7 +869,7 @@ export function CardsView({ user }: { user: SessionUser }) {
         </h2>
         {/*
          * This line said "by distinct cards out of 60. Level on that, more copies goes
-         * first", which stopped being true when the measure became points in 1b917a1.
+         * first", which stopped being true when the measure became points in 42a5df9.
          * Distinct cards is now only the *tie-break*; points is the measure.
          *
          * The direction the old sentence implied was right, though, and it is worth

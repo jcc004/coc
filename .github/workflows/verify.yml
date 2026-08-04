@@ -13,7 +13,7 @@
 #
 # If you ever do want push-triggered deployment, the recipe is in deploy/README.md
 # under "What CI does, and does not, do", and the job that did it is in this file's git
-# history at commit 9a2b550. It needs four repository secrets and a sudoers rule before
+# history at commit 5e6c1b2. It needs four repository secrets and a sudoers rule before
 # it will do anything but fail.
 
 name: Verify

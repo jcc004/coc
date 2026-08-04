@@ -645,7 +645,7 @@ If you do want push-triggered deployment later, it is a job that writes a privat
 from a secret, pins `known_hosts`, and runs `ssh user@host 'cd /srv/coc &&
 ./deploy/update.sh'` — gated on the verify job. It needs a dedicated key, four
 repository secrets, and the sudoers rule below. The version that did this is in git
-history at `9a2b550`. The trade is that port 22 must be reachable from GitHub's
+history at `5e6c1b2`. The trade is that port 22 must be reachable from GitHub's
 runners, which use a wide and changing set of addresses, and a key for your server then
 lives in a third-party service.
 
