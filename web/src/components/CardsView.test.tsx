@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CARD_SEASON, type BaseInventory, type ClanMember, type OwnerRecord } from '@coc/shared'
 import { installTestCleanup, sessionUser, stubApi } from '../test-support.ts'
@@ -97,6 +97,64 @@ describe('the base picker', () => {
     const hint = await screen.findByText(/None of the 1 tracked base is yours/)
     assert.match(hint.textContent ?? '', /admin assigns it to your account/)
     assert.equal(screen.queryByLabelText('Base'), null)
+  })
+
+  /*
+   * The remembered base. The rules are `last-base.ts`' and are tested there; these
+   * two are the wiring, which is the half a pure function cannot hold — that the
+   * choice is written when the picker is used, read back when the page mounts, and
+   * keyed to the account that made it.
+   *
+   * `cleanup()` then `render()` again *is* the reload here: it unmounts the page and
+   * mounts a fresh one over the same `localStorage`, which is the only state a real
+   * refresh carries across.
+   */
+  const TRACKED: OwnerRecord[] = [
+    { tag: '#AAA', owner: 'Sam', ownerUserId: 2 },
+    { tag: '#BBB', owner: 'Sam', ownerUserId: 2 },
+  ]
+
+  it('reselects the base that was last picked, after a reload', async () => {
+    const user = await cards(TRACKED, [])
+
+    // Alda is the head of the list, so Brix is a choice and not the default.
+    await user.selectOptions(await screen.findByLabelText('Base'), '#BBB')
+    assert.equal(localStorage.getItem('coc:cardBase:1'), '#BBB')
+
+    cleanup()
+    render(<CardsView user={RAE} />)
+
+    const picker = await screen.findByLabelText('Base')
+    await waitFor(() => assert.equal((picker as HTMLSelectElement).value, '#BBB'))
+  })
+
+  it('falls back to the first base when the remembered one is no longer tracked', async () => {
+    // Unassigned, removed, or the season rolled: a stale key must not leave the page
+    // blank or stuck on a base the picker no longer offers.
+    localStorage.setItem('coc:cardBase:1', '#ZZZ')
+    await cards(TRACKED, [])
+
+    const picker = await screen.findByLabelText('Base')
+    assert.equal((picker as HTMLSelectElement).value, '#AAA')
+  })
+
+  it('renders the page as usual when the stored base is not a tag at all', async () => {
+    // `localStorage` is user-writable, and this value is read while seeding state
+    // during render — where a throw is the whole app, with no boundary above it.
+    localStorage.setItem('coc:cardBase:1', '{"tag":"#BBB"}')
+    await cards(TRACKED, [])
+
+    const picker = await screen.findByLabelText('Base')
+    assert.equal((picker as HTMLSelectElement).value, '#AAA')
+  })
+
+  it('keys the remembered base per account, so a shared browser does not leak it', async () => {
+    localStorage.setItem('coc:cardBase:1', '#BBB')
+    await cards(TRACKED, [], sessionUser({ id: 2, displayName: 'Sam' }))
+
+    const picker = await screen.findByLabelText('Base')
+    assert.equal((picker as HTMLSelectElement).value, '#AAA')
+    assert.equal(localStorage.getItem('coc:cardBase:1'), '#BBB')
   })
 })
 

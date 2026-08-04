@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { MAX_CARD_COUNT, type BaseInventory, type SessionUser } from '@coc/shared'
 import { useBaseLabels } from '../base-labels.ts'
 import { activeTag, ownsAnyBase, tagsInScope, type BaseScope } from '../base-scope.ts'
@@ -24,6 +24,7 @@ import {
   useMeasuredWidth,
   useRowLimit,
 } from '../hooks.ts'
+import { lastBaseKey, rememberedBaseTag } from '../last-base.ts'
 import { ownerRecordFor, useOwners, useOwnersState } from '../owners.ts'
 import { paginate, type RowLimit } from '../saved-table.ts'
 import { BaseCardEditor } from './BaseCardEditor.tsx'
@@ -623,7 +624,40 @@ export function CardsView({ user }: { user: SessionUser }) {
     return allOptions.filter((option) => mine.has(option.tag))
   }, [allOptions, scope, scopedBases, user.id])
 
-  const [selected, setSelected] = useState<string | null>(null)
+  /*
+   * The base the picker was left on, per account, at `coc:cardBase:<id>` — so a
+   * reload comes back to the base you were entering rather than to the head of the
+   * list. Every rule is in `last-base.ts`, including why a stored value that is not
+   * a tag has to read as "nothing remembered" rather than throw; what is here is
+   * the reading and the writing.
+   *
+   * Read once, when this page mounts. There is no per-account guard of the kind
+   * `useBaseScope` carries, because there is nothing for it to do: `App` renders the
+   * sign-in screen when there is no session, so the account cannot change under a
+   * mounted `CardsView`.
+   */
+  const [selected, setSelected] = useState<string | null>(() =>
+    rememberedBaseTag(localStorage.getItem(lastBaseKey(user.id))),
+  )
+
+  /*
+   * Written at the two places the page commits to a base — the picker, and the
+   * Mine/All change that carries the current base across the filter — rather than by
+   * an effect on `active`. Same shape as `useBaseScope`'s `choose` and
+   * `useRowLimit`'s, and the difference is not cosmetic here: `active` is a *derived*
+   * value that spends the first renders of every load as "the head of whatever list
+   * has arrived so far", before the names, the owners and the resolved filter are in.
+   * An effect on it would overwrite the remembered tag with that transient default on
+   * the way to reading it back, which is the memory deleting itself.
+   */
+  const chooseBase = useCallback(
+    (tag: string | null) => {
+      setSelected(tag)
+      if (tag !== null) localStorage.setItem(lastBaseKey(user.id), tag)
+    },
+    [user.id],
+  )
+
   /*
    * `activeTag` is both the default and the repair: it keeps the chosen base while
    * the filtered list still offers it and otherwise falls to the head of that list.
@@ -632,6 +666,10 @@ export function CardsView({ user }: { user: SessionUser }) {
    * showing counts the picker no longer offers. `options[0]`, not `tags[0]`: the
    * list is ordered by member name, so defaulting by tag would leave the select
    * showing its second or third entry as the chosen one.
+   *
+   * It is also the whole handling of a *remembered* base that is no longer offered —
+   * unassigned, removed, or dropped by `Mine`. A stale key falls to the head of the
+   * list exactly as an emptied filter does, so it can never leave the page blank.
    */
   const active = activeTag(options, selected)
 
@@ -703,7 +741,7 @@ export function CardsView({ user }: { user: SessionUser }) {
                        * first-offered base early would pin the tag-alphabetical one
                        * for good.
                        */
-                      setSelected(active)
+                      chooseBase(active)
                       setScope(event.target.value as BaseScope)
                     }}
                   >
@@ -717,7 +755,7 @@ export function CardsView({ user }: { user: SessionUser }) {
                     <select
                       id="cards-base"
                       value={active ?? ''}
-                      onChange={(event) => setSelected(event.target.value)}
+                      onChange={(event) => chooseBase(event.target.value)}
                     >
                       {options.map((option) => (
                         <option key={option.tag} value={option.tag}>

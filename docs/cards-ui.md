@@ -38,6 +38,16 @@ option are two people's names in one label, and the reader cannot tell which is 
   `baseOptions()` in `base-names.ts`, pure and tested. **Tags remain the identity** — the select's
   values, the inventory keys and the trade suggestions are all still tags, and the selected base
   shows its tag beside the timestamp.
+- **The picker remembers the base**, per account, at `coc:cardBase:<userId>` — so a reload comes
+  back to the base you were entering rather than to the head of the list. Keyed per account for the
+  reason `coc:baseScope:<id>` is: one browser is shared. It is deliberately **not** in the route:
+  `#/cards` still carries no tag, because a link to one base would be a link into somebody else's
+  editing session, and remembering a choice locally is a different thing from handing out an
+  address for it. A remembered base that is no longer offered — unassigned, removed, dropped by
+  `Mine`, or never a tag at all, since `localStorage` is hand-editable — falls to the head of the
+  list through the same `activeTag()` that repairs an emptied filter, so a stale key can never
+  leave the page blank. The reading is `last-base.ts`, pure and tested; nothing is stored until
+  the picker is actually used, so a first visit still opens exactly where it did.
 - **The grid** is one continuous grid of all 60 in deck order — nothing drawn between one deck and
   the next, so a deck that runs out mid-row does not leave a ragged line. Each deck is still a
   **named group** in the markup: a `.card-deck` wrapper carrying `role="group"` and a
