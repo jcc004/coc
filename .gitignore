@@ -26,3 +26,8 @@ data/
 # The snapshot update.sh takes of web/dist before a build, so a failed build or a
 # failed health check has something known-good to put back. Removed on success.
 web/dist.prev-*/
+
+# Claude Code. `.claude/settings.json` IS tracked — it is the shared permission
+# policy for this repo. What stays local is the personal override file, which
+# holds whatever grants one machine has accumulated and is nobody else's default.
+.claude/settings.local.json
