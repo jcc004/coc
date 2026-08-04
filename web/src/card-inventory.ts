@@ -38,6 +38,33 @@ export function inventoryFor(
 }
 
 /**
+ * How many base writes are in flight.
+ *
+ * A counter and not a boolean: the grid's auto-save can have a second write queued
+ * behind the one it is waiting on (see the loop in `BaseCardEditor.commit`), and two
+ * overlapping writes must not have the first one to finish declare the base idle.
+ */
+let writesInFlight = 0
+
+/**
+ * True while somebody's counts are on their way to the server.
+ *
+ * Read by the background refresh in `use-card-refresh.ts`, which must not fire a read
+ * across a write: the inventory it would get back is the one from *before* the write,
+ * so the refresh would be stale before it landed and would then sit in the store until
+ * the next tick. There is nothing to wait for either — `store.mutate` reloads the
+ * store itself once the write lands, which is the same refresh a tick would have made.
+ *
+ * Typing is a separate question and is not this flag's: a draft with unsaved edits is
+ * protected inside `BaseCardEditor`, whose re-seed effect refuses to replace a draft
+ * that differs from what the server was last known to hold. This is only about the
+ * window where the request has already gone out.
+ */
+export function savingBaseCounts(): boolean {
+  return writesInFlight > 0
+}
+
+/**
  * Writes one base's whole set of counts in a single request.
  *
  * Last-write-wins, unlike the owner flow's expected-value handshake: a count is a
@@ -48,8 +75,16 @@ export function inventoryFor(
  * Rethrows on failure so the Save button can say the write did not happen.
  */
 export async function saveBaseCounts(tag: string, counts: CardCount[]): Promise<BaseInventory> {
-  const { base } = await store.mutate(() => api.saveCardInventory(tag, counts))
-  return base
+  writesInFlight += 1
+  try {
+    const { base } = await store.mutate(() => api.saveCardInventory(tag, counts))
+    return base
+  } finally {
+    /* In a `finally`, because this function rethrows: a refused or dropped write that
+       left the counter up would suppress every background refresh for the rest of the
+       session, which is a worse failure than the one that caused it. */
+    writesInFlight -= 1
+  }
 }
 
 export function reloadCardInventory(): Promise<void> {

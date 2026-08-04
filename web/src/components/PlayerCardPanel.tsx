@@ -7,6 +7,7 @@ import { summariseBase } from '../card-summary.ts'
 import { cardCategoriesInOrder, categoryOfCard } from '../cards.ts'
 import { deckProgress, deckSizes } from '../deck-progress.ts'
 import { ownerRecordFor, useOwners } from '../owners.ts'
+import { useCardRefresh } from '../use-card-refresh.ts'
 import { BaseCardEditor } from './BaseCardEditor.tsx'
 import { DeckPlaques } from './DeckPlaques.tsx'
 import { ErrorPanel, HelpLink } from './primitives.tsx'
@@ -60,6 +61,14 @@ export function PlayerCardPanel({
   /** Only a base's owner, or an admin, may type counts into the grid below. */
   user: SessionUser
 }) {
+  /*
+   * The same background refresh the card page runs, and for the same reason: the
+   * other side of a trade completes it in their own tab, and this base's plaques and
+   * summary line are on screen whether the grid is open or shut. It is mounted with
+   * the panel, so it stops when the player page does — see `use-card-refresh.ts`.
+   */
+  useCardRefresh()
+
   /* Subscribed rather than read once, so an admin reassigning this base flips the
      grid between editable and read-only without a reload. */
   const owners = useOwners()

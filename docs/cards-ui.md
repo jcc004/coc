@@ -675,3 +675,45 @@ swap is legal *because* they share a deck, and on a player page the four deck pl
 make the deck the unit of progress — so "which deck does this swap move" is the column that says
 whether an option is worth taking. It costs nothing at 390px either, where the table stacks into one
 labelled card per swap and the deck becomes a line rather than a column competing for width.
+
+## Staying current without a reload
+
+Both card pages **re-read the shared counts and the trade list in the background**, so a swap
+somebody else completes appears on your screen without a reload. Completing a trade moves a card on
+two bases and the two people it moves them for are hardly ever in the same tab — the one who pressed
+**Complete** is already served by that request's own refresh (see
+[what the counts do afterwards](trade-tracker.md#what-the-counts-do-afterwards)); this is everybody
+else.
+
+**Three triggers, and no websocket.** The page reads when it opens, whenever the tab is brought back
+to the front (`focus` *and* `visibilitychange` — neither covers the other, and a tab coming forward
+usually fires both), and every **30 seconds** while it is on screen. `use-card-refresh.ts` is the
+hook, mounted by `CardsView` and by `PlayerCardPanel` and by nothing else; `card-refresh.ts` is the
+decision, pure and tested.
+
+**Why polling is allowed here and nowhere else.** Every clan and player route in this app spends the
+Supercell token, which is rate limited and is the thing the whole cache and TTL design exists to
+protect. `GET /api/cards/inventory` and `GET /api/cards/trades` spend none of it: both are local
+SQLite reads with no upstream call behind them, so a tick is two selects. Nothing that reaches
+upstream may copy this.
+
+Four things it refuses to do, each of which is a way to make a cheap idea an expensive one:
+
+- **a hidden tab does not poll.** `document.visibilityState` outranks everything else, including a
+  read that is long overdue. Eight forgotten tabs overnight is what this is about. The interval
+  keeps ticking and does nothing, which is a comparison; tearing it down and rebuilding it on every
+  visibility change would be a second piece of state saying what the browser already says;
+- **the interval dies with the page.** It is created in the mount effect and cleared in its
+  teardown, so nothing is left running for the life of the session;
+- **it never reads across a save.** While a base's counts are being written, the answer would be the
+  inventory from *before* the write — stale before it landed. `savingBaseCounts()` in
+  `card-inventory.ts` is that flag, and there is nothing to wait for anyway: the write reloads the
+  store itself when it lands;
+- **a focus on the heels of a poll is one request, not two.** A focus may read far sooner than a poll
+  may — making somebody who has just come back wait out the remaining seconds would be the staleness
+  this exists to fix — but not within a couple of seconds of a read that has just started.
+
+**Typing is never overwritten**, and that protection was already in place rather than added here:
+`BaseCardEditor` re-seeds its draft only when the draft still matches what the server was last known
+to hold, so a refresh landing mid-entry moves the attribution line and the panels around the grid
+and leaves the typed numbers exactly where they are. See [Entry](#the-ui).

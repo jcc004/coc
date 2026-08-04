@@ -42,7 +42,10 @@ the clan-totals grid opens when you choose a tile), `roster-state.ts` (the clan 
 selection, filters, sort, paging and bulk-apply, as one reducer with named transitions rather
 than thirteen `useState`s), `base-scope.ts` (the card page's Mine/All filter — what "mine" means,
 which way to default, and where the selection goes when the filter drops it), `last-route.ts`
-(what to restore, and which clan the topbar's Clan button opens).
+(what to restore, and which clan the topbar's Clan button opens), `card-refresh.ts` (whether the
+card pages' background re-read is due: the interval, the tab's visibility, a save in flight and
+the gap that stops a focus event repeating a poll — the interval and the listeners themselves are
+`use-card-refresh.ts`, which is the hook the two card pages mount).
 Components that are shown in more than one place are shared rather than copied — `BaseCardEditor`
 is the one 60-tile card grid, rendered by both the card page and a player page; `CardTile` is the
 one card tile, rendered by that grid and by the card page's clan-totals grid; `TradeSuggestions` is

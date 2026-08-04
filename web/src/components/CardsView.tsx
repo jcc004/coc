@@ -27,6 +27,7 @@ import {
 import { lastBaseKey, rememberedBaseTag } from '../last-base.ts'
 import { ownerRecordFor, useOwners, useOwnersState } from '../owners.ts'
 import { paginate, type RowLimit } from '../saved-table.ts'
+import { useCardRefresh } from '../use-card-refresh.ts'
 import { BaseCardEditor } from './BaseCardEditor.tsx'
 import { CardTile } from './CardTile.tsx'
 import { ScoringRules } from './help-copy.tsx'
@@ -581,6 +582,16 @@ function CardTotals({
 }
 
 export function CardsView({ user }: { user: SessionUser }) {
+  /*
+   * The counts on this page are two people's, not one's: completing a trade moves a
+   * card on both bases, and the person who pressed Complete is usually in another
+   * tab. So the page re-reads both shared stores while it is open — on focus and
+   * every thirty seconds, never while hidden and never across a save. The rules are
+   * `card-refresh.ts` and the mechanism `use-card-refresh.ts`; both endpoints are
+   * local SQLite reads, which is what makes polling them affordable.
+   */
+  useCardRefresh()
+
   const state = useCardInventoryState()
   const bases = state.entries
   const ownersState = useOwnersState()

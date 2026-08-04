@@ -100,3 +100,13 @@ patching it from that payload: it is the same refresh every other write does, an
 add a second path by which counts enter the cache — one no other write uses, and one that would be
 wrong in exactly the case that matters, a count that fell to zero and is therefore *absent* from
 the response rather than present as a zero.
+
+### The other party's tab
+
+All of that serves the tab that pressed **Complete**. The swap has two sides, and the other one is
+usually somebody else's screen, which until it was told otherwise went on showing the counts from
+before the trade. So every page that shows cards — the card page and a player page's card panel —
+**re-reads both shared stores in the background**: when it opens, when the tab comes back to the
+front, and every thirty seconds while it is visible. There is no websocket layer and none is being
+added for this. See [Staying current without a reload](cards-ui.md#staying-current-without-a-reload)
+for what that costs and the four things it refuses to do.
