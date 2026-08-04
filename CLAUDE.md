@@ -3,11 +3,11 @@
 A Clash of Clans API explorer. Hono API on Node, React + Vite front end, `node:sqlite` for
 everything persistent. Three workspaces: `shared/`, `server/`, `web/`.
 
-The shared working rules live outside this repo and are imported here:
-
-@~/repos-jcc/claude-kit/rules/working-style.md
-@~/repos-jcc/claude-kit/rules/invariants.md
-@~/repos-jcc/claude-kit/rules/git.md
+The shared working rules are deliberately **not** imported here. They live in
+`~/repos-jcc/claude-kit/rules/` and are imported by `~/repos-jcc/CLAUDE.md`, one directory up.
+Claude Code walks up the tree from the working directory and concatenates every `CLAUDE.md` it
+finds, parent first, so those rules are already in context by the time this file is read.
+Importing them again would load them twice.
 
 Everything below is what is true of *this* codebase.
 
