@@ -74,6 +74,37 @@ A gold plate carrying the title, the Clan and Cards links, and the account menu.
 390px rather than scrolling sideways, so everything on it stays reachable on a phone (measured:
 two rows, no horizontal overflow).
 
+### The dev marker
+
+Anywhere that is not `coc.jcciv.com`, a **Dev Server** plate sits beside the title. The test is
+the hostname, not the build mode: `import.meta.env.DEV` answers "was this served by `vite dev`",
+which is false for a production build pointed at a local database — the case that actually
+shipped here, and the one you must not mistake for the live site. `web/src/environment.ts` holds
+the rule and its tests; everything else is `.topbar__env` in `styles.css`.
+
+**It used to be the whole banner and it is not any more.** A dev install repainted the topbar in a
+tarnished gold, and because `.topbar--dev` came after `.topbar` at equal specificity it won — so
+the banner color a user picked on the account page did nothing on any local or staging install,
+which is where all the picking happens. The banner belongs to the user. The warning is now the
+marker alone, and there is no `topbar--dev` class left in the markup or the stylesheet.
+
+The marker is the old plate inverted and shrunk: `--dev` is the near-black the tarnished gold used
+to carry as ink, and `--on-dev` is that gold, so the pair is 6.70:1 by a measurement that was
+already on the record. It keeps the title's family, size and weight — set smaller once, it read as
+a different typeface on a different line and looked like a fault — and drops the title's white
+emboss, which is drawn for dark ink on a light plate.
+
+**A dark plate is the guarantee, not a preference.** The ground under the marker is now a color
+somebody chose, so it cannot be checked against one background. It does not have to be: every
+banner the app can paint carries `--on-gold` at 4.5:1 on both gradient stops, which is a floor on
+how dark a banner can be, and the marker measures **5.18:1 light and 4.67:1 dark** against that
+floor — comfortably past the 3:1 a filled shape needs. A tarnished-gold marker could not say that;
+a user who picked a banner near `#c99a2e` would have had one at 1:1 against its own background,
+which is the hiding that keeping `--dev` out of the picker exists to prevent. `DEV_MARK`,
+`darkestBannerLuminance` and `devMarkFloorAgainstBanner` in `web/src/color-scheme.ts` are the
+rule, and `color-scheme.test.ts` checks the arithmetic, a sweep of the whole hue circle, and that
+the stylesheet still declares the pair the module measured.
+
 ### The compass rosette
 
 Left of the words **Clash of Clans Explorer** is a compass rosette: a ring around two four-point
@@ -180,8 +211,10 @@ half-capsule in `currentColor`, for the same reason the rosette is.
 ring, meter fills, progress bars), the **plate** (panel edges, committing buttons, the card badge
 and the display numerals) and the **banner** (the bar across the top, and nothing else). Nothing
 else moves. The neutrals are what every contrast figure is measured against, the status palette
-and the deck colors carry meaning, and `--dev` exists to be unmistakable — a user who could
-restyle the tarnished plate could hide it.
+and the deck colors carry meaning, and `--dev` and `--on-dev` exist to be unmistakable — a user
+who could restyle the dev marker could hide it. Note the boundary: the marker is off limits, the
+banner it sits on is not, and a dev install gets the banner the user chose like any other. See
+[The dev marker](#the-dev-marker).
 
 **The banner used to be part of the plate.** `.topbar` was painted straight out of `--gold`, so
 choosing a plate repainted the banner, the panel edges, the buttons and the badge together. The
@@ -202,7 +235,7 @@ on the root element and clears them from a fixed list, keyed `coc:colors:<id>` l
 separately against the ground it will sit on, which is why the picker almost never has to refuse
 anything: the blue that reads at 4.5:1 on parchment is invisible on dark wood, and no single value
 could have satisfied both. The rules, and the ratios, are `web/src/color-scheme.ts` and
-`web/src/color-contrast.ts` — pure, with 116 tests, because a guard that decides whether the site
+`web/src/color-contrast.ts` — pure, with 125 tests, because a guard that decides whether the site
 is readable is not a `useMemo`.
 
 | Relationship | Floor |

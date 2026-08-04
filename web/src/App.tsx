@@ -214,13 +214,17 @@ export function App() {
   return (
     <div className="shell">
       {/*
-       * Steel banner with a DEV SERVER marker on anything that is not the live host.
+       * The banner carries a Dev Server marker on anything that is not the live host.
        * Production and a local copy are otherwise identical — same app, same
        * shared-looking data, same controls that remove a saved clan "for everyone" —
        * and the only cue was the address bar. See `environment.ts` for why the test is
        * the hostname rather than the build mode.
+       *
+       * The banner itself is *not* restyled here, and there is no longer a
+       * `topbar--dev` modifier to do it with: the banner's color is the user's choice
+       * and a dev install may not overrule it. The marker below is the whole warning.
        */}
-      <header className={environment.kind === 'production' ? 'topbar' : 'topbar topbar--dev'}>
+      <header className="topbar">
         <h1 className="topbar__title">
           {/* One link over the rosette and the words, so the icon navigates home
               without becoming a second tab stop with its own name. */}
@@ -234,10 +238,11 @@ export function App() {
            * screen reader announces which install this is when it reads the title.
            * `role="status"` would be wrong: this never changes, so there is nothing
            * to announce politely; it is simply part of what the page is called.
+           *
+           * No dash in front of the words any more: the marker wears a plate of its
+           * own, and a dash outside it would be a second separator on top of the gap.
            */}
-          {environment.label ? (
-            <span className="topbar__env">— {environment.label}</span>
-          ) : null}
+          {environment.label ? <span className="topbar__env">{environment.label}</span> : null}
         </h1>
         {/*
          * Absent where it would point at the page you are already on, like the

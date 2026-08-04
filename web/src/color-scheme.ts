@@ -1,10 +1,12 @@
 import {
   blend,
   contrastRatio,
+  CONTRAST_FLARE,
   distinguishable,
   formatHex,
   hslToRgb,
   parseHex,
+  relativeLuminance,
   rgbToHsl,
   withHue,
   withLightness,
@@ -66,8 +68,10 @@ import {
  *    colors encode meaning. They are shared vocabulary, not decoration, and a
  *    per-browser preference cannot be allowed to make one person's "error" another
  *    person's "fine";
- *  - `--dev`, the tarnished plate, exists to be *unmistakable* for the live host. A
- *    user who could restyle it could hide it.
+ *  - `--dev` and `--on-dev`, the dev marker, exist to be *unmistakable* for the live
+ *    host. A user who could restyle them could hide them. Note what that does **not**
+ *    mean: the marker used to be the whole banner, and locking the banner away from the
+ *    picker on a dev install was never the deal — see `DEV_MARK`.
  *
  * ## The guard
  *
@@ -614,6 +618,70 @@ function requireHex(hex: string): Rgb {
   /* The argument is always one of this module's own constants. */
   if (!rgb) throw new Error(`not a color: ${hex}`)
   return rgb
+}
+
+/* ---------- the dev marker ---------- */
+
+/**
+ * The marker beside the title on any install that is not the live host, as `styles.css`
+ * declares it.
+ *
+ * Copied here for the reason `THEME_BACKDROP` is: it is a measured relationship, and a
+ * measurement needs its numbers somewhere a test can reach. `color-scheme.test.ts`
+ * asserts the stylesheet still declares exactly this pair, so the copy cannot drift.
+ *
+ * **It is the old tarnished plate, inverted and shrunk.** The dev banner used to be a
+ * whole-topbar override — `--dev` was the plate and `--on-dev` the ink on it — and
+ * because that rule came after `.topbar` at equal specificity, it won: a chosen banner
+ * did nothing on any install except production, which is the one place nobody is
+ * choosing a banner. The banner went back to the user and the warning became a stamp,
+ * so the same two colors changed places. Their contrast is therefore a number that was
+ * already known: 6.70:1, which is the ink floor for a marker whose whole job is to be
+ * read.
+ *
+ * One pair for both themes. The marker sits on the banner, never on the page, and the
+ * banner is light in both themes, so there is nothing here for a theme to adapt to.
+ */
+export const DEV_MARK: { readonly plate: string; readonly ink: string } = {
+  /** The stamp behind the words. Dark, and see `devMarkFloorAgainstBanner` for why. */
+  plate: '#241905',
+  /** The words. The tarnished gold the banner used to be painted in. */
+  ink: '#c99a2e',
+}
+
+/**
+ * The darkest a banner stop can be in this theme, as WCAG relative luminance.
+ *
+ * **Derived, not sampled.** `fitBannerToTheme` refuses any shade whose plate or deep
+ * stop misses `BODY_TEXT_RATIO` against the theme's fixed plate ink, and
+ * `fitChromeToTheme` applies the identical test to the gold that an unchosen banner
+ * falls back to. So every stop this app can paint — chosen, inherited from the plate, or
+ * shipped — sits at or above this line. Inverting the WCAG ratio gives it in one
+ * expression, and that is what turns "no banner can hide the dev marker" from a sweep
+ * over some colors into a statement about all of them.
+ */
+export function darkestBannerLuminance(theme: SchemeTheme): number {
+  const ink = relativeLuminance(requireHex(THEME_BACKDROP[theme].plateInk))
+  return BODY_TEXT_RATIO * (ink + CONTRAST_FLARE) - CONTRAST_FLARE
+}
+
+/**
+ * The worst contrast the dev marker's plate can have against a banner in this theme.
+ *
+ * The marker's ground is darker than any banner the picker can produce, so the darkest
+ * banner is the worst case and this is a floor rather than one reading among many —
+ * `color-scheme.test.ts` asserts that ordering, because the arithmetic below only means
+ * "floor" while it holds. It measures **5.18 light and 4.67 dark** against a
+ * `GRAPHIC_RATIO` requirement of 3.
+ *
+ * This is the guarantee that a tarnished-gold marker could not make. A user who picked
+ * a banner near `#c99a2e` would have had one at 1:1 against its own background — the
+ * hiding that keeping `--dev` out of the picker exists to prevent, arriving through the
+ * banner instead.
+ */
+export function devMarkFloorAgainstBanner(theme: SchemeTheme): number {
+  const plate = relativeLuminance(requireHex(DEV_MARK.plate))
+  return (darkestBannerLuminance(theme) + CONTRAST_FLARE) / (plate + CONTRAST_FLARE)
 }
 
 /* ---------- the scheme itself ---------- */

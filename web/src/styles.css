@@ -57,23 +57,43 @@
   --gold-edge: var(--user-gold-edge-light, #8a5a08);
 
   /*
-   * The dev banner: **tarnished gold**, not a different metal.
+   * The dev marker: a **stamp on the banner**, not a coat of paint over it.
    *
-   * This was a gray steel first, which measured ΔE 80 from the production plate in
-   * Lab — far enough that it read as a foreign component rather than as the same
-   * banner in another state. These values are the same hue at lower value and chroma:
-   * ΔE 19 light and 15 dark, which is "a deliberate sibling" rather than "a different
-   * color". Gold that has not been polished, which is what a dev box is.
+   * There were four of these and they repainted the whole topbar. `.topbar--dev`
+   * overrode the background, the border, the ink and the shadow on every install that
+   * is not the live host, and it sat *after* `.topbar` at equal specificity, so it won
+   * — which meant the banner color a user chose on the account page did nothing on
+   * every local and staging install, and those are the only places anybody is choosing
+   * one. The banner is the user's. The warning is the app's. So the warning came off
+   * the plate and onto `.topbar__env`, the one element that exists only on a dev
+   * install.
    *
-   * A separate role rather than a filter on the gold, because the ink has to be
-   * checked against this plate on its own terms. It was: `--on-dev` at the obvious
-   * `#33240f` measured 4.43:1, just under the floor, so it is deepened to clear it at
-   * 5.10 light and 5.66 dark.
+   * **These two are the old pair, swapped.** `--dev` was the tarnished-gold plate and
+   * `--on-dev` was the ink on it; the marker is that plate inverted, so the ink is now
+   * the tarnished gold and the ground is the near-black it used to carry. Their
+   * contrast is therefore a number that was already measured and did not have to be
+   * found again: **6.70:1**. What is kept from the plate is the reason it was gold at
+   * all — it was a gray steel first, ΔE 80 from the production gold in Lab, and read as
+   * a foreign component rather than as this app in another state; the tarnished values
+   * that replaced it measured ΔE 19 light and 15 dark, a deliberate sibling.
+   *
+   * **The ground is dark, and that is a guarantee rather than a taste.** Every banner
+   * the picker can produce carries `--on-gold` at 4.5:1 on both gradient stops (see
+   * `fitBanner` in `color-scheme.ts`), which puts a floor under how dark a banner can
+   * be. Against that floor this ground measures **5.18:1 light and 4.67:1 dark**, so no
+   * color anybody can choose brings the marker within the 3:1 a filled shape needs. A
+   * tarnished-gold marker could not have said that: a user who picked a gold near
+   * `#c99a2e` would have had a marker at 1:1 against its own background, which is
+   * exactly the hiding the old role was locked away from the picker to prevent.
+   * `DEV_MARK` in `color-scheme.ts` holds this pair and `color-scheme.test.ts` measures
+   * both claims against the stylesheet.
+   *
+   * One pair rather than one per theme: the marker sits on the banner and never on the
+   * page, and the banner is light in both themes, so there is nothing here for a theme
+   * to change.
    */
-  --dev: #c99a2e;
-  --dev-deep: #96700f;
-  --dev-edge: #5c3c05;
-  --on-dev: #241905;
+  --dev: #241905;
+  --on-dev: #c99a2e;
   /* Display numerals only. Deep gold here — bright gold on parchment is ~1.9:1. */
   --display: var(--user-display-light, #8a5a08);
   --on-gold: #33240f;
@@ -154,11 +174,8 @@
     --gold: var(--user-gold-dark, #f5c04a);
     --gold-deep: var(--user-gold-deep-dark, #c9930f);
     --gold-edge: var(--user-gold-edge-dark, #6b4708);
-    /* Lifted like the gold is, so it reads as a plate rather than a hole. */
-    --dev: #d0a337;
-    --dev-deep: #9e7815;
-    --dev-edge: #4a3004;
-    --on-dev: #241905;
+    /* No --dev pair here: the marker sits on the banner, which is light in both
+       themes, so it has nothing to adapt to. See the light block. */
     /* Bright gold clears 9:1 on dark wood, so the display numerals can sing. */
     --display: var(--user-display-dark, #f5c04a);
     --on-gold: #241d14;
@@ -200,10 +217,7 @@
   --gold: var(--user-gold-dark, #f5c04a);
   --gold-deep: var(--user-gold-deep-dark, #c9930f);
   --gold-edge: var(--user-gold-edge-dark, #6b4708);
-  --dev: #d0a337;
-  --dev-deep: #9e7815;
-  --dev-edge: #4a3004;
-  --on-dev: #241905;
+  /* No --dev pair here either; see the light block. */
   --display: var(--user-display-dark, #f5c04a);
   --on-gold: #241d14;
   --banner: var(--user-banner-dark, var(--gold));
@@ -2548,48 +2562,46 @@ table.roster th button:hover {
 }
 
 /*
- * The same plate, tarnished, for any install that is not the live host.
+ * The marker beside the title, on any install that is not the live host.
  *
- * Only the four color roles change — the geometry, bevels and shadow are the gold
- * rule's, so it reads as the same object in a duller finish rather than as a different
- * component. The white wash on the buttons is untouched: it lifts against tarnished
- * gold exactly as it does against bright, which is the whole reason it is white and
- * not a theme token.
- */
-.topbar--dev {
-  border-color: var(--dev-edge);
-  color: var(--on-dev);
-  background: linear-gradient(180deg, var(--dev) 0%, var(--dev-deep) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    inset 0 -2px 6px rgba(0, 0, 0, 0.28),
-    0 2px 0 var(--dev-edge),
-    0 5px 14px var(--drop);
-}
-.topbar--dev .topbar__title,
-.topbar--dev .topbar__home {
-  color: var(--on-dev);
-}
-/*
- * The marker beside the title.
+ * **There is no `.topbar--dev` any more.** A dev install used to repaint the whole
+ * banner in a tarnished gold, and that rule came after `.topbar` at equal specificity,
+ * so it won — which made the banner color a user chose do nothing on every local and
+ * staging install, and those are the only places anybody chooses one. The banner is the
+ * user's; the warning is the app's, and it now lives entirely in this one element. See
+ * the `--dev` note at the top of this file for the pair of colors and what they are
+ * guaranteed against.
  *
- * **It inherits everything.** Family, size, weight, ink and the title's emboss all
- * come from `.topbar__title`, so it sits on the same baseline in the same type — it is
- * part of the heading, not an annotation pinned next to it. It began at 13px with its
- * own letter-spacing, which put it in a visibly different face on a visibly different
- * line, and looked like a mistake rather than a decision.
+ * **It still inherits its type.** Family, size and weight come from `.topbar__title`,
+ * so it is part of the heading rather than an annotation pinned next to it. It began at
+ * 13px with its own letter-spacing, which put it in a visibly different face on a
+ * visibly different line and looked like a mistake rather than a decision; a plate
+ * behind the same type is what makes it a marker instead.
  *
- * That leaves two declarations. `nowrap`, so "DEV SERVER" never breaks across lines on
- * a phone — a lone "SERVER" beneath the title would read as a rendering fault. And the
- * gap.
+ * What it no longer inherits is the ink and the emboss. `--on-dev` on `--dev` is
+ * 6.70:1, and the title's white `text-shadow` is drawn for dark ink on a light plate —
+ * on this one it fringes the letters instead of lifting them.
  *
- * No `opacity`: it was 0.75 to read as secondary, which measured 3.4:1 light and
- * 3.8:1 dark against the plate. A label whose whole purpose is to stop you mistaking
- * this for production is the last thing to render faintly.
+ * `nowrap`, so "Dev Server" never breaks across lines on a phone: a lone "Server"
+ * beneath the title would read as a rendering fault. `flex: none` for the same reason
+ * the rosette has it — the banner wraps at 390px and the marker must not be the thing
+ * that gets squeezed. The vertical padding is zero on purpose, so the plate is exactly
+ * the line box and the marker cannot change the height of the banner it sits on.
+ *
+ * No `opacity`: it was 0.75 to read as secondary, which measured 3.4:1 light and 3.8:1
+ * dark against the banner it was then sitting bare on. A label whose whole purpose is to
+ * stop you mistaking this for production is the last thing to render faintly, and that
+ * goes double now that it fades a plate as well as the words.
  */
 .topbar__env {
   /* No margin: the heading is a flex row and supplies the gap. */
   white-space: nowrap;
+  flex: none;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  background: var(--dev);
+  color: var(--on-dev);
+  text-shadow: none;
 }
 
 /*
@@ -2604,6 +2616,13 @@ table.roster th button:hover {
  * plate in either theme. The account silhouette is on this list rather than styled
  * separately — it is a sibling of Clan and Cards on the same plate, and it should lift
  * the same way when the cursor is over it.
+ *
+ * **This is the only treatment they get, including on a dev install.**
+ * `.topbar--dev .icon-button` used to re-ink and re-edge them in the tarnished roles,
+ * because the plate under them had changed. It does not change now: a dev install wears
+ * the banner the user chose, like every other install. Losing that override is also
+ * losing an unchecked one — the rule below is the pair `fitBanner` measures, and the
+ * tarnished override was never put through the wash.
  */
 .topbar .icon-button,
 .user-menu__button {
@@ -2615,24 +2634,6 @@ table.roster th button:hover {
 .topbar .icon-button:hover,
 .user-menu__button:hover {
   background: rgba(255, 255, 255, 0.45);
-}
-
-/*
- * The same buttons on the tarnished plate.
- *
- * **After** the gold rules above, deliberately: `.topbar--dev .icon-button` and
- * `.topbar .icon-button` have identical specificity, so whichever comes last wins.
- * Declared first this lost, and the Cards button kept a bright gold edge on a dulled
- * banner — which reads as a bug rather than as a decision.
- *
- * The white hover wash is inherited untouched: it lifts against the dull plate as well
- * as against the bright one, which is the whole reason it is white and not a theme
- * token.
- */
-.topbar--dev .icon-button,
-.topbar--dev .user-menu__button {
-  color: var(--on-dev);
-  border-color: var(--dev-edge);
 }
 
 /* ---------- buttons ---------- */

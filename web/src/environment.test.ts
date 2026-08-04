@@ -53,7 +53,7 @@ describe('siteEnvironment', () => {
   })
 
   it('fails toward marking, never toward silence', () => {
-    // The asymmetry that matters: a false "DEV SERVER" is irritating, a missing one
+    // The asymmetry that matters: a false "Dev Server" is irritating, a missing one
     // is how somebody edits the wrong install's data.
     for (const host of ['', '   ', 'undefined', 'null']) {
       assert.equal(siteEnvironment(host).kind, 'development', `${JSON.stringify(host)}`)

@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
-import { contrastRatio, distinguishable, parseHex, rgbToHsl, type Rgb } from './color-contrast.ts'
+import {
+  contrastRatio,
+  distinguishable,
+  parseHex,
+  relativeLuminance,
+  rgbToHsl,
+  type Rgb,
+} from './color-contrast.ts'
 import {
   ACCENT_PRESETS,
   acceptsColor,
@@ -10,10 +17,13 @@ import {
   CHROME_PRESETS,
   colorSchemeKey,
   CONTROL_WASH_ALPHA,
+  darkestBannerLuminance,
   DEFAULT_SCHEME,
   describeAccent,
   describeBanner,
   describeChrome,
+  DEV_MARK,
+  devMarkFloorAgainstBanner,
   fitAccent,
   fitBanner,
   fitChrome,
@@ -213,14 +223,151 @@ describe('the stylesheet contract', () => {
     assert.equal(/(^|[;\s])(color|fill|stroke)\s*:/.test(rosette), false, rosette)
   })
 
-  it('leaves the dev banner unreachable from the picker', () => {
-    // The tarnished plate exists to be unmistakable for the live host. A user who
-    // could restyle it could hide it, so nothing --user-… may reach the --dev roles.
-    for (const role of ['--dev', '--dev-deep', '--dev-edge', '--on-dev']) {
+  it('leaves the dev marker unreachable from the picker', () => {
+    // The marker exists to be unmistakable for the live host, so a user who could
+    // restyle it could hide it. This is what is left of the same guarantee after the
+    // roles went from four to two: the tarnished plate is gone, but the two colors the
+    // marker is drawn in still take nothing from --user-….
+    for (const role of ['--dev', '--on-dev']) {
       const declarations = stylesheet.match(new RegExp(`${role}:[^;]*;`, 'g')) ?? []
       assert.ok(declarations.length > 0, role)
       for (const declaration of declarations) {
         assert.equal(declaration.includes('--user-'), false, declaration)
+      }
+    }
+  })
+
+  it('declares the dev marker in exactly the pair the module measures', () => {
+    // DEV_MARK is a copy, the way THEME_BACKDROP is, and a copy that drifts is a
+    // contrast figure measured against a color nobody is looking at.
+    for (const [role, value] of [
+      ['--dev', DEV_MARK.plate],
+      ['--on-dev', DEV_MARK.ink],
+    ] as const) {
+      const declarations = stylesheet.match(new RegExp(`${role}:[^;]*;`, 'g')) ?? []
+      assert.deepEqual(declarations, [`${role}: ${value};`], role)
+    }
+  })
+
+  it('declares that pair once rather than once per theme', () => {
+    // The marker sits on the banner and the banner is light in both themes, so a
+    // second copy in a dark block would be a value with nothing to adapt to — and,
+    // being a copy, the one that silently disagrees later.
+    assert.equal((stylesheet.match(/--dev:/g) ?? []).length, 1)
+    assert.equal((stylesheet.match(/--on-dev:/g) ?? []).length, 1)
+  })
+
+  it('lets the chosen banner win on a dev install, because nothing repaints it', () => {
+    // The regression this replaced. `.topbar--dev` overrode the background, the
+    // border, the ink and the shadow, and it came after `.topbar` at equal
+    // specificity, so the banner color a user picked did nothing anywhere except
+    // production — the one install where nobody is picking one. The rule is gone, the
+    // modifier is gone from App.tsx with it, and the marker carries the warning alone.
+    assert.equal(stylesheet.includes('topbar--dev'), false, 'the dev banner override is back')
+    const topbar = bodiesFor('.topbar').join('\n')
+    assert.equal(/var\(--dev|var\(--on-dev/.test(topbar), false, topbar)
+
+    const marker = bodiesFor('.topbar__env').join('\n')
+    assert.match(marker, /background:\s*var\(--dev\)/)
+    assert.match(marker, /color:\s*var\(--on-dev\)/)
+    // The title's emboss is drawn for dark ink on a light plate. Inherited onto the
+    // marker's dark one it fringes the letters instead of lifting them.
+    assert.match(marker, /text-shadow:\s*none/)
+  })
+})
+
+/**
+ * The marker that replaced the dev banner.
+ *
+ * Two claims, and the second is the one the change turns on. Its ink has to be readable
+ * on its own plate, which is fixed arithmetic. And its plate has to stand off **every**
+ * banner the picker can produce, which is not a fixed pair at all — the background under
+ * the marker is now whatever the user chose. A tarnished-gold marker would have failed
+ * that second one outright: a banner near `#c99a2e` puts it at 1:1 against itself.
+ */
+describe('the dev marker', () => {
+  it('carries its own ink at the body-text floor', () => {
+    // 6.70:1. The same two colors as the old banner, swapped, so this is a number that
+    // was already measured rather than one this change had to find.
+    const measured = ratio(DEV_MARK.ink, DEV_MARK.plate)
+    assert.ok(measured >= BODY_TEXT_RATIO, `${measured.toFixed(2)}`)
+  })
+
+  it('is darker than the darkest banner, which is what makes the floor a floor', () => {
+    // `devMarkFloorAgainstBanner` divides one luminance by the other and calls the
+    // answer a worst case. That is only true while the marker sits below the whole
+    // band; a lighter marker would land somewhere inside it and the quotient would
+    // stop meaning anything.
+    for (const theme of SCHEME_THEMES) {
+      const plate = relativeLuminance(rgb(DEV_MARK.plate))
+      assert.ok(plate < darkestBannerLuminance(theme), `${theme}: ${plate.toFixed(4)}`)
+    }
+  })
+
+  it('clears the graphic floor against the darkest banner arithmetic allows', () => {
+    // The proof, as opposed to the sweep below: every banner stop the app can paint
+    // carries the plate ink at 4.5:1, which is a floor on its luminance, and this is
+    // the marker measured against that floor. 5.18 light and 4.67 dark.
+    for (const theme of SCHEME_THEMES) {
+      const floor = devMarkFloorAgainstBanner(theme)
+      assert.ok(floor >= GRAPHIC_RATIO, `${theme}: ${floor.toFixed(2)}`)
+    }
+  })
+
+  it('stands off every banner the picker offers, at both stops and in both themes', () => {
+    for (const preset of BANNER_PRESETS) {
+      for (const theme of SCHEME_THEMES) {
+        const roles = bannerIn(preset.hex, theme)
+        for (const stop of [roles.banner, roles.bannerDeep]) {
+          const measured = ratio(DEV_MARK.plate, stop)
+          assert.ok(
+            measured >= GRAPHIC_RATIO,
+            `${preset.label} ${theme} ${stop}: ${measured.toFixed(2)}`,
+          )
+        }
+      }
+    }
+  })
+
+  it('stands off a banner typed in by hand, anywhere on the circle', () => {
+    // The presets are the guided path; the custom input is the one that can produce a
+    // color nobody looked at. Nothing in here may bring the marker under the floor,
+    // and nothing may come in under the derived worst case either — a sample below
+    // the proof would mean the proof is wrong.
+    for (let hue = 0; hue < 360; hue += 15) {
+      for (const saturation of [0, 0.35, 0.7, 1]) {
+        for (const lightness of [0.05, 0.5, 0.99]) {
+          const chosen = hexAt(hue, saturation, lightness)
+          for (const theme of SCHEME_THEMES) {
+            const roles = bannerIn(chosen, theme)
+            for (const stop of [roles.banner, roles.bannerDeep]) {
+              const measured = ratio(DEV_MARK.plate, stop)
+              const floor = Math.max(GRAPHIC_RATIO, devMarkFloorAgainstBanner(theme) - 0.01)
+              assert.ok(measured >= floor, `${chosen} ${theme} ${stop}: ${measured.toFixed(2)}`)
+            }
+          }
+        }
+      }
+    }
+  })
+
+  it('stands off the banner an unchosen scheme leaves behind, which is the plate', () => {
+    // `--banner` falls back to `--gold`, so on a dev install with no banner chosen the
+    // marker is sitting on whatever the plate is. The shipped gold leads CHROME_PRESETS
+    // and is what almost every dev install actually shows.
+    for (const preset of CHROME_PRESETS) {
+      const fit = fitChrome(preset.hex)
+      assert.equal(fit.status, 'fitted', preset.label)
+      if (fit.status !== 'fitted') continue
+      for (const theme of SCHEME_THEMES) {
+        const roles = (theme === 'light' ? fit.light : fit.dark).roles
+        for (const stop of [roles.gold, roles.goldDeep]) {
+          const measured = ratio(DEV_MARK.plate, stop)
+          assert.ok(
+            measured >= GRAPHIC_RATIO,
+            `${preset.label} ${theme} ${stop}: ${measured.toFixed(2)}`,
+          )
+        }
       }
     }
   })

@@ -18,9 +18,10 @@
  * **No color library.** Everything here is ~200 lines of published formulae, and the
  * repo's rule is that a dependency has to earn itself. The Lab conversion is here
  * because the stylesheet already reasons in ΔE — see the `--dev` note in `styles.css`,
- * which records the tarnished-gold plate as "ΔE 19 light and 15 dark" — so a
- * difference measured any other way could not be compared with the decisions already
- * taken.
+ * which records the tarnished gold the dev banner used to be painted in as "ΔE 19 light
+ * and 15 dark" from the production plate — so a difference measured any other way could
+ * not be compared with the decisions already taken. It is load-bearing beyond that
+ * history: `distinguishable` below is ΔE, and it is the accent guard.
  */
 
 /** An sRGB color. Channels are 0–255 and always whole numbers. */
@@ -110,8 +111,15 @@ const LUMINANCE_R = 0.2126
 const LUMINANCE_G = 0.7152
 const LUMINANCE_B = 0.0722
 
-/** WCAG adds this to both terms so that black against black is 1:1 rather than 0/0. */
-const CONTRAST_FLARE = 0.05
+/**
+ * WCAG adds this to both terms so that black against black is 1:1 rather than 0/0.
+ *
+ * Exported because one caller inverts the ratio rather than computing it:
+ * `darkestBannerLuminance` in `color-scheme.ts` turns "this ground must clear 4.5:1
+ * against that ink" into "this ground's luminance is at least L", which is what makes
+ * the dev marker's separation a proof over every banner rather than a sweep of some.
+ */
+export const CONTRAST_FLARE = 0.05
 
 /** One channel, 0–255, to linear light 0–1. */
 export function linearizeChannel(channel: number): number {
