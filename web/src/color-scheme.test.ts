@@ -1,15 +1,21 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import { contrastRatio, distinguishable, parseHex, rgbToHsl, type Rgb } from './color-contrast.ts'
 import {
   ACCENT_PRESETS,
+  acceptsColor,
+  BANNER_PRESETS,
   BODY_TEXT_RATIO,
   CHROME_PRESETS,
   colorSchemeKey,
+  CONTROL_WASH_ALPHA,
   DEFAULT_SCHEME,
   describeAccent,
+  describeBanner,
   describeChrome,
   fitAccent,
+  fitBanner,
   fitChrome,
   GRAPHIC_RATIO,
   isDefaultScheme,
@@ -17,6 +23,7 @@ import {
   nearestUsableAccent,
   parseScheme,
   presetsFor,
+  roleOutcome,
   SCHEME_ROLES,
   SCHEME_THEMES,
   SCHEME_VARIABLES,
@@ -25,7 +32,11 @@ import {
   serialiseScheme,
   SHIPPED,
   THEME_BACKDROP,
+  washedControlGround,
+  withSchemeColor,
   type AccentRoles,
+  type BannerRoles,
+  type ColorScheme,
   type SchemeTheme,
 } from './color-scheme.ts'
 
@@ -37,10 +48,21 @@ const rgb = (hex: string): Rgb => {
 
 const ratio = (a: string, b: string): number => contrastRatio(rgb(a), rgb(b))
 
+/** A scheme with every role this test does not name left on the shipped theme. */
+const scheme = (chosen: Partial<ColorScheme>): ColorScheme => ({ ...DEFAULT_SCHEME, ...chosen })
+
 /** The accent's roles in one theme, or a failed assertion naming what was refused. */
 function accentIn(hex: string, theme: SchemeTheme): AccentRoles {
   const fit = fitAccent(hex)
   assert.equal(fit.status, 'fitted', `${hex} should be usable as an accent`)
+  if (fit.status !== 'fitted') throw new Error('unreachable')
+  return (theme === 'light' ? fit.light : fit.dark).roles
+}
+
+/** The banner's roles in one theme, or a failed assertion naming what was refused. */
+function bannerIn(hex: string, theme: SchemeTheme): BannerRoles {
+  const fit = fitBanner(hex)
+  assert.equal(fit.status, 'fitted', `${hex} should be usable as a banner`)
   if (fit.status !== 'fitted') throw new Error('unreachable')
   return (theme === 'light' ? fit.light : fit.dark).roles
 }
@@ -53,36 +75,154 @@ describe('the shipped themes', () => {
     assert.deepEqual(schemeVariables(DEFAULT_SCHEME), {})
   })
 
-  it('writes only the chosen half when one role is left alone', () => {
-    const names = Object.keys(schemeVariables({ accent: '#7a4fd0', chrome: null }))
+  it('writes only the chosen role when the other two are left alone', () => {
+    const names = Object.keys(schemeVariables(scheme({ accent: '#7a4fd0' })))
     assert.equal(
       names.every((name) => name.includes('accent') || name.includes('track')),
       true,
       names.join(', '),
     )
     assert.equal(
-      Object.keys(schemeVariables({ accent: null, chrome: '#7fc9a8' })).some((name) =>
+      Object.keys(schemeVariables(scheme({ chrome: '#7fc9a8' }))).some((name) =>
         name.includes('accent'),
       ),
       false,
     )
   })
 
+  it('leaves the banner to the plate when only the plate was chosen', () => {
+    // The banner's fallback in styles.css is `var(--gold)`, not a color of its own, so
+    // a plate with no banner has to write nothing for the banner and let the topbar
+    // follow the plate — which is what everybody had before the banner existed.
+    const names = Object.keys(schemeVariables(scheme({ chrome: '#e08a4c' })))
+    assert.equal(
+      names.some((name) => name.includes('banner')),
+      false,
+      names.join(', '),
+    )
+  })
+
   it('never writes a name the applier does not know how to clear', () => {
     // A variable missing from SCHEME_VARIABLES would survive a Reset as a colour
     // nobody can change again.
-    for (const name of Object.keys(schemeVariables({ accent: '#12867f', chrome: '#e08a4c' }))) {
+    const chosen = { accent: '#12867f', chrome: '#e08a4c', banner: '#a9cbe8' }
+    for (const name of Object.keys(schemeVariables(chosen))) {
       assert.ok(SCHEME_VARIABLES.includes(name), `${name} is not in SCHEME_VARIABLES`)
     }
   })
 
-  it('sets every variable it can, when both roles are chosen', () => {
-    const written = Object.keys(schemeVariables({ accent: '#12867f', chrome: '#e08a4c' }))
+  it('sets every variable it can, when all three roles are chosen', () => {
+    const written = Object.keys(
+      schemeVariables({ accent: '#12867f', chrome: '#e08a4c', banner: '#a9cbe8' }),
+    )
     assert.deepEqual([...written].sort(), [...SCHEME_VARIABLES].sort())
   })
 
+  it('writes no ink variable for the banner, because the ink was never a choice', () => {
+    // fitBanner moves the banner until the theme's plate ink clears the floor rather
+    // than swapping the ink, so `--on-banner` stays the alias styles.css declares it
+    // as. A `--user-on-banner-…` here would be a color with nothing deciding it.
+    const written = Object.keys(schemeVariables(scheme({ banner: '#a9cbe8' })))
+    assert.equal(
+      written.some((name) => name.includes('on-banner')),
+      false,
+      written.join(', '),
+    )
+    assert.equal(written.length, 6, written.join(', '))
+  })
+
   it('leaves a stored colour the guard would now refuse out of the variables', () => {
-    assert.deepEqual(schemeVariables({ accent: '#00ff00', chrome: null }), {})
+    assert.deepEqual(schemeVariables(scheme({ accent: '#00ff00' })), {})
+  })
+})
+
+/**
+ * The half of the promise that lives in the other file.
+ *
+ * `schemeVariables` can only keep the shipped themes byte-identical if `styles.css`
+ * holds up its end: every name written has to be read somewhere, every `var(--user-…)`
+ * has to carry a fallback, and the banner's fallback has to be the plate rather than a
+ * color somebody chose. None of that is visible from a unit test on the module, and
+ * all of it breaks silently.
+ */
+describe('the stylesheet contract', () => {
+  const stylesheet = readFileSync(new URL('./styles.css', import.meta.url), 'utf8').replace(
+    /\/\*[\s\S]*?\*\//g,
+    '',
+  )
+
+  /** Every declaration block belonging to exactly this selector. */
+  function bodiesFor(selector: string): string[] {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const pattern = new RegExp(`(?:^|[};])\\s*${escaped}\\s*\\{([^{}]*)\\}`, 'g')
+    return [...stylesheet.matchAll(pattern)].map((match) => match[1] ?? '')
+  }
+
+  it('reads every variable the scheme can write', () => {
+    // A name the module writes and the stylesheet never mentions is a color that
+    // reaches the root element and paints nothing.
+    for (const name of SCHEME_VARIABLES) {
+      assert.ok(stylesheet.includes(name), `${name} is written but never read`)
+    }
+  })
+
+  it('gives every user variable a fallback, which is what keeps the themes shipped', () => {
+    // `var(--user-x)` with nothing after the comma resolves to nothing at all when the
+    // user has chosen nothing, so one missing fallback is one unpainted role.
+    const missing = stylesheet.match(/var\(\s*--user-[a-z-]+\s*\)/g)
+    assert.equal(missing, null, `${missing?.join(', ')} have no shipped value behind them`)
+  })
+
+  it('falls the banner back to the plate rather than to a color somebody picked', () => {
+    // A default banner is not a color and must not become one: with nothing chosen,
+    // and with a plate chosen and no banner, the topbar is whatever the gold is.
+    for (const [role, gold] of [
+      ['banner', 'gold'],
+      ['banner-deep', 'gold-deep'],
+      ['banner-edge', 'gold-edge'],
+    ] as const) {
+      for (const theme of SCHEME_THEMES) {
+        assert.ok(
+          stylesheet.includes(`--${role}: var(--user-${role}-${theme}, var(--${gold}))`),
+          `--${role} in ${theme} should fall back to --${gold}`,
+        )
+      }
+    }
+  })
+
+  it('paints the topbar from the banner and leaves the rest of the chrome on the gold', () => {
+    const topbar = bodiesFor('.topbar').join('\n')
+    assert.match(topbar, /background:\s*linear-gradient\([^)]*var\(--banner\)/)
+    assert.match(topbar, /border:\s*1px solid var\(--banner-edge\)/)
+    assert.equal(/var\(--gold/.test(topbar), false, 'the topbar no longer names the gold')
+
+    // The three the split had to leave behind, or "banner" would just be "plate".
+    for (const selector of ['.card-tile__badge', '.card,\n.tiles,\n.notice']) {
+      assert.match(bodiesFor(selector).join('\n'), /var\(--gold/, selector)
+    }
+  })
+
+  it('keeps the rosette on the ink the title link inherits', () => {
+    // The mark paints in `currentColor` and has no color of its own, so the chain is
+    // .topbar -> .topbar__title -> .topbar__title a -> the SVG. Give the rosette a
+    // color, or drop `inherit` from the link, and the mark vanishes into the banner.
+    assert.match(bodiesFor('.topbar').join('\n'), /color:\s*var\(--on-banner\)/)
+    assert.match(bodiesFor('.topbar__title a').join('\n'), /color:\s*inherit/)
+    const rosette = bodiesFor('.topbar__rosette').join('\n')
+    assert.ok(rosette.length > 0, 'the rosette rule should exist')
+    assert.equal(/(^|[;\s])(color|fill|stroke)\s*:/.test(rosette), false, rosette)
+  })
+
+  it('leaves the dev banner unreachable from the picker', () => {
+    // The tarnished plate exists to be unmistakable for the live host. A user who
+    // could restyle it could hide it, so nothing --user-… may reach the --dev roles.
+    for (const role of ['--dev', '--dev-deep', '--dev-edge', '--on-dev']) {
+      const declarations = stylesheet.match(new RegExp(`${role}:[^;]*;`, 'g')) ?? []
+      assert.ok(declarations.length > 0, role)
+      for (const declaration of declarations) {
+        assert.equal(declaration.includes('--user-'), false, declaration)
+      }
+    }
   })
 })
 
@@ -357,8 +497,134 @@ describe('fitting the plate', () => {
   })
 })
 
+describe('fitting the banner', () => {
+  it('leaves the topbar exactly as it is when the shipped gold is chosen', () => {
+    // The banner's shipped value is the plate's, because the plate is what paints the
+    // topbar today. Choosing it explicitly must be a no-op on screen.
+    const fit = fitBanner(SHIPPED.banner)
+    assert.equal(fit.status, 'fitted')
+    if (fit.status !== 'fitted') return
+    assert.equal(fit.light.roles.banner, SHIPPED.chrome)
+    assert.equal(fit.light.moved, false)
+  })
+
+  it('carries the banner ink across both stops of the gradient at 4.5:1', () => {
+    // The title, the rosette inside it and up to five controls all paint in one ink,
+    // and the smallest of them is 13px, so 4.5 governs the whole banner. The gradient
+    // means the ink has to survive the darker end as well as the lighter one.
+    for (const preset of BANNER_PRESETS) {
+      for (const theme of SCHEME_THEMES) {
+        const roles = bannerIn(preset.hex, theme)
+        const ink = THEME_BACKDROP[theme].plateInk
+        for (const [where, stop] of [
+          ['top', roles.banner],
+          ['deep', roles.bannerDeep],
+        ] as const) {
+          assert.ok(
+            ratio(ink, stop) >= BODY_TEXT_RATIO,
+            `${preset.label} ${theme} ${where}: ${ratio(ink, stop).toFixed(2)}`,
+          )
+        }
+      }
+    }
+  })
+
+  it('checks the ink against the washed ground a control actually gives it', () => {
+    // `.topbar .icon-button` is rgba(255,255,255,0.28) over the banner, so the ink
+    // under a control is not on the banner at all.
+    for (const preset of BANNER_PRESETS) {
+      for (const theme of SCHEME_THEMES) {
+        const roles = bannerIn(preset.hex, theme)
+        const ink = rgb(THEME_BACKDROP[theme].plateInk)
+        for (const stop of [roles.banner, roles.bannerDeep]) {
+          const washed = washedControlGround(rgb(stop))
+          assert.ok(
+            contrastRatio(ink, washed) >= BODY_TEXT_RATIO,
+            `${preset.label} ${theme}: ${contrastRatio(ink, washed).toFixed(2)}`,
+          )
+        }
+      }
+    }
+  })
+
+  it('is stricter at the gradient stops than under the wash, which is why the band holds', () => {
+    // The claim the fit rests on: inside the light band, white at 28% moves the ground
+    // *away* from the dark ink, so measuring the bare stops already covers the
+    // controls. Outside the band it would invert, and that is the second reason the
+    // banner is restricted rather than checked.
+    assert.ok(CONTROL_WASH_ALPHA > 0 && CONTROL_WASH_ALPHA < 1)
+    for (const preset of BANNER_PRESETS) {
+      for (const theme of SCHEME_THEMES) {
+        const roles = bannerIn(preset.hex, theme)
+        const ink = rgb(THEME_BACKDROP[theme].plateInk)
+        for (const stop of [roles.banner, roles.bannerDeep]) {
+          const bare = contrastRatio(ink, rgb(stop))
+          const washed = contrastRatio(ink, washedControlGround(rgb(stop)))
+          assert.ok(washed > bare, `${preset.label} ${theme}: ${washed} should beat ${bare}`)
+        }
+      }
+    }
+  })
+
+  it('raises a dark pick into the band the topbar was drawn for', () => {
+    // Every light-plate assumption in the stylesheet lands here: the 0.55 inset
+    // highlight, the white emboss under the title, the 0.28 wash on the controls. A
+    // dark banner would not fail a ratio, it would fail the drawing.
+    const fit = fitBanner('#101010')
+    assert.equal(fit.status, 'fitted')
+    if (fit.status !== 'fitted') return
+    for (const theme of SCHEME_THEMES) {
+      const roles = (theme === 'light' ? fit.light : fit.dark).roles
+      assert.ok(rgbToHsl(rgb(roles.banner)).l >= MIN_PLATE_LIGHTNESS - 0.001, theme)
+    }
+    assert.equal(fit.light.moved, true)
+  })
+
+  it('keeps the edge and the deep stop darker than the banner, so it still reads as one', () => {
+    for (const preset of BANNER_PRESETS) {
+      const roles = bannerIn(preset.hex, 'light')
+      assert.ok(luminanceOf(roles.bannerDeep) < luminanceOf(roles.banner), preset.label)
+      assert.ok(luminanceOf(roles.bannerEdge) < luminanceOf(roles.bannerDeep), preset.label)
+    }
+  })
+
+  it('stays near the color that was asked for', () => {
+    for (const preset of BANNER_PRESETS) {
+      for (const theme of SCHEME_THEMES) {
+        assert.ok(hueGap(bannerIn(preset.hex, theme).banner, preset.hex) < 6, preset.label)
+      }
+    }
+  })
+
+  it('never refuses a banner, for the same reason the plate is never refused', () => {
+    for (let hue = 0; hue < 360; hue += 20) {
+      for (const lightness of [0.05, 0.5, 0.98]) {
+        assert.equal(fitBanner(hexAt(hue, 0.8, lightness)).status, 'fitted', `${hue}°`)
+      }
+    }
+  })
+
+  it('refuses a banner it cannot read at all', () => {
+    assert.equal(fitBanner('not-a-color').status, 'invalid')
+    assert.equal(fitBanner('#gggggg').status, 'invalid')
+  })
+
+  it('fits the banner independently of the plate', () => {
+    // The whole point of the split: one choice must not move the other's variables.
+    const both = schemeVariables({ accent: null, chrome: '#e08a4c', banner: '#a9cbe8' })
+    const plateOnly = schemeVariables(scheme({ chrome: '#e08a4c' }))
+    assert.equal(both['--user-gold-light'], plateOnly['--user-gold-light'])
+    assert.notEqual(both['--user-banner-light'], both['--user-gold-light'])
+  })
+
+  it('does not derive a display color, because nothing banner-coloured sits on a card', () => {
+    const roles = bannerIn('#a9cbe8', 'light')
+    assert.deepEqual(Object.keys(roles).sort(), ['banner', 'bannerDeep', 'bannerEdge'])
+  })
+})
+
 describe('the offered swatches', () => {
-  it('offers colours for both roles, each with an id and a label', () => {
+  it('offers colours for all three roles, each with an id and a label', () => {
     for (const role of SCHEME_ROLES) {
       const presets = presetsFor(role)
       assert.ok(presets.length >= 5, role)
@@ -381,8 +647,29 @@ describe('the offered swatches', () => {
   it('offers nothing the guard would refuse', () => {
     // The constrained path has to be a path: a swatch that produced a refusal would
     // be the picker arguing with itself.
-    for (const preset of ACCENT_PRESETS) assert.equal(fitAccent(preset.hex).status, 'fitted')
-    for (const preset of CHROME_PRESETS) assert.equal(fitChrome(preset.hex).status, 'fitted')
+    for (const role of SCHEME_ROLES) {
+      for (const preset of presetsFor(role)) {
+        assert.equal(acceptsColor(role, preset.hex), true, `${role}: ${preset.label}`)
+      }
+    }
+  })
+
+  it('starts the banner on the gold the topbar already wears', () => {
+    // The first swatch is the current appearance, so "put it back" is visible in the
+    // row rather than only under Reset.
+    assert.equal(BANNER_PRESETS[0]?.hex, SHIPPED.banner)
+    assert.equal(SHIPPED.banner, SHIPPED.chrome)
+  })
+
+  it('keeps the banner swatches out of the plate band, so the two rows are not one row', () => {
+    // The plate has to read as metal; the banner is one broad object where a flat
+    // color reads as a color. Sharing five of six swatches would say otherwise.
+    const plate = new Set(CHROME_PRESETS.map((preset) => preset.hex))
+    const shared = BANNER_PRESETS.filter((preset) => plate.has(preset.hex))
+    assert.deepEqual(
+      shared.map((preset) => preset.id),
+      ['gold'],
+    )
   })
 
   it('spreads the accents around the circle rather than offering six blues', () => {
@@ -424,6 +711,41 @@ describe('what the picker says', () => {
   it('tells somebody who typed nonsense what to do instead', () => {
     assert.match(describeAccent('rebeccapurple', fitAccent('rebeccapurple')), /swatches/)
   })
+
+  it('calls the banner a banner, not a plate', () => {
+    // Three roles, three nouns. "the plate" under the banner block would be the
+    // picker telling somebody they had changed something else.
+    assert.match(describeBanner('#a9cbe8', fitBanner('#a9cbe8')), /banner/)
+    assert.equal(/plate/.test(describeBanner('#a9cbe8', fitBanner('#a9cbe8'))), false)
+  })
+
+  it('says the same thing through roleOutcome as through the describe functions', () => {
+    // The component reads roleOutcome and nothing else, so the two must not drift.
+    for (const [role, hex] of [
+      ['accent', '#7a4fd0'],
+      ['chrome', '#e08a4c'],
+      ['banner', '#a9cbe8'],
+    ] as const) {
+      const outcome = roleOutcome(role, hex)
+      assert.equal(outcome.refused, false, role)
+      const { light, dark } = outcome
+      assert.ok(light !== null && dark !== null, role)
+      assert.match(outcome.message, new RegExp(light))
+    }
+  })
+
+  it('carries the refusal and its offer through roleOutcome as well', () => {
+    const outcome = roleOutcome('accent', '#00ff00')
+    assert.equal(outcome.refused, true)
+    assert.ok(outcome.suggestion, 'the offer survives the flattening')
+    assert.equal(outcome.light, null)
+  })
+
+  it('never refuses through the two roles that only restrict the range', () => {
+    assert.equal(roleOutcome('chrome', '#101010').refused, false)
+    assert.equal(roleOutcome('banner', '#101010').refused, false)
+    assert.equal(roleOutcome('banner', 'nonsense').refused, true)
+  })
 })
 
 describe('storage', () => {
@@ -433,15 +755,30 @@ describe('storage', () => {
   })
 
   it('round-trips a scheme through storage', () => {
-    const scheme = { accent: '#12867f', chrome: '#e08a4c' }
-    assert.deepEqual(parseScheme(serialiseScheme(scheme)), scheme)
+    const stored = { accent: '#12867f', chrome: '#e08a4c', banner: '#a9cbe8' }
+    assert.deepEqual(parseScheme(serialiseScheme(stored)), stored)
   })
 
   it('normalises what it stores, so two spellings of one colour are one colour', () => {
-    assert.deepEqual(parseScheme('{"accent":"#12867F","chrome":null}'), {
+    assert.deepEqual(
+      parseScheme('{"accent":"#12867F","chrome":null,"banner":"#A9CBE8"}'),
+      scheme({ accent: '#12867f', banner: '#a9cbe8' }),
+    )
+  })
+
+  it('loads a scheme stored before the banner existed, without a banner', () => {
+    // The two-field shape is in people's browsers right now. A missing key is not a
+    // string, so it lands on null, and a null banner is the plate — which is exactly
+    // what those browsers are already showing.
+    assert.deepEqual(parseScheme('{"accent":"#12867f","chrome":"#e08a4c"}'), {
       accent: '#12867f',
-      chrome: null,
+      chrome: '#e08a4c',
+      banner: null,
     })
+    assert.deepEqual(
+      schemeVariables(parseScheme('{"accent":null,"chrome":"#e08a4c"}')),
+      schemeVariables(scheme({ chrome: '#e08a4c' })),
+    )
   })
 
   it('falls back to the shipped theme for anything it cannot read', () => {
@@ -467,24 +804,32 @@ describe('storage', () => {
 
   it('drops a stored colour that the guard would refuse today', () => {
     // A value written by a build with a laxer rule must not survive the rule change.
-    assert.deepEqual(parseScheme('{"accent":"#00ff00","chrome":"#7fc9a8"}'), {
-      accent: null,
-      chrome: '#7fc9a8',
-    })
+    assert.deepEqual(
+      parseScheme('{"accent":"#00ff00","chrome":"#7fc9a8","banner":"#a9cbe8"}'),
+      scheme({ chrome: '#7fc9a8', banner: '#a9cbe8' }),
+    )
   })
 
-  it('keeps the good half of a half-broken value', () => {
-    assert.deepEqual(parseScheme('{"accent":"#12867f","chrome":"oops"}'), {
-      accent: '#12867f',
-      chrome: null,
-    })
+  it('keeps the good parts of a part-broken value', () => {
+    assert.deepEqual(
+      parseScheme('{"accent":"#12867f","chrome":"oops","banner":42}'),
+      scheme({ accent: '#12867f' }),
+    )
   })
 
   it('takes an already-parsed object as well as a string', () => {
-    assert.deepEqual(parseScheme({ accent: '#12867f', chrome: null }), {
-      accent: '#12867f',
-      chrome: null,
-    })
+    const chosen = scheme({ accent: '#12867f' })
+    assert.deepEqual(parseScheme({ accent: '#12867f', chrome: null }), chosen)
+  })
+
+  it('replaces one role at a time and leaves the others alone', () => {
+    const one = withSchemeColor(DEFAULT_SCHEME, 'banner', '#a9cbe8')
+    assert.deepEqual(one, scheme({ banner: '#a9cbe8' }))
+    assert.deepEqual(
+      withSchemeColor(one, 'accent', '#12867f'),
+      scheme({ accent: '#12867f', banner: '#a9cbe8' }),
+    )
+    assert.deepEqual(withSchemeColor(one, 'banner', null), DEFAULT_SCHEME)
   })
 })
 
@@ -494,11 +839,22 @@ describe('the account menu line', () => {
     assert.equal(isDefaultScheme(DEFAULT_SCHEME), true)
   })
 
-  it('distinguishes one customised role from both', () => {
-    assert.equal(schemeSummary({ accent: '#12867f', chrome: null }), 'Custom accent')
-    assert.equal(schemeSummary({ accent: null, chrome: '#e08a4c' }), 'Custom plate')
-    assert.equal(schemeSummary({ accent: '#12867f', chrome: '#e08a4c' }), 'Custom')
-    assert.equal(isDefaultScheme({ accent: '#12867f', chrome: null }), false)
+  it('names the one customised role, and gives up at two', () => {
+    assert.equal(schemeSummary(scheme({ accent: '#12867f' })), 'Custom accent')
+    assert.equal(schemeSummary(scheme({ chrome: '#e08a4c' })), 'Custom plate')
+    assert.equal(schemeSummary(scheme({ banner: '#a9cbe8' })), 'Custom banner')
+    assert.equal(schemeSummary(scheme({ accent: '#12867f', chrome: '#e08a4c' })), 'Custom')
+    assert.equal(
+      schemeSummary({ accent: '#12867f', chrome: '#e08a4c', banner: '#a9cbe8' }),
+      'Custom',
+    )
+  })
+
+  it('offers Reset while any one of the three is set', () => {
+    for (const role of SCHEME_ROLES) {
+      const chosen = withSchemeColor(DEFAULT_SCHEME, role, SHIPPED[role])
+      assert.equal(isDefaultScheme(chosen), false, role)
+    }
   })
 })
 

@@ -300,7 +300,8 @@ function subscribeToScheme(onChange: () => void): () => void {
 }
 
 /**
- * The chosen accent and plate: applied to the root element, remembered per account.
+ * The chosen accent, plate and banner: applied to the root element, remembered per
+ * account.
  *
  * Sits beside `useTheme` because it is the same kind of thing — an appearance
  * preference that lives in this browser — but it is keyed by account where the theme
@@ -318,7 +319,7 @@ function subscribeToScheme(onChange: () => void): () => void {
  * would strip the variables when the account page closes and leave the menu, which
  * still holds the scheme, with no effect scheduled to put them back. The cost is that
  * signing out leaves the last scheme on screen until the next load; the sign-in
- * screen names nobody, and the next account's own effect overwrites all fourteen
+ * screen names nobody, and the next account's own effect overwrites all twenty
  * variables on mount.
  */
 export function useColorScheme(userId: number): [ColorScheme, (next: ColorScheme) => void] {

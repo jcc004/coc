@@ -16,14 +16,16 @@
  * setting, the [data-theme] scope covers the in-app toggle, and the :not() guard
  * lets an explicit light choice beat OS dark.
  *
- * Seven roles per theme are written as `var(--user-…-<theme>, <shipped>)`. That is
+ * Ten roles per theme are written as `var(--user-…-<theme>, <shipped>)`. That is
  * the user's colour scheme, and the shape is the whole of the promise it makes:
- * **the value in the fallback is the theme, unchanged.** Nothing writes the
- * `--user-…` names unless somebody has chosen a colour on the account page, so a
- * fresh browser, a cleared storage and a Reset all render the same bytes this file
- * rendered before the feature existed. The names are set on the root element by
- * `useColorScheme` (`hooks.ts`) from `schemeVariables` (`color-scheme.ts`), which
- * is also where the contrast guard lives — the shade is fitted per theme, so the
+ * **the value in the fallback is the theme, unchanged.** The three banner roles put
+ * another `var()` in the fallback rather than a literal, because "no banner chosen" is
+ * not a color — it is the gold plate, which is what the topbar has always been.
+ * Nothing writes the `--user-…` names unless somebody has chosen a colour on the
+ * account page, so a fresh browser, a cleared storage and a Reset all render the same
+ * bytes this file rendered before the feature existed. The names are set on the root
+ * element by `useColorScheme` (`hooks.ts`) from `schemeVariables` (`color-scheme.ts`),
+ * which is also where the contrast guard lives — the shade is fitted per theme, so the
  * light and dark names hold *different* values derived from one choice.
  */
 :root {
@@ -75,6 +77,28 @@
   /* Display numerals only. Deep gold here — bright gold on parchment is ~1.9:1. */
   --display: var(--user-display-light, #8a5a08);
   --on-gold: #33240f;
+
+  /*
+   * The banner: the topbar's own plate, split out of the gold.
+   *
+   * `.topbar` was painted straight from `--gold`, so choosing a plate repainted the
+   * banner, the panel edges, the committing buttons and the card badge together. These
+   * three names let the banner move on its own — and, because each one *falls back to
+   * the gold role it used to be*, nothing chosen and a plate chosen with no banner both
+   * still resolve to exactly what the topbar rendered before. There is no default
+   * banner color to pick, which is the point: the default is the plate.
+   *
+   * `--on-banner` is an alias of `--on-gold`, not a fourth user color. The ink is
+   * fixed and the *banner* is what moves: `fitBanner` in `color-scheme.ts` searches
+   * upward until this ink clears 4.5:1 on both gradient stops and under the 28% white
+   * wash the topbar's controls carry. The name exists so the topbar's ink is the
+   * banner's ink by declaration rather than the plate's ink by coincidence — the whole
+   * of what this split is for.
+   */
+  --banner: var(--user-banner-light, var(--gold));
+  --banner-deep: var(--user-banner-deep-light, var(--gold-deep));
+  --banner-edge: var(--user-banner-edge-light, var(--gold-edge));
+  --on-banner: var(--on-gold);
 
   /*
    * Card-deck frames. A categorical role, not a magnitude one, so it is its own
@@ -138,6 +162,12 @@
     /* Bright gold clears 9:1 on dark wood, so the display numerals can sing. */
     --display: var(--user-display-dark, #f5c04a);
     --on-gold: #241d14;
+    /* The topbar's own plate; see the light block. Chained to the gold, so an
+       unchosen banner is the gold. */
+    --banner: var(--user-banner-dark, var(--gold));
+    --banner-deep: var(--user-banner-deep-dark, var(--gold-deep));
+    --banner-edge: var(--user-banner-edge-dark, var(--gold-edge));
+    --on-banner: var(--on-gold);
     /* Lightened for dark wood — #6d1e92 in particular vanishes against it. */
     --deck-elixir: #f385f6;
     --deck-dark-elixir: #a855d0;
@@ -176,6 +206,10 @@
   --on-dev: #241905;
   --display: var(--user-display-dark, #f5c04a);
   --on-gold: #241d14;
+  --banner: var(--user-banner-dark, var(--gold));
+  --banner-deep: var(--user-banner-deep-dark, var(--gold-deep));
+  --banner-edge: var(--user-banner-edge-dark, var(--gold-edge));
+  --on-banner: var(--on-gold);
   --deck-elixir: #f385f6;
   --deck-dark-elixir: #a855d0;
   --deck-builder-base: #7cc2f7;
@@ -2477,19 +2511,30 @@ table.roster th button:hover {
   border-left-color: var(--critical);
 }
 
-/* ---------- the gold banner ---------- */
+/* ---------- the banner ---------- */
 
+/*
+ * On `--banner` rather than `--gold`, which is the one structural change: everything
+ * else that was gold — the plaque edges above, the committing buttons below, the card
+ * badge — stays on `--gold`, so the banner is the only thing a chosen banner moves.
+ * With nothing chosen `--banner` *is* `--gold`, so this rule renders the same bytes it
+ * rendered when it named the gold directly.
+ *
+ * The three white values below are why the banner is restricted to a light band rather
+ * than checked afterwards: the 0.55 inset highlight, the emboss on `.topbar__title` and
+ * the 0.28 wash on the controls all assume the plate under them is light.
+ */
 .topbar {
   align-items: center;
   padding: 12px 16px;
-  border: 1px solid var(--gold-edge);
+  border: 1px solid var(--banner-edge);
   border-radius: var(--radius-lg);
-  color: var(--on-gold);
-  background: linear-gradient(180deg, var(--gold) 0%, var(--gold-deep) 100%);
+  color: var(--on-banner);
+  background: linear-gradient(180deg, var(--banner) 0%, var(--banner-deep) 100%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.55),
     inset 0 -2px 6px rgba(0, 0, 0, 0.22),
-    0 2px 0 var(--gold-edge),
+    0 2px 0 var(--banner-edge),
     0 5px 14px var(--drop);
 }
 
@@ -2502,16 +2547,6 @@ table.roster th button:hover {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
-/*
- * On gold, the chrome buttons need their own treatment — the stone one below would
- * disappear into the banner.
- *
- * The wash is **white over gold**, not a theme token, and that is the point: it lifts
- * against the plate identically in light and dark, because the plate is the same gold
- * in both. The account silhouette is on this list rather than styled separately — it
- * is a sibling of Clan and Cards on the same plate, and it should lift the same way
- * when the cursor is over it.
- */
 /*
  * The same plate, tarnished, for any install that is not the live host.
  *
@@ -2557,11 +2592,24 @@ table.roster th button:hover {
   white-space: nowrap;
 }
 
+/*
+ * On the banner, the chrome buttons need their own treatment — the stone one below
+ * would disappear into it.
+ *
+ * They sit *on* the banner, so they take the banner's ink and edge, not the plate's.
+ * `--on-banner` is checked against both stops of the banner gradient **and** against
+ * each stop mixed 28% toward white, which is the ground this rule actually gives it —
+ * see `CONTROL_WASH_ALPHA` in `color-scheme.ts`. The wash stays white rather than
+ * becoming a theme token for the reason it always was: it lifts identically on either
+ * plate in either theme. The account silhouette is on this list rather than styled
+ * separately — it is a sibling of Clan and Cards on the same plate, and it should lift
+ * the same way when the cursor is over it.
+ */
 .topbar .icon-button,
 .user-menu__button {
-  color: var(--on-gold);
+  color: var(--on-banner);
   background: rgba(255, 255, 255, 0.28);
-  border: 1px solid var(--gold-edge);
+  border: 1px solid var(--banner-edge);
   font-weight: 600;
 }
 .topbar .icon-button:hover,

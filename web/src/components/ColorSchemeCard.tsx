@@ -1,21 +1,23 @@
 import { useState } from 'react'
 import type { SessionUser } from '@coc/shared'
 import {
+  acceptsColor,
   DEFAULT_SCHEME,
-  describeAccent,
-  describeChrome,
-  fitAccent,
-  fitChrome,
   isDefaultScheme,
   presetsFor,
+  roleOutcome,
+  SCHEME_ROLES,
   SHIPPED,
+  withSchemeColor,
   type ColorScheme,
+  type RoleOutcome,
   type SchemeRole,
 } from '../color-scheme.ts'
 import { useColorScheme } from '../hooks.ts'
 
 /**
- * The colour picker: pick the accent and the plate, see it happen, put it back.
+ * The colour picker: pick the accent, the plate and the banner, see it happen, put it
+ * back.
  *
  * Two things about the shape of it.
  *
@@ -41,11 +43,13 @@ import { useColorScheme } from '../hooks.ts'
 const ROLE_TITLE: Record<SchemeRole, string> = {
   accent: 'Accent',
   chrome: 'Plate',
+  banner: 'Banner',
 }
 
 const ROLE_NOTE: Record<SchemeRole, string> = {
   accent: 'Links, the focus ring, meter fills and progress bars.',
-  chrome: 'The banner, panel edges, the committing buttons and the display numerals.',
+  chrome: 'Panel edges, the committing buttons, the card badge and the display numerals.',
+  banner: 'The bar across the top. Left alone, it follows the plate.',
 }
 
 /** Drawn at 24 in the viewBox, so one path serves both the swatch and the chip. */
@@ -59,14 +63,16 @@ export function ColorSchemeCard({ user }: { user: SessionUser }) {
     <section className="card">
       <h2 className="section-title">Colours</h2>
       <p className="lookup-preview">
-        Two colours are yours: the accent and the gold plate. Everything else — the
-        parchment, the ink, and the green, amber and red that mean something — stays put, so
-        that whatever you pick still reads. The shade is fitted to each theme separately,
-        because a colour that works on parchment can vanish on dark wood.
+        Three colours are yours: the accent, the gold plate, and the banner across the top.
+        Everything else — the parchment, the ink, and the green, amber and red that mean
+        something — stays put, so that whatever you pick still reads. The shade is fitted to
+        each theme separately, because a colour that works on parchment can vanish on dark
+        wood.
       </p>
 
-      <RoleBlock role="accent" scheme={scheme} onChoose={choose} />
-      <RoleBlock role="chrome" scheme={scheme} onChoose={choose} />
+      {SCHEME_ROLES.map((role) => (
+        <RoleBlock key={role} role={role} scheme={scheme} onChoose={choose} />
+      ))}
 
       <div className="scheme-actions">
         <button
@@ -80,7 +86,7 @@ export function ColorSchemeCard({ user }: { user: SessionUser }) {
         <span className="lookup-preview">
           {isDefaultScheme(scheme)
             ? 'You are on the shipped light and dark themes.'
-            : 'Puts both roles back to the light and dark themes this app ships with.'}
+            : 'Puts all three roles back to the light and dark themes this app ships with.'}
         </span>
       </div>
     </section>
@@ -100,15 +106,14 @@ function RoleBlock({
      refuses stays visible with its reason rather than disappearing on the way in. */
   const [pending, setPending] = useState<string | null>(null)
 
-  const stored = role === 'accent' ? scheme.accent : scheme.chrome
+  const stored = scheme[role]
   const shown = pending ?? stored ?? SHIPPED[role]
-  const outcome = role === 'accent' ? accentOutcome(shown) : chromeOutcome(shown)
+  const outcome = roleOutcome(role, shown)
 
   function apply(hex: string) {
     setPending(hex)
-    const applied = role === 'accent' ? fitAccent(hex) : fitChrome(hex)
-    if (applied.status !== 'fitted') return
-    onChoose(role === 'accent' ? { ...scheme, accent: hex } : { ...scheme, chrome: hex })
+    if (!acceptsColor(role, hex)) return
+    onChoose(withSchemeColor(scheme, role, hex))
   }
 
   const presets = presetsFor(role)
@@ -153,43 +158,11 @@ function RoleBlock({
 }
 
 /**
- * What the guard said, flattened to what the view needs. Both roles end up here so the
- * markup below is written once — and so the two `fit` unions stay inside the two
- * functions that know which is which, rather than being narrowed by a cast.
+ * What the guard said, drawn. The flattening — three `fit` unions narrowed into one
+ * shape — is `roleOutcome` in `color-scheme.ts`, with the sentences, so this file holds
+ * no color logic and a fourth role would need nothing here but a title and a note.
  */
-interface Outcome {
-  readonly message: string
-  readonly refused: boolean
-  /** A colour to offer instead, for the one case where fitting cannot rescue a choice. */
-  readonly suggestion: string | null
-  /** The shade each theme was given, or `null` where there is none to show. */
-  readonly light: string | null
-  readonly dark: string | null
-}
-
-function accentOutcome(hex: string): Outcome {
-  const fit = fitAccent(hex)
-  return {
-    message: describeAccent(hex, fit),
-    refused: fit.status !== 'fitted',
-    suggestion: fit.status === 'clash' ? fit.suggestion : null,
-    light: fit.status === 'fitted' ? fit.light.roles.accent : null,
-    dark: fit.status === 'fitted' ? fit.dark.roles.accent : null,
-  }
-}
-
-function chromeOutcome(hex: string): Outcome {
-  const fit = fitChrome(hex)
-  return {
-    message: describeChrome(hex, fit),
-    refused: fit.status !== 'fitted',
-    suggestion: null,
-    light: fit.status === 'fitted' ? fit.light.roles.gold : null,
-    dark: fit.status === 'fitted' ? fit.dark.roles.gold : null,
-  }
-}
-
-function Outcome({ outcome, onApply }: { outcome: Outcome; onApply: (hex: string) => void }) {
+function Outcome({ outcome, onApply }: { outcome: RoleOutcome; onApply: (hex: string) => void }) {
   const { light, dark, suggestion } = outcome
 
   return (

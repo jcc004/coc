@@ -82,9 +82,15 @@ stars, long and solid on the cardinals, shorter and at 45% opacity on the diagon
 It is **inline SVG written by hand** in `web/src/App.tsx` — no dependency, no external file, no
 icon font. Everything else drawn in this app is either game art from the API and the wiki or it
 is CSS, and one 24-pixel glyph is not a reason to add a package. Both stars paint in
-`currentColor`, so the mark takes whatever ink the plate uses (`--on-gold`, which differs between
-the themes) and needs no colour of its own; `opacity` rather than a second colour is what
+`currentColor`, so the mark takes whatever ink the banner uses (`--on-banner`, which differs
+between the themes) and needs no colour of its own; `opacity` rather than a second colour is what
 separates the two stars, for the same reason.
+
+The chain that makes that work is four links long and every one of them matters: `.topbar` sets
+`color: var(--on-banner)`, `.topbar__title` inherits it, `.topbar__title a` is `color: inherit`
+(which is what beats the global `a { color: var(--accent) }`), and the SVG paints in
+`currentColor`. Give `.topbar__rosette` a color of its own, or drop the `inherit`, and the mark
+goes flat against the banner. `color-scheme.test.ts` asserts all four.
 
 **It is inside the title's existing link, not beside it.** Two adjacent links to the same place
 would be two tab stops reading as two destinations, and naming the icon "Home" would invent a
@@ -153,9 +159,10 @@ not get back to following it without clearing storage. An unrecognised stored va
 build's, or one somebody edited — lands on `system`, the one answer that is never wrong.
 
 **Colours** sits under Appearance and is a link, not a cycler: the choice is a colour, which needs
-a picker and room to show what the guard did with it. Its value line reads `Default`, `Custom
-accent`, `Custom plate` or `Custom`, so "why does this look like this" has an answer without
-opening the page. See [Choosing colours](#choosing-colours).
+a picker and room to show what the guard did with it. Its value line names the one role that was
+changed — `Default`, `Custom accent`, `Custom plate`, `Custom banner` — and says `Custom` once
+two or more are, so "why does this look like this" has an answer without opening the page. See
+[Choosing colours](#choosing-colours).
 
 Hand-rolled ARIA, because there is no menu library here and one glyph is not worth a dependency:
 `aria-haspopup="menu"` and `aria-expanded` on the button, `role="menu"` / `role="menuitem"` on the
@@ -169,13 +176,22 @@ half-capsule in `currentColor`, for the same reason the rosette is.
 
 ## Choosing colours
 
-`ColorSchemeCard` on `#/account` hands the user **two** colours: the **accent** (links, focus
-ring, meter fills, progress bars) and the **plate** (the banner, panel edges, committing buttons
-and the display numerals). Nothing else moves. The neutrals are what every contrast figure is
-measured against, the status palette and the deck colours carry meaning, and `--dev` exists to be
-unmistakable — a user who could restyle the tarnished plate could hide it.
+`ColorSchemeCard` on `#/account` hands the user **three** colours: the **accent** (links, focus
+ring, meter fills, progress bars), the **plate** (panel edges, committing buttons, the card badge
+and the display numerals) and the **banner** (the bar across the top, and nothing else). Nothing
+else moves. The neutrals are what every contrast figure is measured against, the status palette
+and the deck colours carry meaning, and `--dev` exists to be unmistakable — a user who could
+restyle the tarnished plate could hide it.
 
-**The shipped light and dark themes are untouched.** Seven roles per theme are written in
+**The banner used to be part of the plate.** `.topbar` was painted straight out of `--gold`, so
+choosing a plate repainted the banner, the panel edges, the buttons and the badge together. The
+split adds `--banner`, `--banner-deep` and `--banner-edge` as real roles, and each one *falls
+back to the gold role it used to be* — so nothing chosen, and a plate chosen with no banner, both
+still resolve to exactly what the topbar rendered before. There is no default banner color to
+pick, because the default is the plate. That is also how a scheme stored before this change
+loads: the two-field shape has no `banner` key, the key lands on `null`, and `null` is the plate.
+
+**The shipped light and dark themes are untouched.** Ten roles per theme are written in
 `styles.css` as `var(--user-…-<theme>, <shipped>)`, and nothing writes the `--user-…` names until
 somebody chooses something, so a fresh browser, a cleared storage and a Reset all render exactly
 what the file rendered before the feature existed. `useColorScheme` (`web/src/hooks.ts`) sets them
@@ -186,7 +202,7 @@ on the root element and clears them from a fixed list, keyed `coc:colors:<id>` l
 separately against the ground it will sit on, which is why the picker almost never has to refuse
 anything: the blue that reads at 4.5:1 on parchment is invisible on dark wood, and no single value
 could have satisfied both. The rules, and the ratios, are `web/src/color-scheme.ts` and
-`web/src/color-contrast.ts` — pure, with 91 tests, because a guard that decides whether the site
+`web/src/color-contrast.ts` — pure, with 116 tests, because a guard that decides whether the site
 is readable is not a `useMemo`.
 
 | Relationship | Floor |
@@ -195,6 +211,20 @@ is readable is not a `useMemo`.
 | meter fill against its `--track` | 3:1 (a graphical object, WCAG 1.4.11) |
 | `--on-gold` against **both** stops of the plate gradient | 4.5:1 (the topbar's controls are 13px) |
 | `--display` against `--surface` | 4.5:1 (`.section-title` is 12px, not a 48px numeral) |
+| `--on-banner` against both stops of the banner gradient, **and** against each stop washed 28% white | 4.5:1 (same 13px controls, on their own plate) |
+
+**The banner does not get the large-text allowance, and it is the place it looks most tempting.**
+One ink paints the title, the rosette inside it and up to five controls. `.topbar__title` is
+20px/700, which is bold and over 18.66px, so it would qualify for 3:1 — except the same rule
+drops it to 18px below 600px wide, under the bold threshold. The rosette is a 24px graphical
+object and would take 3:1 under 1.4.11. The controls are 13px and take 4.5, and all three share
+one ink, so 4.5 governs the whole banner in both themes.
+
+The wash is the part a stop-only check would miss: `.topbar .icon-button` is
+`rgba(255,255,255,0.28)` over the banner, so the ink under a control is not sitting on the banner
+at all. Inside the light band that mix always moves the ground *away* from the dark ink, so
+measuring the bare stops is the stricter test — which is a claim, so `blend` exists in
+`color-contrast.ts` and the tests measure it rather than repeating it.
 
 Contrast is computed from WCAG relative luminance, not an averaged brightness: `#0000ff` and
 `#00ff00` are 8.59:1 and 1.37:1 on white, and a model that calls them equally bright would pass an
@@ -210,6 +240,15 @@ The plate is restricted rather than checked: it stays above 0.45 lightness, beca
 bevel, the white button wash and the emboss under the title all assume a light one. Fitting the
 shipped gold rediscovers the two decisions `styles.css` made by hand — deep gold for `--display`
 on parchment, the bright plate itself on dark wood.
+
+**The banner takes the same restriction, for a sharper version of the same reason**: all three of
+those light-plate assumptions land on the topbar and nowhere else. A dark banner would not fail a
+ratio, it would fail the drawing — and the wash would start moving the ground *toward* the ink,
+which is the one case measuring the gradient stops would not catch. So the banner has no ink of
+its own to choose. `--on-banner` is declared in `styles.css` as an alias of `--on-gold`, and the
+fit moves the *banner* upward until that fixed dark ink clears 4.5:1, exactly as the plate's fit
+does. The alias earns its place by decoupling: the topbar's ink is now the banner's ink by
+declaration rather than the plate's ink by coincidence.
 
 ## In-app help
 

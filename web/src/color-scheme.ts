@@ -1,4 +1,5 @@
 import {
+  blend,
   contrastRatio,
   distinguishable,
   formatHex,
@@ -22,15 +23,38 @@ import {
  *
  * ## What is exposed, and why so little
  *
- * Two colours, not forty.
+ * Three colours, not forty.
  *
  *  - **Accent** — the app's one interactive/magnitude colour. Links, the focus ring,
  *    the meter fill, the progress bars, the checkbox tick, the notice edge. Changing
  *    it changes every affordance at once, which is what "my colour" means.
- *  - **Chrome** — the gold plate. The topbar, the panel edges, the committing buttons,
- *    the badge, and the display numerals. It is the app's *skin*; `styles.css` says of
- *    it that "gold is chrome only … it never encodes a value", which is precisely why
- *    it is safe to hand over.
+ *  - **Chrome** — the gold plate. The panel edges, the committing buttons, the card
+ *    badge, and the display numerals. It is the app's *skin*; `styles.css` says of it
+ *    that "gold is chrome only … it never encodes a value", which is precisely why it
+ *    is safe to hand over.
+ *  - **Banner** — the topbar, and only the topbar. See below: it used to be part of
+ *    the plate and is now its own role.
+ *
+ * ### Why the banner is not just the plate
+ *
+ * It was. `.topbar` is painted `linear-gradient(--gold → --gold-deep)` with a
+ * `--gold-edge` border, so choosing a plate has always repainted the banner along with
+ * the panel edges, the committing buttons and the card badge — all four at once, with
+ * no way to move one.
+ *
+ * Splitting the banner out is therefore a **new role rather than a re-pointing**: the
+ * stylesheet gains `--banner`, `--banner-deep` and `--banner-edge`, which *default to
+ * the gold ones*. Nothing chosen, or a plate chosen and no banner, and the topbar still
+ * resolves to `--gold` — the same bytes, and the same "the plate paints the banner"
+ * behavior anyone already has. Choosing a banner is what detaches it.
+ *
+ * The banner keeps the plate's **light band** (`MIN_PLATE_LIGHTNESS`) for a sharper
+ * version of the plate's own reason: all three of the drawing's light-plate assumptions
+ * land on the topbar and nowhere else — the `rgba(255,255,255,0.55)` inset bevel, the
+ * white emboss under the title, and the 28% white wash on its controls. A dark banner
+ * would not fail a ratio; it would fail the drawing, and the wash would move the ground
+ * *toward* the ink instead of away from it, which is the one case measuring the
+ * gradient stops would not catch. See `CONTROL_WASH_ALPHA`.
  *
  * Everything else stays fixed and it is not an oversight:
  *
@@ -62,10 +86,19 @@ import {
  * | meter fill against its `--track` | **3:1** | a graphical object, WCAG 1.4.11 |
  * | `--on-gold` against **both** stops of the plate gradient | **4.5:1** | the topbar's controls are 13px text |
  * | `--display` against `--surface` | **4.5:1** | it is `.section-title` at 12px as well as a 48px numeral |
+ * | `--on-banner` against **both** stops of the banner gradient | **4.5:1** | the same 13px controls, now on their own plate |
  *
  * 4.5 rather than 3 wherever text is involved, because every one of these roles is
  * used at body size *somewhere* — the large-text allowance would be claiming an
  * exemption the smallest use does not have.
+ *
+ * The banner is the place that allowance looks most tempting and it is still not
+ * available. The banner ink paints three things: the title, the rosette inside it, and
+ * up to five controls. The title is `.topbar__title` at **20px/700** — bold and over
+ * 18.66px, so it *would* be WCAG large text at 3:1, except that the same rule drops it
+ * to **18px** under 600px wide, which is below the bold threshold. The rosette is a
+ * 24px graphical object and would take 3:1 under 1.4.11. The controls are 13px and take
+ * 4.5, and they share one ink with the other two, so 4.5 is what the whole banner gets.
  *
  * One honest note. The shipped light accent measures **4.02:1 against `--plane`**, the
  * ground behind the footer's links, so a user who types that exact blue gets it
@@ -180,6 +213,26 @@ export const MIN_PLATE_LIGHTNESS = 0.45
 const MAX_LIGHTNESS = 0.96
 const MIN_LIGHTNESS = 0.04
 
+/**
+ * The white wash the topbar's controls carry — `rgba(255, 255, 255, 0.28)` on
+ * `.topbar .icon-button` and `.user-menu__button` in `styles.css`.
+ *
+ * It matters because it means the banner ink under a control is *not* sitting on the
+ * banner: it is sitting on the banner mixed 28% toward white. Inside the light band
+ * that mix always moves the ground away from the dark ink, so checking the two gradient
+ * stops is the stricter test and the controls come free — which is a claim, so
+ * `color-scheme.test.ts` measures it rather than repeating it. Outside the band the
+ * claim inverts, which is the second reason the band is a restriction and not a check.
+ */
+export const CONTROL_WASH_ALPHA = 0.28
+
+export const WHITE: Rgb = { r: 255, g: 255, b: 255 }
+
+/** The ground the banner ink really has under one of the topbar's controls. */
+export function washedControlGround(banner: Rgb): Rgb {
+  return blend(banner, WHITE, CONTROL_WASH_ALPHA)
+}
+
 /** Lightness search resolution. One per cent is finer than sRGB can show at 8 bits. */
 const LIGHTNESS_STEP = 0.01
 
@@ -250,6 +303,17 @@ export interface ChromeRoles {
   readonly display: string
 }
 
+/**
+ * The topbar's plate. The same three parts the chrome has, and deliberately not a
+ * fourth: the banner never paints a numeral on the card surface, so there is no
+ * `--display` to fit. There is no ink here either — see `fitBannerToTheme`.
+ */
+export interface BannerRoles {
+  readonly banner: string
+  readonly bannerDeep: string
+  readonly bannerEdge: string
+}
+
 /** One theme's answer. `moved` is true when the shade is not the one that was picked. */
 export interface ThemeFit<T> {
   readonly roles: T
@@ -283,6 +347,14 @@ export type ChromeFit =
       readonly status: 'fitted'
       readonly light: ThemeFit<ChromeRoles>
       readonly dark: ThemeFit<ChromeRoles>
+    }
+  | { readonly status: 'invalid' }
+
+export type BannerFit =
+  | {
+      readonly status: 'fitted'
+      readonly light: ThemeFit<BannerRoles>
+      readonly dark: ThemeFit<BannerRoles>
     }
   | { readonly status: 'invalid' }
 
@@ -468,6 +540,75 @@ export function fitChrome(hex: string): ChromeFit {
   return { status: 'fitted', light, dark }
 }
 
+/* ---------- the banner ---------- */
+
+/**
+ * Fit one banner to one theme.
+ *
+ * Almost the chrome's routine, and the two differences are the whole of what makes the
+ * banner a separate role rather than a copy:
+ *
+ *  - **No `--display`.** Nothing derived from the banner is ever drawn on the card
+ *    surface, so the constraint that pushes a bright plate to a deep numeral does not
+ *    apply and cannot narrow the range.
+ *  - **The controls are checked, not assumed.** The plate's ink is measured against
+ *    the two gradient stops; the banner's controls put a 28% white wash between the ink
+ *    and the plate, so the wash is composited and measured too. Inside the light band
+ *    it never binds — white over a light ground lifts it further from dark ink — and
+ *    that is exactly the point of measuring rather than asserting it.
+ *
+ * **No ink is returned, because none is chosen.** The theme's plate ink is a fixed
+ * dark brown in both themes, and the search moves the *banner* until that ink clears
+ * 4.5:1 rather than swapping the ink for a light one. That is only sound because the
+ * band keeps the banner light; a dark banner would need light ink, and it would also
+ * need a different bevel, a different emboss and a different control wash, so it is
+ * refused as a range restriction rather than rescued as an ink flip. `--on-banner` does
+ * exist in `styles.css`, as an alias of `--on-gold`: the topbar's ink should be the
+ * *banner's* ink by name now that the banner is not the plate, and not the plate's ink
+ * by coincidence.
+ */
+function fitBannerToTheme(color: Rgb, theme: SchemeTheme): { roles: BannerRoles; plate: Rgb } | null {
+  const ink = requireHex(THEME_BACKDROP[theme].plateInk)
+  const hsl = rgbToHsl(color)
+
+  for (const lightness of lightnessCandidates(hsl.l, MIN_PLATE_LIGHTNESS, MAX_LIGHTNESS, false)) {
+    const plate = hslToRgb({ h: hsl.h, s: hsl.s, l: lightness })
+    const deep = withLightness(plate, lightness - PLATE_DEEP_DROP)
+    const grounds = [plate, deep, washedControlGround(plate), washedControlGround(deep)]
+    if (grounds.some((ground) => contrastRatio(ink, ground) < BODY_TEXT_RATIO)) continue
+
+    return {
+      plate,
+      roles: {
+        banner: formatHex(plate),
+        bannerDeep: formatHex(deep),
+        bannerEdge: formatHex(withLightness(plate, lightness - PLATE_EDGE_DROP)),
+      },
+    }
+  }
+
+  return null
+}
+
+export function fitBanner(hex: string): BannerFit {
+  const picked = parseHex(hex)
+  if (!picked) return { status: 'invalid' }
+
+  const fits: ThemeFit<BannerRoles>[] = []
+  for (const theme of SCHEME_THEMES) {
+    const fitted = fitBannerToTheme(picked, theme)
+    /* Unreachable in practice, for the same reason the plate's is: a light enough
+       banner always takes the dark ink. A `null` must still not become a half-written
+       variable set. */
+    if (!fitted) return { status: 'invalid' }
+    fits.push({ roles: fitted.roles, moved: formatHex(fitted.plate) !== formatHex(picked) })
+  }
+
+  const [light, dark] = fits
+  if (!light || !dark) return { status: 'invalid' }
+  return { status: 'fitted', light, dark }
+}
+
 function requireHex(hex: string): Rgb {
   const rgb = parseHex(hex)
   /* The argument is always one of this module's own constants. */
@@ -477,23 +618,68 @@ function requireHex(hex: string): Rgb {
 
 /* ---------- the scheme itself ---------- */
 
-export type SchemeRole = 'accent' | 'chrome'
+export type SchemeRole = 'accent' | 'chrome' | 'banner'
 
-export const SCHEME_ROLES: readonly SchemeRole[] = ['accent', 'chrome']
+export const SCHEME_ROLES: readonly SchemeRole[] = ['accent', 'chrome', 'banner']
 
 /**
  * What the user chose. `null` is not "no colour", it is **the shipped theme** — the
  * variables are simply not written, so the stylesheet's own fallback stands.
+ *
+ * `banner: null` is the case worth naming, because "no banner" is not a transparent
+ * topbar: `--banner` falls back to `--gold`, so an unchosen banner is whatever the
+ * plate is. That is what makes this field safe to add to a shape that already exists in
+ * people's browsers — see `parseScheme`.
  */
 export interface ColorScheme {
   readonly accent: string | null
   readonly chrome: string | null
+  readonly banner: string | null
 }
 
-export const DEFAULT_SCHEME: ColorScheme = { accent: null, chrome: null }
+export const DEFAULT_SCHEME: ColorScheme = { accent: null, chrome: null, banner: null }
 
-/** The shipped colours, for the picker to show as the current value of a default. */
-export const SHIPPED: Record<SchemeRole, string> = { accent: '#1f6cb0', chrome: '#f2b431' }
+/**
+ * The shipped colours, for the picker to show as the current value of a default. The
+ * banner's is the plate's, because that is literally what the topbar is painted today.
+ */
+export const SHIPPED: Record<SchemeRole, string> = {
+  accent: '#1f6cb0',
+  chrome: '#f2b431',
+  banner: '#f2b431',
+}
+
+/** Whether this role would accept this color. The cheap half of `roleOutcome`. */
+export function acceptsColor(role: SchemeRole, hex: string): boolean {
+  switch (role) {
+    case 'accent':
+      return fitAccent(hex).status === 'fitted'
+    case 'chrome':
+      return fitChrome(hex).status === 'fitted'
+    case 'banner':
+      return fitBanner(hex).status === 'fitted'
+  }
+}
+
+/**
+ * One role replaced. A `{ ...scheme, [role]: hex }` would type the computed key as a
+ * plain string and quietly widen `ColorScheme`, so the three cases are written out and
+ * the compiler checks a fourth role could not be forgotten here.
+ */
+export function withSchemeColor(
+  scheme: ColorScheme,
+  role: SchemeRole,
+  hex: string | null,
+): ColorScheme {
+  switch (role) {
+    case 'accent':
+      return { ...scheme, accent: hex }
+    case 'chrome':
+      return { ...scheme, chrome: hex }
+    case 'banner':
+      return { ...scheme, banner: hex }
+  }
+}
 
 export function colorSchemeKey(userId: number): string {
   /* Per account, like `coc:lastRoute:<id>` and `coc:baseScope:<id>`: one browser is
@@ -509,18 +695,24 @@ export function colorSchemeKey(userId: number): string {
  * not a string, a string that is not a colour, and — the one worth spelling out — a
  * colour that *was* acceptable under an earlier version of the guard and no longer is.
  * Each field falls back on its own, so one bad half does not discard the other.
+ *
+ * **The two-field shape is one of those older shapes.** Everything stored before the
+ * banner existed reads `{ accent, chrome }`; the missing `banner` key is not a string,
+ * so it lands on `null`, and `null` is a banner that follows the plate — which is
+ * exactly what those browsers are already showing. There is no migration and nothing
+ * to detect.
  */
 export function parseScheme(stored: unknown): ColorScheme {
   const raw = readObject(stored)
   if (!raw) return DEFAULT_SCHEME
 
-  const accent = typeof raw['accent'] === 'string' ? raw['accent'] : null
-  const chrome = typeof raw['chrome'] === 'string' ? raw['chrome'] : null
-
-  return {
-    accent: accent !== null && fitAccent(accent).status === 'fitted' ? normalise(accent) : null,
-    chrome: chrome !== null && fitChrome(chrome).status === 'fitted' ? normalise(chrome) : null,
+  let scheme = DEFAULT_SCHEME
+  for (const role of SCHEME_ROLES) {
+    const value = raw[role]
+    if (typeof value !== 'string' || !acceptsColor(role, value)) continue
+    scheme = withSchemeColor(scheme, role, normalise(value))
   }
+  return scheme
 }
 
 function normalise(hex: string): string {
@@ -543,7 +735,7 @@ function tryParse(text: string): unknown {
 }
 
 export function serialiseScheme(scheme: ColorScheme): string {
-  return JSON.stringify({ accent: scheme.accent, chrome: scheme.chrome })
+  return JSON.stringify({ accent: scheme.accent, chrome: scheme.chrome, banner: scheme.banner })
 }
 
 /* ---------- the CSS custom properties ---------- */
@@ -561,6 +753,9 @@ export const SCHEME_VARIABLES: readonly string[] = [
   '--user-gold-deep-light',
   '--user-gold-edge-light',
   '--user-display-light',
+  '--user-banner-light',
+  '--user-banner-deep-light',
+  '--user-banner-edge-light',
   '--user-accent-dark',
   '--user-accent-hover-dark',
   '--user-track-dark',
@@ -568,6 +763,9 @@ export const SCHEME_VARIABLES: readonly string[] = [
   '--user-gold-deep-dark',
   '--user-gold-edge-dark',
   '--user-display-dark',
+  '--user-banner-dark',
+  '--user-banner-deep-dark',
+  '--user-banner-edge-dark',
 ]
 
 /**
@@ -595,6 +793,19 @@ export function schemeVariables(scheme: ColorScheme): Record<string, string> {
       out[`--user-gold-deep-${theme}`] = roles.goldDeep
       out[`--user-gold-edge-${theme}`] = roles.goldEdge
       out[`--user-display-${theme}`] = roles.display
+    }
+  }
+
+  /* No `--user-on-banner-…`. The ink is not a choice: `fitBanner` moves the banner
+     until the theme's plate ink clears the floor, so the stylesheet's `--on-banner`
+     alias already holds the value that was verified. */
+  const banner = scheme.banner === null ? null : fitBanner(scheme.banner)
+  if (banner?.status === 'fitted') {
+    for (const theme of SCHEME_THEMES) {
+      const roles = (theme === 'light' ? banner.light : banner.dark).roles
+      out[`--user-banner-${theme}`] = roles.banner
+      out[`--user-banner-deep-${theme}`] = roles.bannerDeep
+      out[`--user-banner-edge-${theme}`] = roles.bannerEdge
     }
   }
 
@@ -637,13 +848,41 @@ export const CHROME_PRESETS: readonly Preset[] = [
   { id: 'rose', label: 'Rose', hex: '#e5a3b4' },
 ]
 
+/**
+ * The banner's own set, and not a copy of the plate's.
+ *
+ * The plate has to look like *metal* — it edges the panels and fills the committing
+ * buttons, so its swatches are golds, coppers and stones. The banner is one broad
+ * horizontal object at the top of the page, which is the one place a flat color reads
+ * as a color rather than as a finish, so these are lighter and less metallic. Gold
+ * leads the list because it is what the topbar is today.
+ *
+ * Every one of them is checked by the tests against `fitBanner`, and against the ink on
+ * both gradient stops and under the control wash.
+ */
+export const BANNER_PRESETS: readonly Preset[] = [
+  { id: 'gold', label: 'Gold', hex: '#f2b431' },
+  { id: 'sand', label: 'Sand', hex: '#e8d5a3' },
+  { id: 'sage', label: 'Sage', hex: '#a9c49a' },
+  { id: 'sky', label: 'Sky', hex: '#a9cbe8' },
+  { id: 'lilac', label: 'Lilac', hex: '#c8b2e4' },
+  { id: 'clay', label: 'Clay', hex: '#df9f7e' },
+]
+
+const ROLE_PRESETS: Record<SchemeRole, readonly Preset[]> = {
+  accent: ACCENT_PRESETS,
+  chrome: CHROME_PRESETS,
+  banner: BANNER_PRESETS,
+}
+
 export function presetsFor(role: SchemeRole): readonly Preset[] {
-  return role === 'accent' ? ACCENT_PRESETS : CHROME_PRESETS
+  return ROLE_PRESETS[role]
 }
 
 const ROLE_NOUN: Record<SchemeRole, string> = {
   accent: 'accent',
   chrome: 'plate',
+  banner: 'banner',
 }
 
 const CLASH_PARTNER_NOUN: Record<ClashPartner, string> = {
@@ -701,6 +940,70 @@ export function describeChrome(hex: string, fit: ChromeFit): string {
   }
 }
 
+export function describeBanner(hex: string, fit: BannerFit): string {
+  switch (fit.status) {
+    case 'invalid':
+      return `${hex} is not a color this picker can read. Pick one of the swatches instead.`
+    case 'fitted':
+      return describeFitted('banner', fit.light.roles.banner, fit.dark.roles.banner)
+  }
+}
+
+/**
+ * What the picker needs from a fit, with the three unions already narrowed: the
+ * sentence, whether it was refused, the color to offer instead where there is one, and
+ * the shade each theme was given.
+ *
+ * It is here rather than in `ColorSchemeCard` so that adding the third role did not
+ * mean a third pair of ternaries in the component, and so the component keeps holding
+ * no color logic at all.
+ */
+export interface RoleOutcome {
+  readonly message: string
+  readonly refused: boolean
+  /** A colour to offer instead, for the one case where fitting cannot rescue a choice. */
+  readonly suggestion: string | null
+  /** The shade each theme was given, or `null` where there is none to show. */
+  readonly light: string | null
+  readonly dark: string | null
+}
+
+export function roleOutcome(role: SchemeRole, hex: string): RoleOutcome {
+  switch (role) {
+    case 'accent': {
+      const fit = fitAccent(hex)
+      const fitted = fit.status === 'fitted'
+      return {
+        message: describeAccent(hex, fit),
+        refused: !fitted,
+        suggestion: fit.status === 'clash' ? fit.suggestion : null,
+        light: fit.status === 'fitted' ? fit.light.roles.accent : null,
+        dark: fit.status === 'fitted' ? fit.dark.roles.accent : null,
+      }
+    }
+    case 'chrome': {
+      const fit = fitChrome(hex)
+      return {
+        message: describeChrome(hex, fit),
+        refused: fit.status !== 'fitted',
+        suggestion: null,
+        light: fit.status === 'fitted' ? fit.light.roles.gold : null,
+        dark: fit.status === 'fitted' ? fit.dark.roles.gold : null,
+      }
+    }
+    case 'banner': {
+      const fit = fitBanner(hex)
+      return {
+        message: describeBanner(hex, fit),
+        refused: fit.status !== 'fitted',
+        suggestion: null,
+        light: fit.status === 'fitted' ? fit.light.roles.banner : null,
+        dark: fit.status === 'fitted' ? fit.dark.roles.banner : null,
+      }
+    }
+  }
+}
+
 function describeFitted(role: SchemeRole, light: string, dark: string): string {
   const noun = ROLE_NOUN[role]
   if (light === dark) return `Used as ${light} for the ${noun} in both themes.`
@@ -710,14 +1013,22 @@ function describeFitted(role: SchemeRole, light: string, dark: string): string {
   )
 }
 
-/** What the account menu shows beside "Colours". */
+/**
+ * What the account menu shows beside "Colours".
+ *
+ * One customised role is named, because "why is this blue" then has its answer in the
+ * menu. Two or three are just "Custom": a line reading "Custom accent and banner" would
+ * be longer than the label it sits beside, and at that point the picker is the answer.
+ */
 export function schemeSummary(scheme: ColorScheme): string {
-  if (scheme.accent === null && scheme.chrome === null) return 'Default'
-  if (scheme.accent !== null && scheme.chrome !== null) return 'Custom'
-  return scheme.accent === null ? 'Custom plate' : 'Custom accent'
+  const chosen = SCHEME_ROLES.filter((role) => scheme[role] !== null)
+  const only = chosen[0]
+  if (only === undefined) return 'Default'
+  if (chosen.length > 1) return 'Custom'
+  return `Custom ${ROLE_NOUN[only]}`
 }
 
 /** True when there is anything for Reset to undo. */
 export function isDefaultScheme(scheme: ColorScheme): boolean {
-  return scheme.accent === null && scheme.chrome === null
+  return SCHEME_ROLES.every((role) => scheme[role] === null)
 }

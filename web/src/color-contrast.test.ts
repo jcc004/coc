@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  blend,
   colorBlindDelta,
   contrastRatio,
   deltaE76,
@@ -181,6 +182,41 @@ describe('rgbToHsl and hslToRgb', () => {
     const rotated = withHue(rgb('#1f6cb0'), 300)
     assert.ok(Math.abs(rgbToHsl(rotated).l - rgbToHsl(rgb('#1f6cb0')).l) < 0.01)
     assert.ok(hueDistance(rotated, rgb('#1f6cb0')) > 80)
+  })
+})
+
+describe('blend', () => {
+  it('returns the base untouched at zero and the overlay whole at one', () => {
+    assert.deepEqual(blend(rgb('#1f6cb0'), rgb('#ffffff'), 0), rgb('#1f6cb0'))
+    assert.deepEqual(blend(rgb('#1f6cb0'), rgb('#ffffff'), 1), rgb('#ffffff'))
+  })
+
+  it('mixes in the encoded values, the way a CSS rgba() background paints', () => {
+    // Half of black over white is #808080 on screen, not the #bcbcbc a linear-light
+    // mix would give. A ground measured the second way would not be the ground the
+    // browser drew.
+    assert.equal(formatHex(blend(rgb('#ffffff'), rgb('#000000'), 0.5)), '#808080')
+  })
+
+  it('gives the exact 28% white wash the topbar puts on its controls', () => {
+    // 0.28 * 255 + 0.72 * 0xf2 = 245.6, 0.28 * 255 + 0.72 * 0xb4 = 201.0, and
+    // 0.28 * 255 + 0.72 * 0x31 = 106.7.
+    assert.equal(formatHex(blend(rgb('#f2b431'), rgb('#ffffff'), 0.28)), '#f6c96b')
+  })
+
+  it('always moves a light ground further from dark ink', () => {
+    // The property the banner's light band rests on: a white wash over a light plate
+    // can only raise the contrast the ink already had.
+    const ink = rgb('#33240f')
+    for (const plate of ['#f2b431', '#e8d4a1', '#aacce8', '#c9b3e5']) {
+      const washed = blend(rgb(plate), rgb('#ffffff'), 0.28)
+      assert.ok(contrastRatio(ink, washed) > contrastRatio(ink, rgb(plate)), plate)
+    }
+  })
+
+  it('clamps an alpha outside the range instead of extrapolating', () => {
+    assert.deepEqual(blend(rgb('#1f6cb0'), rgb('#ffffff'), -1), rgb('#1f6cb0'))
+    assert.deepEqual(blend(rgb('#1f6cb0'), rgb('#ffffff'), 4), rgb('#ffffff'))
   })
 })
 

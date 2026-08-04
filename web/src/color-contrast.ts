@@ -203,6 +203,26 @@ export function withLightness(rgb: Rgb, lightness: number): Rgb {
   return hslToRgb({ h: hsl.h, s: hsl.s, l: clamp(lightness, 0, 1) })
 }
 
+/**
+ * `over` painted on `base` at `alpha`, the way a CSS `rgba()` background paints.
+ *
+ * **Mixed in the encoded values, not in linear light.** That is what a browser does
+ * when a translucent background sits on an opaque one, so a physically "correct"
+ * linear blend here would disagree with the pixels a contrast checker would sample
+ * off the screen. The one place this app needs it is a ground rather than ink: the
+ * topbar's controls are a white wash over the banner, so the ink under a control is
+ * not sitting on the banner itself.
+ */
+export function blend(base: Rgb, over: Rgb, alpha: number): Rgb {
+  const mix = clamp(alpha, 0, 1)
+  const channel = (from: number, to: number) => Math.round(from + (to - from) * mix)
+  return {
+    r: channel(clamp(base.r, 0, 255), clamp(over.r, 0, 255)),
+    g: channel(clamp(base.g, 0, 255), clamp(over.g, 0, 255)),
+    b: channel(clamp(base.b, 0, 255), clamp(over.b, 0, 255)),
+  }
+}
+
 /** The same lightness and saturation at another hue. This is how a clash is escaped. */
 export function withHue(rgb: Rgb, hue: number): Rgb {
   const hsl = rgbToHsl(rgb)
