@@ -24,6 +24,15 @@ import { ErrorPanel, Loading } from './primitives.tsx'
  * indented blocks are the author's, and `white-space: pre-wrap` keeps them while
  * still wrapping at the container edge instead of scrolling a phone sideways.
  *
+ * **The paragraphs below carry no measure**, and that is the asked-for behavior rather
+ * than an omission. They used to add `help-prose` — the help page's 68ch — which held
+ * them to about 600px inside a panel that is the shell's full width, so the intro
+ * stopped roughly halfway across the page and read as text that had been abandoned
+ * there. Without it they set at the card, which at 1280px is around 140 characters to
+ * the line. That is long by any typographic convention and it is the intended result:
+ * the request was for the header to fill the width it has. Re-imposing a measure here,
+ * whether `help-prose` or a new one, undoes it.
+ *
  * **There is no "new since you last looked" badge**, deliberately. Most commits
  * change nothing a reader can see, so a dot on every deploy would be a signal that
  * is wrong more often than it is right, and it would need per-account last-seen
@@ -56,14 +65,14 @@ export function WhatsNewView() {
     <>
       <section className="card">
         <h1 className="section-title">What's new</h1>
-        <p className="empty-hint help-prose">
+        <p className="empty-hint">
           Every change to this app, newest first. Each is dated by when it landed on{' '}
           <code>main</code>, which is the moment it became what the site deploys — the droplet
           fast-forwards to it every five minutes. Changes to the documentation, the deploy scripts
           and the CI workflows are not listed, because none of them altered anything you can see
           here.
         </p>
-        <p className="empty-hint help-prose">
+        <p className="empty-hint">
           The note under an entry is the message its author wrote at the time, printed as written.
           It explains why the change was made, which is usually the part worth having.
         </p>

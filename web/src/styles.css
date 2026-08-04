@@ -2556,10 +2556,12 @@ table.roster th button:hover {
  * author made *and* still wraps at the container edge, so a phone gets a taller
  * column and never a sideways scroll.
  *
- * No measure is imposed, because the messages already have one: they are wrapped by
- * hand at about eighty columns, so the paragraph sets its own width wherever there is
- * room for it. The `max-width` is only a backstop for the occasional line that was
- * left long, and sits above eighty so it never adds a wrap to a line that has one.
+ * No measure. There was one — an `88ch` backstop, 720px — and measuring the corpus is
+ * what took it out: across all 1,622 non-blank body lines in the history the widest
+ * renders 600px at this 13px, so it had never bound anything. That widest line is 93
+ * characters and *not* the longest by character count, which is 95 and narrower, so
+ * anything reinstated here has to be measured rather than counted. Anything narrower
+ * than 600px re-wraps a line the author had already wrapped by hand.
  *
  * `overflow-wrap: anywhere` is for the token that cannot wrap at all — a URL, a long
  * path — which is the one thing `pre-wrap` would otherwise push past the card edge.
@@ -2571,7 +2573,6 @@ table.roster th button:hover {
   color: var(--ink-2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-width: 88ch;
 }
 
 /* ==========================================================================
