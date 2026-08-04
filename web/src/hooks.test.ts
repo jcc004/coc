@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { act, renderHook, type RenderHookResult } from '@testing-library/react'
+import { InvalidTagError } from '@coc/shared'
 import { ApiError } from './api.ts'
 import { hrefFor, parseHash, useAsync, type AsyncState, type Route } from './hooks.ts'
 import { installTestCleanup } from './test-support.ts'
@@ -99,6 +100,39 @@ describe('parseHash — the help page', () => {
    */
   it('still opens the page for a section it does not recognise', () => {
     assert.deepEqual(parseHash('#/help/renamed-last-year'), { view: 'help', section: null })
+  })
+})
+
+describe('parseHash — a percent-escape that arrived truncated', () => {
+  /*
+   * The crash this closes: `decodeURIComponent` throws `URIError` on an escape it
+   * cannot read, `parseHash` runs inside `useRoute`'s `useMemo`, and a throw during
+   * render with no error boundary over it takes the whole app down. A link cut short
+   * by a chat client is an ordinary thing to be sent one of, and pasting one blanked
+   * the page.
+   *
+   * The same bug, on the same call, was fixed for the server in `shared/src/tags.ts`
+   * — `decodeIfPossible`, and the test named for it in `tags.test.ts` — and missed
+   * here.
+   */
+  it('keeps the raw segment rather than throwing URIError', () => {
+    assert.deepEqual(parseHash('#/search/%'), { view: 'search', name: '%' })
+    assert.deepEqual(parseHash('#/player/%zz'), { view: 'player', tag: '%zz' })
+    assert.deepEqual(parseHash('#/clan/%'), { view: 'clan', tag: '%' })
+    assert.deepEqual(parseHash('#/war/%E0%A4%A'), { view: 'war', tag: '%E0%A4%A' })
+  })
+
+  it('still resolves the views that do not read their parameter', () => {
+    assert.deepEqual(parseHash('#/help/%'), { view: 'help', section: null })
+    assert.deepEqual(parseHash('#/cards/%'), { view: 'cards' })
+  })
+
+  /* The address is rewritten from the route on every link the app draws, so a segment
+     that could not be decoded has to survive being encoded again — otherwise the next
+     click quietly changes which base the page is about. */
+  it('re-encodes the segment it could not decode, so the address round-trips', () => {
+    assert.equal(hrefFor(parseHash('#/player/%zz')), '#/player/%25zz')
+    assert.deepEqual(parseHash('#/player/%25zz'), { view: 'player', tag: '%zz' })
   })
 })
 
@@ -338,6 +372,49 @@ describe('useAsync — failures', () => {
     assert.equal(state.error.status, 0, 'there was no response, so there is no status')
     assert.equal(state.error.reason, 'network')
     assert.equal(state.error.message, 'Failed to fetch')
+  })
+
+  /*
+   * The other half of the truncated-link crash. `parseHash` now hands `%zz` on to the
+   * player page, and `api.player` builds its path with `normalizeTag`, which raises
+   * `InvalidTagError` *synchronously* — before there is a promise to reject. Called
+   * bare inside the effect, that throw is caught by nothing and React unmounts the
+   * tree, so the fix in `parseHash` would only have moved the blank page from the
+   * render phase to the commit phase.
+   *
+   * It is not only reachable through a mangled escape: `#/player/!` is a tag nobody
+   * can look up and took the app down the same way.
+   */
+  it('reports a loader that throws before returning, rather than letting it escape', async () => {
+    const { result } = probe({
+      load: () => {
+        throw new InvalidTagError('%zz')
+      },
+      deps: ['%zz'],
+    })
+
+    // Settles a microtask later than the throw, exactly as a rejection does — which
+    // is the point: it is the same failure path, not a second one.
+    await act(async () => undefined)
+
+    const state = result.current
+    assert.ok(state.status === 'error', 'a throw during the effect must land as an error state')
+    assert.equal(state.error.message, '"%zz" is not a valid Clash of Clans tag')
+  })
+
+  it('keeps an ApiError thrown before the request as itself', async () => {
+    const failure = new ApiError(400, 'invalidTag', 'That is not a tag.', 'Check the tag.')
+    const { result } = probe({
+      load: () => {
+        throw failure
+      },
+      deps: ['a'],
+    })
+    await act(async () => undefined)
+
+    // Same rule as a rejection: the view reads `reason` and `hint` off it, and
+    // rebuilding the error as a network failure would throw both away.
+    assert.deepEqual(result.current, { status: 'error', error: failure })
   })
 
   it('falls back to a generic message when the rejection carries none', async () => {

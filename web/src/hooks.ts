@@ -48,7 +48,16 @@ export function useAsync<T>(
     const controller = new AbortController()
     setState({ status: 'loading' })
 
-    load(controller.signal).then(
+    /* Wrapped rather than called bare, because a loader can fail *before* there is a
+       promise to reject: `api.player` builds its path with `normalizeTag`, which
+       raises `InvalidTagError` on a tag it cannot read, and `#/player/%zz` or
+       `#/player/!` reaches here as exactly that. A throw inside an effect is caught
+       by nothing — there is no error boundary over the app — so React unmounted the
+       tree and the page went blank. The executor runs synchronously, so `load` is
+       still called during this effect and the abort ordering below is unchanged; all
+       that moves is where the failure lands, which is now the same place a rejection
+       lands. */
+    new Promise<T>((resolve) => resolve(load(controller.signal))).then(
       (data) => {
         if (!controller.signal.aborted) setState({ status: 'ready', data })
       },
@@ -100,9 +109,37 @@ export type Route =
    */
   | { view: 'help'; section: HelpSectionId | null }
 
+/**
+ * Percent-decodes the segment when it can and hands the raw one back when it cannot.
+ *
+ * The same call, the same failure and the same answer as `decodeIfPossible` in
+ * `shared/src/tags.ts` — that one was fixed for the server and this one was missed.
+ * `decodeURIComponent` throws `URIError` on an escape it cannot read, and `parseHash`
+ * runs inside `useRoute`'s `useMemo`, so `#/search/%` threw during render, and with no
+ * error boundary above it that is the whole app gone. A link truncated in transit is
+ * an ordinary thing to be sent one of.
+ *
+ * The raw segment rather than the home route, because the line below already settles
+ * the question the other way: an unrecognised help section is `null` and still opens
+ * the help page, on the grounds that somebody following a mangled link should land
+ * where it was aimed. So `#/player/%zz` opens the player page carrying the literal
+ * `%zz`, where `normalizeTag` refuses it and the view says so — naming the tag it
+ * could not read. Home would have been a page that looks like it worked.
+ *
+ * That landing is only survivable because `useAsync` now catches the synchronous
+ * `InvalidTagError` that refusal is; see the note there. The two go together.
+ */
+function decodeIfPossible(param: string): string {
+  try {
+    return decodeURIComponent(param)
+  } catch {
+    return param
+  }
+}
+
 export function parseHash(hash: string): Route {
   const [view, param] = hash.replace(/^#\/?/, '').split('/')
-  const decoded = param ? decodeURIComponent(param) : ''
+  const decoded = param ? decodeIfPossible(param) : ''
 
   if (view === 'account') return { view: 'account' }
   if (view === 'admin') return { view: 'admin' }
