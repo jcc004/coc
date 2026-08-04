@@ -58,6 +58,35 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
   occurrences across 13 components, which is why the CSP carries `'unsafe-inline'`
   (`deploy/nginx-coc.conf`). Do not introduce a third styling mechanism.
 
+## Files that bite, and how
+
+Not a hot-file list in the rework sense — this repo is days old and has no ticket history to
+measure reopens against, so a list claiming "most bugs live here" would be borrowing the authority
+of evidence it does not have. These are named for a specific way each one has misled a reader, or
+can.
+
+- **`web/src/styles.css`** (~3.5k lines, the most-churned file in the repo) — **selectors recur far
+  apart, so grep to the end; the first match is not the last word.** `.topbar` is declared twice,
+  roughly 2,300 lines apart: once with no background, once painting it. A grep that stopped at the
+  first produced a confident, wrong answer about how the banner was styled, and that shaped a
+  design decision before it was caught. Brace-depth scanning is what found the truth.
+
+  No line numbers here on purpose. The first draft of this bullet cited them, and they were stale
+  within the hour — a commit landing earlier in the file moved both. A warning about a churning
+  file must not be pinned to positions in it; name the selector, which is stable.
+- **`web/src/hooks.ts`** — routing and `useAsync`, so it runs during render and inside effects with
+  **no error boundary anywhere above it**. A throw here is not a broken panel, it is a blank page.
+  Both crashes found on 2026-08-04 were in this file: `decodeURIComponent` on a truncated escape,
+  and a loader that threw before returning a promise.
+- **`server/src/db.ts`** — migrations are append-only and an applied one can never be edited. The
+  reasoning is in the file header; read it before adding a step, and never renumber.
+- **`web/src/components/CardsView.tsx`** (990 lines) — the card page's controller, sharing three
+  components with the player page (`BaseCardEditor`, `CardTile`, `TradeSuggestions`). A change here
+  frequently lands there too, and two people editing it at once do not compose.
+
+The first two are recorded from incidents; the last two are reasoned from the code and have not yet
+cost anything. Add to this list when a file misleads you, and say what it did.
+
 ## Testing
 
 `npm test` runs all three workspaces — 1,124 tests, `node:test`, no framework. Tests sit adjacent
