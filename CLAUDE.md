@@ -60,12 +60,16 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
 
 ## Testing
 
-`npm test` runs all three workspaces — 911 tests, `node:test`, no framework. Tests sit adjacent
+`npm test` runs all three workspaces — 1,124 tests, `node:test`, no framework. Tests sit adjacent
 to their module. Run the whole suite, not a workspace.
 
-Known gap, so it is not rediscovered as a surprise: **4 of 24 components have tests**. The pure
-modules are well covered; `hooks.ts` and `api.ts`'s global 401/403 routing are the two
-non-presentational blanks.
+Run it on the pinned Node. A non-interactive shell does not fire the `fnm --use-on-cd` hook and
+silently gets whatever Node is on `PATH`, so a green suite there says nothing about the runtime
+production uses. `zsh -i -c 'cd <repo> && npm test'` is the form that pins it.
+
+Known gap, so it is not rediscovered as a surprise: **5 of 25 components have tests**. The pure
+modules are well covered, and `hooks.ts` and `api.ts` now are too; what remains untested is
+presentational.
 
 ## Deploying
 
