@@ -2,13 +2,19 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { BaseInventory } from '@coc/shared'
 import {
+  activeOwnerFilter,
+  ALL_OWNERS,
   baseStandings,
   cardPoints,
   cardsInGridOrder,
   cardTotals,
+  filterStandingsByOwner,
+  lastUpdatedCell,
+  standingOwnerOptions,
   type StandingBase,
 } from './card-standings.ts'
 import { ALL_CARDS, cardCategoriesInOrder, cardsInCategory } from './cards.ts'
+import { UNASSIGNED_OWNER } from './saved-table.ts'
 
 /*
  * Real card ids, unlike `card-trades.test.ts`'s toy deck: both functions here go
@@ -27,6 +33,9 @@ function base(tag: string, counts: [number, number][], updatedAt?: string): Base
 function named(tag: string, label: string, owner: string | null = null): StandingBase {
   return { tag, label, owner }
 }
+
+/** A save stamp, in the ISO form the server sends. */
+const STAMP = '2026-08-02T09:30:00.000Z'
 
 /*
  * The curve itself. `cardPoints` uses a closed-form arithmetic sum, which is easy to
@@ -230,6 +239,213 @@ describe('baseStandings — the rank number', () => {
         ['Bert', 1],
         ['Anna', 2],
       ],
+    )
+  })
+})
+
+/*
+ * A four-base board with two owners and one base nobody is assigned to, scored so that
+ * every base holds a rank of its own: Anna 27, Bert 19, Cass 10, Dana nothing.
+ * Anna and Cass are the same owner's and are deliberately *not* adjacent — filtering to
+ * them has to produce 1 and 3, and it cannot do that by accident. Two of the four carry
+ * a save stamp and two do not, which is the mix the Last updated column has to read
+ * down.
+ */
+function board() {
+  return baseStandings(
+    [
+      named('#A', 'Anna', 'Rae'),
+      named('#B', 'Bert', 'Sam'),
+      named('#C', 'Cass', 'Rae'),
+      named('#D', 'Dana', null),
+    ],
+    [base('#A', [[1, 3]], STAMP), base('#B', [[1, 2]], STAMP), base('#C', [[1, 1]])],
+  )
+}
+
+describe('baseStandings — when the counts were last saved', () => {
+  it('carries the stamp through, so the board can say how stale a base is', () => {
+    const [row] = baseStandings([named('#A', 'Anna')], [base('#A', [[1, 1]], STAMP)])
+    assert.equal(row?.updatedAt, STAMP)
+  })
+
+  it('reports no stamp as null rather than undefined, because absent is a state', () => {
+    // A base nobody has ever saved, and a base with counts the store has no row for:
+    // both are "Never" on the board, and neither may reach a date formatter.
+    const rows = baseStandings([named('#A', 'Anna'), named('#B', 'Bert')], [base('#B', [[1, 1]])])
+    assert.equal(rows.find((row) => row.label === 'Anna')?.updatedAt, null)
+    assert.equal(rows.find((row) => row.label === 'Bert')?.updatedAt, null)
+  })
+
+  it('keeps the stamp of a base cleared back to zero, which is the one worth having', () => {
+    // Migration v5 gave the stamp its own table for exactly this: the counts are
+    // sparse, so an emptied base has no rows left to derive a date from.
+    const [row] = baseStandings([named('#A', 'Anna')], [base('#A', [], STAMP)])
+    assert.equal(row?.updatedAt, STAMP)
+    assert.equal(row?.recorded, true)
+  })
+})
+
+describe('filterStandingsByOwner — the rank is the whole board’s, not the filter’s', () => {
+  it('keeps each base’s standing among every tracked base, not 1 upwards', () => {
+    /* The one column on this board that carries meaning. Renumbering an owner's bases
+       1, 2, 3 would make a leaderboard of one out of a slice of the clan's. */
+    const filtered = filterStandingsByOwner(board(), 'Rae')
+    assert.deepEqual(
+      filtered.map((row) => [row.label, row.rank]),
+      [
+        ['Anna', 1],
+        ['Cass', 3],
+      ],
+    )
+  })
+
+  it('holds the shared rank of a tie even when only one side of it survives', () => {
+    // Bert and Cass are level, so both are rank 2 and Dana is 4. Filtered to Cass's
+    // owner alone, Cass is still 2 — a rank says how many bases are ahead, and three
+    // of them being hidden does not move anybody up.
+    const rows = baseStandings(
+      [
+        named('#A', 'Anna', 'Rae'),
+        named('#B', 'Bert', 'Sam'),
+        named('#C', 'Cass', 'Ivy'),
+        named('#D', 'Dana', 'Sam'),
+      ],
+      [base('#A', [[1, 3]]), base('#B', [[1, 1]]), base('#C', [[2, 1]])],
+    )
+    assert.deepEqual(
+      rows.map((row) => [row.label, row.rank]),
+      [
+        ['Anna', 1],
+        ['Bert', 2],
+        ['Cass', 2],
+        ['Dana', 4],
+      ],
+    )
+    assert.deepEqual(
+      filterStandingsByOwner(rows, 'Ivy').map((row) => [row.label, row.rank]),
+      [['Cass', 2]],
+    )
+  })
+
+  it('returns the whole board for the everyone default, in the same order', () => {
+    const rows = board()
+    assert.deepEqual(
+      filterStandingsByOwner(rows, ALL_OWNERS).map((row) => row.label),
+      rows.map((row) => row.label),
+    )
+  })
+
+  it('finds the bases no account and no label owns, under the sentinel', () => {
+    assert.deepEqual(
+      filterStandingsByOwner(board(), UNASSIGNED_OWNER).map((row) => [row.label, row.rank]),
+      [['Dana', 4]],
+    )
+  })
+
+  it('narrows to nothing for an owner who is not on the board, rather than to everything', () => {
+    // The select cannot offer this, but a filter that fell back to "everybody" on a
+    // value it did not recognize would be a filter that silently stopped filtering.
+    assert.deepEqual(filterStandingsByOwner(board(), 'Nobody'), [])
+  })
+})
+
+describe('standingOwnerOptions — built from the owners actually on the board', () => {
+  it('opens on everyone, then lists the owners in name order', () => {
+    assert.deepEqual(standingOwnerOptions(board()), [
+      { value: ALL_OWNERS, label: 'Everyone' },
+      { value: UNASSIGNED_OWNER, label: 'No owner set' },
+      { value: 'Rae', label: 'Rae' },
+      { value: 'Sam', label: 'Sam' },
+    ])
+  })
+
+  it('offers the unowned option only when a base on the board has no owner', () => {
+    /* Every option has to keep at least one row: one that could only ever empty the
+       board is a control that answers a press by doing nothing. */
+    const owned = baseStandings([named('#A', 'Anna', 'Rae'), named('#B', 'Bert', 'Sam')], [])
+    assert.deepEqual(
+      standingOwnerOptions(owned).map((option) => option.value),
+      [ALL_OWNERS, 'Rae', 'Sam'],
+    )
+  })
+
+  it('lists an unlinked legacy label like any other owner, since it still names a person', () => {
+    // `mayWriteBaseCounts` separates `ownerNotLinked` from `unowned`, and so does this:
+    // a label nobody has matched to an account is not a permission, but "which of
+    // Dave's bases have gone stale" is still a question worth being able to ask.
+    const rows = baseStandings([named('#A', 'Anna', 'Dave'), named('#B', 'Bert', null)], [])
+    assert.deepEqual(
+      standingOwnerOptions(rows).map((option) => option.value),
+      [ALL_OWNERS, UNASSIGNED_OWNER, 'Dave'],
+    )
+  })
+
+  it('names one owner once, however many bases they hold', () => {
+    const rows = baseStandings([named('#A', 'Anna', 'Rae'), named('#B', 'Bert', 'Rae')], [])
+    assert.deepEqual(
+      standingOwnerOptions(rows).map((option) => option.value),
+      [ALL_OWNERS, 'Rae'],
+    )
+  })
+})
+
+describe('activeOwnerFilter — a chosen owner who has left the board', () => {
+  it('keeps a choice the board can still offer', () => {
+    const options = standingOwnerOptions(board())
+    assert.equal(activeOwnerFilter(options, 'Sam'), 'Sam')
+    assert.equal(activeOwnerFilter(options, UNASSIGNED_OWNER), UNASSIGNED_OWNER)
+  })
+
+  it('falls back to everyone when the owner is no longer on it', () => {
+    /* The board is re-read every thirty seconds. An owner whose last base was
+       reassigned would otherwise leave a select showing a value it has no option for,
+       over an empty table. */
+    const options = standingOwnerOptions(board())
+    assert.equal(activeOwnerFilter(options, 'Gone'), ALL_OWNERS)
+  })
+})
+
+describe('lastUpdatedCell — “Never” is a state, not a formatting accident', () => {
+  const relative = () => '5 days ago'
+  const exact = (date: Date) => date.toISOString()
+
+  it('says Never for a base nobody has ever saved', () => {
+    const cell = lastUpdatedCell(null, relative, exact)
+    assert.equal(cell.never, true)
+    assert.equal(cell.text, 'Never')
+    // Nothing to expand, so the cell must not offer a tooltip over an empty string.
+    assert.equal(cell.exact, null)
+  })
+
+  it('reads the age off the stamp and keeps the exact moment for the tooltip', () => {
+    const cell = lastUpdatedCell(STAMP, relative, exact)
+    assert.equal(cell.never, false)
+    assert.equal(cell.text, '5 days ago')
+    assert.equal(cell.exact, STAMP)
+  })
+
+  it('prints a stamp that is not a date at all rather than Invalid Date', () => {
+    // The same call `parseStamp` exists to make, and the same choice the attribution
+    // line above the grid makes with this value: the base *was* saved, so "Never"
+    // would be the worse answer of the two.
+    const cell = lastUpdatedCell('the other day', relative, exact)
+    assert.equal(cell.never, false)
+    assert.equal(cell.text, 'the other day')
+    assert.equal(cell.exact, null)
+  })
+
+  it('gives every base on a board a cell, with the never ones told apart', () => {
+    /* The column has to read down cleanly: no blanks, no `Invalid Date`, and the one
+       state worth spotting distinguishable by something other than its wording. */
+    const cells = board().map((row) => lastUpdatedCell(row.updatedAt, relative, exact))
+    assert.deepEqual(
+      cells.map((cell) => cell.text),
+      ['5 days ago', '5 days ago', 'Never', 'Never'],
+    )
+    assert.deepEqual(
+      cells.map((cell) => cell.never),
+      [false, false, true, true],
     )
   })
 })

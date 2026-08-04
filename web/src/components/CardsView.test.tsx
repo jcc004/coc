@@ -36,9 +36,20 @@ const member = (over: { tag: string; name: string }): ClanMember => ({
 
 const ALDA = member({ tag: '#AAA', name: 'Alda' })
 const BRIX = member({ tag: '#BBB', name: 'Brix' })
+/* Four more, so the leaderboard can be longer than one page and hold more than two
+   owners. They are roster members and nothing else: the bases come from the owner
+   assignments, so a member no test assigns never appears on the page. */
+const CASS = member({ tag: '#CCC', name: 'Cass' })
+const DANA = member({ tag: '#DDD', name: 'Dana' })
+const ELI = member({ tag: '#EEE', name: 'Eli' })
+const FENN = member({ tag: '#FFF', name: 'Fenn' })
 
 /** One base's holdings. Sparse, ascending by card id, exactly as the server sends. */
-const inventory = (tag: string, counts: BaseInventory['counts']): BaseInventory => ({ tag, counts })
+const inventory = (
+  tag: string,
+  counts: BaseInventory['counts'],
+  updatedAt?: string,
+): BaseInventory => ({ tag, counts, ...(updatedAt === undefined ? {} : { updatedAt }) })
 
 async function cards(owners: OwnerRecord[], bases: BaseInventory[], who = RAE) {
   const user = userEvent.setup()
@@ -49,7 +60,7 @@ async function cards(owners: OwnerRecord[], bases: BaseInventory[], who = RAE) {
     // The bases are named from the saved clans' rosters, one request per clan rather
     // than one per base — so a clan is what a test has to supply to get names.
     savedClans: () => Promise.resolve({ clans: [{ tag: '#CLAN', name: 'Clan' }] }),
-    clanMembers: () => Promise.resolve({ items: [ALDA, BRIX] }),
+    clanMembers: () => Promise.resolve({ items: [ALDA, BRIX, CASS, DANA, ELI, FENN] }),
   })
   render(<CardsView user={who} />)
   return user
@@ -203,6 +214,179 @@ describe('the collection leaderboard', () => {
     const board = await screen.findByRole('table', { name: 'Collection leaderboard' })
     const brix = (await within(board).findByText('Brix')).closest('tr')
     assert.match(brix?.textContent ?? '', /Nothing recorded yet/)
+  })
+
+  it('labels every cell, so the board survives being stacked on a phone', async () => {
+    /* At ≤900px the table becomes one card per base and each cell prints `data-label`
+       in place of the column head it no longer sits under — so a new column without
+       one loses its heading entirely on a phone. `.stack-title` is the exception by
+       design, being the card's own heading. */
+    await cards(OWNERS, [inventory('#AAA', [{ cardId: 1, count: 1 }])])
+
+    const board = await screen.findByRole('table', { name: 'Collection leaderboard' })
+    for (const cell of within(board).getAllByRole('cell')) {
+      assert.ok(
+        cell.classList.contains('stack-title') || cell.hasAttribute('data-label'),
+        `unlabeled cell: ${cell.textContent}`,
+      )
+    }
+  })
+})
+
+/**
+ * The Last updated column and the Owner filter — "which of my bases has nobody entered
+ * counts for lately", which the picker could only answer one base at a time.
+ *
+ * The filtering, the options and the words for a base with no stamp are pure and
+ * tested in `card-standings.ts`. What is here is the half that has no test anywhere
+ * else: that the rank printed beside a filtered row is still the rank that base holds
+ * on the **whole** board, and that a page number left past the end of a board the
+ * filter has just shortened is repaired rather than left showing nothing.
+ */
+describe('the leaderboard’s owner filter and staleness column', () => {
+  /*
+   * Six tracked bases, six different scores, so every base holds a rank of its own and
+   * a renumbered board is unmistakable. Three owners: two accounts, one unlinked legacy
+   * label (Dave, who has never signed in), and one base with no assignment at all —
+   * which reaches the board through its counts, since the tracked bases are the owner
+   * assignments plus anything holding cards.
+   */
+  const BOARD: OwnerRecord[] = [
+    { tag: '#AAA', owner: 'Rae', ownerUserId: RAE.id },
+    { tag: '#BBB', owner: 'Sam', ownerUserId: 2 },
+    { tag: '#CCC', owner: 'Rae', ownerUserId: RAE.id },
+    { tag: '#DDD', owner: 'Dave', ownerUserId: null },
+    { tag: '#EEE', owner: 'Sam', ownerUserId: 2 },
+  ]
+
+  const TWO_DAYS_AGO = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+
+  const COUNTS: BaseInventory[] = [
+    inventory('#AAA', [{ cardId: 1, count: 5 }], TWO_DAYS_AGO),
+    inventory('#BBB', [{ cardId: 1, count: 4 }], TWO_DAYS_AGO),
+    inventory('#CCC', [{ cardId: 1, count: 3 }], TWO_DAYS_AGO),
+    inventory('#DDD', [{ cardId: 1, count: 2 }], TWO_DAYS_AGO),
+    inventory('#EEE', [{ cardId: 1, count: 1 }], TWO_DAYS_AGO),
+    // Fenn: counts but no owner assignment, and no stamp — the never-saved case.
+    inventory('#FFF', []),
+  ]
+
+  const boardTable = () => screen.findByRole('table', { name: 'Collection leaderboard' })
+
+  /** The rank printed beside one member, read off the row rather than off the array. */
+  function rankOf(table: HTMLElement, member: string): string {
+    const row = within(table).getByText(member).closest('tr')
+    assert.ok(row, `${member} is not on the board`)
+    return within(row).getAllByRole('cell')[0]?.textContent ?? ''
+  }
+
+  it('keeps a base’s rank on the whole board when the filter narrows it to one owner', async () => {
+    const user = await cards(BOARD, COUNTS)
+    const table = await boardTable()
+    await within(table).findByText('Cass')
+
+    await user.selectOptions(await screen.findByLabelText('Owner'), 'Rae')
+
+    /* Rae's two bases are 1st and 3rd of six. Renumbering them 1 and 2 would make the
+       one column that carries meaning into a row counter, and it would read as a
+       leaderboard of one — which is the thing this board must never become. */
+    assert.equal(rankOf(table, 'Alda'), '1')
+    assert.equal(rankOf(table, 'Cass'), '3')
+    assert.equal(within(table).queryByText('Brix'), null)
+  })
+
+  it('offers everyone, the bases with no owner, and the owners on the board', async () => {
+    await cards(BOARD, COUNTS)
+    await boardTable()
+
+    const filter = await screen.findByLabelText('Owner')
+    assert.deepEqual(
+      within(filter)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+      ['Everyone', 'No owner set', 'Dave', 'Rae', 'Sam'],
+    )
+    // Everyone is the default, so the board opens as it always did.
+    assert.equal((filter as HTMLSelectElement).value, '')
+  })
+
+  it('finds the base no account and no label owns, under its own option', async () => {
+    const user = await cards(BOARD, COUNTS)
+    const table = await boardTable()
+
+    await user.selectOptions(await screen.findByLabelText('Owner'), 'No owner set')
+
+    // Last of the six, and still numbered 6 rather than 1.
+    assert.equal(rankOf(table, 'Fenn'), '6')
+    assert.equal(within(table).queryByText('Alda'), null)
+  })
+
+  it('keeps an unlinked legacy label as an owner you can filter by', async () => {
+    /* 32 of this install's assignments are free text nobody has matched to an account.
+       That is not a permission — `mayWriteBaseCounts` is clear — but it still names the
+       person whose bases these are, so it is a fair thing to ask the board for. */
+    const user = await cards(BOARD, COUNTS)
+    const table = await boardTable()
+
+    await user.selectOptions(await screen.findByLabelText('Owner'), 'Dave')
+
+    assert.equal(rankOf(table, 'Dana'), '4')
+  })
+
+  it('clamps a page number the filter has left past the end of the board', async () => {
+    // Six bases at the default five rows is two pages; Rae's two are one.
+    const user = await cards(BOARD, COUNTS)
+    const table = await boardTable()
+    await within(table).findByText('Cass')
+
+    await user.click(await screen.findByRole('button', { name: /Next/ }))
+    assert.ok(screen.getByText('Page 2 of 2'))
+
+    await user.selectOptions(await screen.findByLabelText('Owner'), 'Rae')
+
+    /* Without the clamp this is an empty table under a pager saying page 2 of 1. The
+       repair is `paginate`'s clamped page fed back — the same one a base losing its
+       owner assignment needs, rather than a second effect for the filter. */
+    assert.equal(rankOf(table, 'Alda'), '1')
+    assert.equal(rankOf(table, 'Cass'), '3')
+  })
+
+  it('says Never for a base nobody has ever entered counts for', async () => {
+    const user = await cards(BOARD, COUNTS)
+    const table = await boardTable()
+
+    await user.selectOptions(await screen.findByLabelText('Owner'), 'No owner set')
+
+    /* The one value in this column worth reading the column for. It is decided from
+       the absence of a stamp, so it cannot come out as `Invalid Date` or as a blank
+       cell that reads like a rendering fault. */
+    const fenn = within(table).getByText('Fenn').closest('tr')
+    const cells = within(fenn as HTMLElement).getAllByRole('cell')
+    assert.equal(cells[cells.length - 1]?.textContent, 'Never')
+  })
+
+  it('prints the age of a base that has been saved, with the exact time on the cell', async () => {
+    await cards(BOARD, COUNTS)
+    const table = await boardTable()
+
+    const alda = (await within(table).findByText('Alda')).closest('tr')
+    const cells = within(alda as HTMLElement).getAllByRole('cell')
+    const last = cells[cells.length - 1]
+    // Relative to scan the column with, exact on the tooltip so nothing is lost.
+    assert.equal(last?.textContent, '2 days ago')
+    assert.ok(last?.querySelector('span[title]')?.getAttribute('title'))
+  })
+
+  it('draws no filter at all when there is only one owner to choose', async () => {
+    /* Two options that select the same board is a control that answers a press by
+       doing nothing — the same reason the density control is not drawn when it offers
+       one value. */
+    await cards([{ tag: '#AAA', owner: 'Rae', ownerUserId: RAE.id }], [
+      inventory('#AAA', [{ cardId: 1, count: 1 }], TWO_DAYS_AGO),
+    ])
+    await boardTable()
+
+    assert.equal(screen.queryByLabelText('Owner'), null)
   })
 })
 

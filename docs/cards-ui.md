@@ -13,7 +13,8 @@ the three panels under them are the whole clan and are deliberately *not* filter
 1. the base picker, with the **Mine / All** filter to its left, and the 60-tile grid for the base
    it chooses;
 2. **Trade suggestions** — who should swap what with whom, 5 pairs at a time;
-3. **Collection leaderboard** — every tracked base, furthest along first, 5 rows at a time;
+3. **Collection leaderboard** — every tracked base, furthest along first, 5 rows at a time, with a
+   last-updated column and an Owner filter of its own that does not renumber it;
 4. **Cards across the clan** — an expandable copy of the same grid, every tile badged with the
    clan's total, and every tile a button: press one for the bases holding that card.
 
@@ -265,9 +266,9 @@ gives 15 blocks and 19 rows with no pager at all.
 
 Every tracked base, ranked by how far it has got, directly under the trade suggestions — because
 "who should trade with whom" and "who is furthest ahead" are the same question asked two ways, and
-the base near the top with spares is the one worth messaging. Member name, tag, owner, points, cards
-and copies; the `17/60` is printed and a `.meter` bar on the sequential blue ramp is a second
-telling of it, never the only one.
+the base near the top with spares is the one worth messaging. Member name, tag, owner, points, cards,
+copies and **last updated**; the `17/60` is printed and a `.meter` bar on the sequential blue ramp is
+a second telling of it, never the only one.
 
 **A Rows select at the bottom of the table**, defaulting to **5** (5 / 10 / 20 / **50**), persisted
 at `coc:cardStandingLimit`. No `All`: 50 already covers every tracked base with room to spare, so
@@ -316,7 +317,53 @@ A base **nobody has ever saved** stays on the board, last, and says `Nothing rec
 than printing `0/60` — the same distinction the grid's attribution line draws. Sixty zeroes
 presented as data would be a claim nobody made.
 
-It is **group-wide and not filtered by Mine/All**. A leaderboard of one base answers nothing.
+### Last updated, and the Owner filter
+
+The last column is **when this base's counts were last saved**, as a relative age — `5 days ago` —
+with the exact moment on the cell's `title`. Relative is what a column is scanned down; the exact
+timestamp is what you check once you have found the row, so it is one hover away rather than gone.
+The same pair the footer's build stamp and the attribution line above the grid already use, and the
+same `parseStamp` guards all three. The stamp comes from `card_base_updates` (migration v5), which
+is why a base **cleared back to zero still carries one**: the counts are sparse, so a stamp derived
+from them would vanish for exactly the base most likely to prompt "when did we last check this?".
+
+**`Never` is a state, not a formatter falling over.** A base nobody has ever entered counts for has
+no stamp at all — and v5's backfill is explicit that a base emptied before that migration has
+nothing to recover — so the column decides `Never` from the absence and prints it in the muted
+`.role-pill` the Owner column uses for `no owner set`. It is the most useful value in the column,
+which is the opposite of something to render as `Invalid Date` or leave blank. A stamp that is not a
+date at all keeps its raw text, exactly as the attribution line does with the same value: the base
+*was* saved, so `Never` would be the worse of the two lies.
+
+An **Owner select above the table** narrows which rows are drawn. Its options are the owners
+**actually on the board** — so every option keeps at least one row — with `Everyone` as the default,
+so the board still opens on the whole clan. A base whose owner is an unlinked legacy label is
+listed under that label like anybody else, and only a base with *no assignment at all* falls under
+`No owner set`; that is the same line `mayWriteBaseCounts()` draws between `ownerNotLinked` and
+`unowned`, and neither the column nor the filter grants anybody a permission. The select is not
+drawn at all when it would offer one owner, for the reason the density control is not: an option
+that cannot change what is on screen is a control that answers a press by doing nothing.
+
+**The filter never renumbers, either.** `filterStandingsByOwner()` takes the board `baseStandings()`
+has already ranked and only removes rows, so an owner's four bases read 3, 7, 12 and 19 — their
+places among every tracked base — rather than 1 to 4. Ranking the survivors would be a leaderboard
+of one, which is the thing this board must not become. Pinned by a test in `card-standings.test.ts`
+and again off the DOM in `CardsView.test.tsx`. Narrowing the board can leave the page number past
+the end; that is the clamp `paginate()` already reports and the leaderboard already follows for a
+base that lost its owner assignment, extended rather than duplicated for this second cause.
+
+The choice is **transient**, unlike the row limit: a filter that survived a reload would open the
+page on a board with most of the clan missing and no memory of having asked for that. And if the
+chosen owner leaves the board — a reassignment landing on the thirty-second background re-read —
+the select falls back to `Everyone` rather than showing a value it has no option for over an empty
+table, which is `activeTag()`'s reasoning applied to a filter.
+
+**Why this exists at all**, since it overturns what this page used to say: the board is still
+group-wide by default and the **Mine/All picker still does not touch it**. But "which of my bases
+has nobody entered counts for lately" is a maintenance question, not a ranking one, and the only
+place that fact was shown was the attribution line for the *selected* base — one at a time, behind a
+`<select>`, with the reader left to remember what each said. The column plus this filter is that
+same fact for every base at once.
 
 ## Cards across the clan
 
@@ -506,7 +553,10 @@ Four things it has to get right, all of them in `base-scope.ts` with tests:
   signing in on the same profile still defaults to `Mine` and does not touch the first key.
 
 **The leaderboard and the card totals ignore this filter entirely.** They are about the whole
-clan's progress; narrowed to one person's bases they would stop meaning anything.
+clan's progress, and a *ranking* narrowed to one person's bases would stop meaning anything. The
+leaderboard's own [Owner filter](#last-updated-and-the-owner-filter) is a separate control and a
+different question — which rows to draw, for "whose bases have gone stale" — and it leaves the rank
+each base holds on the whole board untouched.
 
 ## Deck progress plaques
 

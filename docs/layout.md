@@ -36,8 +36,9 @@ Anything with rules in it is a pure module in `web/src/` with its own tests, nev
 component: `saved-table.ts` (sorting, paging), `base-names.ts` (how a base is written),
 `card-trades.ts` (the four swap rules), `card-summary.ts` (per-deck counts and "is a trade
 waiting"), `deck-progress.ts` (those counts as the four progress plaques),
-`card-standings.ts` (the leaderboard's order, and the group's total of each card in the grid's
-fixed order), `card-holders.ts` (which bases hold one card and which can spare a copy — the table
+`card-standings.ts` (the leaderboard's order, its Owner filter and its how-stale column — the
+filter runs *after* the ranking, so a narrowed board keeps each base's place on the whole one —
+and the group's total of each card in the grid's fixed order), `card-holders.ts` (which bases hold one card and which can spare a copy — the table
 the clan-totals grid opens when you choose a tile), `roster-state.ts` (the clan roster's
 selection, filters, sort, paging and bulk-apply, as one reducer with named transitions rather
 than thirteen `useState`s), `base-scope.ts` (the card page's Mine/All filter — what "mine" means,

@@ -8,15 +8,20 @@ import { cardColumnOptions } from '../card-scale.ts'
 import { searchCards } from '../card-search.ts'
 import { inventoryFor, useCardInventoryState } from '../card-inventory.ts'
 import {
+  activeOwnerFilter,
+  ALL_OWNERS,
   baseStandings,
   cardPoints,
   cardTotals,
   cardsInGridOrder,
+  filterStandingsByOwner,
+  lastUpdatedCell,
+  standingOwnerOptions,
   type BaseStanding,
   type CardTotal,
 } from '../card-standings.ts'
 import { deckSlug } from '../cards.ts'
-import { formatFull } from '../format.ts'
+import { formatDateTime, formatFull, formatRelative } from '../format.ts'
 import {
   hrefFor,
   useBaseScope,
@@ -91,13 +96,62 @@ import { TradeTracker } from './TradeTracker.tsx'
 const STANDING_LIMITS: RowLimit[] = [5, 10, 20, 50]
 
 /**
+ * The staleness column's heading, written once.
+ *
+ * The table stacks on a phone and each cell prints its own heading from `data-label`,
+ * so the words exist twice in the markup; naming them here is what stops the column
+ * head and the stacked label drifting apart, exactly as `rosterColumnLabel` does for
+ * the clan roster.
+ */
+const LAST_UPDATED_LABEL = 'Last updated'
+
+/**
+ * When this base's counts were last saved.
+ *
+ * The words and the "Never" state are `lastUpdatedCell`'s, tested there; what is here
+ * is which of the two it draws. A base nobody has ever entered gets `.role-pill`, the
+ * same muted treatment the Owner column gives "no owner set" — an absence, stated,
+ * rather than a dash somebody has to interpret. A base with a stamp gets the relative
+ * age with the exact moment on its `title`, as the attribution line above the grid and
+ * the build stamp in the footer both do.
+ */
+function LastUpdated({ updatedAt }: { updatedAt: string | null }) {
+  const cell = lastUpdatedCell(updatedAt, formatRelative, formatDateTime)
+
+  return (
+    <td role="cell" data-label={LAST_UPDATED_LABEL}>
+      {cell.never ? (
+        <span className="role-pill">{cell.text}</span>
+      ) : (
+        <span className="card-meta" title={cell.exact ?? undefined}>
+          {cell.text}
+        </span>
+      )}
+    </td>
+  )
+}
+
+/**
  * How far every tracked base has got, best first.
  *
- * **Group-wide, never filtered by the picker.** It is about the whole clan's
- * progress; narrowed to one person's bases it would be a leaderboard of one and
- * would answer nothing. It sits directly under the trade suggestions because "who
- * should trade with whom" and "who is furthest ahead" are the same question asked
- * two ways — the base near the top with spares is the one worth messaging.
+ * **Group-wide by default, and never filtered by the picker.** The Mine/All select at
+ * the top of the page chooses which base you can *type into*; it has no business
+ * narrowing a board about the whole clan's progress, and it still does not touch it.
+ * The board sits directly under the trade suggestions because "who should trade with
+ * whom" and "who is furthest ahead" are the same question asked two ways — the base
+ * near the top with spares is the one worth messaging.
+ *
+ * **Its own Owner filter is a separate control, and it exists for a question the
+ * picker cannot answer.** This comment used to argue that the board must never be
+ * narrowed to one person, on the grounds that a leaderboard of one answers nothing.
+ * That is still true of *ranking* — which is why the ranking is untouched, below — but
+ * it was the wrong conclusion about *reading*. An owner with several bases has a
+ * maintenance question, "which of mine has nobody entered counts for lately", and the
+ * only place that fact was shown was the attribution line above the grid, one base at
+ * a time behind a `<select>`. Answering it meant clicking through the picker and
+ * remembering what each one said. The Last updated column plus this filter is that
+ * same fact for every base at once. The board still opens on **Everyone**, so nobody
+ * who came for the clan's progress has to put the filter back.
  *
  * The order is `baseStandings`', not this component's: **points** descending, then
  * distinct descending, then member name and tag. Ties are the *normal* case early in
@@ -106,19 +160,34 @@ const STANDING_LIMITS: RowLimit[] = [5, 10, 20, 50]
  * measure before `cardPoints` — the same staleness the intro line under the heading
  * below was carrying.)
  *
- * **Paging never touches the rank.** The number in the first column is
- * `baseStanding.rank` — computed once over the whole board, shared on a genuine tie
- * and skipping the numbers a tie consumes — so rank 6 reads 6 wherever it is
- * printed. Numbering the visible rows instead would restart at 1 on page 2 and turn
- * the one column that means something into a row counter.
+ * **Neither paging nor the owner filter touches the rank.** The number in the first
+ * column is `baseStanding.rank` — computed once over the whole board, shared on a
+ * genuine tie and skipping the numbers a tie consumes — so rank 6 reads 6 wherever it
+ * is printed. Numbering the visible rows instead would restart at 1 on page 2, and
+ * ranking the filtered rows would renumber somebody's four bases to 1–4 and read as if
+ * they were the clan; either turns the one column that means something into a row
+ * counter. `filterStandingsByOwner` therefore only ever removes rows from a board
+ * `baseStandings` has already numbered.
  */
 function Leaderboard({ rows }: { rows: BaseStanding[] }) {
   const [limit, setLimit] = useRowLimit('coc:cardStandingLimit', 5)
   const [page, setPage] = useState(1)
-  const view = useMemo(() => paginate(rows, limit, page), [rows, limit, page])
+  /* Transient, like the card search and unlike the row limit: a filter that survived a
+     reload would leave somebody opening the page to a board with most of the clan
+     missing and no memory of having asked for that. */
+  const [owner, setOwner] = useState(ALL_OWNERS)
 
-  /* A base losing its owner assignment shortens the board, which can leave the
-     page number past the end; `paginate` clamps and this follows it. */
+  const ownerOptions = useMemo(() => standingOwnerOptions(rows), [rows])
+  /* Derived rather than repaired by an effect, for the reason `activeTag` is: the
+     board is re-read in the background, so the chosen owner can leave it. */
+  const chosenOwner = activeOwnerFilter(ownerOptions, owner)
+  const filtered = useMemo(() => filterStandingsByOwner(rows, chosenOwner), [rows, chosenOwner])
+  const view = useMemo(() => paginate(filtered, limit, page), [filtered, limit, page])
+
+  /* Two ways the board gets shorter under a page number that was fine a moment ago: a
+     base losing its owner assignment, and the Owner filter narrowing it. Both leave
+     the page past the end, `paginate` clamps for both, and this follows it — one
+     repair rather than one per cause. */
   useEffect(() => {
     if (view.page !== page) setPage(view.page)
   }, [view.page, page])
@@ -127,6 +196,32 @@ function Leaderboard({ rows }: { rows: BaseStanding[] }) {
 
   return (
     <>
+      {/*
+       * Above the table, in the roster's own filter row, because it decides what the
+       * table holds — and drawn only where it has something to choose between. One
+       * owner and no unowned bases is two options that select the same board, which is
+       * the control that answers a press by doing nothing that this page refuses to
+       * hand out.
+       */}
+      {ownerOptions.length > 2 ? (
+        <div className="roster-filters">
+          <label htmlFor="leaderboard-owner">
+            Owner
+            <select
+              id="leaderboard-owner"
+              value={chosenOwner}
+              onChange={(event) => setOwner(event.target.value)}
+            >
+              {ownerOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
+
       <div className="table-wrap">
         {/*
          * Named with `aria-label` rather than pointed at the section's own `<h2>`.
@@ -153,6 +248,10 @@ function Leaderboard({ rows }: { rows: BaseStanding[] }) {
               <th className="num" role="columnheader">
                 Copies
               </th>
+              {/* Last, after the three numbers: it is about the record rather than
+                  about the collection, and it is the one column somebody scans down
+                  rather than compares across. */}
+              <th role="columnheader">{LAST_UPDATED_LABEL}</th>
             </tr>
           </thead>
           <tbody role="rowgroup">
@@ -220,6 +319,7 @@ function Leaderboard({ rows }: { rows: BaseStanding[] }) {
                 <td className="num" role="cell" data-label="Copies">
                   {row.recorded ? row.total : '—'}
                 </td>
+                <LastUpdated updatedAt={row.updatedAt} />
               </tr>
             ))}
           </tbody>
@@ -935,7 +1035,8 @@ export function CardsView({ user }: { user: SessionUser }) {
           Every tracked base, by <strong>points</strong>: {cardPoints(1)} for the first copy of a
           card and less for every copy after it, so breadth outranks hoarding. Level on points, more
           distinct cards of {totals.length} goes first. Not affected by <strong>Show</strong>: this
-          is the whole clan.
+          is the whole clan. <strong>Owner</strong> narrows which rows are drawn — the rank stays
+          each base's place on the whole board, so it never renumbers.
         </p>
         <Leaderboard rows={standings} />
         <details className="group">
