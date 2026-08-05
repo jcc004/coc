@@ -58,9 +58,12 @@ export interface CardSection {
  * Every anchored section, **in the order the page renders them**.
  *
  * `cards-top` is the page's own header, and it is a section here because the
- * back-to-top arrows need somewhere to send focus. Scrolling the window to 0 would
- * move the view and leave the caret at the bottom of the page, which hands a keyboard
- * user the whole document to tab back through — the trap `HelpView` documents.
+ * back-to-top arrows need somewhere to send focus. Scrolling the window to 0 *instead*
+ * would move the view and leave the caret at the bottom of the page, which hands a
+ * keyboard user the whole document to tab back through — the trap `HelpView` documents.
+ * The arrows do scroll the window rather than this heading, for the reason under
+ * `CARD_TOP_ID` below, and then focus it; it is the substitution that was the trap, not
+ * the scroll.
  */
 export const CARD_SECTIONS: readonly CardSection[] = [
   { id: 'cards-top', title: 'Clash of Cards' },
@@ -122,7 +125,18 @@ export const CARD_JUMP_TARGETS: readonly CardJumpTarget[] = [
   { id: 'cards-totals', label: 'Totals', hideWhereCramped: true },
 ]
 
-/** The section every back-to-top arrow returns to. */
+/**
+ * The section every back-to-top arrow returns to.
+ *
+ * **It is the focus target, not the scroll target.** The other four sections are
+ * scrolled to with `scrollIntoView`, which aligns the element — and this element is not
+ * the top of the page. It is a heading inside the first card, roughly 120px down: the
+ * shell's padding, the banner and its margin, then the card's border and padding. An
+ * arrow that aligned it left the banner off-screen and the card looking cut off, which
+ * is what "not quite the top" turned out to mean. So `jumpToSection` scrolls the window
+ * to 0 for this id and moves the caret here, and the two together are what the arrow
+ * promises.
+ */
 export const CARD_TOP_ID: CardSectionId = 'cards-top'
 
 /**

@@ -641,31 +641,54 @@ describe('jumping about the card page', () => {
   const BASES = [inventory('#AAA', [{ cardId: 1, count: 3 }])]
 
   /**
-   * jsdom implements no scrolling at all, so the call is recorded rather than done.
+   * jsdom implements no scrolling at all, so the calls are recorded rather than done.
+   *
+   * **Both scrolls, in one list.** A chip aligns its heading with `scrollIntoView`; the
+   * back-to-top arrow scrolls the window to 0 instead, because the top heading sits
+   * about 120px into the document and aligning it leaves the banner off-screen. Keeping
+   * them in one ordered list is what lets a test say *which* of the two happened — and
+   * catches the arrow quietly reverting to the element, which would look like a pass
+   * against a list that only held one kind.
+   *
+   * `target` is the element's id, or `'window'` for the window scroll. No id collides
+   * with that: the page's are all `cards-*`, which `card-sections.ts` explains.
    *
    * Swapped through the property descriptor rather than by reading the method into a
    * variable: an unbound method reference is exactly what `@typescript-eslint`'s
    * `unbound-method` rule is for, and the descriptor also restores a property that was
-   * never there — which is the real case here, since jsdom defines no `scrollIntoView`
-   * for this to shadow.
+   * never there — which is the real case for `scrollIntoView`, since jsdom defines none
+   * for this to shadow. `window.scrollTo` it does define, as a throwing stub.
    */
   function captureScrolls() {
-    const calls: { id: string; behavior: ScrollBehavior | undefined }[] = []
-    const before = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+    const calls: { target: string; behavior: ScrollBehavior | undefined; top?: number }[] = []
+    const beforeElement = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+    const beforeWindow = Object.getOwnPropertyDescriptor(window, 'scrollTo')
 
     Object.defineProperty(Element.prototype, 'scrollIntoView', {
       configurable: true,
       writable: true,
       value: function scrollIntoView(this: Element, options?: ScrollIntoViewOptions) {
-        calls.push({ id: this.id, behavior: options?.behavior })
+        calls.push({ target: this.id, behavior: options?.behavior })
+      },
+    })
+
+    Object.defineProperty(window, 'scrollTo', {
+      configurable: true,
+      writable: true,
+      value: (options?: ScrollToOptions) => {
+        calls.push({ target: 'window', behavior: options?.behavior, top: options?.top })
       },
     })
 
     return {
       calls,
       restore: () => {
-        if (before) Object.defineProperty(Element.prototype, 'scrollIntoView', before)
-        else Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+        if (beforeElement) {
+          Object.defineProperty(Element.prototype, 'scrollIntoView', beforeElement)
+        } else Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+
+        if (beforeWindow) Object.defineProperty(window, 'scrollTo', beforeWindow)
+        else Reflect.deleteProperty(window, 'scrollTo')
       },
     }
   }
@@ -748,7 +771,7 @@ describe('jumping about the card page', () => {
       await user.click(await screen.findByRole('button', { name: 'Totals' }))
 
       assert.deepEqual(
-        scrolls.calls.map((call) => call.id),
+        scrolls.calls.map((call) => call.target),
         ['cards-totals'],
       )
       assert.equal(document.activeElement?.id, 'cards-totals')
@@ -764,7 +787,7 @@ describe('jumping about the card page', () => {
       await user.click(await screen.findByRole('button', { name: 'Tracker' }))
 
       assert.deepEqual(
-        scrolls.calls.map((call) => call.id),
+        scrolls.calls.map((call) => call.target),
         ['cards-tracker'],
       )
       /* Scrolling without moving focus leaves a keyboard user at the top of the page
@@ -813,12 +836,55 @@ describe('jumping about the card page', () => {
       const user = await cards(OWNERS, BASES)
       await user.click(await screen.findByRole('button', { name: 'Back to top, from Trade tracker' }))
 
+      /* The window, not `cards-top` — see below for why the distinction is the point.
+         What this test owns is that the arrow does not scroll to the section it sits
+         on, which is the failure that would leave the reader where they already were. */
       assert.deepEqual(
-        scrolls.calls.map((call) => call.id),
-        ['cards-top'],
+        scrolls.calls.map((call) => call.target),
+        ['window'],
       )
       assert.equal(document.activeElement?.id, 'cards-top')
     } finally {
+      scrolls.restore()
+    }
+  })
+
+  it('scrolls the window to 0 rather than aligning the top heading', async () => {
+    /*
+     * The distinction is invisible in jsdom and was invisible in a screenshot too, which
+     * is why it is pinned. `cards-top` is a heading inside the first card, roughly 120px
+     * down the document — the shell's padding, the banner and its margin, the card's
+     * border and padding. `scrollIntoView` on it does exactly what it says and stops
+     * with the banner off-screen, which is what the arrow was reported as getting wrong.
+     *
+     * So: no element scroll at all on this press, and a window scroll to a literal 0.
+     * Asserting only "the window was scrolled" would pass on a `scrollIntoView` that had
+     * merely been swapped for `window.scrollTo({ top: heading.offsetTop })`.
+     */
+    const scrolls = captureScrolls()
+    try {
+      const user = await cards(OWNERS, BASES)
+      await user.click(await screen.findByRole('button', { name: 'Back to top, from Trade tracker' }))
+
+      assert.deepEqual(scrolls.calls, [{ target: 'window', behavior: 'smooth', top: 0 }])
+    } finally {
+      scrolls.restore()
+    }
+  })
+
+  it('lets the arrow refuse motion too, not just the chips', async () => {
+    /* The arrow is on the other branch of `jumpToSection` now, so the reduced-motion
+       rule has two paths to hold on and the chip test only covers one. */
+    const scrolls = captureScrolls()
+    const restoreMedia = withReducedMotion(true)
+
+    try {
+      const user = await cards(OWNERS, BASES)
+      await user.click(await screen.findByRole('button', { name: 'Back to top, from Trade tracker' }))
+
+      assert.equal(scrolls.calls[0]?.behavior, 'auto')
+    } finally {
+      restoreMedia()
       scrolls.restore()
     }
   })

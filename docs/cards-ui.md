@@ -446,10 +446,20 @@ rather than shareable addresses, and it would mean widening `parseHash` — a fi
 boundary above it — for a convenience nobody asked for.
 
 **Every jump moves the caret, not just the view.** The target headings carry `tabIndex={-1}` for no
-other reason, and the jump calls `focus({ preventScroll: true })` after `scrollIntoView` — the same
+other reason, and the jump calls `focus({ preventScroll: true })` after the scroll — the same
 pairing, for the same reason, as the help page's deep links. Scrolling alone would leave a keyboard
 user's focus at the top of the page for a chip and at the bottom for an arrow, with the thing they
 pressed now a whole document away.
+
+**A chip scrolls its heading; an arrow scrolls the window to 0.** The two branches of
+`jumpToSection` differ because `cards-top` is a heading *inside the first card*, about 120px down
+the document — `.shell`'s 24px of padding, the banner and its 20px margin, then the card's border
+and 20px of padding. `scrollIntoView` on it did exactly what it says and stopped with the banner
+off-screen and the card looking beheaded, which is what "the arrow doesn't go quite high enough"
+turned out to mean. The heading stays the *focus* target, which is the only reason it is an anchored
+section at all; scrolling the window **instead of** focusing would be the trap the paragraph above
+describes, and scrolling the window *and* focusing is not. The distinction is invisible in jsdom and
+in a screenshot, so a test asserts a literal `top: 0` and no element scroll at all on that press.
 
 **Smooth by default, instant for anybody who asked for less motion.** `scrollBehaviorFor()` in
 `card-sections.ts` is a boolean in and a `ScrollBehavior` out, so the rule is a line a test holds

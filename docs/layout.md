@@ -41,7 +41,7 @@ filter runs *after* the ranking, so a narrowed board keeps each base's place on 
 and the group's total of each card in the grid's fixed order), `card-holders.ts` (which bases hold one card, which can spare a copy, and how many of the bases
 that have reported at all still need it — the table the clan-totals grid opens when you choose a
 tile, and the line above it), `card-sections.ts` (the card page's own anchors: which sections have
-an id, which three the jump row offers and in what order, and whether a jump slides or lands —
+an id, which four the jump row offers and in what order, and whether a jump slides or lands —
 plus why the chips are buttons rather than `#fragment` links), `roster-state.ts` (the clan roster's
 selection, filters, sort, paging and bulk-apply, as one reducer with named transitions rather
 than thirteen `useState`s), `base-scope.ts` (the card page's Mine/All filter — what "mine" means,

@@ -701,7 +701,24 @@ function jumpToSection(id: CardSectionId): void {
   /* Read at press time rather than subscribed to: it is one decision per click, so
      there is no state to keep in step and no listener to unsubscribe. */
   const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  target.scrollIntoView({ block: 'start', behavior: scrollBehaviorFor(still) })
+  const behavior = scrollBehaviorFor(still)
+
+  /*
+   * The top of the page is the *window's* top, not the top heading's.
+   *
+   * `cards-top` sits about 120px into the document — `.shell`'s 24px of padding, the
+   * banner and its 20px margin, then the card's border and 20px of padding — so
+   * `scrollIntoView` on it stops with the banner scrolled off and the card apparently
+   * beheaded. Which is exactly what it was asked to do: it aligns the element, and the
+   * element is not the top. Every other target wants the element, and gets it.
+   *
+   * Focus still moves to the heading, and that is the whole reason `cards-top` is an
+   * anchored section at all — see `card-sections.ts`. Scrolling instead of focusing is
+   * the trap; scrolling *and* focusing is not.
+   */
+  if (id === CARD_TOP_ID) window.scrollTo({ top: 0, behavior })
+  else target.scrollIntoView({ block: 'start', behavior })
+
   target.focus({ preventScroll: true })
 }
 
