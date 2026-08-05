@@ -532,6 +532,124 @@ select {
   margin: 0 0 12px;
 }
 
+/* ---------- in-page jumps on the card page ---------- */
+
+/*
+ * A section heading that carries a back-to-top arrow in its right-hand corner.
+ *
+ * Flex rather than a float or a wrapper: the heading is already the full-width rule
+ * with the gold underline, and wrapping it in the `.card-header` pattern the page
+ * header uses would shorten that underline to the width of the words. This keeps the
+ * heading exactly as it was and only changes where its last child sits.
+ *
+ * `gap` is what replaces the literal space between the title and the inline `?` in the
+ * three headings that carry a `HelpLink` — flex makes the text an anonymous item and
+ * trims the whitespace, so without this they would touch. 6px, which is what the space
+ * measured at this font size.
+ *
+ * `flex-wrap` is deliberately *not* set: at 390px the words are 12px and the arrow is a
+ * 44px touch target, and letting them wrap would put the arrow on a line of its own
+ * under a heading, which reads as a control belonging to whatever comes next.
+ */
+.section-title--jump {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* The heading is the scroll and focus target, so it needs to not land flush against
+     the top edge, which reads as a page cut off mid-word. The same 16px, for the same
+     reason, as `.help-section__title` further down this file — the two are the app's
+     only two scroll targets and should stay in step. */
+  scroll-margin-top: 16px;
+}
+
+/*
+ * Pushed to the right-hand end, whatever else is in the heading. Three of the four have
+ * the title, a `HelpLink` and then this; the totals heading has only the title and
+ * this, and `auto` is what makes both land in the same place without a spacer element.
+ *
+ * Only margin and flex are set here on purpose. `.icon-button` is declared three more
+ * times further down — including the touch-target block that gives it `min-height:
+ * 44px` on a coarse pointer — and none of those touch either property, so this rule
+ * cannot be quietly overridden by one of them and does not have to fight for
+ * specificity from up here.
+ */
+.section-title__top {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+/*
+ * The jump row: a second line under the header's controls, aligned to their right edge.
+ *
+ * A **sibling** of `.card-header` rather than a fourth child of `.card-header__tools`,
+ * and right-aligned by its own `justify-content` rather than by anything the header
+ * does. Putting it inside the tools would mean `flex-basis: 100%` to break it onto a
+ * line of its own, which resolves against a container whose width is itself
+ * shrink-to-fit — so it would move `Show`, `Base` and `Find`, and at 1280px it would
+ * also cap the row at the tools' 414px instead of letting it use the card.
+ *
+ * The alignment needs no cleverness because `.card-header` is `space-between`: the
+ * tools are flush to the header's right edge, which is the card's content edge, which
+ * is where a full-width row's `flex-end` puts its last chip. Measured: 1239px at
+ * 1280px and 363px at 390px, tools and row alike.
+ *
+ * At 390px the header wraps (`flex-wrap` in the 600px block) and the tools take the
+ * whole second line, so "right-aligned under the tools" and "the width of the card"
+ * describe the same edge there. The chips still sit on one 44px line — right-aligning
+ * changes where they sit on the line, not how many lines they need.
+ *
+ * `margin-top: 0` because the header already carries a 12px bottom margin and
+ * `.recents` would add its own 12px on top, which reads as a gap rather than a row.
+ */
+.card-jump {
+  margin-top: 0;
+  justify-content: flex-end;
+}
+
+/*
+ * The fourth chip — `Totals` — drops out where four will not fit on one line.
+ *
+ * **480px is measured, not chosen for looking round.** Sweeping the real markup at 4px
+ * steps from 320 to 1000: four chips need 372.8px of line, the card gives the viewport
+ * less 52px of shell and card padding at this end, and the row is two lines from 320px
+ * up to and including 424px, then one line from **428px** all the way up. Identical
+ * with a coarse pointer, so the constraint is width and nothing else.
+ *
+ * 480 rather than 428 because the 372.8px is *this* platform's font metrics, and chip
+ * widths move with them. 480 leaves the row 429px of content against the 372.8 it
+ * needs — about 15% of slack — where 428 would leave none and could wrap on a machine
+ * whose fonts run a little wide.
+ *
+ * **Neither existing breakpoint was right.** `600px` works in the sense that it never
+ * wraps, but it would hide the chip across 428–600px where four demonstrably fit
+ * (measured one line at 500 and 600) — a whole band of small windows and portrait
+ * tablets losing a chip for nothing. `900px, (pointer: coarse)` is wider still, and its
+ * coarse arm would hide `Totals` on a large touchscreen that has room for ten of them,
+ * which is answering a question about input with a rule about width.
+ *
+ * `display: none`, deliberately, and not `visibility` or `opacity`: the chip has to
+ * leave the accessibility tree, not merely stop being painted. A keyboard user tabbing
+ * onto a control they cannot see is worse than not having the control.
+ *
+ * The totals section keeps its back-to-top arrow at every width. This hides the way
+ * *down*, never the way back.
+ *
+ * **Two classes deep on purpose, and this is not neatness.** Written as a bare
+ * `.card-jump__wide` it did nothing at all: `.chip` is declared again some 2,500 lines
+ * below here, inside `@media (max-width: 900px), (pointer: coarse)`, and that
+ * declaration sets `display: inline-flex` for the touch target. Equal specificity, so
+ * the later rule won and the computed display came back `flex` — the chip stayed
+ * visible at 390px with the media query matching and the rule sitting in the sheet.
+ * Caught by measuring; nothing about the CSS looks wrong. `.card-jump .card-jump__wide`
+ * outranks `.chip` on specificity rather than on position, so this cannot be undone
+ * again by someone adding a fourth `.chip` block further down.
+ */
+@media (max-width: 480px) {
+  .card-jump .card-jump__wide {
+    display: none;
+  }
+}
+
 /* ---------- search ---------- */
 
 .search {

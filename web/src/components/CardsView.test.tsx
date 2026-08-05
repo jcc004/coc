@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CARD_SEASON, type BaseInventory, type ClanMember, type OwnerRecord } from '@coc/shared'
+import { CARD_JUMP_TARGETS } from '../card-sections.ts'
 import { installTestCleanup, sessionUser, stubApi } from '../test-support.ts'
 import { CardsView } from './CardsView.tsx'
 
@@ -622,6 +623,234 @@ describe('who holds a card', () => {
         cell.classList.contains('stack-title') || cell.hasAttribute('data-label'),
         `unlabeled cell: ${cell.textContent}`,
       )
+    }
+  })
+})
+
+/**
+ * The jump row under the controls, and the arrows back up.
+ *
+ * Which sections exist and what the chips are called is `card-sections.ts`', tested
+ * there. What is here is the half that module cannot check about itself: that every id
+ * it hands out is a heading this page actually draws. A chip pointing at a renamed id
+ * scrolls nowhere, leaves the reader at the top and looks exactly like a page that had
+ * nothing to scroll — no throw, nothing on screen, which is why it is pinned here.
+ */
+describe('jumping about the card page', () => {
+  const OWNERS: OwnerRecord[] = [{ tag: '#AAA', owner: 'Rae', ownerUserId: RAE.id }]
+  const BASES = [inventory('#AAA', [{ cardId: 1, count: 3 }])]
+
+  /**
+   * jsdom implements no scrolling at all, so the call is recorded rather than done.
+   *
+   * Swapped through the property descriptor rather than by reading the method into a
+   * variable: an unbound method reference is exactly what `@typescript-eslint`'s
+   * `unbound-method` rule is for, and the descriptor also restores a property that was
+   * never there — which is the real case here, since jsdom defines no `scrollIntoView`
+   * for this to shadow.
+   */
+  function captureScrolls() {
+    const calls: { id: string; behavior: ScrollBehavior | undefined }[] = []
+    const before = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: function scrollIntoView(this: Element, options?: ScrollIntoViewOptions) {
+        calls.push({ id: this.id, behavior: options?.behavior })
+      },
+    })
+
+    return {
+      calls,
+      restore: () => {
+        if (before) Object.defineProperty(Element.prototype, 'scrollIntoView', before)
+        else Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+      },
+    }
+  }
+
+  /** Same swap, for the query `jumpToSection` reads at press time. */
+  function withReducedMotion(matches: boolean) {
+    const before = Object.getOwnPropertyDescriptor(window, 'matchMedia')
+
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: (query: string) => ({
+        matches: matches && query.includes('prefers-reduced-motion'),
+        media: query,
+        onchange: null,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }),
+    })
+
+    return () => {
+      if (before) Object.defineProperty(window, 'matchMedia', before)
+      else Reflect.deleteProperty(window, 'matchMedia')
+    }
+  }
+
+  it('points every chip at a heading that is really on the page', async () => {
+    await cards(OWNERS, BASES)
+    await screen.findByRole('navigation', { name: 'Jump to a section' })
+
+    for (const target of CARD_JUMP_TARGETS) {
+      const heading = document.getElementById(target.id)
+      assert.ok(heading, `${target.id} is not on the page`)
+      // A focus target has to be focusable, and these are headings, not controls.
+      assert.equal(heading?.getAttribute('tabindex'), '-1')
+    }
+  })
+
+  it('draws all four chips in page order, with the totals last', async () => {
+    /*
+     * Four at every width, because the fourth is hidden in **CSS** and jsdom neither
+     * lays out nor applies a media query. That is the split on purpose: this test owns
+     * the DOM and the order, and the browser measurement owns whether the row is one
+     * line at 390px. Faking a viewport here would be this file quietly asserting a
+     * layout it cannot see.
+     */
+    await cards(OWNERS, BASES)
+    const row = await screen.findByRole('navigation', { name: 'Jump to a section' })
+
+    assert.deepEqual(
+      within(row)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+      ['Suggestions', 'Tracker', 'Leaderboard', 'Totals'],
+    )
+  })
+
+  it('puts the hiding class on the totals chip and on no other', async () => {
+    /* The class is the whole mechanism, and it is invisible to every other test here —
+       jsdom will not apply the rule, so nothing else would notice it going missing. */
+    await cards(OWNERS, BASES)
+    const row = await screen.findByRole('navigation', { name: 'Jump to a section' })
+
+    assert.deepEqual(
+      within(row)
+        .getAllByRole('button')
+        .filter((button) => button.classList.contains('card-jump__wide'))
+        .map((button) => button.textContent),
+      ['Totals'],
+    )
+  })
+
+  it('jumps to the totals from its chip, the same as any other', async () => {
+    const scrolls = captureScrolls()
+    try {
+      const user = await cards(OWNERS, BASES)
+      await user.click(await screen.findByRole('button', { name: 'Totals' }))
+
+      assert.deepEqual(
+        scrolls.calls.map((call) => call.id),
+        ['cards-totals'],
+      )
+      assert.equal(document.activeElement?.id, 'cards-totals')
+    } finally {
+      scrolls.restore()
+    }
+  })
+
+  it('scrolls to the section a chip names, and moves the caret there', async () => {
+    const scrolls = captureScrolls()
+    try {
+      const user = await cards(OWNERS, BASES)
+      await user.click(await screen.findByRole('button', { name: 'Tracker' }))
+
+      assert.deepEqual(
+        scrolls.calls.map((call) => call.id),
+        ['cards-tracker'],
+      )
+      /* Scrolling without moving focus leaves a keyboard user at the top of the page
+         with the thing they pressed now a whole document away. */
+      assert.equal(document.activeElement?.id, 'cards-tracker')
+    } finally {
+      scrolls.restore()
+    }
+  })
+
+  it('gives all four sections below the top an arrow back up, including the totals', async () => {
+    /* Four arrows, not three. The totals chip is hidden below 480px, so on a phone the
+       totals section is the one place with a way back and no way down — which is the
+       right way round, since it is the bottom of the page and the worst place to be
+       stranded. The arrow is never hidden at any width. */
+    await cards(OWNERS, BASES)
+
+    for (const from of [
+      'Trade suggestions',
+      'Trade tracker',
+      'Collection leaderboard',
+      'Cards across the clan',
+    ]) {
+      assert.ok(
+        await screen.findByRole('button', { name: `Back to top, from ${from}` }),
+        `no arrow on ${from}`,
+      )
+    }
+  })
+
+  it('names each arrow by the section it leaves, so four of them are not one control', async () => {
+    await cards(OWNERS, BASES)
+    const arrow = await screen.findByRole('button', { name: 'Back to top, from Trade tracker' })
+
+    /* The glyph is `aria-hidden` and the words are a visually-hidden span — the
+       `HelpLink` pattern. An `aria-label` over a text node leaves `↑` in the tree on
+       some combinations, and an arrow is not a word. */
+    assert.equal(arrow.querySelector('[aria-hidden="true"]')?.textContent, '↑')
+    assert.equal(arrow.getAttribute('aria-label'), null)
+    assert.equal(arrow.getAttribute('title'), 'Back to top, from Trade tracker')
+  })
+
+  it('sends an arrow to the top of the page, not to its own section', async () => {
+    const scrolls = captureScrolls()
+    try {
+      const user = await cards(OWNERS, BASES)
+      await user.click(await screen.findByRole('button', { name: 'Back to top, from Trade tracker' }))
+
+      assert.deepEqual(
+        scrolls.calls.map((call) => call.id),
+        ['cards-top'],
+      )
+      assert.equal(document.activeElement?.id, 'cards-top')
+    } finally {
+      scrolls.restore()
+    }
+  })
+
+  it('slides by default, because nothing has asked it not to', async () => {
+    // `test-dom.ts` answers false to every media query, which is the no-preference case.
+    const scrolls = captureScrolls()
+    try {
+      const user = await cards(OWNERS, BASES)
+      await user.click(await screen.findByRole('button', { name: 'Leaderboard' }))
+
+      assert.equal(scrolls.calls[0]?.behavior, 'smooth')
+    } finally {
+      scrolls.restore()
+    }
+  })
+
+  it('jumps outright when the reader has asked for less motion', async () => {
+    /* The stub in `test-dom.ts` is deliberately inert, so a test that cares about a
+       media query has to replace `window.matchMedia` itself — which is what the note
+       there says to do. */
+    const scrolls = captureScrolls()
+    const restoreMedia = withReducedMotion(true)
+
+    try {
+      const user = await cards(OWNERS, BASES)
+      await user.click(await screen.findByRole('button', { name: 'Leaderboard' }))
+
+      assert.equal(scrolls.calls[0]?.behavior, 'auto')
+    } finally {
+      restoreMedia()
+      scrolls.restore()
     }
   })
 })

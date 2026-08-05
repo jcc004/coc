@@ -365,6 +365,112 @@ place that fact was shown was the attribution line for the *selected* base — o
 `<select>`, with the reader left to remember what each said. The column plus this filter is that
 same fact for every base at once.
 
+## Getting about the page
+
+The page is long — with a base selected, the entry grid alone measures **1194px at 390px wide**,
+which is 1.4 phone screens before the first panel anybody scrolled down for. So there is a row of
+jump chips under the controls, and an up arrow in the corner of each section it can land on.
+
+```
+CLASH OF CARDS   Show [Mine v]  Base [Alda v]  Find [        ]
+                 ( Suggestions ) ( Tracker ) ( Leaderboard ) ( Totals )
+```
+
+**It reads as a second line of the header's tools, right-aligned to the same edge** — but it is a
+*sibling* of `.card-header`, not a fourth child of `.card-header__tools`. Breaking a line inside the
+tools would mean `flex-basis: 100%` on a child of a shrink-to-fit flex item, which moves `Show`,
+`Base` and `Find`; and at 1280px it would cap the row at the tools' 414px rather than letting it use
+the card's full width. The alignment falls out of the header being `justify-content: space-between`
+— the tools are flush to the card's content edge, and so is a full-width row's `flex-end`. Measured,
+the last chip's right edge and the tools' right edge are the same number: **1239px at 1280px, 363px
+at 390px**.
+
+At 390px the header itself wraps — `.card-header { flex-wrap: wrap }` in the `600px` block — and the
+tools take the whole second line, so "right-aligned under the tools" and "the width of the card"
+are the same edge there. The chips still sit on **one 44px line**; right-aligning changes where they
+sit on the line, not how many lines they need.
+
+**Four chips in page order, and the fourth is hidden where it will not fit.** Suggestions, tracker
+and leaderboard are the order those sections are rendered in, so the row reads as a map of what is
+below rather than as a ranking; `Totals` comes last. An earlier revision led with `Leaderboard` on
+the grounds that it is what people open the page for — tried, then reversed, because a row whose
+order disagrees with the page teaches nothing about where anything is. The order and the one-word
+labels are pinned by a test, since both are decisions that would otherwise read as accidents.
+
+**`Totals` disappears below 480px, and 480 is measured rather than picked.** Sweeping the real
+markup in Chrome at 2px steps from 320 to 1000: four chips need **372.8px** of line; the card offers
+the viewport less 52px of shell and card padding at that end; the row is two lines from 320px up to
+**426px** and one line from **428px** upward — identically with a coarse pointer, so the constraint
+is width and nothing else. The rule sits at 480 rather than 428 because 372.8px is *this* platform's
+font metrics and chip widths travel with them; 480 leaves 429px of content against 372.8 needed,
+about 15% of slack, where 428 would leave none.
+
+Neither existing breakpoint was right. `600px` never wraps, but would drop the chip across 428–600px
+where four demonstrably fit (one line at 500 and at 600) — every small window and portrait tablet
+losing a chip for nothing. `900px, (pointer: coarse)` is wider again, and its coarse arm would hide
+`Totals` on a large touchscreen with room for ten of them, which answers a question about input with
+a rule about width.
+
+**The chip is always rendered; the hiding is `display: none` in CSS.** Not `visibility`, not
+`opacity` — the chip has to leave the accessibility tree rather than stay focusable while invisible.
+That also means **jsdom does not exercise it**: the component tests see four buttons at every width
+and assert the DOM and the ordering, while the browser measurement owns whether the row is one line.
+Faking a viewport in jsdom would be a test asserting a layout it cannot see.
+
+**One trap, and it cost a wrong "done".** Written as a bare `.card-jump__wide { display: none }` the
+rule did nothing: `.chip` is declared again ~2,500 lines further down inside
+`@media (max-width: 900px), (pointer: coarse)`, setting `display: inline-flex` for the touch target.
+Equal specificity, later rule wins — so at 390px the media query matched, the rule was in the sheet,
+and the computed display came back `flex` with all four chips still showing. Nothing about the CSS
+looked wrong; only measuring caught it. It is now `.card-jump .card-jump__wide`, which outranks
+`.chip` on specificity rather than on position and cannot be undone by a fifth `.chip` block landing
+below it.
+
+**The totals section keeps its back-to-top arrow at every width.** On a phone it is the one section
+with a way back and no way down, which is the right way round for the bottom of the page.
+
+**Known: below 354px even three chips wrap** to two rows and 96px — measured two lines from 320px to
+352px. That is narrower than any current phone in portrait (390px here, 375px for the smaller
+iPhones) but it is reachable by zooming, and it is the one width band where the row is not a single
+line. Left as it is rather than papered over: fixing it means either a second hidden chip or shorter
+words, and both are decisions rather than adjustments.
+
+**The chips are buttons, not `href="#cards-leaderboard"`.** The hash is spent on the router.
+`parseHash` splits it on `/` and matches the first segment, so a bare fragment is an unknown route
+that resolves to `home` — which unmounts the card page to render the home page. Worse quietly:
+`routeToRemember` keeps any non-blank hash, so the fragment is persisted as the last route and
+restores to home on the *next* sign-in. Both were run against the real modules rather than reasoned
+about. `help.ts` hit the same wall and answered it with a path segment (`#/help/<section>`);
+`#/cards/<section>` is available here too and was not taken, because the ask is in-page scrolling
+rather than shareable addresses, and it would mean widening `parseHash` — a file with no error
+boundary above it — for a convenience nobody asked for.
+
+**Every jump moves the caret, not just the view.** The target headings carry `tabIndex={-1}` for no
+other reason, and the jump calls `focus({ preventScroll: true })` after `scrollIntoView` — the same
+pairing, for the same reason, as the help page's deep links. Scrolling alone would leave a keyboard
+user's focus at the top of the page for a chip and at the bottom for an arrow, with the thing they
+pressed now a whole document away.
+
+**Smooth by default, instant for anybody who asked for less motion.** `scrollBehaviorFor()` in
+`card-sections.ts` is a boolean in and a `ScrollBehavior` out, so the rule is a line a test holds
+rather than a ternary in JSX; the query is read at press time, since it is one decision per click
+with nothing to keep in sync. Note that the help page's own scroll is still unconditionally smooth —
+a known gap, left alone deliberately rather than fixed in passing.
+
+**The arrows are named for what they leave**, as `Back to top, from Trade tracker`, because four
+controls all reading "Back to top" are four indistinguishable rows in a screen reader's list. The
+glyph is `aria-hidden` with the words in a `.visually-hidden` span — the `HelpLink` pattern, not an
+`aria-label`, which over a text node can leave `↑` in the accessibility tree. The name comes from
+`card-sections.ts` in sentence case and never from the heading beside it: those are
+`text-transform: uppercase`, and Chrome computes the accessible name *after* the transform, which is
+how the leaderboard table once ended up called `COLLECTION LEADERBOARD`.
+
+The arrow makes its heading a flex row so `margin-left: auto` can push it into the corner. Measured
+before and after against the real markup: the heading grows from 28.9px to 54px at 390px and to
+45.5px at 1280px — the arrow is a 44px touch target on a phone — and the inline `?` beside the three
+headings that have one shifts right by **1.5px**, which is the literal space becoming a 6px flex
+gap. No horizontal overflow at either width.
+
 ## Cards across the clan
 
 The **last** panel, and an expandable one: the same 60-tile grid as above, every tile carrying the

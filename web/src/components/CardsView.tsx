@@ -6,6 +6,12 @@ import { baseOwnerOf } from '../card-entry.ts'
 import { cardDemand, cardHolders, type CardDemand, type CardHolder } from '../card-holders.ts'
 import { cardColumnOptions } from '../card-scale.ts'
 import { searchCards } from '../card-search.ts'
+import {
+  CARD_JUMP_TARGETS,
+  CARD_TOP_ID,
+  scrollBehaviorFor,
+  type CardSectionId,
+} from '../card-sections.ts'
 import { inventoryFor, useCardInventoryState } from '../card-inventory.ts'
 import {
   activeOwnerFilter,
@@ -669,6 +675,101 @@ function CardHolders({
   )
 }
 
+/* ---------- jumping about the page ---------- */
+
+/**
+ * Scrolls one of the page's sections into view and puts the caret on it.
+ *
+ * **The focus move is not optional.** Scrolling alone leaves a keyboard user's caret
+ * wherever it was — at the top of the page for a jump chip, at the bottom for a
+ * back-to-top arrow — so the thing they pressed is now somewhere they have to tab the
+ * whole document to reach. That is the trap `HelpView` records; the headings carry
+ * `tabIndex={-1}` for no other reason than to let this succeed.
+ *
+ * `preventScroll`, because the browser's own focus scroll would race the one above and
+ * land somewhere else. Same pairing, same reason, as `HelpView`.
+ *
+ * A missing element is a return, not a throw. It cannot happen while `card-sections.ts`
+ * and the headings agree — which is what its tests are for — but this runs inside a
+ * click handler on a page with no error boundary above it, and "the arrow did nothing"
+ * is a far better failure than a blank page.
+ */
+function jumpToSection(id: CardSectionId): void {
+  const target = document.getElementById(id)
+  if (target === null) return
+
+  /* Read at press time rather than subscribed to: it is one decision per click, so
+     there is no state to keep in step and no listener to unsubscribe. */
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  target.scrollIntoView({ block: 'start', behavior: scrollBehaviorFor(still) })
+  target.focus({ preventScroll: true })
+}
+
+/**
+ * The jump row, under the controls.
+ *
+ * Buttons rather than `href="#cards-leaderboard"`: the hash is the router, and a bare
+ * fragment parses as an unknown route, unmounts this page to render home, *and* gets
+ * remembered as the last route. The whole argument is in `card-sections.ts`.
+ *
+ * `.recents` and `.chip` rather than a new class, because that pair is already the
+ * app's row-of-small-controls and `.chip` is already worn by buttons as well as links
+ * (the saved-clans row, the trade tracker). A row this small does not earn a third
+ * styling mechanism, and the chip's 44px touch target on a phone comes free with it.
+ */
+function SectionJumpRow() {
+  return (
+    <nav className="recents card-jump" aria-label="Jump to a section">
+      {CARD_JUMP_TARGETS.map((target) => (
+        <button
+          key={target.id}
+          type="button"
+          /* Always rendered; `.card-jump__wide` is what takes the fourth one out of the
+             row — and out of the accessibility tree with it — below the width where
+             four would wrap. Rendering conditionally instead would mean this component
+             tracking the viewport, which is a `matchMedia` subscription and a re-render
+             to do what one line of CSS already does. */
+          className={target.hideWhereCramped ? 'chip card-jump__wide' : 'chip'}
+          onClick={() => jumpToSection(target.id)}
+        >
+          {target.label}
+        </button>
+      ))}
+    </nav>
+  )
+}
+
+/**
+ * The up arrow in the corner of a section heading.
+ *
+ * Named the way `HelpLink` is — the glyph `aria-hidden`, the words in a
+ * `.visually-hidden` span, and the same string on `title` — rather than by an
+ * `aria-label` on the button. An `aria-label` over a text node leaves the glyph in the
+ * accessibility tree on some combinations, and `↑` is not a word.
+ *
+ * The name says what it is leaving, not just where it goes: four of these on one page
+ * all reading "Back to top" is four identical controls in a screen reader's list, and
+ * the section is the only thing that tells them apart. It comes from
+ * `card-sections.ts` in sentence case and never from the heading beside it — those are
+ * `text-transform: uppercase`, and Chrome computes the accessible name after the
+ * transform, which is how the leaderboard table ended up named `COLLECTION
+ * LEADERBOARD`.
+ */
+function BackToTop({ from }: { from: string }) {
+  const name = `Back to top, from ${from}`
+  return (
+    <button
+      type="button"
+      className="icon-button section-title__top"
+      onClick={() => jumpToSection(CARD_TOP_ID)}
+      title={name}
+    >
+      <span aria-hidden="true">↑</span>
+      <span className="visually-hidden">{name}</span>
+    </button>
+  )
+}
+
 /**
  * The totals grid and, once a tile is pressed, the table of who holds that card.
  *
@@ -846,7 +947,11 @@ export function CardsView({ user }: { user: SessionUser }) {
     <>
       <section className="card" ref={rowRef}>
         <div className="card-header">
-          <h2 className="section-title" style={{ margin: 0 }}>
+          {/* The anchor every back-to-top arrow returns to, and the only heading here
+              that gets an id without an arrow of its own — there is nothing above it.
+              `tabIndex={-1}` so `jumpToSection` can move the caret here; it stays out
+              of the tab order, which `-1` is exactly what means. */}
+          <h2 className="section-title" style={{ margin: 0 }} id={CARD_TOP_ID} tabIndex={-1}>
             Clash of Cards
           </h2>
           <div className="card-header__tools">
@@ -955,6 +1060,22 @@ export function CardsView({ user }: { user: SessionUser }) {
           </div>
         </div>
 
+        {/*
+         * Below the controls rather than among them: those choose what this panel
+         * shows, these leave it entirely, and a Leaderboard button between `Base` and
+         * `Find` would read as a third filter. It reads as a second line of the
+         * header's tools all the same — right-aligned to the same edge — which is
+         * `.card-jump`'s doing and is explained there, including why it is a sibling of
+         * `.card-header` rather than a child of `.card-header__tools`.
+         *
+         * Drawn unconditionally, unlike the controls above, which are all inside
+         * `tags.length > 0`. The three panels it points at are group-wide and are
+         * rendered whatever this account owns — the row would be at its most useful
+         * to somebody with no bases of their own, who has nothing to type into the
+         * grid and is only here to read.
+         */}
+        <SectionJumpRow />
+
         {/* Said out loud, because a grid with 57 tiles missing looks like a fault until
             something explains it. Below the row rather than in it: it is a result, not a
             control, and it appears and disappears as you type. */}
@@ -1015,8 +1136,9 @@ export function CardsView({ user }: { user: SessionUser }) {
           suggestions are made of, and this is the only panel on the page that asks
           you to do something. */}
       <section className="card">
-        <h2 className="section-title">
+        <h2 className="section-title section-title--jump" id="cards-suggestions" tabIndex={-1}>
           Trade suggestions <HelpLink section="trades" topic="what makes a swap legal" />
+          <BackToTop from="Trade suggestions" />
         </h2>
         <TradeSuggestions bases={bases} labelOf={labelOf} ownerOf={ownerOf} user={user} />
       </section>
@@ -1030,16 +1152,18 @@ export function CardsView({ user }: { user: SessionUser }) {
        * of arithmetic.
        */}
       <section className="card">
-        <h2 className="section-title">
+        <h2 className="section-title section-title--jump" id="cards-tracker" tabIndex={-1}>
           Trade tracker{' '}
           <HelpLink section="tracker" topic="who can complete a trade, and what it does" />
+          <BackToTop from="Trade tracker" />
         </h2>
         <TradeTracker user={user} labelOf={labelOf} />
       </section>
 
       <section className="card">
-        <h2 className="section-title">
+        <h2 className="section-title section-title--jump" id="cards-leaderboard" tabIndex={-1}>
           Collection leaderboard <HelpLink section="leaderboard" topic="how the leaderboard scores" />
+          <BackToTop from="Collection leaderboard" />
         </h2>
         {/*
          * This line said "by distinct cards out of 60. Level on that, more copies goes
@@ -1079,7 +1203,16 @@ export function CardsView({ user }: { user: SessionUser }) {
        * grid's above, so opening it adds no requests, only the drawing.
        */}
       <section className="card">
-        <h2 className="section-title">Cards across the clan</h2>
+        {/* An arrow but no chip in the row above. It is the bottom of the page, so it
+            is the worst place to strand somebody and the best claim on an arrow — and
+            it was the fourth chip that took that row from one line to two at 390px.
+            The only one of the four whose heading carries no `HelpLink`, so the arrow
+            is its sole flex item after the text and `margin-left: auto` is doing all
+            the work. */}
+        <h2 className="section-title section-title--jump" id="cards-totals" tabIndex={-1}>
+          Cards across the clan
+          <BackToTop from="Cards across the clan" />
+        </h2>
         <details className="group">
           <summary>
             All {totals.length} cards, in grid order

@@ -77,6 +77,16 @@ can.
   grep finds only the first. That one caught a reader on 2026-08-04 who had written this very
   bullet hours earlier.
 
+  **Knowing about the later declaration is not enough — position decides the cascade.** A new
+  `@media (max-width: 480px) { .card-jump__wide { display: none } }` placed beside the rule it
+  modifies did nothing at all, because `.chip` is declared again ~2,500 lines below it inside
+  `@media (max-width: 900px), (pointer: coarse)` with `display: inline-flex`. Equal specificity,
+  later wins. The media query matched, the rule was in the stylesheet, the element had the class,
+  and the computed style still came back `flex` — there is no symptom to grep for. This was found by
+  measuring in a browser, not by reading. **In this file, write a rule that must win as a compound
+  selector** (`.card-jump .card-jump__wide`) so it outranks the recurrences rather than racing them;
+  placing it late works today and breaks the next time somebody appends a block.
+
   No line numbers here on purpose. The first draft of this bullet cited them, and they were stale
   within the hour — a commit landing earlier in the file moved both. A warning about a churning
   file must not be pinned to positions in it; name the selector, which is stable.
@@ -95,7 +105,7 @@ cost anything. Add to this list when a file misleads you, and say what it did.
 
 ## Testing
 
-`npm test` runs all three workspaces — 1,199 tests (21 shared, 338 server, 840 web), `node:test`,
+`npm test` runs all three workspaces — 1,222 tests (21 shared, 338 server, 863 web), `node:test`,
 no framework. Tests sit adjacent
 to their module. Run the whole suite, not a workspace.
 
