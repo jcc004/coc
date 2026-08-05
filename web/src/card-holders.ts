@@ -88,3 +88,54 @@ export function cardHolders(
 
   return rows
 }
+
+/** How many bases have an answer for this card, and how many of those answers is "none". */
+export interface CardDemand {
+  /**
+   * Bases that have reported at all this season — every entry in the inventory.
+   *
+   * Membership of that array *is* the definition: the server returns a base if it has
+   * count rows **or** a stamp (`groupByBase`, `server/src/cards/store.ts`), so a base
+   * saved and then cleared to nothing is still reporting and a base nobody has ever
+   * entered is simply not here. That is the same distinction `BaseStanding.recorded`
+   * draws, and re-deriving it per base would be a no-op on this input.
+   *
+   * Deliberately **not** the tracked bases. `useBaseLabels` unions the owner
+   * assignments in, and a base nobody has entered has not told us it lacks the card —
+   * counting it as needing one would invent a demand from an absence of data.
+   */
+  reporting: number
+  /**
+   * Of those, the ones holding no copy of this card.
+   *
+   * Counted through `countMap`, not by looking for a row that says zero: **counts are
+   * sparse**, a count of 0 deletes the row, and a base that reported and holds none of
+   * this card therefore has no row for it at all. A scan looking for `count === 0`
+   * would find nothing and report that nobody needs anything.
+   */
+  needing: number
+}
+
+/**
+ * How many reporting bases still want `cardId` — the line's third statistic.
+ *
+ * The panel already says who holds it and who could spare one; both are answers to
+ * "can I get one". This is the other side, "who am I competing with", and it is the
+ * one number on the line that a scan of the table below cannot recover, because the
+ * bases it counts are precisely the ones with no row in that table.
+ *
+ * Scans rather than returning `reporting - cardHolders().length`. The subtraction
+ * would be true by construction and so could never disagree with the rows; going
+ * through `countMap` on the same terms `cardHolders` does is what makes the agreement
+ * a fact the tests can check instead of an identity they restate. A zero, a negative
+ * and an id the generated list has never heard of are absences in both.
+ */
+export function cardDemand(inventory: readonly BaseInventory[], cardId: number): CardDemand {
+  let needing = 0
+
+  for (const base of inventory) {
+    if (!countMap(base).has(cardId)) needing += 1
+  }
+
+  return { reporting: inventory.length, needing }
+}

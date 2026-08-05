@@ -478,7 +478,49 @@ describe('who holds a card', () => {
     assert.match(first?.textContent ?? '', /Can spare one/)
     assert.match(second?.textContent ?? '', /Alda/)
     assert.match(second?.textContent ?? '', /Its only copy/)
-    assert.ok(screen.getByText('2 bases hold it · 1 with a spare to trade'))
+    assert.ok(
+      screen.getByText('2 bases hold it · 1 with a spare to trade · 0 of 2 reporting bases need it'),
+    )
+  })
+
+  it('counts the reporting bases with no copy, which have no row in the table at all', async () => {
+    /*
+     * The one number on that line a reader cannot recover by scanning the table, and
+     * the one the storage shape makes easy to get wrong. Counts are sparse — a count
+     * of 0 deletes the row — so a base that reported and holds no Barbarian has no
+     * Barbarian row anywhere, and looking for a stored zero would find nobody needing
+     * anything. Four bases here have reported and two of them are in that state:
+     *
+     *   #BBB reported an Archer and no Barbarian.
+     *   #DDD was saved and then cleared to nothing, so it keeps a stamp and no counts.
+     *
+     * #EEE is the control. It is a tracked base — the owner assignments carry it — but
+     * nobody has ever entered it, so it has not told us it lacks the card and it must
+     * be in neither figure. If it leaked in, the denominator would read 5.
+     */
+    const stamped = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+    const user = await cards(
+      [...OWNERS, { tag: '#EEE', owner: 'Eli', ownerUserId: 3 }],
+      [
+        inventory('#AAA', [{ cardId: 1, count: 3 }]),
+        inventory('#BBB', [{ cardId: 2, count: 1 }]),
+        inventory('#CCC', [{ cardId: 1, count: 1 }]),
+        inventory('#DDD', [], stamped),
+      ],
+    )
+    await openTotals(user)
+
+    await user.click(tile('Barbarian, Elixir — 4 held across the clan'))
+
+    assert.ok(
+      await screen.findByText(
+        '2 bases hold it · 1 with a spare to trade · 2 of 4 reporting bases need it',
+      ),
+    )
+    // And the two it counts really are absent from the table below it.
+    const table = await screen.findByRole('table', { name: 'Bases holding Barbarian' })
+    assert.equal(within(table).getAllByRole('row').length - 1, 2)
+    assert.equal(within(table).queryByText('Brix'), null)
   })
 
   it('puts the table away when the same tile is pressed again', async () => {

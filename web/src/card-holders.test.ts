@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { MIN_TRADEABLE_COUNT, type BaseInventory } from '@coc/shared'
-import { cardHolders } from './card-holders.ts'
+import { cardDemand, cardHolders } from './card-holders.ts'
 import { cardTotals } from './card-standings.ts'
 import { cardById } from './cards.ts'
 
@@ -144,5 +144,64 @@ describe('cardHolders', () => {
       inventory.map((entry) => entry.tag),
       ['#BBB', '#AAA'],
     )
+  })
+})
+
+describe('cardDemand', () => {
+  it('counts a reporting base with no row for the card as needing it', () => {
+    /* The whole point, and the thing sparse storage makes easy to get wrong: `#BBB`
+       reported, holds no Barbarian, and therefore has no Barbarian row at all. An
+       implementation looking for a row whose count is 0 finds none and answers
+       "nobody needs one", which is both wrong and the reading a screenshot agrees
+       with. */
+    const demand = cardDemand(
+      [base('#AAA', [[BARBARIAN, 2]]), base('#BBB', [[ARCHER, 1]])],
+      BARBARIAN,
+    )
+
+    assert.deepEqual(demand, { reporting: 2, needing: 1 })
+  })
+
+  it('counts a base saved and then cleared to nothing as reporting, and needing every card', () => {
+    /* An emptied base keeps its stamp and comes back from the server with no counts —
+       see `empties a base to zero cards but keeps its stamp` in the server suite. It
+       has told us it holds nothing, which is an answer, so it reports and it needs. */
+    const emptied: BaseInventory = { tag: '#CCC', counts: [], updatedAt: '2026-08-04T10:00:00Z' }
+
+    assert.deepEqual(cardDemand([base('#AAA', [[BARBARIAN, 1]]), emptied], BARBARIAN), {
+      reporting: 2,
+      needing: 1,
+    })
+    assert.deepEqual(cardDemand([emptied], ARCHER), { reporting: 1, needing: 1 })
+  })
+
+  it('treats a stored zero and an unknown id as needing it, exactly as the grid does', () => {
+    const demand = cardDemand(
+      [base('#AAA', [[BARBARIAN, 0]]), base('#BBB', [[9999, 4]])],
+      BARBARIAN,
+    )
+
+    assert.deepEqual(demand, { reporting: 2, needing: 2 })
+  })
+
+  it('adds up: the bases holding it plus the ones needing it are every reporting base', () => {
+    /* The line prints all three numbers side by side, so a reader will do this sum.
+       Asserted rather than guaranteed by subtraction — `cardDemand` scans, so the two
+       can drift and this is what would catch it. */
+    const inventory = [
+      base('#AAA', [[BARBARIAN, 3]]),
+      base('#BBB', [[ARCHER, 2]]),
+      base('#CCC', [[BARBARIAN, 1]]),
+      base('#ZZZ', []),
+    ]
+
+    const { reporting, needing } = cardDemand(inventory, BARBARIAN)
+
+    assert.equal(cardHolders(inventory, BARBARIAN, labelOf).length + needing, reporting)
+  })
+
+  it('counts an empty inventory as nobody reporting, not as everybody needing it', () => {
+    // What the panel is handed on the render before the store has loaded.
+    assert.deepEqual(cardDemand([], BARBARIAN), { reporting: 0, needing: 0 })
   })
 })

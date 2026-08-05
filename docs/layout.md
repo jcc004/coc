@@ -38,8 +38,9 @@ component: `saved-table.ts` (sorting, paging), `base-names.ts` (how a base is wr
 waiting"), `deck-progress.ts` (those counts as the four progress plaques),
 `card-standings.ts` (the leaderboard's order, its Owner filter and its how-stale column — the
 filter runs *after* the ranking, so a narrowed board keeps each base's place on the whole one —
-and the group's total of each card in the grid's fixed order), `card-holders.ts` (which bases hold one card and which can spare a copy — the table
-the clan-totals grid opens when you choose a tile), `roster-state.ts` (the clan roster's
+and the group's total of each card in the grid's fixed order), `card-holders.ts` (which bases hold one card, which can spare a copy, and how many of the bases
+that have reported at all still need it — the table the clan-totals grid opens when you choose a
+tile, and the line above it), `roster-state.ts` (the clan roster's
 selection, filters, sort, paging and bulk-apply, as one reducer with named transitions rather
 than thirteen `useState`s), `base-scope.ts` (the card page's Mine/All filter — what "mine" means,
 which way to default, and where the selection goes when the filter drops it), `last-route.ts`

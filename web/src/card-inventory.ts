@@ -12,9 +12,18 @@ import { createServerStore, type StoreSnapshot } from './server-store.ts'
  * something another person can alter*, so `status` and `error` are part of it and
  * a failed write rethrows rather than being swallowed.
  *
- * Only bases with at least one card recorded come back from the server. A base
- * that has never been entered is simply absent, which `inventoryFor` reports as
- * `undefined` and the grid renders as sixty zeroes.
+ * **What comes back is every base anyone has saved this season** — including one
+ * whose counts are now all zero, which keeps its stamp and so arrives with an
+ * empty `counts` (`groupByBase`, `server/src/cards/store.ts`: a base appears if it
+ * has count rows *or* a stamp). A base that has never been entered is the only one
+ * absent, which `inventoryFor` reports as `undefined` and the grid renders as sixty
+ * zeroes.
+ *
+ * This said "only bases with at least one card recorded" until 2026-08-04, which was
+ * wrong in the direction that matters: it denies the existence of the
+ * checked-and-holds-nothing base, and it is the comment somebody reads to find out
+ * what this array *is*. `card-holders.ts`' demand count is a count of exactly these
+ * entries, so the distinction is now load-bearing on screen.
  */
 
 const store = createServerStore<BaseInventory>(async () => (await api.cardInventory()).bases)

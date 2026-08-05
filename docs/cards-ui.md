@@ -449,7 +449,7 @@ Pressing a tile opens a table **under the grid**, headed by the card's name and 
 
 ```
 [art] Barbarian   Elixir · 6 held across the clan
-2 bases hold it · 1 with a spare to trade
+2 bases hold it · 1 with a spare to trade · 3 of 5 reporting bases need it
 
 Member          Copies   Spare
 Brix  #BBB           5   Can spare one
@@ -481,8 +481,46 @@ roster names sorts under its `#` exactly as it does there.
 (`MIN_TRADEABLE_COUNT`, the same constant the trade suggestions and the server apply), so one copy is
 a holding you cannot ask for and two is an offer — spelled out per row as `Can spare one` /
 `Its only copy` rather than left as a comparison to make once per row. The line above the table counts
-both: `2 bases hold it · 1 with a spare to trade`, so "several bases hold it and none of them can
-help you" does not need a scan of the column to notice.
+both: `2 bases hold it · 1 with a spare to trade · 3 of 5 reporting bases need it`, so "several bases
+hold it and none of them can help you" does not need a scan of the column to notice.
+
+**The third statistic is the one the table cannot be scanned for**, because the bases it counts are
+precisely the ones with no row in it. The first two answer "can I get one"; this is "who am I
+competing with", and on a card three of five bases still want it means something different from
+three of thirty. It is `cardDemand()` in `web/src/card-holders.ts`, beside `cardHolders()` and
+tested in the same file.
+
+Two definitions are doing work in that clause, and both have a wrong answer that looks right:
+
+- **"Reporting" is every base in `state.entries`**, which is every base anyone has *saved* this
+  season. Membership of that array is the definition — the server returns a base if it has count
+  rows **or** a stamp, so a base saved and then cleared back to zero is reporting and arrives with
+  an empty `counts`. That is the same distinction `BaseStanding.recorded` draws for the
+  leaderboard's `Never` column. It is deliberately **not** the *tracked* bases: `useBaseLabels()`
+  unions the owner assignments in, and a base nobody has ever entered has not told us it lacks the
+  card, so counting it as needing one would invent a demand out of missing data. A test pins that
+  by putting an owner-assigned base with no inventory row in the fixture and checking the
+  denominator does not move.
+- **"Needs it" is an absent row, never a stored zero.** Counts are sparse and a count of 0 deletes
+  the row, so a base that reported and holds none of this card has no row for it anywhere. An
+  implementation looking for `count === 0` finds nothing and reports that nobody needs anything —
+  which is why the count goes through `countMap` like everything else on this panel, and why the
+  test for it uses a base whose only rows are for *other* cards plus one cleared to nothing.
+
+The three numbers add up — the bases holding it plus the ones needing it are every reporting base —
+and that is asserted rather than guaranteed, because `cardDemand()` scans instead of subtracting the
+holder count. Subtraction would make the sum an identity that could never catch the two drifting
+apart.
+
+The zero stays numeric here (`0 of 2 reporting bases need it`) where the spares clause turns into
+words (`none with a spare to trade`). The denominator is most of what the clause is for, and the
+spares clause has no denominator to lose.
+
+**A card nobody holds shows none of this line.** The whole line is replaced by the sentence below,
+so the statistic is absent for the 38 of sixty in that state — the cards it would arguably say the
+most about. That is a known gap and a deliberate one for now: the empty-state paragraph is its own
+decision, made below, and folding a fraction into it is a change to that sentence rather than to
+this one.
 
 **The member is a link to that player's page**, with the tag as secondary text under the name, and
 the name is `labelOf` from `useBaseLabels()` — the same resolver the picker, the leaderboard and the

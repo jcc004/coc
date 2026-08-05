@@ -1956,8 +1956,11 @@ details.group > .group__body {
   font-weight: 600;
 }
 
-/* Counts the rows and says how many of them can actually give one away — the
-   actionable half, which the Spare column below only yields to a scan. */
+/* Counts the rows, says how many of them can actually give one away — the actionable
+   half, which the Spare column below only yields to a scan — and then how many
+   reporting bases still need the card, which has no row in the table at all.
+   Three clauses wrap to two lines at 390px and stay on one at 1280px; measured in
+   Chrome at both, with a 60-base clan and two-digit figures as the widest case. */
 .card-holders__note {
   margin: 0 0 10px;
   font-size: 12px;

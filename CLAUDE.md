@@ -95,7 +95,8 @@ cost anything. Add to this list when a file misleads you, and say what it did.
 
 ## Testing
 
-`npm test` runs all three workspaces — 1,164 tests, `node:test`, no framework. Tests sit adjacent
+`npm test` runs all three workspaces — 1,199 tests (21 shared, 338 server, 840 web), `node:test`,
+no framework. Tests sit adjacent
 to their module. Run the whole suite, not a workspace.
 
 Run it on the pinned Node. A non-interactive shell does not fire the `fnm --use-on-cd` hook and

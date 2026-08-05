@@ -3,7 +3,7 @@ import { MAX_CARD_COUNT, type BaseInventory, type SessionUser } from '@coc/share
 import { useBaseLabels } from '../base-labels.ts'
 import { activeTag, ownsAnyBase, tagsInScope, type BaseScope } from '../base-scope.ts'
 import { baseOwnerOf } from '../card-entry.ts'
-import { cardHolders, type CardHolder } from '../card-holders.ts'
+import { cardDemand, cardHolders, type CardDemand, type CardHolder } from '../card-holders.ts'
 import { cardColumnOptions } from '../card-scale.ts'
 import { searchCards } from '../card-search.ts'
 import { inventoryFor, useCardInventoryState } from '../card-inventory.ts'
@@ -510,11 +510,31 @@ function CardTotalsGrid({
  * It counts the spares as well as the rows because that is the actionable half and the
  * Spare column below only yields it to a scan: four bases each sitting on their only
  * copy is four bases you cannot ask, which is worth knowing before reading the table.
+ *
+ * The third clause is the one the table cannot be scanned for *at all*, because the
+ * bases it counts are precisely the ones with no row in it: how many of the bases that
+ * have reported still want this card. It is the "who am I competing with" half of the
+ * same question the other two answer, and `cardDemand` has the rules — in particular
+ * that a base nobody has ever entered is in neither the numerator nor the denominator,
+ * since it has not told us it lacks the card.
+ *
+ * `of ${reporting}` rather than a bare count: three needing it out of four bases and
+ * three out of thirty are different situations. That is also why the zero stays
+ * numeric here where the spares clause turns into words — `0 of 2 reporting bases need
+ * it` keeps the denominator, and the denominator is most of what the clause is for.
  */
-function holdersLine(holders: readonly CardHolder[]): string {
+function holdersLine(holders: readonly CardHolder[], demand: CardDemand): string {
   const bases = holders.length === 1 ? '1 base holds it' : `${holders.length} bases hold it`
   const sparing = holders.filter((holder) => holder.canSpare).length
-  return `${bases} · ${sparing === 0 ? 'none with a spare to trade' : `${sparing} with a spare to trade`}`
+  const spares = sparing === 0 ? 'none with a spare to trade' : `${sparing} with a spare to trade`
+  /* "1 of 3 reporting bases needs it" — the subject is the one base, not the three, so
+     the verb agrees with the numerator and the noun with the denominator. */
+  const { needing, reporting } = demand
+  const plural = reporting === 1 ? '' : 's'
+  const verb = needing === 1 ? 'needs' : 'need'
+  const wanting = `${needing} of ${reporting} reporting base${plural} ${verb} it`
+
+  return `${bases} · ${spares} · ${wanting}`
 }
 
 /**
@@ -549,12 +569,17 @@ function CardHolders({
   labelOf,
 }: {
   entry: CardTotal
-  /** Every tracked base, as `state.entries` — group-wide, like the grid above it. */
+  /**
+   * Every base that has reported, as `state.entries` — group-wide, like the grid above
+   * it. Not every base *tracked*: the owner assignments carry bases nobody has entered
+   * yet, and those are not in here. Both numbers on the line below depend on that.
+   */
   bases: readonly BaseInventory[]
   labelOf: (tag: string) => string
 }) {
   const { card } = entry
   const holders = useMemo(() => cardHolders(bases, card.id, labelOf), [bases, card.id, labelOf])
+  const demand = useMemo(() => cardDemand(bases, card.id), [bases, card.id])
 
   return (
     <div className="card-holders" id={HOLDERS_ID}>
@@ -577,7 +602,7 @@ function CardHolders({
         </p>
       ) : (
         <>
-          <p className="card-holders__note">{holdersLine(holders)}</p>
+          <p className="card-holders__note">{holdersLine(holders, demand)}</p>
           <div className="table-wrap">
             {/*
              * Stacks into one labeled card per base on a phone, like every other table
