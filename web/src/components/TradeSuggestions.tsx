@@ -25,7 +25,7 @@ import {
   tradeFilterSummary,
 } from '../trade-filters.ts'
 import { findPendingSwap, sidesOfTrade, tradeProposeAccess } from '../trade-tracker.ts'
-import { proposeTrade, useTrades } from '../trades.ts'
+import { completeTrade, proposeTrade, useTrades } from '../trades.ts'
 import { SwapRules } from './help-copy.tsx'
 import { GameIcon, Pager, RowLimitSelect } from './primitives.tsx'
 
@@ -137,6 +137,70 @@ function ProposeButton({
         title="Adds it to the trade tracker below — no cards move until it is completed"
       >
         {state === 'sending' ? 'Proposing…' : 'Propose'}
+      </button>
+      {problem ? <p className="notice__hint">{problem}</p> : null}
+    </>
+  )
+}
+
+/**
+ * The admin fast path: propose and complete a suggestion in one click, instead of a
+ * trip to the tracker below to approve what was just proposed.
+ *
+ * Reuses `proposeTrade` as-is, including its already-proposed handling — a duplicate
+ * 409 comes back as the existing pending row rather than an error — so the same click
+ * handler works whether or not this exact swap is already on the tracker: propose (or
+ * recover the existing one), then complete it. No separate authorization check is
+ * needed here because an admin already clears `tradeProposeAccess` and
+ * `tradeResolveAccess` unconditionally.
+ *
+ * Renders nothing for anybody else: this is a shortcut past the tracker's own
+ * confirmation and audit trail, not a second way for a member to act on somebody
+ * else's swap.
+ */
+function CompleteNowButton({
+  trade,
+  user,
+}: {
+  trade: TradeSuggestion
+  user: Pick<SessionUser, 'id' | 'role'>
+}) {
+  const [state, setState] = useState<'idle' | 'sending'>('idle')
+  const [problem, setProblem] = useState<string | null>(null)
+
+  if (user.role !== 'admin') return null
+
+  return (
+    <>
+      <button
+        type="button"
+        className="chip"
+        disabled={state === 'sending'}
+        onClick={() => {
+          const question =
+            'Complete this trade now? It records the swap and moves the cards on both ' +
+            'bases immediately — nothing to approve afterwards.'
+          if (!window.confirm(question)) return
+
+          setState('sending')
+          setProblem(null)
+          proposeTrade({
+            baseA: trade.baseA,
+            baseB: trade.baseB,
+            cardFromA: trade.cardFromA,
+            cardFromB: trade.cardFromB,
+            category: trade.category,
+          })
+            .then((proposed) => completeTrade(proposed.id))
+            .then(() => setState('idle'))
+            .catch((cause: unknown) => {
+              setProblem(cause instanceof ApiError ? cause.message : 'Could not reach the server.')
+              setState('idle')
+            })
+        }}
+        title="Proposes and completes it in one step — both bases change immediately"
+      >
+        {state === 'sending' ? 'Completing…' : 'Complete'}
       </button>
       {problem ? <p className="notice__hint">{problem}</p> : null}
     </>
@@ -280,15 +344,30 @@ export function TradeSuggestions({
    */
   const [firstOwner, setFirstOwner] = useState<string | null>(null)
   const [secondOwner, setSecondOwner] = useState<string | null>(null)
+  /*
+   * `suggestTrades` only rules out a base trading with itself, not an owner's two
+   * bases trading with each other — that pair is a real, if narrow, result (see
+   * `filterPairsByOwners` in `trade-filters.ts`). This is the general form of "only
+   * show trades with other people": it works whether or not an owner is picked, so
+   * it stays a checkbox rather than a value on the second select, which could only
+   * ever mean "other than the first" once a first owner already narrowed the list.
+   */
+  const [otherOnly, setOtherOnly] = useState(false)
 
   /* Offered from the unfiltered pairs, so choosing one owner never empties the other
      picker of the very options you would want next. */
   const ownerChoices = useMemo(() => ownersInPairs(pairs, ownerOf), [pairs, ownerOf])
   const shown = useMemo(
-    () => filterPairsByOwners(pairs, ownerOf, firstOwner, secondOwner),
-    [pairs, ownerOf, firstOwner, secondOwner],
+    () => filterPairsByOwners(pairs, ownerOf, firstOwner, secondOwner, otherOnly),
+    [pairs, ownerOf, firstOwner, secondOwner, otherOnly],
   )
-  const filterNote = tradeFilterSummary(shown.length, pairs.length, firstOwner, secondOwner)
+  const filterNote = tradeFilterSummary(
+    shown.length,
+    pairs.length,
+    firstOwner,
+    secondOwner,
+    otherOnly,
+  )
 
   const [limit, setLimit] = useRowLimit('coc:tradePairLimit', 5)
   const [page, setPage] = useState(1)
@@ -353,7 +432,7 @@ export function TradeSuggestions({
                 setPage(1)
               }}
             >
-              <option value="">anyone</option>
+              <option value="">Anyone</option>
               {ownerChoices.map((owner) => (
                 <option key={owner} value={owner}>
                   {owner === UNOWNED ? UNOWNED_LABEL : owner}
@@ -362,13 +441,35 @@ export function TradeSuggestions({
             </select>
           </label>
 
-          {firstOwner !== null || secondOwner !== null ? (
+          {/* Excludes an owner's own bases trading with each other — a real result
+              `suggestTrades` allows, since it only rules out a base trading with
+              itself, not an owner's second base. Standalone rather than a value on
+              the second select, so it also narrows the plain unfiltered list. */}
+          <label
+            htmlFor="trade-other-only"
+            className="roster-filters__check"
+            title="Hides pairs where one member's own two bases would trade with each other"
+          >
+            <input
+              id="trade-other-only"
+              type="checkbox"
+              checked={otherOnly}
+              onChange={(event) => {
+                setOtherOnly(event.target.checked)
+                setPage(1)
+              }}
+            />
+            Other only
+          </label>
+
+          {firstOwner !== null || secondOwner !== null || otherOnly ? (
             <button
               type="button"
               className="icon-button"
               onClick={() => {
                 setFirstOwner(null)
                 setSecondOwner(null)
+                setOtherOnly(false)
                 setPage(1)
               }}
             >
@@ -551,7 +652,8 @@ function SuggestionTable({
                       user={user}
                       owners={owners}
                       tracked={tracked}
-                    />
+                    />{' '}
+                    <CompleteNowButton trade={trade} user={user} />
                   </td>
                 </tr>
               )),

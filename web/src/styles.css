@@ -799,7 +799,30 @@ select {
   font-size: 12px;
   color: var(--ink-muted);
 }
-.roster-filters input,
+/* A checkbox reads left-to-right beside its own label text, not stacked above it
+   like a select's label — the column layout above is for "label over control".
+   Sized and colored to match the selects beside it rather than the small muted
+   caption text above them, which is what a select's own label is and this is not:
+   there is no separate caption over this control, so the label doubles as both.
+   No `align-self` override: `.roster-filters` already bottom-aligns every child,
+   which for the select labels means the *select itself*, since the caption sits
+   above it. Centering this one within the row's full height — caption to
+   select-bottom — put it floating between the two, level with neither. Left to
+   inherit flex-end, its bottom edge lands on the same line as the selects'. */
+.roster-filters > label.roster-filters__check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.roster-filters__check input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.roster-filters input:not([type='checkbox']),
 .roster-filters select {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -808,7 +831,7 @@ select {
   font-size: 13px;
   color: var(--ink);
 }
-.roster-filters input {
+.roster-filters input:not([type='checkbox']) {
   min-width: 140px;
 }
 /* Row count and pager share a bar under the table: both answer "what am I
@@ -3567,7 +3590,7 @@ table.roster--pairs td {
     flex: 1 1 40%;
     min-width: 0;
   }
-  .roster-filters input,
+  .roster-filters input:not([type='checkbox']),
   .roster-filters select {
     min-width: 0;
     width: 100%;

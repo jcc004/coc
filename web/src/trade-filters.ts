@@ -62,18 +62,27 @@ export function ownersInPairs(
  * Order between the selections never matters. Each is **consumed** against one side, so
  * picking the same owner twice needs two sides owned by that person rather than being
  * satisfied twice over by one of them.
+ *
+ * `otherOnly` drops any pair where both sides belong to the same owner — a real result,
+ * since `suggestTrades` only rules out the same *base* trading with itself, not the same
+ * *owner*'s two bases. {@link UNOWNED} is exempted from the comparison: two bases with no
+ * owner set are not thereby the same person, and treating the sentinel as one would hide
+ * every unowned pair the moment the checkbox is on.
  */
 export function filterPairsByOwners(
   pairs: readonly TradePair[],
   ownerOf: (tag: string) => string | undefined,
   first: string | null,
   second: string | null,
+  otherOnly: boolean,
 ): TradePair[] {
   const wanted = [first, second].filter((owner): owner is string => owner !== null)
-  if (wanted.length === 0) return [...pairs]
 
   return pairs.filter((pair) => {
     const sides = [ownerKey(pair.baseA, ownerOf), ownerKey(pair.baseB, ownerOf)]
+    if (otherOnly && sides[0] === sides[1] && sides[0] !== UNOWNED) return false
+    if (wanted.length === 0) return true
+
     return wanted.every((owner) => {
       const at = sides.indexOf(owner)
       if (at === -1) return false
@@ -94,8 +103,9 @@ export function tradeFilterSummary(
   total: number,
   first: string | null,
   second: string | null,
+  otherOnly: boolean,
 ): string | null {
-  if (first === null && second === null) return null
+  if (first === null && second === null && !otherOnly) return null
   const name = (owner: string) => (owner === UNOWNED ? UNOWNED_LABEL : owner)
 
   const who =
@@ -103,8 +113,14 @@ export function tradeFilterSummary(
       ? first === second
         ? `between two bases owned by ${name(first)}`
         : `between ${name(first)} and ${name(second)}`
-      : `involving ${name(first ?? second ?? '')}`
+      : first !== null || second !== null
+        ? `involving ${name(first ?? second ?? '')}`
+        : null
 
-  if (shown === 0) return `No suggested trades ${who}.`
-  return `Showing ${shown} of ${total} pair${total === 1 ? '' : 's'}, ${who}.`
+  const clause = [who, otherOnly ? "excluding a member's own bases" : null]
+    .filter((part): part is string => part !== null)
+    .join(', ')
+
+  if (shown === 0) return `No suggested trades ${clause}.`
+  return `Showing ${shown} of ${total} pair${total === 1 ? '' : 's'}, ${clause}.`
 }
