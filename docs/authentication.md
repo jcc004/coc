@@ -244,6 +244,28 @@ schema changes) because v2 has to drop and re-create `users`.
   **partial unique index** on the four swap columns `WHERE status = 'pending'` makes a duplicate
   live proposal impossible while leaving history alone. See
   [The Trade Tracker](trade-tracker.md#the-trade-tracker).
+- **v8** — session tokens stop being stored in plaintext. `sessions.id` *was* the bearer token
+  verbatim; anyone who could read `coc.db`, one of `deploy/update.sh`'s backups, or the WAL
+  beside it held a working 30-day session for any signed-in account, no password needed. The
+  store now hashes the cookie with SHA-256 and keeps the digest instead. Existing rows are
+  **deleted, not rehashed** — rehashing in place would leave every copy already sitting in a
+  backup still valid, which is the exposure this step exists to close — so this is the one
+  migration that logs everybody out on purpose.
+- **v9** — drops `chat_messages`, created by v1 for a feature the Trade Tracker replaced and
+  read or written by nothing since. v1 is left as it was: it still creates the table for a
+  database starting from zero, because a migration that drops what was never created is the one
+  failure the version marker cannot save. Create at v1, drop at v9 — both run in one boot for a
+  fresh file.
+- **v10** — `auth_events`, the audit trail for account actions. Nothing recorded logins, failed
+  attempts, disables, role changes or temporary-password issuance before this; the questions
+  that get asked after an incident had no answer to be wrong about. Append-only as far as the
+  app is concerned (no route or store code issues an `UPDATE`/`DELETE` against it), `kind` is
+  typed in `shared/src/auth-types.ts` rather than constrained by a database `CHECK`, and both
+  user columns are `ON DELETE SET NULL` — the trail must outlive the account it describes.
+- **v11** — `base_progress`, `max_level_reference`, `wall_reference`: weekly per-base progress
+  tracking. See [Weekly progress tracking and base order](progress-tracking.md).
+- **v12** — `base_order`, the first per-user server-side preference in this app (everything
+  else — color scheme, last-viewed base, row limits — is `localStorage`-only). Same doc as v11.
 
 Backfill, per row:
 
@@ -273,10 +295,12 @@ log into.
 
 One SQLite file, `DATABASE_PATH` (default `./data/coc.db`, resolved against the server
 workspace's working directory, so `npm run dev` puts it at `server/data/coc.db` — gitignored).
-The directory is created if missing. Eight tables — `users`, `sessions`, `chat_messages`,
-`saved_clans`, `owner_assignments`, `card_inventory`, `card_base_updates`, `trades` — created and
-migrated on boot by `user_version`, currently at **v7**. Seven of the eight are live;
-`chat_messages` is kept but unused, as above.
+The directory is created if missing. Thirteen tables — `users`, `sessions`, `chat_messages`,
+`saved_clans`, `owner_assignments`, `card_inventory`, `card_base_updates`, `trades`,
+`auth_events`, `base_progress`, `max_level_reference`, `wall_reference`, `base_order` — created
+and migrated on boot by `user_version`, currently at **v12** (`SCHEMA_VERSION`,
+`server/src/db.ts`). Twelve of the thirteen are live; `chat_messages` is kept but unused, as
+above.
 
 `node:sqlite` is used rather than `better-sqlite3` because it is in the runtime from Node 22.5
 on: no native module, nothing to compile on the host, nothing to rebuild when Node is

@@ -14,8 +14,8 @@ Everything below is what is true of *this* codebase.
 ## The documentation is the documentation
 
 `README.md` indexes `docs/`, one file per topic — setup, authentication, layout, the API, the UI,
-shared data, the card event, the trade tracker, game art. It is unusually complete and it is
-current. Read the topic file before asking about an area, and do not restate it here.
+shared data, the card event, the trade tracker, game art, weekly progress tracking and base
+order. It is unusually complete and it is current. Read the topic file before asking about an area, and do not restate it here.
 
 The code comments carry the same weight. Where a comment explains why something is the way it is,
 it is usually recording an incident. Treat it as evidence, not decoration.
@@ -29,9 +29,9 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
 - **Session rows are verifiers.** `sessions.id` is `sha256(token)` — `hashToken`,
   `server/src/auth/store.ts:42`. The raw token exists only in the cookie.
 - **`/api/*` is deny-by-default.** The public allowlist is `PUBLIC_API_PATHS`,
-  `server/src/app.ts:135`. Adding to it is a security decision.
+  `server/src/app.ts:146`. Adding to it is a security decision.
 - **Migrations are append-only**, keyed on `PRAGMA user_version` — `MIGRATIONS`,
-  `server/src/db.ts:521`. `v1` creates a table `v9` drops; both must stay, because a fresh
+  `server/src/db.ts:626`. `v1` creates a table `v9` drops; both must stay, because a fresh
   database passes through both in one boot.
 - **The runtime pin lives in three files and they move together**: `.nvmrc` (22.23.2),
   `package.json` `engines` (`>=22.23.2 <23`), and `.npmrc` (`engine-strict=true`, which is what

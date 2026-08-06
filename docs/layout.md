@@ -5,7 +5,8 @@ shared/   types for the CoC API, the auth payloads and the shared data, + tag
           parsing, email normalization and CARD_SEASON
 server/   Hono API, upstream client, TTL cache, auth (src/auth/), the shared
           saved clans and owners (src/shared-data/), the card inventory
-          (src/cards/), migrations (src/db.ts)
+          (src/cards/), weekly progress tracking (src/progress/), per-account
+          base order (src/base-order/), migrations (src/db.ts)
 web/      Vite + React UI
 ```
 
@@ -20,6 +21,14 @@ live in `server/src/db.ts`.
 `server/src/cards/` is the same split again: `store.ts` is the only code touching
 `card_inventory`, `routes.ts` mounts `/api/cards/*`, and `cards.test.ts` drives both through the
 whole app.
+
+`server/src/progress/` holds weekly base-progress tracking: `store.ts` is the only code
+touching `base_progress` / `max_level_reference` / `wall_reference`, `routes.ts` mounts
+`/api/progress/*`, `capture-snapshot.ts` and `refresh-reference.ts` are the two standalone
+scripts a systemd timer runs weekly (not part of the request path — see
+[Weekly progress tracking and base order](progress-tracking.md)), and `wiki-tables.ts` is the
+pure parser the reference job depends on. `server/src/base-order/` is the smallest instance of
+the same split: `store.ts` touches `base_order` alone, `routes.ts` mounts `/api/base-order`.
 
 `createApp({ coc, cache, auth, sharedData, cards, trades })` stays dependency-injected, which is
 what lets the test suite drive the whole app over an in-memory database and a stub upstream.
@@ -54,6 +63,13 @@ the gap that stops a focus event repeating a poll — the interval and the liste
 filter and the newest-first order). `changelog.ts` is the one pure module `vite.config.ts` also
 imports, so the build that writes the list and the browser that reads it back share one format
 and one set of tests.
+
+The progress-tracking feature follows the same rule: `progress-grid.ts` (the board's row shape
+and sort), `progress-percent.ts` (percent-to-max against the wiki-scraped reference, never the
+API's own `maxLevel`), `progress-diff.ts` (the week-over-week `autoNote` text), and `base-order.ts`
+(reconciling a saved order against what's currently owned, and the one array-move operation a
+drag-and-drop reorder needs) — see
+[Weekly progress tracking and base order](progress-tracking.md).
 Components that are shown in more than one place are shared rather than copied — `BaseCardEditor`
 is the one 60-tile card grid, rendered by both the card page and a player page; `CardTile` is the
 one card tile, rendered by that grid and by the card page's clan-totals grid; `TradeSuggestions` is

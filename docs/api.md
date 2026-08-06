@@ -22,6 +22,23 @@ exception is `/api/health`, which stays open for a host's liveness probe but ans
 
 Errors come back as `{ error: { status, reason, message, hint? } }`.
 
+### Progress tracking and base order
+
+Two more route groups, neither a proxy over the upstream API — both serve data this app owns
+outright. Full detail, including who may write what and the two scheduled jobs that keep
+`/api/progress/reference` current, is in
+[Weekly progress tracking and base order](progress-tracking.md).
+
+| Route | Returns / accepts |
+|---|---|
+| `GET /api/progress` | latest week for every tracked base |
+| `GET /api/progress/:tag` | one base's full week-by-week history |
+| `GET /api/progress/reference` | the max-level and wall reference tables |
+| `PUT /api/progress/:tag/manual` | the base's owner hand-enters walls / buildings left / notes |
+| `PUT /api/admin/progress/reference/:category` | admin-only; hand-corrects the `pet` or `equipment` reference |
+| `GET /api/base-order` | the caller's own saved base order |
+| `PUT /api/base-order` | the caller's own base order, replaced (accepts a partial list) |
+
 ### Caching
 
 Successful upstream responses are cached in memory for `CACHE_TTL_SECONDS` (default 60) and

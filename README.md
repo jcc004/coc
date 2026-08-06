@@ -30,7 +30,7 @@ TLS, the systemd units — is [`deploy/README.md`](deploy/README.md).
   provide, fetching the game art before a build, and every `npm` script.
 - **[Authentication](docs/authentication.md)** — why there is a login at all, server-side
   sessions rather than JWT, scrypt, admin-mediated password recovery and why there is
-  deliberately no email reset, the account columns, the SQLite storage, all seven migrations,
+  deliberately no email reset, the account columns, the SQLite storage, all twelve migrations,
   and the environment variables.
 - **[Layout](docs/layout.md)** — which workspace holds what, and the module conventions: rules
   live in pure tested modules, three files are machine-written, components shown twice are
@@ -55,6 +55,10 @@ TLS, the systemd units — is [`deploy/README.md`](deploy/README.md).
 - **[The Trade Tracker](docs/trade-tracker.md)** — proposing a swap, who may resolve one and why
   that rule differs from card entry, the audit record, the ordering, and what completing does to
   both bases' counts.
+- **[Weekly progress tracking and base order](docs/progress-tracking.md)** — the spreadsheet this
+  feature replaces, the two writers merged into one row per base per week, the two scheduled wiki
+  and auto-capture jobs and why their order matters, the routes, and the per-account base-order
+  page that shares nothing with progress tracking but ships beside it.
 - **[Game art and the Fan Content Policy](docs/game-art.md)** — which asset comes from where, why
   `web/public/coc/` is gitignored, absent art as the normal case rather than an error, and the
   licensing conditions that became binding when this went to public hosting.
