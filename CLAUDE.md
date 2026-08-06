@@ -44,6 +44,9 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
 
 ## Local rules
 
+- **Ask before every commit whether it belongs on What's New.** `docs/ui.md` documents the
+  `No-Changelog` body-line opt-out (`skipsChangelog`, `web/src/changelog.ts`) — but which commits
+  get it is not Claude's call to make silently. Ask, per commit, before committing.
 - **Card counts are stored sparsely.** Absent means zero; a count of 0 deletes the row. Never
   store a 0. Sixty rows per base would be sixty times the writes to say almost nothing.
 - **Authorization lives in one pure function.** `mayWriteBaseCounts`,
@@ -134,3 +137,20 @@ host itself: Nginx, TLS, the systemd units.
 One trap worth knowing: the fast-forward happens *before* `npm ci`, so a failed install leaves the
 tree advanced and the service un-restarted. The next timer run then sees local equal to remote and
 reports "Already up to date" forever. Recovery is `./deploy/update.sh --force`.
+
+### This project overrides "production is hands-off by default"
+
+`claude-kit/rules/working-style.md`'s standing rule is to hand over commands for the operator to
+run rather than SSH into a live system directly. **For this project only**, that default is
+lifted: [the specific droplet address, account name and sudo posture were removed from this historical revision on 2026-08-09 — see the current CLAUDE.md]
+
+
+
+This authorizes running commands against the droplet directly — installing systemd units,
+checking service status, reading logs, applying a scoped data merge — the things this file and
+`deploy/README.md` already describe. It does not relax anything else: still take a backup before a
+write that could lose data, still say plainly what a command will do before running something with
+real effect, and the general prohibitions (destructive actions without a clear, reversible path
+back) still hold. The point of this exception is removing the copy-paste round trip for routine
+operational work on a project with exactly one operator, not removing judgment about what a command
+actually does before it runs.
