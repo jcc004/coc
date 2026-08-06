@@ -138,6 +138,22 @@ One trap worth knowing: the fast-forward happens *before* `npm ci`, so a failed 
 tree advanced and the service un-restarted. The next timer run then sees local equal to remote and
 reports "Already up to date" forever. Recovery is `./deploy/update.sh --force`.
 
+### This project overrides "Commit and push only when asked"
+
+`claude-kit/rules/git.md`'s standing rule treats committing and pushing as two separate asks.
+**For this project only**, that default is lifted: a request to commit means commit and push,
+without waiting to be asked twice. If something comes up while committing that is worth pausing
+on first — a failing test, a diff that doesn't match what was asked, a question about which
+commit a change belongs on — stop and raise it before pushing, the same as any other blocker.
+Otherwise push follows the commit in the same turn.
+
+This is the same reasoning as the sudo override below: committing to `main` already *is*
+deploying here (previous section), so treating push as a separate, later ask only inserts a
+manual step between "the work is ready" and "the work is live" on a project with exactly one
+operator and no review gate to wait for. It does not relax anything else about committing —
+stage deliberately (`git add -A`, then read the diff before committing), still confirm before
+amending or force-pushing, and still stop if the change itself looks wrong.
+
 ### This project overrides "production is hands-off by default"
 
 `claude-kit/rules/working-style.md`'s standing rule is to hand over commands for the operator to
