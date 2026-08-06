@@ -462,7 +462,7 @@ export function TradeSuggestions({
             Other only
           </label>
 
-          {firstOwner !== null || secondOwner !== null || otherOnly ? (
+          {firstOwner !== null || secondOwner !== null ? (
             <button
               type="button"
               className="icon-button"
