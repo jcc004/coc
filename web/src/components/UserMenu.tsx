@@ -7,6 +7,9 @@ import { menuButtonLabel, nextTheme, themeLabel, userMenuItems } from '../user-m
 /** The picker lives on the account page; this is the entry point to it. */
 const COLORS_ROUTE: Route = { view: 'account' }
 
+/** The reorder page has its own route, unlike Colors — see the item below. */
+const BASE_ORDER_ROUTE: Route = { view: 'base-order' }
+
 /**
  * The account menu: a silhouette in the topbar, holding the theme switch, the
  * password page, the admin panel for admins, and Sign out.
@@ -151,6 +154,23 @@ export function UserMenu({
           >
             <span>Colors</span>
             <span className="user-menu__theme-value">{schemeSummary(scheme)}</span>
+          </a>
+
+          {/* Also a personal setting, same reasoning as Colors above — it used to be
+              reachable only from a card on the account page, which made it easy to
+              forget existed. */}
+          <a
+            className="user-menu__theme"
+            role="menuitem"
+            href={hrefFor(BASE_ORDER_ROUTE)}
+            title="The order your own bases are listed in, on pages that narrow down to just yours"
+            onClick={(event) => {
+              event.preventDefault()
+              setOpen(false)
+              navigate(BASE_ORDER_ROUTE)
+            }}
+          >
+            <span>Base order</span>
           </a>
 
           {items.map((item) =>

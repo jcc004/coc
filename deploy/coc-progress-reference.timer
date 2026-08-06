@@ -1,0 +1,21 @@
+# Fires weekly, an hour ahead of coc-progress-snapshot.timer.
+#
+# The order matters: capture-snapshot.ts classifies a unit as a pet by looking
+# its name up in max_level_reference (petNamesFromReference,
+# server/src/progress/capture-snapshot.ts), which this job populates. Running
+# this first means that lookup table is current before the snapshot job reads
+# it, rather than a week stale.
+
+[Unit]
+Description=Weekly refresh of the CoC max-level wiki reference data
+
+[Timer]
+# Calendar events are local time unless a zone is named — UTC here so the
+# schedule does not drift with the host's timezone or DST.
+OnCalendar=Tue *-*-* 16:00:00 UTC
+# A missed window (the droplet was off) fires once on the next boot rather than
+# waiting a full week, same reasoning as coc-update.timer's Persistent=true.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

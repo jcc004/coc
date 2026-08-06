@@ -405,6 +405,24 @@ select {
   background: var(--hover);
 }
 
+/*
+ * The pet/equipment category toggle in `ProgressReferenceCard`
+ * (`AdminView.tsx`) — `aria-pressed` alone carries the state correctly for
+ * assistive tech, but two buttons with identical, fixed labels ("Pets" /
+ * "Hero equipment") need *some* visible difference or a sighted reader cannot
+ * tell which table they are looking at.
+ *
+ * Written as a compound selector scoped to `.progress-reference-tabs` rather
+ * than a bare `.icon-button[aria-pressed='true']`, per this file's own
+ * warning: `.icon-button` is declared again further down for the mobile
+ * breakpoint, and a bare rule here would be racing that recurrence on source
+ * order instead of outranking it on specificity.
+ */
+.progress-reference-tabs .icon-button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -2341,6 +2359,148 @@ table.roster--divided tbody tr:not(:first-child) > td {
   line-height: 1.4;
 }
 
+/* ---------- weekly progress ---------- */
+
+.progress-week {
+  border-top: 1px solid var(--grid);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.progress-week:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.progress-week__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.progress-week__date {
+  font-weight: 600;
+}
+.progress-week__notes {
+  color: var(--ink-2);
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+
+.progress-category {
+  margin-top: 10px;
+}
+.progress-category__title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-muted);
+  margin: 0 0 4px;
+}
+.progress-category__units {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 2px 20px;
+}
+.progress-category__units li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+/* A maxed unit: same icon+name+value shape as every other row (see
+   `.progress-category__units li`), just picked out by color/weight — no
+   layout override needed here, unlike the earlier icon-only design this
+   replaced, which needed its own centering to avoid the icon reading as
+   the *next* cell's, not its own. */
+.progress-unit--maxed {
+  color: var(--good-text);
+  font-weight: 600;
+}
+/* Scoped larger than the shared 32px `.art-icon` default: in a list that is
+   otherwise mostly text, 32px read as too small to register as artwork. */
+.progress-category__units .art-icon {
+  width: 40px;
+  height: 40px;
+}
+
+/* The manual-entry form, sitting above the read-only weeks in the same disclosure —
+   a rule under it is what separates "editing this week" from "everything already
+   captured", the same job the rule under `details.group > summary` does one level up. */
+.progress-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--grid);
+}
+.progress-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.progress-form__label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-muted);
+}
+.progress-form__notes {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  font: inherit;
+  resize: vertical;
+}
+
+.buildings-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.buildings-left__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+.buildings-left input[type='number'] {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  width: 90px;
+}
+
+.progress-walls-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.progress-walls-editor__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.progress-walls-editor__row input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  width: 90px;
+}
+
 /* ---------- tables ---------- */
 
 .table-wrap {
@@ -2401,6 +2561,67 @@ table.roster th button:hover {
 .donation-cell .meter {
   width: 100%;
   margin-top: 0;
+}
+
+/* The progress grid's hero/pet column heads: an icon ahead of the sort button's
+   own label rather than beside it, so a header carries the same "icon
+   supplements the text, never replaces it" rule `.meter-row__name` does. The
+   icon is scoped down from the shared 32px `.art-icon` default — eighteen of
+   these across one header row at that size would be wider than the columns of
+   numbers underneath them. */
+.progress-grid__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.progress-grid__head .art-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* A base with an owner but no captured week yet: still a row, quieted rather
+   than hidden — see the note on `ProgressBoardView`. */
+.progress-board__row--untracked {
+  opacity: 0.7;
+}
+
+/* The legend below the grid: what every column's short form actually means.
+   Wraps rather than scrolling — eighteen entries read fine as a flowed list,
+   and it is reference material read once, not a control worth its own
+   horizontal scrollbar the way the table above genuinely needs one. */
+.progress-grid__legend {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--grid);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+.progress-grid__legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.progress-grid__legend-abbr {
+  font-weight: 700;
+  color: var(--ink);
+  min-width: 1.6em;
+}
+.progress-grid__legend .art-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* A hero, pet or wall count at this row's Town-Hall-relative cap — the
+   spreadsheet's own convention for "done," carried over: a tinted cell rather
+   than a solid fill, so the number stays legible in both themes without a
+   second text color to keep in sync with `--good`/`--good-text`. */
+.progress-grid__cell--maxed {
+  background: color-mix(in srgb, var(--good) 22%, transparent);
+  font-weight: 600;
 }
 
 .role-pill {
@@ -3690,4 +3911,68 @@ table.roster--pairs td {
    make two similar hashes look alike. */
 .site-footer__commit {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/*
+ * `#/base-order` — the reorderable list of one account's own bases.
+ *
+ * `cursor: grab` marks the whole row as the drag surface rather than just the
+ * handle glyph, since native drag-and-drop only needs `draggable` on the
+ * element, not on any particular child of it — the handle is a visual cue, not
+ * where the interaction is scoped.
+ */
+.base-order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.base-order-list__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: grab;
+}
+
+/* The row being dragged, on the source browser only — nothing paints a ghost on
+   the drop target beyond the border below, since a moving element and a static
+   highlight both changing at once reads as more motion than one row settling
+   into a new slot needs. */
+.base-order-list__item--dragging {
+  opacity: 0.5;
+}
+
+.base-order-list__item--over {
+  border-color: var(--accent);
+}
+
+.base-order-list__handle {
+  color: var(--ink-muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.base-order-list__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.base-order-list__tag {
+  flex: 0 0 auto;
+}
+
+.base-order-list__move {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
 }

@@ -3,6 +3,7 @@ import { bindHostFromEnv, bindsEveryInterface, createApp } from './app.ts'
 import { bootstrapAdmin } from './auth/bootstrap.ts'
 import { cookieSecureFromEnv, trustProxyFromEnv } from './auth/middleware.ts'
 import { createAuthStore } from './auth/store.ts'
+import { createBaseOrderStore } from './base-order/store.ts'
 import { TtlCache } from './cache.ts'
 import { createCardInventoryStore } from './cards/store.ts'
 import { createTradeStore } from './cards/trades-store.ts'
@@ -13,6 +14,7 @@ import {
   SCHEMA_VERSION,
   summarizeOwnerAssignments,
 } from './db.ts'
+import { createProgressStore } from './progress/store.ts'
 import { createSharedDataStore } from './shared-data/store.ts'
 
 const port = Number(process.env.PORT ?? 8787)
@@ -38,6 +40,8 @@ const cards = createCardInventoryStore(db)
 // Handed the inventory store because completing a trade moves cards: the status
 // change and the four count changes are one transaction over both tables.
 const trades = createTradeStore(db, cards)
+const progress = createProgressStore(db)
+const baseOrder = createBaseOrderStore(db)
 
 // Awaited: `bootstrapAdmin` hashes a password and scrypt is async now, and the
 // first admin has to exist before the first request. This file is an ES module, so
@@ -79,6 +83,8 @@ const app = createApp({
   sharedData,
   cards,
   trades,
+  progress,
+  baseOrder,
   cookieSecure: cookieSecureFromEnv(process.env),
   trustProxy,
 })

@@ -4,7 +4,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { CARD_SEASON, type BaseInventory, type ClanMember, type OwnerRecord } from '@coc/shared'
 import { CARD_JUMP_TARGETS } from '../card-sections.ts'
-import { installTestCleanup, sessionUser, stubApi } from '../test-support.ts'
+import { installTestCleanup, sessionUser, stubApi, type ApiStubs } from '../test-support.ts'
 import { CardsView } from './CardsView.tsx'
 
 /**
@@ -52,7 +52,12 @@ const inventory = (
   updatedAt?: string,
 ): BaseInventory => ({ tag, counts, ...(updatedAt === undefined ? {} : { updatedAt }) })
 
-async function cards(owners: OwnerRecord[], bases: BaseInventory[], who = RAE) {
+async function cards(
+  owners: OwnerRecord[],
+  bases: BaseInventory[],
+  who = RAE,
+  extraStubs: ApiStubs = {},
+) {
   const user = userEvent.setup()
   stubApi({
     owners: () => Promise.resolve({ owners }),
@@ -62,6 +67,11 @@ async function cards(owners: OwnerRecord[], bases: BaseInventory[], who = RAE) {
     // than one per base — so a clan is what a test has to supply to get names.
     savedClans: () => Promise.resolve({ clans: [{ tag: '#CLAN', name: 'Clan' }] }),
     clanMembers: () => Promise.resolve({ items: [ALDA, BRIX, CASS, DANA, ELI, FENN] }),
+    // No saved order by default, which reconciles to the same alphabetical list
+    // `allOptions` already offers — a test only has to stub this when it actually
+    // cares about the Mine picker's order.
+    getBaseOrder: () => Promise.resolve({ tags: [] }),
+    ...extraStubs,
   })
   render(<CardsView user={who} />)
   return user
@@ -109,6 +119,53 @@ describe('the base picker', () => {
     const hint = await screen.findByText(/None of the 1 tracked base is yours/)
     assert.match(hint.textContent ?? '', /admin assigns it to your account/)
     assert.equal(screen.queryByLabelText('Base'), null)
+  })
+
+  /*
+   * The Mine order — `useBaseOrder`'s read side, reused rather than reimplemented.
+   * `reconcileOrder` and `applyBaseOrder` each carry their own tests for the
+   * general rule; these three are the wiring, that the picker actually shows what
+   * those functions compute, and only for Mine.
+   */
+  const MINE: OwnerRecord[] = [
+    { tag: '#AAA', owner: 'Rae', ownerUserId: RAE.id },
+    { tag: '#BBB', owner: 'Rae', ownerUserId: RAE.id },
+    { tag: '#CCC', owner: 'Rae', ownerUserId: RAE.id },
+  ]
+
+  function baseOptionLabels(picker: HTMLElement): (string | null)[] {
+    return within(picker)
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+  }
+
+  it('orders the Mine picker by the saved base order, not alphabetically', async () => {
+    await cards(MINE, [], RAE, {
+      getBaseOrder: () => Promise.resolve({ tags: ['#CCC', '#AAA', '#BBB'] }),
+    })
+
+    const picker = await screen.findByLabelText('Base')
+    await waitFor(() => assert.deepEqual(baseOptionLabels(picker), ['Cass', 'Alda', 'Brix']))
+  })
+
+  it('appends a base the saved order never mentioned, after the ones it does', async () => {
+    // `#AAA` and `#CCC` predate the saved order (or were assigned since), so
+    // `reconcileOrder` appends them in the order the owner list already had them.
+    await cards(MINE, [], RAE, { getBaseOrder: () => Promise.resolve({ tags: ['#BBB'] }) })
+
+    const picker = await screen.findByLabelText('Base')
+    await waitFor(() => assert.deepEqual(baseOptionLabels(picker), ['Brix', 'Alda', 'Cass']))
+  })
+
+  it('leaves the All list alphabetical, ignoring the saved order entirely', async () => {
+    const user = await cards(MINE, [], RAE, {
+      getBaseOrder: () => Promise.resolve({ tags: ['#CCC', '#AAA', '#BBB'] }),
+    })
+
+    await user.selectOptions(await screen.findByLabelText('Show'), 'all')
+
+    const picker = await screen.findByLabelText('Base')
+    await waitFor(() => assert.deepEqual(baseOptionLabels(picker), ['Alda', 'Brix', 'Cass']))
   })
 
   /*
@@ -296,7 +353,10 @@ describe('the leaderboard’s owner filter and staleness column', () => {
     assert.equal(within(table).queryByText('Brix'), null)
   })
 
-  it('offers everyone, the bases with no owner, and the owners on the board', async () => {
+  it('offers everyone, the bases with no owner, and the linked owners on the board', async () => {
+    // Dave is an unlinked legacy label (`ownerUserId: null`), the same as Fenn's base
+    // having no assignment at all — the filter groups by account id now, so Dave is not
+    // a distinct option, only folded into "No owner set".
     await cards(BOARD, COUNTS)
     await boardTable()
 
@@ -305,13 +365,16 @@ describe('the leaderboard’s owner filter and staleness column', () => {
       within(filter)
         .getAllByRole('option')
         .map((option) => option.textContent),
-      ['Everyone', 'No owner set', 'Dave', 'Rae', 'Sam'],
+      ['Everyone', 'No owner set', 'Rae', 'Sam'],
     )
     // Everyone is the default, so the board opens as it always did.
     assert.equal((filter as HTMLSelectElement).value, '')
   })
 
-  it('finds the base no account and no label owns, under its own option', async () => {
+  it('finds both the base no account owns and the unlinked-label base under "No owner set"', async () => {
+    /* Dave's assignment is a label nobody has matched to an account, so it carries no
+       `ownerUserId` — the same "no id" state as Fenn's base, which has no assignment at
+       all. The filter now groups strictly by id, so both fall under the one sentinel. */
     const user = await cards(BOARD, COUNTS)
     const table = await boardTable()
 
@@ -319,19 +382,9 @@ describe('the leaderboard’s owner filter and staleness column', () => {
 
     // Last of the six, and still numbered 6 rather than 1.
     assert.equal(rankOf(table, 'Fenn'), '6')
-    assert.equal(within(table).queryByText('Alda'), null)
-  })
-
-  it('keeps an unlinked legacy label as an owner you can filter by', async () => {
-    /* 32 of this install's assignments are free text nobody has matched to an account.
-       That is not a permission — `mayWriteBaseCounts` is clear — but it still names the
-       person whose bases these are, so it is a fair thing to ask the board for. */
-    const user = await cards(BOARD, COUNTS)
-    const table = await boardTable()
-
-    await user.selectOptions(await screen.findByLabelText('Owner'), 'Dave')
-
+    // Dana is Dave's, an unlinked label — folded in alongside Fenn, still ranked 4.
     assert.equal(rankOf(table, 'Dana'), '4')
+    assert.equal(within(table).queryByText('Alda'), null)
   })
 
   it('clamps a page number the filter has left past the end of the board', async () => {

@@ -4,6 +4,7 @@ import type { AdminUser, SessionUser } from '@coc/shared'
 import { api } from './api.ts'
 import { resetCardInventory } from './card-inventory.ts'
 import { resetOwners } from './owners.ts'
+import { resetProgress, resetProgressReference } from './progress.ts'
 import { resetSavedClans } from './saved-clans.ts'
 import { resetTrades } from './trades.ts'
 
@@ -15,7 +16,7 @@ import { resetTrades } from './trades.ts'
  * bites: the shared lists live in **module-level** stores (`owners.ts`,
  * `card-inventory.ts`, …), so a roster rendered in one test still holds its owners
  * when the next one mounts, and the second test passes or fails on the first one's
- * fixtures. Four `reset*` calls in one place is the difference between that being
+ * fixtures. Five `reset*` calls in one place is the difference between that being
  * handled and being remembered.
  */
 
@@ -83,6 +84,8 @@ export function installTestCleanup(): void {
     resetSavedClans()
     resetCardInventory()
     resetTrades()
+    resetProgress()
+    resetProgressReference()
     localStorage.clear()
   })
 }

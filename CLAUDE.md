@@ -57,6 +57,10 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
 - **There are no CSS modules here.** Styling is `styles.css` plus 25 inline `style={{}}`
   occurrences across 13 components, which is why the CSP carries `'unsafe-inline'`
   (`deploy/nginx-coc.conf`). Do not introduce a third styling mechanism.
+- **A table's row-limit select and its pager are one control, not two.** They sit together in a
+  `<div className="roster-footer">` below the table — see `CardsView.tsx`'s leaderboard or
+  `SavedClansView.tsx`. Never put the row-limit select in the card header while the pager stays at
+  the bottom; `ProgressGridView.tsx` shipped that way once and had to be moved.
 
 ## Files that bite, and how
 
@@ -105,7 +109,7 @@ cost anything. Add to this list when a file misleads you, and say what it did.
 
 ## Testing
 
-`npm test` runs all three workspaces — 1,224 tests (21 shared, 338 server, 865 web), `node:test`,
+`npm test` runs all three workspaces — 1,319 tests (21 shared, 397 server, 901 web), `node:test`,
 no framework. Tests sit adjacent
 to their module. Run the whole suite, not a workspace.
 
@@ -113,7 +117,7 @@ Run it on the pinned Node. A non-interactive shell does not fire the `fnm --use-
 silently gets whatever Node is on `PATH`, so a green suite there says nothing about the runtime
 production uses. `zsh -i -c 'cd <repo> && npm test'` is the form that pins it.
 
-Known gap, so it is not rediscovered as a surprise: **5 of 26 components have tests**. The pure
+Known gap, so it is not rediscovered as a surprise: **6 of 28 components have tests**. The pure
 modules are well covered, and `hooks.ts` and `api.ts` now are too; what remains untested is
 presentational.
 

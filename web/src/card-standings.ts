@@ -71,8 +71,18 @@ export interface StandingBase {
   tag: string
   /** The member name, or the tag when no roster we can see names it. */
   label: string
-  /** Who would do the trading, or `null` when nobody is assigned. */
+  /**
+   * Who would do the trading, or `null` when nobody is assigned — the label to
+   * *print*. The owner filter no longer groups or matches on this; see
+   * {@link Ownable.ownerUserId} for the field it actually keys on.
+   */
   owner: string | null
+  /**
+   * The linked account this base belongs to, or `null` for an unassigned base
+   * *and* for one still carrying only an unlinked legacy label — see
+   * {@link Ownable.ownerUserId}, which this feeds.
+   */
+  ownerUserId: number | null
 }
 
 export interface BaseStanding extends StandingBase {
@@ -184,6 +194,35 @@ export function baseStandings(
 /* ---------- reading the board: the owner filter and the staleness column ---------- */
 
 /**
+ * The two fields {@link standingOwnerOptions} and {@link filterStandingsByOwner} touch.
+ *
+ * Generic over this rather than fixed to {@link BaseStanding} so the progress board's
+ * `ProgressGridRow` (`progress-grid.ts`) can share the exact same filter — same options,
+ * same sentinels, same "narrows what's shown, never what's ranked" rule — without
+ * depending on points, rank or any of the rest of a standing. `saved-table.ts` already
+ * takes this shape for owner logic (`OwnableRow`, `planOwnerChange`), so a second row
+ * shape sharing a narrow structural type here follows the same precedent rather than
+ * inventing a new one.
+ *
+ * **`ownerUserId` is the identity the filter groups and matches on; `owner` is only
+ * ever printed.** Two rows are "the same owner" when their account ids agree, never
+ * when their labels happen to read the same — which also means two different accounts
+ * that happen to share a display name are correctly kept apart, something a label
+ * comparison could not do. A row whose owner is an unlinked legacy label has
+ * `ownerUserId: null`, the same as a row with no assignment at all, so it now falls
+ * under {@link UNASSIGNED_OWNER} rather than under its own option keyed by that label.
+ * That is a deliberate narrowing, not an oversight: this app has exactly one definition
+ * of "is this my base" everywhere else — the linked account — and a filter that grouped
+ * by free text was the one place still answering a different question.
+ */
+export interface Ownable {
+  /** Who would do the trading, or `null` when nobody is assigned. Display only. */
+  owner: string | null
+  /** The account this base belongs to, or `null` — see the type doc for what that means. */
+  ownerUserId: number | null
+}
+
+/**
  * "Every owner", the value the board opens on, so it opens unchanged.
  *
  * `''` rather than a word, matching the roster's Owner filter — an empty select value
@@ -197,9 +236,12 @@ export const ALL_OWNERS = ''
 
 /** One entry of the board's Owner select. */
 export interface OwnerFilterOption {
-  /** What the select stores: a name, {@link ALL_OWNERS} or {@link UNASSIGNED_OWNER}. */
+  /**
+   * What the select stores: an account id, stringified since a `<select>`'s values
+   * are always strings, or {@link ALL_OWNERS} or {@link UNASSIGNED_OWNER}.
+   */
   value: string
-  /** What it prints. */
+  /** What it prints — the owner's display name, never the raw id. */
   label: string
 }
 
@@ -213,30 +255,31 @@ const UNOWNED_OPTION_LABEL = 'No owner set'
  * be an option that filters the board down to nothing, and every option here is
  * guaranteed to keep at least one row.
  *
- * A base whose owner is an **unlinked legacy label** gets an option under that label
- * like any other, and only a base with *no assignment at all* falls under
- * {@link UNASSIGNED_OWNER}. That is the same line `mayWriteBaseCounts` draws between
- * `ownerNotLinked` and `unowned`: a label nobody has matched to an account is still a
- * note about a person, and "which of Dave's bases have gone stale" is a fair question
- * whether or not Dave has ever signed in. What it is not is a permission, and nothing
- * here grants one — this select decides which rows are drawn and nothing else.
+ * Grouped by {@link Ownable.ownerUserId}, not by the label. A base whose owner is an
+ * **unlinked legacy label** — an account id of `null` — falls under
+ * {@link UNASSIGNED_OWNER} along with a base that has no assignment at all, rather than
+ * getting an option of its own under that label. `mayWriteBaseCounts` still draws a line
+ * between `ownerNotLinked` and `unowned` for *permission*, but this board answers a
+ * different question — "is this the same owner as that row" — and the account id is now
+ * the one fact everywhere else in the app already treats as the answer.
  *
- * The unowned option appears only when a base on the board has no owner, for the same
- * reason the density control is not drawn when it offers one value: an option that
+ * The unowned option appears only when a base on the board has no linked owner, for the
+ * same reason the density control is not drawn when it offers one value: an option that
  * cannot change what is on screen is a control that answers a press by doing nothing.
  */
-export function standingOwnerOptions(rows: readonly BaseStanding[]): OwnerFilterOption[] {
-  const named = new Set<string>()
+export function standingOwnerOptions<T extends Ownable>(rows: readonly T[]): OwnerFilterOption[] {
+  const named = new Map<number, string>()
   let anyUnowned = false
   for (const row of rows) {
-    if (row.owner === null) anyUnowned = true
-    else named.add(row.owner)
+    if (row.ownerUserId === null) anyUnowned = true
+    else if (!named.has(row.ownerUserId)) named.set(row.ownerUserId, row.owner ?? String(row.ownerUserId))
   }
 
   const options: OwnerFilterOption[] = [{ value: ALL_OWNERS, label: 'Everyone' }]
   if (anyUnowned) options.push({ value: UNASSIGNED_OWNER, label: UNOWNED_OPTION_LABEL })
-  for (const name of [...named].sort((a, b) => a.localeCompare(b))) {
-    options.push({ value: name, label: name })
+  const owners = [...named].sort(([, a], [, b]) => a.localeCompare(b))
+  for (const [ownerUserId, label] of owners) {
+    options.push({ value: String(ownerUserId), label })
   }
   return options
 }
@@ -253,14 +296,26 @@ export function standingOwnerOptions(rows: readonly BaseStanding[]): OwnerFilter
  * Never call it before {@link baseStandings}. The order is total and the ranks share
  * and skip, so ranking a subset is not a cheaper way to get the same answer; it is a
  * different, wrong one.
+ *
+ * That rank-ordering rule is specific to `BaseStanding` — a row with no rank at all,
+ * like `ProgressGridRow`, has nothing for filtering to disturb, and this function only
+ * removes rows either way.
+ *
+ * `owner` is a select value, so a chosen account arrives as `ownerUserId` stringified —
+ * see {@link Ownable} for why the id, not the label, is what is compared. A value that
+ * is not one of {@link ALL_OWNERS}, {@link UNASSIGNED_OWNER} or a real id parses to
+ * `NaN`, which matches no row's `ownerUserId` and so narrows to nothing rather than
+ * falling back to "everyone" — the same "unrecognized means empty, not unfiltered" rule
+ * this already held for a stale label.
  */
-export function filterStandingsByOwner(
-  rows: readonly BaseStanding[],
+export function filterStandingsByOwner<T extends Ownable>(
+  rows: readonly T[],
   owner: string,
-): BaseStanding[] {
+): T[] {
   if (owner === ALL_OWNERS) return [...rows]
-  if (owner === UNASSIGNED_OWNER) return rows.filter((row) => row.owner === null)
-  return rows.filter((row) => row.owner === owner)
+  if (owner === UNASSIGNED_OWNER) return rows.filter((row) => row.ownerUserId === null)
+  const ownerUserId = Number(owner)
+  return rows.filter((row) => row.ownerUserId === ownerUserId)
 }
 
 /**

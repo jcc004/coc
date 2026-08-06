@@ -6,11 +6,13 @@ import { bootstrapAdmin } from '../auth/bootstrap.ts'
 import { SESSION_COOKIE } from '../auth/middleware.ts'
 import { createLoginLimiter } from '../auth/rate-limit.ts'
 import { createAuthStore } from '../auth/store.ts'
+import { createBaseOrderStore } from '../base-order/store.ts'
 import { TtlCache } from '../cache.ts'
 import { createCardInventoryStore } from '../cards/store.ts'
 import { createTradeStore } from '../cards/trades-store.ts'
 import type { CocClient } from '../coc-client.ts'
 import { openDatabase } from '../db.ts'
+import { createProgressStore } from '../progress/store.ts'
 import { MAX_BULK_ROWS, SAVED_CLAN_NAME_MAX } from './routes.ts'
 import { createSharedDataStore, type SharedDataStore } from './store.ts'
 
@@ -70,6 +72,8 @@ async function createHarness(): Promise<Harness> {
     sharedData: shared,
     cards,
     trades: createTradeStore(db, cards),
+    progress: createProgressStore(db),
+    baseOrder: createBaseOrderStore(db),
     loginLimiter: createLoginLimiter(),
   })
 

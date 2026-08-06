@@ -109,6 +109,19 @@ export type Route =
   | { view: 'admin' }
   | { view: 'cards' }
   /**
+   * The clan-wide progress board — every tracked base's latest week, at a glance.
+   * No tag in the route for the same reason `cards` carries none: the page shows
+   * every base at once rather than picking one.
+   */
+  | { view: 'progress' }
+  /**
+   * This account's own base order — the reorderable list behind `#/base-order`.
+   * A route of its own, not a card on `account`, the same call made for `admin`:
+   * it needs more room than a settings card gives a drag-and-drop list, and a
+   * route means it can be linked to directly.
+   */
+  | { view: 'base-order' }
+  /**
    * The help page, optionally scrolled to one section.
    *
    * A route of its own for the same reason `admin` is: it has to be linkable. The
@@ -168,6 +181,8 @@ export function parseHash(hash: string): Route {
   // No tag in the route: the card page picks its base from the shared list, so a
   // deep link to one base would be a link into somebody else's editing session.
   if (view === 'cards') return { view: 'cards' }
+  if (view === 'progress') return { view: 'progress' }
+  if (view === 'base-order') return { view: 'base-order' }
   if (view === 'player' && decoded) return { view: 'player', tag: decoded }
   if (view === 'clan' && decoded) return { view: 'clan', tag: decoded }
   if (view === 'war' && decoded) return { view: 'war', tag: decoded }
@@ -191,6 +206,10 @@ export function hrefFor(route: Route): string {
       return '#/admin'
     case 'cards':
       return '#/cards'
+    case 'progress':
+      return '#/progress'
+    case 'base-order':
+      return '#/base-order'
     case 'whats-new':
       return '#/whats-new'
     case 'help':

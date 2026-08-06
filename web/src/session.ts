@@ -3,6 +3,7 @@ import type { SessionUser } from '@coc/shared'
 import { api, setPasswordChangeRequiredHandler, setUnauthorizedHandler } from './api.ts'
 import { resetCardInventory } from './card-inventory.ts'
 import { resetOwners } from './owners.ts'
+import { resetProgress, resetProgressReference } from './progress.ts'
 import { resetSavedClans } from './saved-clans.ts'
 import { resetTrades } from './trades.ts'
 
@@ -38,13 +39,16 @@ export interface Session {
  * saved clans, the card inventory and the trades are the same rows whoever is looking,
  * so the stale snapshot the next sign-in would briefly show is the snapshot they were
  * going to be given anyway. It is done on both paths for consistency, not because the
- * 401 path was leaking anything.
+ * 401 path was leaking anything. Progress is the same shape: `progress.ts`'s latest-
+ * week store is the clan-wide board, not a per-account view.
  */
 function dropSharedCaches(): void {
   resetOwners()
   resetSavedClans()
   resetCardInventory()
   resetTrades()
+  resetProgress()
+  resetProgressReference()
 }
 
 export function useSession(): Session {

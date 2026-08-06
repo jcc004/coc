@@ -3,12 +3,16 @@ import {
   isValidEmail,
   MIN_PASSWORD_LENGTH,
   type AdminUser,
+  type HandEnteredReferenceCategory,
+  type MaxLevelReferenceRow,
   type SessionUser,
   type UserRole,
 } from '@coc/shared'
 import { api, describe } from '../api.ts'
 import { formatDateTime } from '../format.ts'
 import { useAsync } from '../hooks.ts'
+import { parseBulkPasteRows } from '../progress-bulk-paste.ts'
+import { refreshProgressReference, useProgressReference } from '../progress.ts'
 import { ErrorPanel, Loading, PasswordField } from './primitives.tsx'
 
 /**
@@ -635,6 +639,391 @@ function UsersCard({ currentUserId }: { currentUserId: number }) {
   )
 }
 
+/* ---------- weekly base progress: hand-entered pet & equipment caps ---------- */
+
+const REFERENCE_CATEGORIES: { value: HandEnteredReferenceCategory; label: string }[] = [
+  { value: 'pet', label: 'Pets' },
+  { value: 'equipment', label: 'Hero equipment' },
+]
+
+/** `(name, thLevel)` is the upsert key `max_level_reference` is keyed on. */
+function rowKey(row: Pick<MaxLevelReferenceRow, 'name' | 'thLevel'>): string {
+  return `${row.name}#${row.thLevel}`
+}
+
+/**
+ * One stored cap, editable in place — but **only `maxLevel`**. `name` and
+ * `thLevel` together are the row's key (`upsertMaxLevelReference`), so letting
+ * either drift here would not correct the row, it would upsert a second one and
+ * leave the original sitting in the table under its old numbers. Renaming a unit
+ * or moving it to a different Town Hall is a new row, added below, not an edit
+ * of an old one.
+ */
+function ReferenceRow({
+  category,
+  row,
+  problem,
+  onProblem,
+}: {
+  category: HandEnteredReferenceCategory
+  row: MaxLevelReferenceRow
+  problem?: string
+  onProblem: (key: string, text: string | null) => void
+}) {
+  const key = rowKey(row)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(String(row.maxLevel))
+  const [busy, setBusy] = useState(false)
+
+  async function submit(event: FormEvent): Promise<void> {
+    event.preventDefault()
+    if (busy) return
+
+    const maxLevel = Number(draft)
+    if (!Number.isInteger(maxLevel) || maxLevel <= 0) {
+      onProblem(key, 'Max level must be a positive whole number.')
+      return
+    }
+
+    setBusy(true)
+    onProblem(key, null)
+    try {
+      await api.saveProgressReference(category, [
+        { name: row.name, thLevel: row.thLevel, maxLevel },
+      ])
+      await refreshProgressReference()
+      setEditing(false)
+    } catch (cause) {
+      onProblem(key, describe(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <tr role="row">
+      <td className="stack-title" role="cell">
+        {row.name}
+      </td>
+      <td role="cell" data-label="Town Hall">
+        {row.thLevel}
+      </td>
+      <td role="cell" data-label="Max level">
+        {editing ? (
+          <form className="row-edit" onSubmit={(event) => void submit(event)}>
+            <input
+              type="number"
+              min={1}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              aria-label={`Max level for ${row.name} at Town Hall ${row.thLevel}`}
+              autoFocus
+            />
+            <button type="submit" className="icon-button" disabled={busy || !draft.trim()}>
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => {
+                setDraft(String(row.maxLevel))
+                setEditing(false)
+                onProblem(key, null)
+              }}
+            >
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <>
+            {row.maxLevel}{' '}
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => {
+                setDraft(String(row.maxLevel))
+                onProblem(key, null)
+                setEditing(true)
+              }}
+              aria-label={`Change the max level for ${row.name} at Town Hall ${row.thLevel}`}
+            >
+              Edit
+            </button>
+          </>
+        )}
+        {problem ? <p className="row-actions__problem">{problem}</p> : null}
+      </td>
+      <td role="cell" data-label="Updated">
+        {formatDateTime(new Date(row.updatedAt))}
+      </td>
+    </tr>
+  )
+}
+
+/** Adds one new `(name, thLevel)` row. Same shape as `NewUserForm` above. */
+function AddReferenceRowForm({ category }: { category: HandEnteredReferenceCategory }) {
+  const [name, setName] = useState('')
+  const [thLevel, setThLevel] = useState('')
+  const [maxLevel, setMaxLevel] = useState('')
+  const [problem, setProblem] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(event: FormEvent): Promise<void> {
+    event.preventDefault()
+    if (busy) return
+
+    const trimmedName = name.trim()
+    const th = Number(thLevel)
+    const max = Number(maxLevel)
+
+    if (!trimmedName) {
+      setProblem('Unit name cannot be blank.')
+      return
+    }
+    if (!Number.isInteger(th) || th <= 0) {
+      setProblem('Town Hall level must be a positive whole number.')
+      return
+    }
+    if (!Number.isInteger(max) || max <= 0) {
+      setProblem('Max level must be a positive whole number.')
+      return
+    }
+
+    setBusy(true)
+    setProblem(null)
+    try {
+      await api.saveProgressReference(category, [
+        { name: trimmedName, thLevel: th, maxLevel: max },
+      ])
+      await refreshProgressReference()
+      setName('')
+      setThLevel('')
+      setMaxLevel('')
+    } catch (cause) {
+      setProblem(describe(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <form className="search" onSubmit={(event) => void submit(event)}>
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Unit name"
+          aria-label="Unit name"
+          autoComplete="off"
+        />
+        <input
+          type="number"
+          min={1}
+          value={thLevel}
+          onChange={(event) => setThLevel(event.target.value)}
+          placeholder="Town Hall level"
+          aria-label="Town Hall level"
+        />
+        <input
+          type="number"
+          min={1}
+          value={maxLevel}
+          onChange={(event) => setMaxLevel(event.target.value)}
+          placeholder="Max level at that Town Hall"
+          aria-label="Max level at that Town Hall"
+        />
+        <button type="submit" disabled={busy || !name.trim() || !thLevel || !maxLevel}>
+          {busy ? 'Adding…' : 'Add row'}
+        </button>
+      </form>
+      {problem ? <p className="notice__hint">{problem}</p> : null}
+    </>
+  )
+}
+
+/**
+ * "name, town hall, max level" — one line per row, comma or tab separated (a
+ * spreadsheet paste is tab-delimited; typing it by hand is easier with commas).
+ * See `parseBulkPasteRows` for the parsing itself, kept pure and tested on its
+ * own. Worth having at all because a first-time fill-in is ~10 pets and ~40
+ * equipment items across a dozen-plus Town Hall levels each — closer to 150
+ * numbers than 15 — and typing each into its own add-row form would be the
+ * tedious part of a feature whose whole point is replacing a spreadsheet.
+ */
+function BulkPastePanel({ category }: { category: HandEnteredReferenceCategory }) {
+  const [text, setText] = useState('')
+  const [problem, setProblem] = useState<string | null>(null)
+  const [imported, setImported] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(event: FormEvent): Promise<void> {
+    event.preventDefault()
+    if (busy) return
+
+    const parsed = parseBulkPasteRows(text)
+    if ('problem' in parsed) {
+      setProblem(parsed.problem)
+      setImported(null)
+      return
+    }
+
+    setBusy(true)
+    setProblem(null)
+    setImported(null)
+    try {
+      const result = await api.saveProgressReference(category, parsed.rows)
+      await refreshProgressReference()
+      setText('')
+      setImported(result.written)
+    } catch (cause) {
+      setProblem(describe(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="progress-form" onSubmit={(event) => void submit(event)}>
+      <label className="progress-form__field">
+        <span className="progress-form__label">
+          Bulk paste — one row per line: name, town hall, max level
+        </span>
+        <textarea
+          className="progress-form__notes"
+          rows={5}
+          value={text}
+          disabled={busy}
+          onChange={(event) => setText(event.target.value)}
+          placeholder={'L.A.S.S.I, 7, 5\nMighty Yak, 9, 10'}
+          aria-label="Bulk paste — one row per line: name, town hall, max level"
+        />
+      </label>
+      <button type="submit" disabled={busy || !text.trim()}>
+        {busy ? 'Importing…' : 'Import pasted rows'}
+      </button>
+      {problem ? <p className="notice__hint">{problem}</p> : null}
+      {imported !== null ? (
+        <p className="notice__hint">
+          Imported {imported} row{imported === 1 ? '' : 's'}.
+        </p>
+      ) : null}
+    </form>
+  )
+}
+
+/**
+ * Pet and hero-equipment level caps — the two `max_level_reference` categories
+ * the weekly wiki scrape (`refresh-reference.ts`) cannot cover, because their
+ * wiki pages use table layouts (rowspan grids; rarity not stated on the page)
+ * it will not parse on a guess rather than risk a silently-wrong number. Hero,
+ * troop, spell and wall caps need no admin attention at all — they refresh on
+ * their own every week.
+ *
+ * Reads through `useProgressReference`, the same module-level store every other
+ * "% to max" computation in the app shares, so what an admin sees here before
+ * typing anything is the same table the percent bars are already scoring
+ * against — including a category with nothing in it yet, today.
+ */
+function ProgressReferenceCard() {
+  const [category, setCategory] = useState<HandEnteredReferenceCategory>('pet')
+  const [rowProblems, setRowProblems] = useState<Record<string, string>>({})
+  const reference = useProgressReference()
+
+  function setRowProblem(key: string, text: string | null): void {
+    setRowProblems((current) => {
+      const next = { ...current }
+      if (text === null) delete next[key]
+      else next[key] = text
+      return next
+    })
+  }
+
+  const activeLabel =
+    REFERENCE_CATEGORIES.find((option) => option.value === category)?.label ?? category
+  const rows = reference.maxLevels
+    .filter((row) => row.category === category)
+    .sort((a, b) => a.name.localeCompare(b.name) || a.thLevel - b.thLevel)
+
+  return (
+    <section className="card">
+      <div className="card-header">
+        <h2 className="section-title" style={{ marginBottom: 0 }}>
+          Level caps: pets &amp; hero equipment
+        </h2>
+      </div>
+      <p className="empty-hint">
+        Hero, troop, spell and wall caps refresh on their own every week from the wiki. Pet and
+        hero equipment do not — their wiki pages cannot be parsed safely, so they are entered here
+        by hand instead. The numbers only move when Supercell changes them, so this is occasional
+        upkeep, not a weekly one.
+      </p>
+
+      <div className="progress-reference-tabs" role="group" aria-label="Reference category">
+        {REFERENCE_CATEGORIES.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className="icon-button"
+            aria-pressed={category === option.value}
+            onClick={() => setCategory(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {reference.status === 'loading' ? <Loading what="the reference tables" /> : null}
+      {reference.status === 'error' && reference.error ? (
+        <ErrorPanel error={reference.error} />
+      ) : null}
+
+      {reference.status === 'ready' ? (
+        <div className="table-wrap">
+          <table className="roster roster--stack" role="table">
+            <thead role="rowgroup">
+              <tr role="row">
+                <th role="columnheader">Unit</th>
+                <th role="columnheader">Town Hall</th>
+                <th role="columnheader">Max level</th>
+                <th role="columnheader">Updated</th>
+              </tr>
+            </thead>
+            <tbody role="rowgroup">
+              {rows.length === 0 ? (
+                <tr role="row">
+                  <td role="cell" colSpan={4}>
+                    No {activeLabel.toLowerCase()} entered yet — add rows below.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row) => (
+                  <ReferenceRow
+                    key={rowKey(row)}
+                    category={category}
+                    row={row}
+                    problem={rowProblems[rowKey(row)]}
+                    onProblem={setRowProblem}
+                  />
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      <h3 className="section-title" style={{ fontSize: 14, marginTop: 20 }}>
+        Add a row
+      </h3>
+      <AddReferenceRowForm category={category} />
+
+      <h3 className="section-title" style={{ fontSize: 14, marginTop: 20 }}>
+        Bulk paste
+      </h3>
+      <BulkPastePanel category={category} />
+    </section>
+  )
+}
+
 /**
  * The page. Everything below the guard needs an admin, and the guard is here rather
  * than at the route so that a direct `#/admin` says why instead of appearing to be
@@ -642,5 +1031,10 @@ function UsersCard({ currentUserId }: { currentUserId: number }) {
  */
 export function AdminView({ user }: { user: SessionUser }) {
   if (user.role !== 'admin') return <NotAnAdmin />
-  return <UsersCard currentUserId={user.id} />
+  return (
+    <>
+      <UsersCard currentUserId={user.id} />
+      <ProgressReferenceCard />
+    </>
+  )
 }

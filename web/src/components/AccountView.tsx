@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { MIN_PASSWORD_LENGTH, type SessionUser } from '@coc/shared'
 import { api, describe } from '../api.ts'
 import { formatDateTime } from '../format.ts'
+import { hrefFor } from '../hooks.ts'
 import { ColorSchemeCard } from './ColorSchemeCard.tsx'
 import { PasswordField } from './primitives.tsx'
 
@@ -63,6 +64,28 @@ function IdentityCard({ user }: { user: SessionUser }) {
       <p className="lookup-preview">
         You sign in with your email address. Ask an admin to change it — the ID is fixed.
       </p>
+    </section>
+  )
+}
+
+/**
+ * A pointer to `#/base-order`, which lives on its own route rather than as a
+ * card here — see the note on `AccountView` below for why, and `hooks.ts` for
+ * the route itself. This card is the way in: one line saying what it is, one
+ * link to it, the same "go look elsewhere" shape the topbar's own `Cards` and
+ * `Progress` links use, just placed on the account page instead of the banner
+ * since setting your own base order is a setting, not a section of the app.
+ */
+function BaseOrderCard() {
+  return (
+    <section className="card">
+      <h2 className="section-title">Base order</h2>
+      <p className="empty-hint">
+        The order your own bases are listed in, for pages that narrow down to just yours.
+      </p>
+      <a className="icon-button" href={hrefFor({ view: 'base-order' })}>
+        Set base order
+      </a>
     </section>
   )
 }
@@ -155,6 +178,7 @@ export function AccountView({ user }: { user: SessionUser }) {
       {/* Above the password form on purpose: it is the thing on this page somebody
           comes back to, where changing a password is a once-a-year errand. */}
       <ColorSchemeCard user={user} />
+      <BaseOrderCard />
       <PasswordCard />
     </>
   )

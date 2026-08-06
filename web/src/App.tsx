@@ -2,6 +2,7 @@ import { buildInfo, buildLine } from './build-info.ts'
 import { currentEnvironment } from './environment.ts'
 import { AccountView } from './components/AccountView.tsx'
 import { AdminView } from './components/AdminView.tsx'
+import { BaseOrderView } from './components/BaseOrderView.tsx'
 import { CardsView } from './components/CardsView.tsx'
 import { ClanSearchView } from './components/ClanSearchView.tsx'
 import { ClanView } from './components/ClanView.tsx'
@@ -9,6 +10,7 @@ import { ForcedPasswordChange } from './components/ForcedPasswordChange.tsx'
 import { HelpView } from './components/HelpView.tsx'
 import { LoginScreen } from './components/Login.tsx'
 import { PlayerView } from './components/PlayerView.tsx'
+import { ProgressGridView } from './components/ProgressGridView.tsx'
 import { SavedClansView } from './components/SavedClansView.tsx'
 import { SearchBar } from './components/SearchBar.tsx'
 import { UserMenu } from './components/UserMenu.tsx'
@@ -284,6 +286,16 @@ export function App() {
             Cards
           </a>
         ) : null}
+        {/* Same rule as Cards above: absent on the page it points at. */}
+        {route.view !== 'progress' ? (
+          <a
+            className="icon-button"
+            href={hrefFor({ view: 'progress' })}
+            title="Every base's weekly progress, at a glance"
+          >
+            Progress
+          </a>
+        ) : null}
         {/* One control for everything about *you*: the appearance switch, the
             password page, the admin panel if it is yours, and Sign out. It replaced
             three separate buttons that were squeezing the title on a phone. */}
@@ -322,6 +334,12 @@ export function App() {
 
         {route.view === 'account' ? <AccountView user={user} /> : null}
 
+        {/* Also this account's own, like the account page beside it — reached from
+            the account page's own card and from the account menu (`UserMenu`,
+            same place Colors is), not from the topbar, since it is a personal
+            setting rather than a section of the app everybody navigates into. */}
+        {route.view === 'base-order' ? <BaseOrderView user={user} /> : null}
+
         {/* Guarded inside the view, not here: a member who types the URL is told the
             page is admins-only rather than silently sent home, which would read as a
             broken link. Every `/api/admin/*` route is gated on the server anyway. */}
@@ -340,6 +358,13 @@ export function App() {
             each needs to know who is signed in. Passed down rather than read from
             `useSession` again, which would refetch /api/auth/me per mount. */}
         {route.view === 'cards' ? <CardsView user={user} /> : null}
+
+        {/* Read-only and open to everyone, like the help and what's-new pages
+            above — every row is visible whoever is asking. It does take a
+            user now, but only to know whether the Owner filter it renders is
+            narrowed to *this* account, which decides whether the rows sort by
+            the saved base order instead of the picked column. */}
+        {route.view === 'progress' ? <ProgressGridView user={user} /> : null}
 
         {route.view === 'player' ? (
           <PlayerView key={route.tag} tag={route.tag} user={user} onLoaded={remember} />

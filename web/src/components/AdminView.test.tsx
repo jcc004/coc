@@ -4,7 +4,13 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AdminUser } from '@coc/shared'
 import { api, ApiError } from '../api.ts'
-import { adminAccount, installTestCleanup, sessionUser, stubApi } from '../test-support.ts'
+import {
+  adminAccount,
+  installTestCleanup,
+  sessionUser,
+  stubApi,
+  type ApiStubs,
+} from '../test-support.ts'
 import { AdminView } from './AdminView.tsx'
 
 /**
@@ -23,6 +29,18 @@ installTestCleanup()
 const ADMIN = adminAccount({ id: 1, displayName: 'Rae', email: 'rae@example.com', role: 'admin' })
 const MEMBER = adminAccount({ id: 2, displayName: 'Sam', email: 'sam@example.com', role: 'user' })
 
+/**
+ * `stubApi`, with the reference tables defaulted to empty. `AdminView` always
+ * mounts `ProgressReferenceCard` alongside the users table now, and that card
+ * fetches `GET /api/progress/reference` the moment it mounts — every test here
+ * would otherwise be exercising an *unstubbed* request path instead of the one
+ * it means to test. A test that cares about the reference tables overrides
+ * `progressReference` in its own call.
+ */
+function stub(overrides: ApiStubs = {}): void {
+  stubApi({ progressReference: () => Promise.resolve({ maxLevels: [], walls: [] }), ...overrides })
+}
+
 /** Renders the panel for `who` and waits for the account rows to arrive. */
 async function panel(accounts: AdminUser[], who = ADMIN) {
   const user = userEvent.setup()
@@ -34,7 +52,7 @@ async function panel(accounts: AdminUser[], who = ADMIN) {
 describe('the guard', () => {
   it('refuses the panel to an account that is not an admin, and asks the server for nothing', () => {
     const users = mock.method(api, 'users', () => Promise.resolve({ users: [] }))
-    stubApi({})
+    stub({})
 
     render(<AdminView user={sessionUser({ role: 'user' })} />)
 
@@ -50,7 +68,7 @@ describe('the guard', () => {
 describe('creating an account', () => {
   it('sends what was typed, trimming the name but never the password', async () => {
     const createUser = mock.method(api, 'createUser', () => Promise.resolve({ user: MEMBER }))
-    stubApi({ users: () => Promise.resolve({ users: [ADMIN] }) })
+    stub({ users: () => Promise.resolve({ users: [ADMIN] }) })
     const user = await panel([ADMIN])
 
     await user.type(screen.getByLabelText("New user's email"), 'Nia@Example.com')
@@ -77,7 +95,7 @@ describe('creating an account', () => {
        password this form takes is spent the moment it is used. The copy used to read as
        though changing it were optional, and an admin who believes that has no reason
        not to reuse one password across every account they create. */
-    stubApi({ users: () => Promise.resolve({ users: [ADMIN] }) })
+    stub({ users: () => Promise.resolve({ users: [ADMIN] }) })
     await panel([ADMIN])
 
     const hint = screen.getByText(/Tell them the initial password out of band/)
@@ -86,7 +104,7 @@ describe('creating an account', () => {
 
   it('reports a refusal at the form and keeps what was typed', async () => {
     const refusal = new ApiError(409, 'emailTaken', 'That email address already has an account.')
-    stubApi({
+    stub({
       users: () => Promise.resolve({ users: [ADMIN] }),
       createUser: () => Promise.reject(refusal),
     })
@@ -118,7 +136,7 @@ describe('the temporary password', () => {
     )
 
   it('is shown once and kept nowhere', async () => {
-    stubApi(issuing())
+    stub(issuing())
     mock.method(window, 'confirm', () => true)
     const user = await panel([ADMIN, MEMBER])
 
@@ -142,7 +160,7 @@ describe('the temporary password', () => {
   })
 
   it('admits a copy did not happen rather than letting the password be lost', async () => {
-    stubApi(issuing(0))
+    stub(issuing(0))
     mock.method(window, 'confirm', () => true)
     const user = await panel([ADMIN, MEMBER])
 
@@ -167,7 +185,7 @@ describe('the temporary password', () => {
     const issue = mock.method(api, 'issueTempPassword', () =>
       Promise.resolve({ user: MEMBER, password: 'unused', revokedSessions: 0 }),
     )
-    stubApi({ users: () => Promise.resolve({ users: [ADMIN, MEMBER] }) })
+    stub({ users: () => Promise.resolve({ users: [ADMIN, MEMBER] }) })
     const confirm = mock.method(window, 'confirm', () => false)
     const user = await panel([ADMIN, MEMBER])
 
@@ -183,7 +201,7 @@ describe('changing a role', () => {
     const setUserRole = mock.method(api, 'setUserRole', () =>
       Promise.resolve({ user: { ...MEMBER, role: 'admin' as const } }),
     )
-    stubApi({ users: () => Promise.resolve({ users: [ADMIN, MEMBER] }) })
+    stub({ users: () => Promise.resolve({ users: [ADMIN, MEMBER] }) })
     mock.method(window, 'confirm', () => true)
     const user = await panel([ADMIN, MEMBER])
 
@@ -197,7 +215,7 @@ describe('changing a role', () => {
     const setUserRole = mock.method(api, 'setUserRole', () =>
       Promise.resolve({ user: { ...ADMIN, role: 'user' as const } }),
     )
-    stubApi({ users: () => Promise.resolve({ users: [ADMIN, MEMBER] }) })
+    stub({ users: () => Promise.resolve({ users: [ADMIN, MEMBER] }) })
     mock.method(window, 'confirm', () => true)
     const user = await panel([ADMIN, MEMBER])
 
@@ -214,7 +232,7 @@ describe('changing a role', () => {
       'lastAdmin',
       'The last active admin cannot give up the role — promote somebody else first.',
     )
-    stubApi({
+    stub({
       users: () => Promise.resolve({ users: [ADMIN, MEMBER] }),
       setUserRole: () => Promise.reject(refusal),
     })
@@ -242,7 +260,7 @@ describe('disabling an account', () => {
       accounts = [ADMIN, disable ? disabled : MEMBER]
       return Promise.resolve({ user: disable ? disabled : MEMBER })
     })
-    stubApi({ users: () => Promise.resolve({ users: accounts }) })
+    stub({ users: () => Promise.resolve({ users: accounts }) })
     mock.method(window, 'confirm', () => true)
     const user = await panel([ADMIN, MEMBER])
 
@@ -256,7 +274,7 @@ describe('disabling an account', () => {
   })
 
   it('is not offered on your own row, since the last active admin has to stay usable', async () => {
-    stubApi({ users: () => Promise.resolve({ users: [ADMIN, MEMBER] }) })
+    stub({ users: () => Promise.resolve({ users: [ADMIN, MEMBER] }) })
     await panel([ADMIN, MEMBER])
 
     const buttons = screen.getAllByRole('button', { name: 'Disable' })
@@ -268,7 +286,7 @@ describe('disabling an account', () => {
     const setUserDisabled = mock.method(api, 'setUserDisabled', () =>
       Promise.resolve({ user: MEMBER }),
     )
-    stubApi({ users: () => Promise.resolve({ users: [ADMIN, MEMBER] }) })
+    stub({ users: () => Promise.resolve({ users: [ADMIN, MEMBER] }) })
     const confirm = mock.method(window, 'confirm', () => false)
     const user = await panel([ADMIN, MEMBER])
 
@@ -282,7 +300,7 @@ describe('disabling an account', () => {
 describe('the account table', () => {
   it('names an account that still has to change its password', async () => {
     const pending = adminAccount({ ...MEMBER, mustChangePassword: true })
-    stubApi({ users: () => Promise.resolve({ users: [ADMIN, pending] }) })
+    stub({ users: () => Promise.resolve({ users: [ADMIN, pending] }) })
     await panel([ADMIN, pending])
 
     const row = screen.getByText(pending.displayName).closest('tr')
@@ -291,11 +309,154 @@ describe('the account table', () => {
 
   it('says an account with no email cannot sign in at all', async () => {
     const noEmail = adminAccount({ ...MEMBER, email: null })
-    stubApi({ users: () => Promise.resolve({ users: [ADMIN, noEmail] }) })
+    stub({ users: () => Promise.resolve({ users: [ADMIN, noEmail] }) })
     await panel([ADMIN, noEmail])
 
     // Email *is* the credential, so a null one is a fact about the account rather
     // than a blank cell.
     assert.ok(screen.getByText('No email — cannot sign in'))
+  })
+})
+
+/*
+ * The pet & equipment reference card — the two `max_level_reference` categories
+ * the weekly wiki scrape cannot cover (see `refresh-reference.ts`), hand-entered
+ * here instead. Same assertion style as the rest of this file: which call went
+ * out with which arguments, not markup — except for the bulk-paste rejection,
+ * where the words on screen are the only evidence a bad line was ever caught.
+ */
+describe('the pet & equipment reference card', () => {
+  const petRow = {
+    category: 'pet' as const,
+    name: 'L.A.S.S.I',
+    thLevel: 7,
+    maxLevel: 5,
+    updatedAt: '2026-08-01T00:00:00.000Z',
+  }
+  const equipmentRow = {
+    category: 'equipment' as const,
+    name: 'Giant Gauntlet',
+    thLevel: 14,
+    maxLevel: 18,
+    updatedAt: '2026-08-01T00:00:00.000Z',
+  }
+
+  it('shows pets by default and switches to equipment on request, one table at a time', async () => {
+    stub({
+      users: () => Promise.resolve({ users: [ADMIN] }),
+      progressReference: () => Promise.resolve({ maxLevels: [petRow, equipmentRow], walls: [] }),
+    })
+    const user = await panel([ADMIN])
+
+    await screen.findByText('L.A.S.S.I')
+    assert.equal(screen.queryByText('Giant Gauntlet'), null)
+
+    await user.click(screen.getByRole('button', { name: 'Hero equipment' }))
+
+    await screen.findByText('Giant Gauntlet')
+    assert.equal(screen.queryByText('L.A.S.S.I'), null)
+  })
+
+  it('adds a row through the add-row form', async () => {
+    const saveProgressReference = mock.method(api, 'saveProgressReference', () =>
+      Promise.resolve({ ok: true as const, written: 1 }),
+    )
+    stub({ users: () => Promise.resolve({ users: [ADMIN] }) })
+    const user = await panel([ADMIN])
+
+    await user.type(screen.getByLabelText('Unit name'), 'Mighty Yak')
+    await user.type(screen.getByLabelText('Town Hall level'), '9')
+    await user.type(screen.getByLabelText('Max level at that Town Hall'), '10')
+    await user.click(screen.getByRole('button', { name: 'Add row' }))
+
+    await waitFor(() => assert.equal(saveProgressReference.mock.callCount(), 1))
+    assert.deepEqual(saveProgressReference.mock.calls[0]?.arguments, [
+      'pet',
+      [{ name: 'Mighty Yak', thLevel: 9, maxLevel: 10 }],
+    ])
+  })
+
+  it('edits only the max level in place — the row stays keyed on name and Town Hall', async () => {
+    const saveProgressReference = mock.method(api, 'saveProgressReference', () =>
+      Promise.resolve({ ok: true as const, written: 1 }),
+    )
+    stub({
+      users: () => Promise.resolve({ users: [ADMIN] }),
+      progressReference: () => Promise.resolve({ maxLevels: [petRow], walls: [] }),
+    })
+    const user = await panel([ADMIN])
+
+    await screen.findByText('L.A.S.S.I')
+    await user.click(
+      screen.getByRole('button', { name: 'Change the max level for L.A.S.S.I at Town Hall 7' }),
+    )
+    const input = screen.getByLabelText('Max level for L.A.S.S.I at Town Hall 7')
+    await user.clear(input)
+    await user.type(input, '6')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => assert.equal(saveProgressReference.mock.callCount(), 1))
+    // Never the name or thLevel, which together are the row's upsert key —
+    // letting either drift here would add a second row rather than fix this one.
+    assert.deepEqual(saveProgressReference.mock.calls[0]?.arguments, [
+      'pet',
+      [{ name: 'L.A.S.S.I', thLevel: 7, maxLevel: 6 }],
+    ])
+  })
+
+  it('imports every bulk-pasted row in one request', async () => {
+    const saveProgressReference = mock.method(api, 'saveProgressReference', () =>
+      Promise.resolve({ ok: true as const, written: 2 }),
+    )
+    stub({ users: () => Promise.resolve({ users: [ADMIN] }) })
+    const user = await panel([ADMIN])
+
+    await user.type(
+      screen.getByLabelText(/Bulk paste/),
+      'L.A.S.S.I, 7, 5{enter}Mighty Yak, 9, 10',
+    )
+    await user.click(screen.getByRole('button', { name: 'Import pasted rows' }))
+
+    await waitFor(() => assert.equal(saveProgressReference.mock.callCount(), 1))
+    assert.deepEqual(saveProgressReference.mock.calls[0]?.arguments, [
+      'pet',
+      [
+        { name: 'L.A.S.S.I', thLevel: 7, maxLevel: 5 },
+        { name: 'Mighty Yak', thLevel: 9, maxLevel: 10 },
+      ],
+    ])
+    await screen.findByText('Imported 2 rows.')
+  })
+
+  it('rejects a bad bulk paste before sending anything, and names the line', async () => {
+    const saveProgressReference = mock.method(api, 'saveProgressReference', () =>
+      Promise.resolve({ ok: true as const, written: 1 }),
+    )
+    stub({ users: () => Promise.resolve({ users: [ADMIN] }) })
+    const user = await panel([ADMIN])
+
+    await user.type(screen.getByLabelText(/Bulk paste/), 'Mighty Yak, 9')
+    await user.click(screen.getByRole('button', { name: 'Import pasted rows' }))
+
+    await screen.findByText(/Line 1/)
+    assert.equal(saveProgressReference.mock.callCount(), 0)
+  })
+
+  it('reports a refusal at the add-row form and keeps what was typed', async () => {
+    const refusal = new ApiError(403, 'forbidden', 'This endpoint is for admins only.')
+    stub({
+      users: () => Promise.resolve({ users: [ADMIN] }),
+      saveProgressReference: () => Promise.reject(refusal),
+    })
+    const user = await panel([ADMIN])
+
+    await user.type(screen.getByLabelText('Unit name'), 'Mighty Yak')
+    await user.type(screen.getByLabelText('Town Hall level'), '9')
+    await user.type(screen.getByLabelText('Max level at that Town Hall'), '10')
+    await user.click(screen.getByRole('button', { name: 'Add row' }))
+
+    await screen.findByText(refusal.message)
+    const name = screen.getByLabelText('Unit name')
+    assert.equal((name as HTMLInputElement).value, 'Mighty Yak')
   })
 })

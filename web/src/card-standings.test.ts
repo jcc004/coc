@@ -30,8 +30,38 @@ function base(tag: string, counts: [number, number][], updatedAt?: string): Base
   }
 }
 
-function named(tag: string, label: string, owner: string | null = null): StandingBase {
-  return { tag, label, owner }
+/*
+ * The filter now keys on the account id, not the label — see `Ownable` in
+ * `card-standings.ts`. Fixtures still name an owner by a string, so this hands out a
+ * stable id per label the first time it is seen, the same account across every base
+ * that names the same person. A test that needs two *different* accounts sharing one
+ * display name, or an unlinked legacy label, passes `ownerUserId` explicitly instead
+ * of leaving it to be derived.
+ */
+let nextOwnerId = 1
+const ownerIds = new Map<string, number>()
+function ownerId(owner: string): number {
+  let id = ownerIds.get(owner)
+  if (id === undefined) {
+    id = nextOwnerId
+    nextOwnerId += 1
+    ownerIds.set(owner, id)
+  }
+  return id
+}
+
+function named(
+  tag: string,
+  label: string,
+  owner: string | null = null,
+  ownerUserId?: number | null,
+): StandingBase {
+  return {
+    tag,
+    label,
+    owner,
+    ownerUserId: owner === null ? null : ownerUserId !== undefined ? ownerUserId : ownerId(owner),
+  }
 }
 
 /** A save stamp, in the ISO form the server sends. */
@@ -290,7 +320,7 @@ describe('filterStandingsByOwner — the rank is the whole board’s, not the fi
   it('keeps each base’s standing among every tracked base, not 1 upwards', () => {
     /* The one column on this board that carries meaning. Renumbering an owner's bases
        1, 2, 3 would make a leaderboard of one out of a slice of the clan's. */
-    const filtered = filterStandingsByOwner(board(), 'Rae')
+    const filtered = filterStandingsByOwner(board(), String(ownerId('Rae')))
     assert.deepEqual(
       filtered.map((row) => [row.label, row.rank]),
       [
@@ -323,7 +353,7 @@ describe('filterStandingsByOwner — the rank is the whole board’s, not the fi
       ],
     )
     assert.deepEqual(
-      filterStandingsByOwner(rows, 'Ivy').map((row) => [row.label, row.rank]),
+      filterStandingsByOwner(rows, String(ownerId('Ivy'))).map((row) => [row.label, row.rank]),
       [['Cass', 2]],
     )
   })
@@ -343,9 +373,42 @@ describe('filterStandingsByOwner — the rank is the whole board’s, not the fi
     )
   })
 
+  it('folds an unlinked legacy label in with the truly unassigned, since neither has an account id', () => {
+    // Dave's label was never matched to an account, so `ownerUserId` is null exactly
+    // like Dana's base with no assignment at all — the deliberate narrowing `Ownable`
+    // documents: one definition of "is this my base" everywhere, not a label match here
+    // and an id match everywhere else.
+    const rows = baseStandings(
+      [named('#A', 'Anna', 'Dave', null), named('#B', 'Bert', null)],
+      [],
+    )
+    assert.deepEqual(
+      filterStandingsByOwner(rows, UNASSIGNED_OWNER).map((row) => row.label),
+      ['Anna', 'Bert'],
+    )
+  })
+
+  it('keeps two accounts with the same display name apart, since the id decides sameness', () => {
+    // A real if rare case a label comparison could not tell apart: two different
+    // accounts that happen to share a display name.
+    const rows = baseStandings(
+      [named('#A', 'Anna', 'Sam', 101), named('#B', 'Bert', 'Sam', 202)],
+      [],
+    )
+    assert.deepEqual(
+      filterStandingsByOwner(rows, '101').map((row) => row.label),
+      ['Anna'],
+    )
+    assert.deepEqual(
+      filterStandingsByOwner(rows, '202').map((row) => row.label),
+      ['Bert'],
+    )
+  })
+
   it('narrows to nothing for an owner who is not on the board, rather than to everything', () => {
     // The select cannot offer this, but a filter that fell back to "everybody" on a
     // value it did not recognize would be a filter that silently stopped filtering.
+    // A non-numeric value parses to `NaN`, which matches no row's `ownerUserId` either.
     assert.deepEqual(filterStandingsByOwner(board(), 'Nobody'), [])
   })
 })
@@ -355,8 +418,8 @@ describe('standingOwnerOptions — built from the owners actually on the board',
     assert.deepEqual(standingOwnerOptions(board()), [
       { value: ALL_OWNERS, label: 'Everyone' },
       { value: UNASSIGNED_OWNER, label: 'No owner set' },
-      { value: 'Rae', label: 'Rae' },
-      { value: 'Sam', label: 'Sam' },
+      { value: String(ownerId('Rae')), label: 'Rae' },
+      { value: String(ownerId('Sam')), label: 'Sam' },
     ])
   })
 
@@ -366,18 +429,18 @@ describe('standingOwnerOptions — built from the owners actually on the board',
     const owned = baseStandings([named('#A', 'Anna', 'Rae'), named('#B', 'Bert', 'Sam')], [])
     assert.deepEqual(
       standingOwnerOptions(owned).map((option) => option.value),
-      [ALL_OWNERS, 'Rae', 'Sam'],
+      [ALL_OWNERS, String(ownerId('Rae')), String(ownerId('Sam'))],
     )
   })
 
-  it('lists an unlinked legacy label like any other owner, since it still names a person', () => {
-    // `mayWriteBaseCounts` separates `ownerNotLinked` from `unowned`, and so does this:
-    // a label nobody has matched to an account is not a permission, but "which of
-    // Dave's bases have gone stale" is still a question worth being able to ask.
-    const rows = baseStandings([named('#A', 'Anna', 'Dave'), named('#B', 'Bert', null)], [])
+  it('folds an unlinked legacy label into the unassigned option, not one of its own', () => {
+    // `mayWriteBaseCounts` still separates `ownerNotLinked` from `unowned` for
+    // *permission*, but this select now answers a different question — grouping by
+    // `ownerUserId` — and an unlinked label has none, the same as no assignment at all.
+    const rows = baseStandings([named('#A', 'Anna', 'Dave', null), named('#B', 'Bert', null)], [])
     assert.deepEqual(
       standingOwnerOptions(rows).map((option) => option.value),
-      [ALL_OWNERS, UNASSIGNED_OWNER, 'Dave'],
+      [ALL_OWNERS, UNASSIGNED_OWNER],
     )
   })
 
@@ -385,15 +448,28 @@ describe('standingOwnerOptions — built from the owners actually on the board',
     const rows = baseStandings([named('#A', 'Anna', 'Rae'), named('#B', 'Bert', 'Rae')], [])
     assert.deepEqual(
       standingOwnerOptions(rows).map((option) => option.value),
-      [ALL_OWNERS, 'Rae'],
+      [ALL_OWNERS, String(ownerId('Rae'))],
     )
+  })
+
+  it('lists two accounts sharing a display name as two options, the label unaffected', () => {
+    const rows = baseStandings(
+      [named('#A', 'Anna', 'Sam', 301), named('#B', 'Bert', 'Sam', 302)],
+      [],
+    )
+    assert.deepEqual(standingOwnerOptions(rows), [
+      { value: ALL_OWNERS, label: 'Everyone' },
+      { value: '301', label: 'Sam' },
+      { value: '302', label: 'Sam' },
+    ])
   })
 })
 
 describe('activeOwnerFilter — a chosen owner who has left the board', () => {
   it('keeps a choice the board can still offer', () => {
     const options = standingOwnerOptions(board())
-    assert.equal(activeOwnerFilter(options, 'Sam'), 'Sam')
+    const sam = String(ownerId('Sam'))
+    assert.equal(activeOwnerFilter(options, sam), sam)
     assert.equal(activeOwnerFilter(options, UNASSIGNED_OWNER), UNASSIGNED_OWNER)
   })
 

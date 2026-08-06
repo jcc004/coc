@@ -1,0 +1,86 @@
+# Runs refresh-reference.ts once, to keep max_level_reference and wall_reference
+# current against clashofclans.fandom.com. Paired with coc-progress-reference.timer,
+# which fires weekly — see the timer file for the schedule and why it runs an hour
+# ahead of the snapshot capture.
+#
+#   sudo cp deploy/coc-progress-reference.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now coc-progress-reference.timer
+#   systemctl list-timers coc-progress-reference   # when it next/last fired
+#   journalctl -u coc-progress-reference -n 40      # what the last run did
+
+[Unit]
+Description=Refresh the CoC max-level wiki reference data
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=crighjc
+
+# Same reasoning as coc.service: DATABASE_PATH defaults to ./data/coc.db, which
+# only resolves to the real database — /srv/coc/server/data/coc.db — from this
+# cwd. Confirmed directly rather than assumed: running the equivalent script from
+# /srv/coc instead resolves to a nonexistent /srv/coc/data/coc.db.
+WorkingDirectory=/srv/coc/server
+
+# tsx directly, loading /srv/coc/.env the same way coc.service does — no
+# EnvironmentFile=, because the script reads WIKI_CONTACT (optional, for a polite
+# wiki User-Agent) from the environment itself via the --env-file flag.
+ExecStart=/srv/coc/node_modules/.bin/tsx --env-file-if-exists=/srv/coc/.env /srv/coc/server/src/progress/refresh-reference.ts
+
+# Four serial wiki requests a little over a second apart (see the file header),
+# so this finishes in a few seconds; the ceiling only guards against the wiki
+# hanging.
+TimeoutStartSec=300
+
+# ------------------------------------------------------------------ sandboxing
+#
+# Same tier as coc.service, not coc-update.service's lighter one: this unit runs
+# no git, no npm, no sudo — just a Node process making outbound HTTPS calls (to
+# the wiki) and writing to the one SQLite file coc.service also owns. Nothing
+# here needs the escape hatches coc-update.service's comment explains.
+NoNewPrivileges=true
+
+ProtectSystem=strict
+ReadWritePaths=/srv/coc/server/data
+
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+
+# Outbound HTTPS to the wiki. No loopback listener needed — unlike coc.service,
+# this process never binds a port — but AF_INET/AF_INET6 are still required for
+# the outbound side, and AF_UNIX for anything Node's own internals open locally.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# Matches coc.service: the database this writes holds no secrets itself, but
+# UMask=0077 costs nothing and keeps every file this process creates consistent
+# with the server's.
+UMask=0077
+
+# MemoryDenyWriteExecute is deliberately NOT set, for the same reason coc.service
+# omits it: V8 needs W+X memory for its own JIT output, and setting this gives a
+# crash loop whose message points nowhere near this file.
+
+[Install]
+WantedBy=multi-user.target

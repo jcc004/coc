@@ -30,6 +30,7 @@ const ROUTES: readonly Route[] = [
   { view: 'account' },
   { view: 'admin' },
   { view: 'cards' },
+  { view: 'progress' },
   { view: 'whats-new' },
   { view: 'help', section: null },
   { view: 'help', section: 'trades' },
@@ -40,6 +41,7 @@ describe('parseHash — the views that take no parameter', () => {
     assert.deepEqual(parseHash('#/account'), { view: 'account' })
     assert.deepEqual(parseHash('#/admin'), { view: 'admin' })
     assert.deepEqual(parseHash('#/cards'), { view: 'cards' })
+    assert.deepEqual(parseHash('#/progress'), { view: 'progress' })
     assert.deepEqual(parseHash('#/whats-new'), { view: 'whats-new' })
   })
 

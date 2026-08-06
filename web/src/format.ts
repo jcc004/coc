@@ -36,6 +36,17 @@ export function formatDateTime(date: Date): string {
   return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+/**
+ * A bare `YYYY-MM-DD` (a progress snapshot's `weekStart`, which carries no time of
+ * day) as a reader would want it. Parsed with an explicit UTC midnight rather than
+ * handed to `new Date(isoDate)` directly: that constructor already treats a
+ * date-only string as UTC, but spelling it out here means this reads correctly even
+ * if a caller ever passes a value `Date` would parse in the local zone instead.
+ */
+export function formatDate(isoDate: string): string {
+  return new Date(`${isoDate}T00:00:00Z`).toLocaleDateString(undefined, { dateStyle: 'medium' })
+}
+
 export function ratio(numerator: number, denominator: number): string {
   if (denominator === 0) return numerator === 0 ? '—' : '∞'
   return (numerator / denominator).toFixed(2)

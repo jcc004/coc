@@ -27,6 +27,7 @@
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { KNOWN_ENTRIES, mergeKnownNames } from './wiki-art-known-names.mjs'
 
 const TOKEN = process.env.COC_API_TOKEN
 if (!TOKEN) {
@@ -140,10 +141,19 @@ const cocApi = async (path) => {
 }
 
 /**
- * The set of names to look for, taken from the API itself rather than hardcoded,
- * so art for a new troop arrives without editing this script. Sampled from the
- * highest Town Hall members of a few large clans — a maxed profile lists every
- * unit, including the ones the owner has not unlocked.
+ * The set of names to look for. Mostly taken from the API itself rather than
+ * hardcoded, so art for a new troop arrives without editing this script: sampled
+ * from the highest Town Hall members of a few large clans — a maxed profile lists
+ * every unit, including the ones the owner has not unlocked.
+ *
+ * That sampling only ever finds a name if some sampled account happens to have it
+ * equipped, which is a real gap for hero equipment (41 items across six heroes —
+ * no small sample owns all of them). `KNOWN_ENTRIES` from
+ * ./wiki-art-known-names.mjs supplements it with the complete known equipment and
+ * pet catalog, so those names are attempted regardless of what any sampled account
+ * happens to be wearing. Troops, spells and heroes stay sample-only: that catalog
+ * is far more stable and a hardcoded list there would just be another place to
+ * forget to update.
  */
 async function discoverNames() {
   const { items: clans } = await cocApi('/clans?minMembers=45&minClanLevel=20&limit=8')
@@ -173,12 +183,19 @@ async function discoverNames() {
     for (const item of player.heroes) remember('hero', item)
     for (const item of player.heroEquipment ?? []) remember('equipment', item)
   }
-  console.log(`sampled ${Math.min(6, candidateTags.length)} maxed profiles: ${entries.size} unit names`)
+  const sampledCount = entries.size
+  console.log(`sampled ${Math.min(6, candidateTags.length)} maxed profiles: ${sampledCount} unit names`)
+
+  const merged = mergeKnownNames([...entries.values()], KNOWN_ENTRIES)
+  console.log(
+    `known-name catalog: ${KNOWN_ENTRIES.length} hero equipment/pet names checked, ` +
+      `${merged.length - sampledCount} not already found by sampling`,
+  )
 
   for (let level = TOWN_HALL_MIN; level <= TOWN_HALL_MAX; level++) {
-    entries.set(`townHall:${level}`, { kind: 'townHall', name: String(level), village: 'home' })
+    merged.push({ kind: 'townHall', name: String(level), village: 'home' })
   }
-  return [...entries.values()]
+  return merged
 }
 
 /* ---------- resolving names to wiki files ---------- */

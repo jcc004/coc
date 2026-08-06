@@ -91,6 +91,8 @@ export interface BaseLabels {
   labelOf: (tag: string) => string
 }
 
+const NO_EXTRA_TAGS: readonly string[] = []
+
 /**
  * The tracked bases, named.
  *
@@ -103,16 +105,27 @@ export interface BaseLabels {
  * labels have to read the same in a picker, a leaderboard and a trade table on two
  * different pages, and a name shared by two bases must still get its `(#TAG)` suffix
  * when the caller happens to be showing only one of them.
+ *
+ * `extraTags` is purely additive and defaults to empty, so every existing caller
+ * (cards, trades) is unaffected. It exists for `ProgressGridView`, which — unlike
+ * cards and trades — is not meant to be owner-gated: progress-tracking reads
+ * straight off the live API with no ownership question involved, so the board wants
+ * every clan member the server has ever captured a row for, not just the ones
+ * somebody has claimed. Passing that wider set here, rather than duplicating this
+ * function's tag/name/label machinery in a progress-local copy, is what keeps the
+ * two pages' labels reading the same way for a base both happen to show.
  */
 export function useBaseLabels(
   owners: readonly { tag: string }[],
   bases: readonly BaseInventory[],
+  extraTags: readonly string[] = NO_EXTRA_TAGS,
 ): BaseLabels {
   const tags = useMemo(() => {
     const all = new Set(owners.map((entry) => entry.tag))
     for (const base of bases) all.add(base.tag)
+    for (const tag of extraTags) all.add(tag)
     return [...all].sort()
-  }, [owners, bases])
+  }, [owners, bases, extraTags])
 
   const memberNames = useMemberNames(tags)
 

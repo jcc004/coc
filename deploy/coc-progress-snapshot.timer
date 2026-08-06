@@ -1,0 +1,17 @@
+# Fires weekly, an hour after coc-progress-reference.timer — see that timer for
+# why the order matters (this job classifies pets by looking names up in the
+# table the reference job populates).
+
+[Unit]
+Description=Weekly auto-capture of CoC base progress snapshots
+
+[Timer]
+# Calendar events are local time unless a zone is named — UTC here so the
+# schedule does not drift with the host's timezone or DST.
+OnCalendar=Tue *-*-* 17:00:00 UTC
+# A missed window (the droplet was off) fires once on the next boot rather than
+# waiting a full week, same reasoning as coc-update.timer's Persistent=true.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { MAX_CARD_COUNT, type BaseInventory, type SessionUser } from '@coc/shared'
 import { useBaseLabels } from '../base-labels.ts'
+import { applyBaseOrder, useBaseOrder } from '../base-order.ts'
 import { activeTag, ownsAnyBase, tagsInScope, type BaseScope } from '../base-scope.ts'
 import { baseOwnerOf } from '../card-entry.ts'
 import { cardDemand, cardHolders, type CardDemand, type CardHolder } from '../card-holders.ts'
@@ -845,6 +846,11 @@ export function CardsView({ user }: { user: SessionUser }) {
     return (tag: string) => byTag.get(tag)
   }, [owners])
 
+  const ownerUserIdOf = useMemo(() => {
+    const byTag = new Map(owners.map((entry) => [entry.tag, entry.ownerUserId ?? null]))
+    return (tag: string) => byTag.get(tag) ?? null
+  }, [owners])
+
   /*
    * The tracked bases and the text to print for each. Which bases those are, and
    * how a shared name is disambiguated, is `useBaseLabels`' — shared with the
@@ -872,11 +878,30 @@ export function CardsView({ user }: { user: SessionUser }) {
   const ownsAny = useMemo(() => ownsAnyBase(scopedBases, user.id), [scopedBases, user.id])
   const [scope, setScope] = useBaseScope(user.id, ownsAny, ownersReady)
 
+  const mineTags = useMemo(
+    () => tagsInScope(scopedBases, 'mine', user.id),
+    [scopedBases, user.id],
+  )
+  /*
+   * Read-only here: this page reorders nothing, it only shows the order
+   * `#/base-order` saved. `reorder()` is left unused on purpose — see the doc
+   * on `useBaseOrder` for why the read side alone is what a caller like this
+   * wants.
+   */
+  const baseOrder = useBaseOrder(mineTags, ownersReady)
+
   const options = useMemo(() => {
     if (scope === 'all') return allOptions
-    const mine = new Set(tagsInScope(scopedBases, 'mine', user.id))
-    return allOptions.filter((option) => mine.has(option.tag))
-  }, [allOptions, scope, scopedBases, user.id])
+    /*
+     * Mine is ordered by the saved base order, not alphabetically like `All`
+     * stays — `applyBaseOrder` only reorders, so a tag `baseOrder` has not
+     * caught up with yet (still loading, or reconciliation not run) simply
+     * keeps `allOptions`' alphabetical position instead of vanishing.
+     */
+    const mine = new Set(mineTags)
+    const mineOptions = allOptions.filter((option) => mine.has(option.tag))
+    return applyBaseOrder(mineOptions, baseOrder.tags)
+  }, [allOptions, scope, mineTags, baseOrder.tags])
 
   /*
    * The base the picker was left on, per account, at `coc:cardBase:<id>` — so a
@@ -932,10 +957,15 @@ export function CardsView({ user }: { user: SessionUser }) {
   const standings = useMemo(
     () =>
       baseStandings(
-        tags.map((tag) => ({ tag, label: labelOf(tag), owner: ownerOf(tag) ?? null })),
+        tags.map((tag) => ({
+          tag,
+          label: labelOf(tag),
+          owner: ownerOf(tag) ?? null,
+          ownerUserId: ownerUserIdOf(tag),
+        })),
         bases,
       ),
-    [tags, labelOf, ownerOf, bases],
+    [tags, labelOf, ownerOf, ownerUserIdOf, bases],
   )
   const totals = useMemo(() => cardTotals(bases, cardsInGridOrder()), [bases])
   const absentCount = useMemo(() => totals.filter((entry) => entry.absent).length, [totals])

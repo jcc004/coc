@@ -1,0 +1,85 @@
+# Runs capture-snapshot.ts once, capturing this week's TH/heroes/equipment/pets/
+# troops/spells for every owned base. Paired with coc-progress-snapshot.timer,
+# which fires weekly, an hour after coc-progress-reference.timer — see that timer
+# for why the order matters.
+#
+#   sudo cp deploy/coc-progress-snapshot.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now coc-progress-snapshot.timer
+#   systemctl list-timers coc-progress-snapshot   # when it next/last fired
+#   journalctl -u coc-progress-snapshot -n 40      # what the last run did
+
+[Unit]
+Description=Weekly auto-capture of CoC base progress snapshots
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=crighjc
+
+# Same reasoning as coc.service: DATABASE_PATH defaults to ./data/coc.db, which
+# only resolves to the real database — /srv/coc/server/data/coc.db — from this
+# cwd. Confirmed directly rather than assumed: running the equivalent script from
+# /srv/coc instead resolves to a nonexistent /srv/coc/data/coc.db.
+WorkingDirectory=/srv/coc/server
+
+# tsx directly, loading /srv/coc/.env the same way coc.service does — this is
+# where COC_API_TOKEN comes from, the same token coc.service itself uses.
+ExecStart=/srv/coc/node_modules/.bin/tsx --env-file-if-exists=/srv/coc/.env /srv/coc/server/src/progress/capture-snapshot.ts
+
+# One sequential API call per owned base (dozens, not thousands — see the file's
+# CaptureDeps comment on why this doesn't need concurrency). Generous ceiling
+# against a slow or degraded CoC API, not the expected run time.
+TimeoutStartSec=900
+
+# ------------------------------------------------------------------ sandboxing
+#
+# Same tier as coc.service, not coc-update.service's lighter one: this unit runs
+# no git, no npm, no sudo — just a Node process making outbound HTTPS calls (to
+# the Clash of Clans API, the same one coc.service itself calls) and writing to
+# the one SQLite file coc.service also owns.
+NoNewPrivileges=true
+
+ProtectSystem=strict
+ReadWritePaths=/srv/coc/server/data
+
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+
+# Outbound HTTPS to the Clash of Clans API. No loopback listener needed — unlike
+# coc.service, this process never binds a port — but AF_INET/AF_INET6 are still
+# required for the outbound side, and AF_UNIX for anything Node's own internals
+# open locally.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# Matches coc.service: new files created owner-only, consistent with the rest of
+# what this database directory holds.
+UMask=0077
+
+# MemoryDenyWriteExecute is deliberately NOT set, for the same reason coc.service
+# omits it: V8 needs W+X memory for its own JIT output, and setting this gives a
+# crash loop whose message points nowhere near this file.
+
+[Install]
+WantedBy=multi-user.target

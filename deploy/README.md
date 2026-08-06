@@ -57,6 +57,10 @@ session cookies cross the network in clear text.
 - `coc-update.service` / `coc-update.timer` — the pull-based deploy: every five
   minutes the droplet checks `origin/main` and runs `update.sh` if it has moved.
   Sandboxed much more lightly, and the unit says why.
+- `coc-progress-reference.service` / `.timer` and `coc-progress-snapshot.service` /
+  `.timer` — the two weekly progress-tracking jobs, Tuesdays 16:00 and 17:00 UTC.
+  Sandboxed as tightly as `coc.service` itself. See "Weekly progress-tracking
+  jobs" below.
 - `nginx-coc.conf` — Nginx site: HTTPS on 443 serving the built SPA from
   `web/dist`, proxying `/api` to `127.0.0.1:8787`, with an HTTP server block
   that only redirects and serves ACME challenges. Also carries the security
@@ -728,3 +732,69 @@ sudo -n systemctl restart coc     # must not prompt
 
 Narrow it to those commands. A blanket `NOPASSWD: ALL` would make the deploy key — or
 a compromised CI job — equivalent to root.
+
+## Weekly progress-tracking jobs
+
+Two more oneshot units, on the same pull-based-timer pattern as `coc-update` above
+but unrelated to it — these keep the base-progress feature's data current rather
+than deploying anything, and neither runs `git`, `npm` or `sudo`.
+
+- **`coc-progress-reference.service` / `.timer`** — runs
+  `server/src/progress/refresh-reference.ts`, which re-scrapes
+  `clashofclans.fandom.com` for the current max-level and wall reference tables.
+  Fires **Tuesdays 16:00 UTC**.
+- **`coc-progress-snapshot.service` / `.timer`** — runs
+  `server/src/progress/capture-snapshot.ts`, the weekly auto-capture of
+  TH/heroes/equipment/pets/troops/spells for every owned base, against the live
+  Clash of Clans API. Fires **Tuesdays 17:00 UTC**, an hour after the reference
+  refresh above.
+
+The order is not arbitrary: the snapshot job classifies a troop as a pet by
+looking its name up in `max_level_reference` (`petNamesFromReference`,
+`server/src/progress/capture-snapshot.ts`) — the table the reference job
+populates. Running reference first means that lookup is current before the
+snapshot reads it, rather than a week stale. An empty pet table is a harmless
+bootstrap gap on the very first run (everything classifies as a troop until the
+first reference refresh completes) but would be a recurring one every week if
+the jobs ran in the other order, or too close together to reliably serialize.
+
+Both units are sandboxed the same way `coc.service` is (`ProtectSystem=strict`,
+`NoNewPrivileges=true`, the same `Restrict*`/`Protect*` block) rather than
+`coc-update.service`'s lighter tier, because neither needs `sudo` — they are
+read-then-write jobs against the same SQLite file `coc.service` owns, calling
+either the CoC API or the wiki's API outbound, and nothing else. Both also use
+`WorkingDirectory=/srv/coc/server`, for the identical reason `coc.service` does:
+`DATABASE_PATH` defaults to `./data/coc.db`, which only resolves to the real
+database from that directory.
+
+```bash
+sudo cp deploy/coc-progress-reference.{service,timer} /etc/systemd/system/
+sudo cp deploy/coc-progress-snapshot.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now coc-progress-reference.timer
+sudo systemctl enable --now coc-progress-snapshot.timer
+
+# When each last/next ran
+systemctl list-timers 'coc-progress-*'
+
+# What the last run did
+journalctl -u coc-progress-reference -n 40
+journalctl -u coc-progress-snapshot -n 40
+
+# Run one by hand, off-schedule, without waiting for Tuesday
+sudo systemctl start coc-progress-reference
+sudo systemctl start coc-progress-snapshot
+```
+
+Both `OnCalendar` lines are `UTC`-qualified explicitly — systemd calendar events
+are local time otherwise, which would drift the schedule with the host's
+timezone and DST. Verify the syntax before relying on it:
+
+```bash
+systemd-analyze calendar 'Tue *-*-* 16:00:00 UTC'
+systemd-analyze calendar 'Tue *-*-* 17:00:00 UTC'
+```
+
+Like `coc-update.timer`, both carry `Persistent=true`: a missed window (the
+droplet was off at 16:00 or 17:00 Tuesday) fires once on the next boot rather
+than waiting a full week for the next occurrence.

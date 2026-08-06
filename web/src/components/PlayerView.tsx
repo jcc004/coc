@@ -8,6 +8,7 @@ import { formatFull, formatStat, ratio } from '../format.ts'
 import { hrefFor, useAsync, type Recent } from '../hooks.ts'
 import { artFor, type ArtKind } from '../wiki-art.ts'
 import { PlayerCardPanel } from './PlayerCardPanel.tsx'
+import { PlayerProgressPanel } from './PlayerProgressPanel.tsx'
 import {
   Card,
   ErrorPanel,
@@ -80,6 +81,25 @@ function builderBase(items: PlayerItemLevel[] | undefined): PlayerItemLevel[] {
   return (items ?? []).filter((item) => item.village === 'builderBase')
 }
 
+function HeroCard({ title, heroes }: { title: string; heroes: PlayerItemLevel[] }) {
+  if (heroes.length === 0) return null
+  return (
+    <Card title={title}>
+      <div className="meter-grid">
+        {heroes.map((hero) => (
+          <LevelRow
+            key={hero.name}
+            name={hero.name}
+            level={hero.level}
+            maxLevel={hero.maxLevel}
+            art={artFor('hero', hero.name)}
+          />
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 function LevelGroup({
   title,
   items,
@@ -134,6 +154,7 @@ export function PlayerView({
   if (!player) return null
 
   const heroes = homeVillage(player.heroes)
+  const builderHeroes = builderBase(player.heroes)
   const equipment = player.heroEquipment ?? []
 
   return (
@@ -207,6 +228,12 @@ export function PlayerView({
           so sixty tiles cannot bury the rest of the page. */}
       <PlayerCardPanel tag={player.tag} name={player.name} user={user} />
 
+      {/* Beside the card panel rather than folded into it: cards and weekly
+          progress are two different weekly rituals sharing one base, not one
+          feature. Same mount shape, same reason it needs the tag and the session
+          user and nothing else picked for it. */}
+      <PlayerProgressPanel tag={player.tag} name={player.name} user={user} />
+
       <TileRow>
         <StatTile label="Best trophies" value={player.bestTrophies} />
         <StatTile label="War stars" value={player.warStars} />
@@ -232,21 +259,8 @@ export function PlayerView({
         ) : null}
       </TileRow>
 
-      {heroes.length > 0 ? (
-        <Card title="Heroes">
-          <div className="meter-grid">
-            {heroes.map((hero) => (
-              <LevelRow
-                key={hero.name}
-                name={hero.name}
-                level={hero.level}
-                maxLevel={hero.maxLevel}
-                art={artFor('hero', hero.name)}
-              />
-            ))}
-          </div>
-        </Card>
-      ) : null}
+      <HeroCard title="Heroes" heroes={heroes} />
+      <HeroCard title="Builder base heroes" heroes={builderHeroes} />
 
       <Card title="Progression">
         <LevelGroup title="Home village troops" items={homeVillage(player.troops)} kind="troop" />
@@ -256,9 +270,12 @@ export function PlayerView({
         <details className="group">
           <summary>Achievements ({player.achievements.length})</summary>
           <div className="group__body meter-grid">
-            {player.achievements.map((achievement) => (
+            {player.achievements.map((achievement, index) => (
               <LevelRow
-                key={achievement.name}
+                /* Supercell's API has returned two entries with the identical name
+                   for one account (a stale pre-rename "Keep Your Account Safe!"
+                   alongside the current one), so `name` alone cannot key this list. */
+                key={`${achievement.name}-${index}`}
                 name={`${achievement.name} · ${achievement.stars}★`}
                 /* Completed achievements keep counting past their target, so the
                    meter clamps while the label keeps the true running total. */

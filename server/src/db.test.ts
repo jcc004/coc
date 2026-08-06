@@ -466,14 +466,18 @@ describe('migration v5 — card_base_updates', () => {
     await createV1Database(path, [{ username: 'jcc@example.com' }])
 
     // Wind back to a realistic v4-shaped database for the backfill to read: the
-    // stamp table gone, v6's column with it, v7's and v10's tables too, and v9's
-    // back in place, so every step after v4 really re-runs.
+    // stamp table gone, v6's column with it, v7's, v10's, v11's and v12's tables
+    // too, and v9's back in place, so every step after v4 really re-runs.
     const staged = new DatabaseSync(path)
     migrate(staged)
     staged.exec('DROP TABLE card_base_updates')
     staged.exec('ALTER TABLE owner_assignments DROP COLUMN owner_user_id')
     staged.exec('DROP TABLE trades')
     staged.exec('DROP TABLE auth_events')
+    staged.exec('DROP TABLE base_progress')
+    staged.exec('DROP TABLE max_level_reference')
+    staged.exec('DROP TABLE wall_reference')
+    staged.exec('DROP TABLE base_order')
     staged.exec(`
 CREATE TABLE chat_messages (
   id         INTEGER PRIMARY KEY,
@@ -601,6 +605,10 @@ describe('migration v6 — owner_user_id', () => {
     // v5-shaped fixture really is one and each later step re-runs against it.
     db.exec('DROP TABLE trades')
     db.exec('DROP TABLE auth_events')
+    db.exec('DROP TABLE base_progress')
+    db.exec('DROP TABLE max_level_reference')
+    db.exec('DROP TABLE wall_reference')
+    db.exec('DROP TABLE base_order')
     db.exec(`
 CREATE TABLE chat_messages (
   id         INTEGER PRIMARY KEY,
@@ -789,6 +797,10 @@ describe('migration v7 — trades', () => {
     migrate(db)
     db.exec('DROP TABLE trades')
     db.exec('DROP TABLE auth_events')
+    db.exec('DROP TABLE base_progress')
+    db.exec('DROP TABLE max_level_reference')
+    db.exec('DROP TABLE wall_reference')
+    db.exec('DROP TABLE base_order')
     db.exec(`
 CREATE TABLE chat_messages (
   id         INTEGER PRIMARY KEY,
@@ -1031,8 +1043,13 @@ describe('migration v8 — plaintext session tokens are wiped, not rehashed', ()
 
     const db = new DatabaseSync(path)
     migrate(db)
-    // v10's table off and v9's back on, so each outstanding step really is outstanding.
+    // v10's, v11's and v12's tables off and v9's back on, so each outstanding
+    // step really is outstanding.
     db.exec('DROP TABLE auth_events')
+    db.exec('DROP TABLE base_progress')
+    db.exec('DROP TABLE max_level_reference')
+    db.exec('DROP TABLE wall_reference')
+    db.exec('DROP TABLE base_order')
     db.exec(`
 CREATE TABLE chat_messages (
   id         INTEGER PRIMARY KEY,

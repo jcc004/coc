@@ -10,6 +10,8 @@ import {
 import { mountAuthRoutes } from './auth/routes.ts'
 import { createLoginLimiter, type LoginLimiter } from './auth/rate-limit.ts'
 import type { AuthStore } from './auth/store.ts'
+import { mountBaseOrderRoutes } from './base-order/routes.ts'
+import type { BaseOrderStore } from './base-order/store.ts'
 import type { TtlCache } from './cache.ts'
 import { mountCardRoutes } from './cards/routes.ts'
 import type { CardInventoryStore } from './cards/store.ts'
@@ -17,6 +19,8 @@ import { mountTradeRoutes } from './cards/trade-routes.ts'
 import type { TradeStore } from './cards/trades-store.ts'
 import { CocApiError, type CocClient } from './coc-client.ts'
 import { errorBody } from './http.ts'
+import { mountProgressRoutes } from './progress/routes.ts'
+import type { ProgressStore } from './progress/store.ts'
 import { mountSharedDataRoutes } from './shared-data/routes.ts'
 import type { SharedDataStore } from './shared-data/store.ts'
 
@@ -34,6 +38,13 @@ export interface AppDeps {
    * than the two being kept apart.
    */
   trades: TradeStore
+  /** Weekly per-base progress — auto-captured levels plus hand-entered walls, notes. */
+  progress: ProgressStore
+  /**
+   * A user's own base ordering — the first server-persisted per-user preference
+   * in this app (everything else is `localStorage`-only). One row per user.
+   */
+  baseOrder: BaseOrderStore
   /** Injectable so tests can trip the lockout in a few requests. */
   loginLimiter?: LoginLimiter
   /** `Secure` on the session cookie. Derive it with `cookieSecureFromEnv`. */
@@ -154,6 +165,8 @@ export function createApp({
   sharedData,
   cards,
   trades,
+  progress,
+  baseOrder,
   loginLimiter,
   cookieSecure = false,
   trustProxy = false,
@@ -225,6 +238,14 @@ export function createApp({
   // The Trade Tracker reads the same owner column, for a different rule: a trade
   // is mutual, so *either* base's owner may propose and resolve it.
   mountTradeRoutes(app, trades, sharedData)
+
+  // Same owner column again, this time for "who may hand-enter this base's
+  // walls and buildings-left", and for "which tags exist" on the clan-wide table.
+  mountProgressRoutes(app, progress, sharedData)
+
+  // Same owner column a third time, this time for "which of these tags may the
+  // caller reorder" — always their own session, never another user's.
+  mountBaseOrderRoutes(app, baseOrder, sharedData)
 
   // Public so a host's liveness probe can reach it, but the cache size is an
   // internal detail an anonymous caller has no business seeing.

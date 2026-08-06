@@ -518,7 +518,112 @@ CREATE INDEX auth_events_at ON auth_events (at);
 `)
 }
 
-const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5, v6, v7, v8, v9, v10]
+/**
+ * v11 — `base_progress`, `max_level_reference`, `wall_reference`: weekly
+ * per-base progress tracking, replacing a spreadsheet kept by hand.
+ *
+ * `base_progress` is written by two callers that must never step on each
+ * other: a scheduled job (Town Hall, heroes, equipment, pets, troops, spells —
+ * everything the API can answer) and a person (walls, buildings left, free-text
+ * notes — everything it cannot). `progress/store.ts`'s `upsertSnapshot` is what
+ * merges the two field by field rather than letting either overwrite the
+ * other's half of the row. `auto_note` is neither of those: it is computed by
+ * the store from the diff against the prior week and overwritten on every call,
+ * so it is never accepted from a caller — the same shape as every other
+ * server-owned value in this schema (the season, the audit trail's `at`).
+ *
+ * `player_tag` is stored, not FK'd to anything — a base tracked here need not be
+ * one anybody has claimed with `owner_assignments`, the same way
+ * `card_inventory` needs no such link.
+ *
+ * The JSON columns (`heroes_json`, `equipment_json`, `pets_json`,
+ * `troops_json`, `spells_json`, `walls_json`) hold a whole array or object
+ * rather than a row per unit, unlike `card_inventory`'s one-row-per-card shape.
+ * A base's roster of heroes and troops is not sparse the way card counts are —
+ * most of it is populated most weeks — so normalizing it into rows would
+ * multiply the write count for no query this feature needs: nothing here
+ * filters or aggregates across units within a week, only across a base's own
+ * weeks.
+ *
+ * `max_level_reference` and `wall_reference` are reference data a wiki-scraper
+ * script (a follow-up to this migration) keeps current. They exist so a later
+ * percent-to-max computation can look up caps in bulk — `getAllMaxLevelReference`
+ * / `getAllWallReference` — instead of one query per unit per base.
+ */
+const v11: Migration = (db) => {
+  db.exec(`
+CREATE TABLE base_progress (
+  player_tag     TEXT NOT NULL,
+  week_start     TEXT NOT NULL,
+  th_level       INTEGER,
+  heroes_json    TEXT,
+  equipment_json TEXT,
+  pets_json      TEXT,
+  troops_json    TEXT,
+  spells_json    TEXT,
+  walls_json     TEXT,
+  buildings_left TEXT,
+  notes          TEXT,
+  auto_note      TEXT,
+  captured_by    TEXT NOT NULL,
+  updated_at     TEXT NOT NULL,
+  PRIMARY KEY (player_tag, week_start)
+);
+
+CREATE TABLE max_level_reference (
+  category   TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  th_level   INTEGER NOT NULL,
+  max_level  INTEGER NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (category, name, th_level)
+);
+
+CREATE TABLE wall_reference (
+  th_level         INTEGER PRIMARY KEY,
+  max_wall_level   INTEGER NOT NULL,
+  total_wall_count INTEGER NOT NULL,
+  updated_at       TEXT NOT NULL
+);
+`)
+}
+
+/**
+ * v12 — `base_order`, the first per-user server-side preference in this app.
+ *
+ * Every other saved preference (color scheme, last-viewed base, row limits) lives
+ * in `localStorage` and stays on the one browser that set it. This one is
+ * different because the user asked for it to be different: the order a member
+ * puts their bases in is something they set up once and expect to see on their
+ * phone too, so it has to live where every device can read it.
+ *
+ * One row per user, `ON DELETE CASCADE` so a removed account's ordering does not
+ * linger as an orphan the way nothing else in this schema is allowed to. The
+ * whole order is replaced on every save — `tag_order` is a JSON array, not one
+ * row per position — the same "whole thing at once" shape `card_inventory`'s
+ * base-level saves and `progress`'s manual captures already use. A user has at
+ * most a handful of bases, so there is no per-position query this feature needs
+ * that normalizing into rows would earn back, and a single UPDATE keeps a
+ * reorder atomic without a transaction wrapped around N statements.
+ *
+ * `tag_order` deliberately does not have to list every base the user owns —
+ * `base-order/routes.ts` accepts a partial list and leaves "where does a tag
+ * missing from it belong" to the client (append at the end). The server's job is
+ * only to remember the sequence it was given and to refuse a tag the caller does
+ * not own; it is not the source of truth for which bases exist, `owner_assignments`
+ * already is that.
+ */
+const v12: Migration = (db) => {
+  db.exec(`
+CREATE TABLE base_order (
+  user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  tag_order  TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`)
+}
+
+const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12]
 
 /** The version a fully migrated database reports. */
 export const SCHEMA_VERSION = MIGRATIONS.length

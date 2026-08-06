@@ -3,6 +3,7 @@ import {
   type AdminUser,
   type ApiErrorResponse,
   type BaseInventoryResponse,
+  type BaseOrderResponse,
   type CapitalRaidSeasonsResponse,
   type CardCount,
   type CardInventoryResponse,
@@ -11,14 +12,18 @@ import {
   type ClanSearchResponse,
   type CurrentWar,
   type EmailChangeResponse,
+  type HandEnteredReferenceCategory,
   type ImportRequest,
   type ImportResponse,
+  type ManualCapturePayload,
+  type MaxLevelReferenceRow,
   type MeResponse,
   type OwnerAssignResponse,
   type OwnerBulkResponse,
   type OwnerBulkRow,
   type OwnersResponse,
   type Player,
+  type ProgressSnapshot,
   type SavedClanInput,
   type SavedClanRecord,
   type SavedClansResponse,
@@ -30,6 +35,7 @@ import {
   type TradesResponse,
   type UserRole,
   type UsersResponse,
+  type WallReferenceRow,
   type WarLogResponse,
 } from '@coc/shared'
 
@@ -316,4 +322,62 @@ export const api = {
 
   declineTrade: (id: number) =>
     request<ResolveTradeResponse>('POST', `/api/cards/trades/${id}/decline`, { body: {} }),
+
+  /* ---------- shared data: weekly base progress ---------- */
+
+  /** One base's captured weeks, newest first — the server's own order. */
+  progressHistory: (tag: string, signal?: AbortSignal) =>
+    get<{ history: ProgressSnapshot[] }>(`/api/progress/${tagPath(tag)}`, signal),
+
+  /** Every base's latest week — the clan-wide progress board. */
+  progressLatest: (signal?: AbortSignal) =>
+    get<{ bases: ProgressSnapshot[] }>('/api/progress', signal),
+
+  /**
+   * The two reference tables `percentToMax` and `wallProgress` score a capture
+   * against — refreshed weekly by a scheduled job, so this is worth caching
+   * rather than fetching per component; see `useProgressReference` in `progress.ts`.
+   */
+  progressReference: (signal?: AbortSignal) =>
+    get<{ maxLevels: MaxLevelReferenceRow[]; walls: WallReferenceRow[] }>(
+      '/api/progress/reference',
+      signal,
+    ),
+
+  /**
+   * This week's hand-entered fields, merged into whatever the current week already
+   * holds. Never the auto-captured fields (TH, heroes, equipment, pets, troops,
+   * spells) — those come from the scheduled job, not this route.
+   */
+  saveProgressManual: (tag: string, payload: ManualCapturePayload) =>
+    request<{ snapshot: ProgressSnapshot }>('PUT', `/api/progress/${tagPath(tag)}/manual`, {
+      body: payload,
+    }),
+
+  /**
+   * Admin-only. Writes the wiki scrape cannot reach — see `HandEnteredReferenceCategory`
+   * — so `category` is typed to only the two it covers rather than every
+   * `UnitCategory`, the same restriction the server enforces.
+   */
+  saveProgressReference: (
+    category: HandEnteredReferenceCategory,
+    rows: { name: string; thLevel: number; maxLevel: number }[],
+  ) =>
+    request<{ ok: true; written: number }>('PUT', `/api/admin/progress/reference/${category}`, {
+      body: rows,
+    }),
+
+  /* ---------- per-user base order ---------- */
+
+  /** The caller's own saved order — never anyone else's; there is no `:userId`. */
+  getBaseOrder: (signal?: AbortSignal) => get<BaseOrderResponse>('/api/base-order', signal),
+
+  /**
+   * Replaces the caller's whole saved order. The body is the bare array, not
+   * `{ tags }` — see `BaseOrderResponse` in `@coc/shared` for why the request and
+   * response shapes differ. The server accepts a partial list; it does not have
+   * to name every base the caller owns.
+   */
+  saveBaseOrder: (tags: string[]) =>
+    request<BaseOrderResponse>('PUT', '/api/base-order', { body: tags }),
 }
