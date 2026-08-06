@@ -55,6 +55,18 @@ export interface ManualCapturePayload {
 }
 
 /**
+ * Who or what made one write to `base_progress` — `upsertSnapshot`'s fourth
+ * argument. A closed union rather than a free-text label, so a caller cannot
+ * invent a fourth kind of writer the read side does not know how to resolve.
+ *
+ * Only `'manual'` names an account: `'auto'` (the scheduled job) and `'import'`
+ * (the one-off historical backfill) are not attributable to a person, and
+ * carry no `userId` for the same reason `card_inventory`'s season is never a
+ * request value — there is nothing to resolve because nobody typed anything.
+ */
+export type CapturedBy = { source: 'auto' } | { source: 'import' } | { source: 'manual'; userId: number }
+
+/**
  * One week's row, as read back.
  *
  * Every captured field is nullable rather than optional: a week can genuinely
@@ -82,8 +94,13 @@ export interface ProgressSnapshot {
    * prior row, or nothing tracked changed.
    */
   autoNote: string | null
-  /** `'auto'` for the scheduled job, or a user id (as text) for a manual save. */
-  capturedBy: string
+  /**
+   * `'auto'` for the scheduled job, `'import'` for the one-off historical
+   * backfill, or the account that made a manual save — resolved to a display
+   * name the same way every other attribution column in this schema is,
+   * rather than a bare id the reader has to look up a second time.
+   */
+  capturedBy: 'auto' | 'import' | { userId: number; displayName: string | null }
   updatedAt: string
 }
 

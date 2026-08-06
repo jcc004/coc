@@ -2580,6 +2580,9 @@ describe('the audit trail records account actions', () => {
       ...patchJson(`/api/admin/users/${memberId}/email`, { email: 'moved@example.com' }, admin),
     )
     await harness.app.request(
+      ...patchJson(`/api/admin/users/${memberId}/display-name`, { displayName: 'Renamed' }, admin),
+    )
+    await harness.app.request(
       ...postJson(`/api/admin/users/${memberId}/temp-password`, {}, admin),
     )
     await harness.app.request(...postJson(`/api/admin/users/${memberId}/disable`, {}, admin))
@@ -2589,23 +2592,27 @@ describe('the audit trail records account actions', () => {
 
     const { events } = await readEvents(harness, admin)
     // Newest first, so this is the sequence backwards.
-    assert.deepEqual(kinds(events).slice(0, 6), [
+    assert.deepEqual(kinds(events).slice(0, 7), [
       'userEnabled',
       'userDisabled',
       'tempPasswordIssued',
+      'displayNameChanged',
       'emailChanged',
       'roleChanged',
       'userCreated',
     ])
 
     // Each one names both sides: who did it and to whom.
-    for (const event of events.slice(0, 6)) {
+    for (const event of events.slice(0, 7)) {
       assert.equal(event.actorUserId, adminId, `${event.kind} must name the actor`)
       assert.equal(event.targetUserId, memberId, `${event.kind} must name the target`)
     }
 
     const roleChange = events.find((event) => event.kind === 'roleChanged')
     assert.equal(roleChange?.detail, 'user → admin', 'and says what changed')
+
+    const nameChange = events.find((event) => event.kind === 'displayNameChanged')
+    assert.equal(nameChange?.detail, 'was "Audited"', 'and names the name it replaced')
     harness.db.close()
   })
 

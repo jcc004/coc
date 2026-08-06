@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
-import { InvalidTagError } from '@coc/shared'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
+import { InvalidTagError, normalizeTag } from '@coc/shared'
 import {
   requireAdmin,
   requireAuth,
@@ -158,6 +159,20 @@ function positiveInt(raw: string | undefined): number | undefined {
   return Math.min(parsed, MAX_QUERY_INT)
 }
 
+/**
+ * `CocApiError.status` is a plain `number` at its source (`coc-client.ts`) —
+ * Supercell's own response code, or a locally-constructed 504 — so there is no
+ * literal type it could honestly be asserted into. This is the narrow check that
+ * earns the cast onto Hono's real `ContentfulStatusCode` union below, rather
+ * than asserting a single specific code (`400`) that the value usually is not.
+ * `errorBody` always has a body, so the four content-less codes are excluded
+ * along with anything outside the valid HTTP range.
+ */
+function isContentfulStatusCode(value: number): value is ContentfulStatusCode {
+  if (!Number.isInteger(value) || value < 100 || value > 599) return false
+  return value !== 101 && value !== 204 && value !== 205 && value !== 304
+}
+
 export function createApp({
   coc,
   cache,
@@ -255,7 +270,7 @@ export function createApp({
   })
 
   app.get('/api/players/:tag', async (c) => {
-    const tag = c.req.param('tag')
+    const tag = normalizeTag(c.req.param('tag'))
     const player = await cache.wrap(`player:${tag}`, () => coc.getPlayer(tag))
     return c.json(player)
   })
@@ -286,7 +301,7 @@ export function createApp({
   })
 
   app.get('/api/clans/:tag', async (c) => {
-    const tag = c.req.param('tag')
+    const tag = normalizeTag(c.req.param('tag'))
     const clan = await cache.wrap(`clan:${tag}`, () => coc.getClan(tag))
     return c.json(clan)
   })
@@ -296,20 +311,20 @@ export function createApp({
   const WAR_TTL_MS = 20_000
 
   app.get('/api/clans/:tag/currentwar', async (c) => {
-    const tag = c.req.param('tag')
+    const tag = normalizeTag(c.req.param('tag'))
     const war = await cache.wrap(`currentWar:${tag}`, () => coc.getCurrentWar(tag), WAR_TTL_MS)
     return c.json(war)
   })
 
   app.get('/api/clans/:tag/warlog', async (c) => {
-    const tag = c.req.param('tag')
+    const tag = normalizeTag(c.req.param('tag'))
     const limit = positiveInt(c.req.query('limit'))
     const log = await cache.wrap(`warLog:${tag}:${limit ?? 20}`, () => coc.getWarLog(tag, limit))
     return c.json(log)
   })
 
   app.get('/api/clans/:tag/capitalraidseasons', async (c) => {
-    const tag = c.req.param('tag')
+    const tag = normalizeTag(c.req.param('tag'))
     const limit = positiveInt(c.req.query('limit'))
     const seasons = await cache.wrap(`capitalRaidSeasons:${tag}:${limit ?? 10}`, () =>
       coc.getCapitalRaidSeasons(tag, limit),
@@ -318,7 +333,7 @@ export function createApp({
   })
 
   app.get('/api/clans/:tag/members', async (c) => {
-    const tag = c.req.param('tag')
+    const tag = normalizeTag(c.req.param('tag'))
     const limit = positiveInt(c.req.query('limit'))
     const members = await cache.wrap(`clanMembers:${tag}:${limit ?? 'all'}`, () =>
       coc.getClanMembers(tag, limit),
@@ -343,8 +358,11 @@ export function createApp({
 
     if (err instanceof CocApiError) {
       // 5xx from upstream is not this server failing, but the client still needs
-      // a status it can branch on, so pass it through as-is.
-      return c.json(errorBody(err.status, err.reason, err.message, err.hint), err.status as 400)
+      // a status it can branch on, so pass it through as-is — validated by
+      // isContentfulStatusCode rather than asserted, since Supercell controls
+      // this number.
+      const status = isContentfulStatusCode(err.status) ? err.status : 502
+      return c.json(errorBody(status, err.reason, err.message, err.hint), status)
     }
 
     console.error('Unhandled error:', err)

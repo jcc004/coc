@@ -101,6 +101,7 @@ export type AuthEventKind =
   | 'userEnabled'
   | 'roleChanged'
   | 'emailChanged'
+  | 'displayNameChanged'
   | 'tempPasswordIssued'
 
 /**

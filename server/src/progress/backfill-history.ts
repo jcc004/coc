@@ -1035,7 +1035,9 @@ if (isMainModule) {
       db.close()
       process.exit(1)
     }
-    progress.upsertSnapshot(plan.tag, plan.weekStart, { auto: plan.auto, manual: plan.manual }, 'import')
+    progress.upsertSnapshot(plan.tag, plan.weekStart, { auto: plan.auto, manual: plan.manual }, {
+      source: 'import',
+    })
     written += 1
   }
 

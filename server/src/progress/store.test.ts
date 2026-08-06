@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import type { DatabaseSync } from 'node:sqlite'
 import type { UnitLevel } from '@coc/shared'
 import { openDatabase } from '../db.ts'
 import { computeAutoNote, createProgressStore, type AutoNoteSnapshot } from './store.ts'
@@ -72,26 +73,40 @@ describe('computeAutoNote', () => {
 
 const TAG = '#AAABBB'
 
+/**
+ * `captured_by_user_id` (migration v13) is a real `REFERENCES users(id)`, so a
+ * manual-save test needs an actual row to point at — unlike before v13, when
+ * `captured_by` was free text and any placeholder would do.
+ */
+function insertUser(db: DatabaseSync): number {
+  db.exec(`
+    INSERT INTO users (guid, display_name, email, password_hash, password_salt, role, created_at)
+    VALUES ('00000000-0000-4000-8000-000000000001', 'Tester', 'tester@example.test', 'x', 'x', 'user', '2026-08-01T00:00:00.000Z')
+  `)
+  return Number(db.prepare('SELECT id FROM users ORDER BY id DESC LIMIT 1').get()?.['id'])
+}
+
 describe('progress store', () => {
   function harness() {
     const db = openDatabase(':memory:')
-    return createProgressStore(db)
+    const userId = insertUser(db)
+    return { store: createProgressStore(db), userId }
   }
 
   it('merges an auto capture followed by a manual save, keeping both halves', () => {
-    const store = harness()
+    const { store, userId } = harness()
 
     store.upsertSnapshot(
       TAG,
       '2026-08-04',
       { auto: { thLevel: 16, heroes: [BARB_KING(80)] } },
-      'auto',
+      { source: 'auto' },
     )
     const saved = store.upsertSnapshot(
       TAG,
       '2026-08-04',
       { manual: { walls: { '17': 250 }, buildingsLeft: '3', notes: 'push next season' } },
-      'user:1',
+      { source: 'manual', userId },
     )
 
     assert.equal(saved.thLevel, 16, 'the auto field must survive the manual save')
@@ -99,23 +114,27 @@ describe('progress store', () => {
     assert.deepEqual(saved.walls, { '17': 250 })
     assert.equal(saved.buildingsLeft, '3')
     assert.equal(saved.notes, 'push next season')
-    assert.equal(saved.capturedBy, 'user:1', 'the most recent write is the attribution')
+    assert.deepEqual(
+      saved.capturedBy,
+      { userId, displayName: 'Tester' },
+      'the most recent write is the attribution',
+    )
   })
 
   it('merges a manual save followed by an auto capture, keeping both halves', () => {
-    const store = harness()
+    const { store, userId } = harness()
 
     store.upsertSnapshot(
       TAG,
       '2026-08-04',
       { manual: { walls: { '17': 250 }, buildingsLeft: '3', notes: 'push next season' } },
-      'user:1',
+      { source: 'manual', userId },
     )
     const saved = store.upsertSnapshot(
       TAG,
       '2026-08-04',
       { auto: { thLevel: 16, heroes: [BARB_KING(80)] } },
-      'auto',
+      { source: 'auto' },
     )
 
     assert.deepEqual(saved.walls, { '17': 250 }, 'the manual field must survive the auto capture')
@@ -127,20 +146,20 @@ describe('progress store', () => {
   })
 
   it('merges field by field within a single payload, not payload by payload', () => {
-    const store = harness()
+    const { store } = harness()
 
     store.upsertSnapshot(
       TAG,
       '2026-08-04',
       { auto: { thLevel: 16, heroes: [BARB_KING(80)], troops: [{ name: 'Barbarian', level: 9, maxLevel: 11 }] } },
-      'auto',
+      { source: 'auto' },
     )
     // A second auto-capture that only refreshed heroes must not blank troops.
     const saved = store.upsertSnapshot(
       TAG,
       '2026-08-04',
       { auto: { heroes: [BARB_KING(81)] } },
-      'auto',
+      { source: 'auto' },
     )
 
     assert.equal(saved.thLevel, 16, 'a field omitted from the second auto payload is preserved')
@@ -149,14 +168,14 @@ describe('progress store', () => {
   })
 
   it('recomputes auto_note against the most recent prior week on every upsert', () => {
-    const store = harness()
+    const { store, userId } = harness()
 
-    store.upsertSnapshot(TAG, '2026-07-28', { auto: { thLevel: 16, heroes: [BARB_KING(80)] } }, 'auto')
+    store.upsertSnapshot(TAG, '2026-07-28', { auto: { thLevel: 16, heroes: [BARB_KING(80)] } }, { source: 'auto' })
     const week1 = store.upsertSnapshot(
       TAG,
       '2026-08-04',
       { auto: { thLevel: 17, heroes: [BARB_KING(81)] } },
-      'auto',
+      { source: 'auto' },
     )
     assert.equal(week1.autoNote, 'TH 16->17; Barbarian King 80->81')
 
@@ -167,7 +186,7 @@ describe('progress store', () => {
       TAG,
       '2026-08-04',
       { manual: { notes: 'strong week' } },
-      'user:1',
+      { source: 'manual', userId },
     )
     assert.equal(manualSave.autoNote, 'TH 16->17; Barbarian King 80->81')
 
@@ -177,10 +196,10 @@ describe('progress store', () => {
   })
 
   it('orders history newest week first', () => {
-    const store = harness()
-    store.upsertSnapshot(TAG, '2026-07-21', { auto: { thLevel: 15 } }, 'auto')
-    store.upsertSnapshot(TAG, '2026-08-04', { auto: { thLevel: 17 } }, 'auto')
-    store.upsertSnapshot(TAG, '2026-07-28', { auto: { thLevel: 16 } }, 'auto')
+    const { store } = harness()
+    store.upsertSnapshot(TAG, '2026-07-21', { auto: { thLevel: 15 } }, { source: 'auto' })
+    store.upsertSnapshot(TAG, '2026-08-04', { auto: { thLevel: 17 } }, { source: 'auto' })
+    store.upsertSnapshot(TAG, '2026-07-28', { auto: { thLevel: 16 } }, { source: 'auto' })
 
     assert.deepEqual(
       store.getHistory(TAG).map((row) => row.weekStart),
@@ -189,18 +208,18 @@ describe('progress store', () => {
   })
 
   it('accepts a tag without the # and stores the canonical form', () => {
-    const store = harness()
-    store.upsertSnapshot('AAABBB', '2026-08-04', { auto: { thLevel: 16 } }, 'auto')
+    const { store } = harness()
+    store.upsertSnapshot('AAABBB', '2026-08-04', { auto: { thLevel: 16 } }, { source: 'auto' })
     assert.equal(store.getHistory('#AAABBB')[0]?.playerTag, '#AAABBB')
   })
 
   it('getLatestForClan returns one row per tag, in request order, skipping tags with none', () => {
-    const store = harness()
+    const { store } = harness()
     const other = '#CCCDDD'
 
-    store.upsertSnapshot(TAG, '2026-07-28', { auto: { thLevel: 15 } }, 'auto')
-    store.upsertSnapshot(TAG, '2026-08-04', { auto: { thLevel: 16 } }, 'auto')
-    store.upsertSnapshot(other, '2026-08-04', { auto: { thLevel: 12 } }, 'auto')
+    store.upsertSnapshot(TAG, '2026-07-28', { auto: { thLevel: 15 } }, { source: 'auto' })
+    store.upsertSnapshot(TAG, '2026-08-04', { auto: { thLevel: 16 } }, { source: 'auto' })
+    store.upsertSnapshot(other, '2026-08-04', { auto: { thLevel: 12 } }, { source: 'auto' })
 
     const latest = store.getLatestForClan([other, TAG, '#NOROWS1'])
     assert.deepEqual(
@@ -213,25 +232,25 @@ describe('progress store', () => {
   })
 
   it('getAllTrackedTags lists every distinct player_tag with a captured row, once each', () => {
-    const store = harness()
+    const { store } = harness()
     const other = '#CCCDDD'
 
-    store.upsertSnapshot(TAG, '2026-07-28', { auto: { thLevel: 15 } }, 'auto')
+    store.upsertSnapshot(TAG, '2026-07-28', { auto: { thLevel: 15 } }, { source: 'auto' })
     // A second week for the same tag must not produce a duplicate entry.
-    store.upsertSnapshot(TAG, '2026-08-04', { auto: { thLevel: 16 } }, 'auto')
-    store.upsertSnapshot(other, '2026-08-04', { auto: { thLevel: 12 } }, 'auto')
+    store.upsertSnapshot(TAG, '2026-08-04', { auto: { thLevel: 16 } }, { source: 'auto' })
+    store.upsertSnapshot(other, '2026-08-04', { auto: { thLevel: 12 } }, { source: 'auto' })
 
     assert.deepEqual(new Set(store.getAllTrackedTags()), new Set([TAG, other]))
     assert.equal(store.getAllTrackedTags().length, 2)
   })
 
   it('getAllTrackedTags returns an empty list when nothing has ever been captured', () => {
-    const store = harness()
+    const { store } = harness()
     assert.deepEqual(store.getAllTrackedTags(), [])
   })
 
   it('round-trips the max-level reference table, upserting on a repeat key', () => {
-    const store = harness()
+    const { store } = harness()
 
     store.upsertMaxLevelReference([
       { category: 'hero', name: 'Barbarian King', thLevel: 11, maxLevel: 40 },
@@ -254,7 +273,7 @@ describe('progress store', () => {
   })
 
   it('round-trips the wall reference table, upserting on a repeat key', () => {
-    const store = harness()
+    const { store } = harness()
 
     store.upsertWallReference([
       { thLevel: 14, maxWallLevel: 15, totalWallCount: 500 },
@@ -273,7 +292,7 @@ describe('progress store', () => {
   })
 
   it('getWallReference finds one row by thLevel, or null when the wiki refresh has not covered it', () => {
-    const store = harness()
+    const { store } = harness()
     store.upsertWallReference([{ thLevel: 14, maxWallLevel: 15, totalWallCount: 500 }])
 
     const found = store.getWallReference(14)
@@ -285,26 +304,26 @@ describe('progress store', () => {
   })
 
   it('getLatestThLevel returns the most recent week that actually carried a TH level', () => {
-    const store = harness()
+    const { store, userId } = harness()
 
     // An auto capture, then a manual-only save the same week (th_level stays what
     // it was) and a later manual-only week (th_level null on that row) — the last
     // *known* TH must still be 17, not null just because the newest row has none.
-    store.upsertSnapshot(TAG, '2026-07-28', { auto: { thLevel: 17 } }, 'auto')
-    store.upsertSnapshot(TAG, '2026-08-04', { manual: { notes: 'no auto capture this week' } }, 'user:1')
+    store.upsertSnapshot(TAG, '2026-07-28', { auto: { thLevel: 17 } }, { source: 'auto' })
+    store.upsertSnapshot(TAG, '2026-08-04', { manual: { notes: 'no auto capture this week' } }, { source: 'manual', userId })
 
     assert.equal(store.getLatestThLevel(TAG), 17)
   })
 
   it('getLatestThLevel is null for a base that has never been auto-captured', () => {
-    const store = harness()
-    store.upsertSnapshot(TAG, '2026-08-04', { manual: { notes: 'manual only' } }, 'user:1')
+    const { store, userId } = harness()
+    store.upsertSnapshot(TAG, '2026-08-04', { manual: { notes: 'manual only' } }, { source: 'manual', userId })
 
     assert.equal(store.getLatestThLevel(TAG), null)
   })
 
   it('getLatestThLevel is null for a tag with no rows at all', () => {
-    const store = harness()
+    const { store } = harness()
     assert.equal(store.getLatestThLevel('#NOROWS1'), null)
   })
 })

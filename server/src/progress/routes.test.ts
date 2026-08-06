@@ -220,7 +220,7 @@ describe('reading progress is shared, not per-user', () => {
       NO_OWNER_BASE,
       '2026-08-04',
       { auto: { thLevel: 12 } },
-      'auto',
+      { source: 'auto' },
     )
 
     const response = await harness.app.request('/api/progress', { headers: { cookie: admin } })
@@ -295,14 +295,17 @@ describe('only the base’s owner writes its manual progress', () => {
         walls: Record<string, number> | null
         buildingsLeft: string | null
         notes: string | null
-        capturedBy: string
+        capturedBy: 'auto' | 'import' | { userId: number; displayName: string | null }
       }
     }
     assert.equal(body.snapshot.playerTag, BASE_A)
     assert.deepEqual(body.snapshot.walls, { '17': 4, '16': 250 })
     assert.equal(body.snapshot.buildingsLeft, 'LOTS')
     assert.equal(body.snapshot.notes, 'working on walls')
-    assert.equal(body.snapshot.capturedBy, String(idOf(harness, SECOND.email)))
+    assert.deepEqual(body.snapshot.capturedBy, {
+      userId: idOf(harness, SECOND.email),
+      displayName: SECOND_NAME,
+    })
     harness.db.close()
   })
 
@@ -380,7 +383,7 @@ describe("manual walls are checked against the base's known Town Hall", () => {
       BASE_A,
       currentWeekStart(new Date()),
       { auto: { thLevel: 18 } },
-      'auto',
+      { source: 'auto' },
     )
     harness.progress.upsertWallReference([{ thLevel: 18, maxWallLevel: 18, totalWallCount: 250 }])
 
@@ -405,7 +408,7 @@ describe("manual walls are checked against the base's known Town Hall", () => {
       BASE_A,
       currentWeekStart(new Date()),
       { auto: { thLevel: 18 } },
-      'auto',
+      { source: 'auto' },
     )
     harness.progress.upsertWallReference([{ thLevel: 18, maxWallLevel: 18, totalWallCount: 250 }])
 
@@ -426,7 +429,7 @@ describe("manual walls are checked against the base's known Town Hall", () => {
       BASE_A,
       currentWeekStart(new Date()),
       { auto: { thLevel: 18 } },
-      'auto',
+      { source: 'auto' },
     )
     harness.progress.upsertWallReference([{ thLevel: 18, maxWallLevel: 18, totalWallCount: 250 }])
 

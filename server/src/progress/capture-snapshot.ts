@@ -223,7 +223,7 @@ export async function captureAllSnapshots(
     try {
       const player = await deps.coc.getPlayer(tag)
       const payload = buildAutoCapturePayload(player, petNames)
-      deps.progress.upsertSnapshot(tag, weekStart, { auto: payload }, 'auto')
+      deps.progress.upsertSnapshot(tag, weekStart, { auto: payload }, { source: 'auto' })
       succeeded.push(tag)
     } catch (cause) {
       failed.push({ tag, reason: cause instanceof Error ? cause.message : String(cause) })

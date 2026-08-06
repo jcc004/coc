@@ -1235,6 +1235,85 @@ describe('migration v10 — auth_events', () => {
   })
 })
 
+describe('migration v13 — base_progress.captured_by_user_id', () => {
+  /** A v12-shaped database: fully migrated, then v13's column dropped back off. */
+  async function createV12Database(path: string): Promise<void> {
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const db = new DatabaseSync(path)
+    migrate(db)
+    db.exec('ALTER TABLE base_progress DROP COLUMN captured_by_user_id')
+    db.exec('PRAGMA user_version = 12')
+    db.close()
+  }
+
+  function insertRow(db: DatabaseSync, tag: string, weekStart: string, capturedBy: string): void {
+    db.prepare(
+      `INSERT INTO base_progress (player_tag, week_start, captured_by, updated_at)
+       VALUES (?, ?, ?, ?)`,
+    ).run(tag, weekStart, capturedBy, '2026-08-01T10:00:00.000Z')
+  }
+
+  function capturedByRow(db: DatabaseSync, tag: string): [unknown, unknown] {
+    const row = db
+      .prepare('SELECT captured_by, captured_by_user_id FROM base_progress WHERE player_tag = ?')
+      .get(tag)
+    return [row?.['captured_by'], row?.['captured_by_user_id']]
+  }
+
+  it('moves a digit-string captured_by into the new column and relabels it manual', async () => {
+    const path = join(tempDir(), 'coc.db')
+    await createV12Database(path)
+
+    const staged = new DatabaseSync(path)
+    const userId = Number(staged.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
+    insertRow(staged, '#AAABBB', '2026-08-04', String(userId))
+    staged.close()
+
+    const db = openDatabase(path)
+    assert.deepEqual(capturedByRow(db, '#AAABBB'), ['manual', userId])
+    db.close()
+  })
+
+  it('leaves auto and import rows alone', async () => {
+    const path = join(tempDir(), 'coc.db')
+    await createV12Database(path)
+
+    const staged = new DatabaseSync(path)
+    insertRow(staged, '#AAABBB', '2026-08-04', 'auto')
+    insertRow(staged, '#CCCDDD', '2026-08-04', 'import')
+    staged.close()
+
+    const db = openDatabase(path)
+    assert.deepEqual(capturedByRow(db, '#AAABBB'), ['auto', null])
+    assert.deepEqual(capturedByRow(db, '#CCCDDD'), ['import', null])
+    db.close()
+  })
+
+  it('relabels a digit-string row even when the account it named no longer exists', async () => {
+    const path = join(tempDir(), 'coc.db')
+    await createV12Database(path)
+
+    const staged = new DatabaseSync(path)
+    insertRow(staged, '#AAABBB', '2026-08-04', '9999')
+    staged.close()
+
+    const db = openDatabase(path)
+    // The label still moves to 'manual' — a digit string always meant a person
+    // typed it — but the id resolves to nothing rather than a dangling reference.
+    assert.deepEqual(capturedByRow(db, '#AAABBB'), ['manual', null])
+    db.close()
+  })
+
+  it('takes a fresh database straight to the new column', async () => {
+    const path = join(tempDir(), 'coc.db')
+    const db = openDatabase(path)
+    assert.ok(columnsOf(path, 'base_progress').includes('captured_by_user_id'))
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+    db.close()
+  })
+})
+
 describe('the ADMIN_EMAIL escape hatch', () => {
   it('fills a missing email without touching the password, then stops', async () => {
     const path = join(tempDir(), 'coc.db')

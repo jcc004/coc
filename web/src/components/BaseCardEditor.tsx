@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from 'react'
 import {
   MAX_CARD_COUNT,
   normalizeTag,
@@ -441,19 +449,20 @@ export function BaseCardEditor({
      now, not what was there when React last closed over it. */
   const draftRef = useRef(stored)
   /*
-   * Assigned during render, which React's rules say not to do — a render can be
-   * discarded, and this would have written anyway. The linter is right on the point
-   * of principle and the suppression is narrow for that reason.
-   *
-   * It stands because the two readers, `commit` and the unmount cleanup, run outside
-   * render and need the draft *as it is now* rather than the one closed over when
-   * their render happened — that is the whole reason the ref exists, and moving the
-   * assignment into an effect would reintroduce exactly the lag it is here to avoid.
-   * The honest fix is to stop stashing the draft and pass it in at the call site,
-   * which is a change to the auto-save path and not a formatting one.
+   * Kept in sync via a layout effect rather than a write during render — the
+   * latter is what `react-hooks/refs` flags, since a render can be discarded and
+   * this would have written anyway. `useLayoutEffect`, not `useEffect`: the two
+   * readers, `commit` and the unmount cleanup below, run outside render and need
+   * the draft *as it is now*, including an edit made while a save is already in
+   * flight (`commit`'s save loop re-reads this on every iteration, not once at
+   * the start) — a plain `useEffect` defers to after paint, which is exactly the
+   * lag that would reopen. A layout effect runs synchronously in the same commit
+   * as the render it followed, before the browser can process the next event, so
+   * the timing this ref depends on is unchanged.
    */
-  // eslint-disable-next-line react-hooks/refs
-  draftRef.current = draft
+  useLayoutEffect(() => {
+    draftRef.current = draft
+  }, [draft])
 
   /*
    * Re-seed on a change of base, or when the server's copy moves under us — which

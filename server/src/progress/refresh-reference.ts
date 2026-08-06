@@ -166,4 +166,12 @@ async function main() {
   }
 }
 
-await main()
+// Only runs when this file is executed directly (`tsx refresh-reference.ts`), never
+// on import — the same guard capture-snapshot.ts and backfill-history.ts use, so
+// importing this file (a future test, a future admin-triggered route) can never
+// open a database or hit the live wiki as a side effect of `import`.
+const isMainModule = process.argv[1] === new URL(import.meta.url).pathname
+
+if (isMainModule) {
+  await main()
+}

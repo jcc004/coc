@@ -623,7 +623,49 @@ CREATE TABLE base_order (
 `)
 }
 
-const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12]
+/**
+ * v13 — `base_progress.captured_by_user_id`, and `captured_by` narrowed to a
+ * closed label.
+ *
+ * Every other attribution column in this schema is an `INTEGER REFERENCES
+ * users(id)`, joined to `display_name` at read time — `card_inventory
+ * .updated_by_user_id`, `trades.proposed_by_user_id`, `auth_events
+ * .actor_user_id`, and so on. `base_progress.captured_by` broke that pattern
+ * from v11 on: a bare string, `'auto'` for the scheduled job or a user id typed
+ * as *text* for a manual save. That meant a manual capture's account could
+ * never resolve to a display name the way every other column's can without a
+ * second query nothing performs, and would keep showing a stale id forever if
+ * `users.display_name` ever changed, unlike every join-based column beside it.
+ *
+ * `captured_by` itself stays — narrowed to `'auto'`, `'import'` (the one-off
+ * historical backfill script), or `'manual'` — so a reader can still tell *how*
+ * a row was captured without a join, the job it always did. *Who* captured a
+ * manual row now lives in the new `captured_by_user_id`, resolved the normal
+ * way. `ON DELETE SET NULL`, like every other user reference here: the row is
+ * the record of what was typed, so deleting the account must cost the
+ * attribution, not the entry.
+ *
+ * Existing manual rows — `captured_by` holding a digit string, the pre-v13
+ * shape — are backfilled in one pass: the id moves into the new column (`NULL`
+ * if that account no longer exists), and the label is rewritten to `'manual'`.
+ * Rows already holding `'auto'` or `'import'` are untouched by the `WHERE`.
+ */
+const v13: Migration = (db) => {
+  db.exec(
+    'ALTER TABLE base_progress ADD COLUMN captured_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL',
+  )
+
+  db.exec(`
+UPDATE base_progress
+   SET captured_by_user_id = (
+         SELECT u.id FROM users u WHERE u.id = CAST(base_progress.captured_by AS INTEGER)
+       ),
+       captured_by = 'manual'
+ WHERE captured_by NOT GLOB '*[^0-9]*' AND captured_by <> ''
+`)
+}
+
+const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13]
 
 /** The version a fully migrated database reports. */
 export const SCHEMA_VERSION = MIGRATIONS.length

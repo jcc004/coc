@@ -30,6 +30,15 @@ Three tables, added by migration v11 (`server/src/db.ts`):
   troop roster is populated most weeks, and nothing queries across units within a week, only
   across a base's own weeks, so normalizing it would only multiply writes.
 
+  `captured_by` names *how* a row was captured — `'auto'`, `'import'` (the one-off historical
+  backfill), or `'manual'` — and `captured_by_user_id` (migration v13) names *who*, for a
+  `'manual'` row, as a real `INTEGER REFERENCES users(id)` joined to `display_name` at read
+  time, the same pattern every other attribution column in this schema follows. `captured_by`
+  started life in v11 as a bare string doing double duty for both — `'auto'` or a user id typed
+  as text — which meant a manual save's account could never resolve to a display name without a
+  second query; v13 split the two apart. On the wire, `ProgressSnapshot.capturedBy` is
+  `'auto' | 'import' | { userId, displayName }`.
+
 - **`max_level_reference`** — `(category, name, th_level) → max_level`. The reason this table
   has to exist at all: the Clash of Clans API returns a unit's *absolute* game-max level, never
   the cap at a given Town Hall — a TH18, a TH12 and a TH11 account all report Barbarian King

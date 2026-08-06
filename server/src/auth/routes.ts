@@ -434,6 +434,7 @@ export function mountAuthRoutes(
    * unlike the email route this revokes nothing.
    */
   app.patch('/api/admin/users/:id/display-name', async (c) => {
+    const admin = currentUser(c)
     const id = userIdParam(c)
     if (id === undefined) return badUserId(c)
 
@@ -446,8 +447,17 @@ export function mountAuthRoutes(
       )
     }
 
+    const before = store.findUser(id)
     const user = store.setDisplayName(id, displayName)
     if (!user) return noSuchUser(c, id)
+    store.recordAuthEvent({
+      kind: 'displayNameChanged',
+      actorUserId: admin.id,
+      targetUserId: user.id,
+      email: user.email,
+      ip: clientIp(c, trustProxy),
+      detail: `was "${before?.displayName ?? 'unset'}"`,
+    })
     return c.json({ user })
   })
 

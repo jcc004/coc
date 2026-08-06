@@ -266,6 +266,12 @@ schema changes) because v2 has to drop and re-create `users`.
   tracking. See [Weekly progress tracking and base order](progress-tracking.md).
 - **v12** — `base_order`, the first per-user server-side preference in this app (everything
   else — color scheme, last-viewed base, row limits — is `localStorage`-only). Same doc as v11.
+- **v13** — `base_progress.captured_by_user_id`, bringing a v11 column that broke this schema's
+  own convention back in line with it. `captured_by` started as a bare string — `'auto'` or a
+  user id typed as text — instead of the `INTEGER REFERENCES users(id)` every other attribution
+  column here is, which meant it could never resolve to a display name without a second query.
+  `captured_by` stays, narrowed to `'auto'` / `'import'` / `'manual'`; *who* made a manual save
+  now lives in the new column, backfilled from the old digit-string rows. Same doc as v11.
 
 Backfill, per row:
 
@@ -298,7 +304,7 @@ workspace's working directory, so `npm run dev` puts it at `server/data/coc.db` 
 The directory is created if missing. Thirteen tables — `users`, `sessions`, `chat_messages`,
 `saved_clans`, `owner_assignments`, `card_inventory`, `card_base_updates`, `trades`,
 `auth_events`, `base_progress`, `max_level_reference`, `wall_reference`, `base_order` — created
-and migrated on boot by `user_version`, currently at **v12** (`SCHEMA_VERSION`,
+and migrated on boot by `user_version`, currently at **v13** (`SCHEMA_VERSION`,
 `server/src/db.ts`). Twelve of the thirteen are live; `chat_messages` is kept but unused, as
 above.
 

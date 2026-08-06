@@ -431,18 +431,25 @@ function CardTotalsGrid({
      direct children of the one grid, named by a hidden heading. Walking `totals` in
      the order it arrives is what guarantees the two grids agree — grouping cannot
      reorder. The heading ids are its own: `BaseCardEditor` is mounted on this page
-     too and carries `card-deck-*`. */
-  const decks: { category: string; slug: string; entries: CardTotal[] }[] = []
-  for (const entry of totals) {
-    const last = decks[decks.length - 1]
-    if (last?.category === entry.card.category) last.entries.push(entry)
-    else
-      decks.push({
-        category: entry.card.category,
-        slug: deckSlug(entry.card.category),
-        entries: [entry],
-      })
-  }
+     too and carries `card-deck-*`.
+
+     Memoized on `totals` alone: `picked` changes on every tile press, and without
+     this the grouping loop would re-run on every one of those for a grid that did
+     not change shape. */
+  const decks = useMemo(() => {
+    const grouped: { category: string; slug: string; entries: CardTotal[] }[] = []
+    for (const entry of totals) {
+      const last = grouped[grouped.length - 1]
+      if (last?.category === entry.card.category) last.entries.push(entry)
+      else
+        grouped.push({
+          category: entry.card.category,
+          slug: deckSlug(entry.card.category),
+          entries: [entry],
+        })
+    }
+    return grouped
+  }, [totals])
 
   return (
     <div className="card-grid" style={{ '--card-columns': columns } as CSSProperties}>

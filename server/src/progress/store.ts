@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import {
   normalizeTag,
   type AutoCapturePayload,
+  type CapturedBy,
   type ManualCapturePayload,
   type MaxLevelReferenceInput,
   type MaxLevelReferenceRow,
@@ -96,6 +97,23 @@ function parseWalls(raw: unknown): Record<string, number> | null {
   return isWalls(parsed) ? parsed : null
 }
 
+/**
+ * `captured_by` is `'auto'`, `'import'`, or `'manual'` (migration v13) — only
+ * the last names an account, resolved here from the `captured_by_user_id` join
+ * every read query below adds. A `'manual'` row somehow missing the id (should
+ * not happen; the store always writes both together) falls back to `'auto'`
+ * rather than fabricating a userId, the same "do not invent an attribution"
+ * stance `card_inventory`'s columns take.
+ */
+function toCapturedBy(row: Record<string, unknown>): ProgressSnapshot['capturedBy'] {
+  const label = asText(row['captured_by'])
+  if (label !== 'manual') return label === 'import' ? 'import' : 'auto'
+
+  const userId = asIntOrNull(row['captured_by_user_id'])
+  if (userId === null) return 'auto'
+  return { userId, displayName: asTextOrNull(row['captured_by_display_name']) }
+}
+
 function toSnapshot(row: Record<string, unknown>): ProgressSnapshot {
   return {
     playerTag: asText(row['player_tag']),
@@ -110,7 +128,7 @@ function toSnapshot(row: Record<string, unknown>): ProgressSnapshot {
     buildingsLeft: asTextOrNull(row['buildings_left']),
     notes: asTextOrNull(row['notes']),
     autoNote: asTextOrNull(row['auto_note']),
-    capturedBy: asText(row['captured_by']),
+    capturedBy: toCapturedBy(row),
     updatedAt: asText(row['updated_at']),
   }
 }
@@ -201,7 +219,7 @@ export interface ProgressStore {
     playerTag: string,
     weekStart: string,
     capture: { auto?: AutoCapturePayload; manual?: ManualCapturePayload },
-    capturedBy: string,
+    capturedBy: CapturedBy,
   ): ProgressSnapshot
 
   /** Every week recorded for one base, newest first. */
@@ -255,8 +273,17 @@ export interface ProgressStore {
 }
 
 export function createProgressStore(db: DatabaseSync): ProgressStore {
+  // `captured_by_display_name` is only ever populated for a `'manual'` row —
+  // the join is on `captured_by_user_id`, which is `NULL` for `'auto'` and
+  // `'import'` rows, and a `LEFT JOIN` leaves the column `NULL` right along
+  // with it. `toCapturedBy` is what turns the pair back into the read shape.
+  const BASE_PROGRESS_SELECT = `
+    SELECT base_progress.*, users.display_name AS captured_by_display_name
+      FROM base_progress
+      LEFT JOIN users ON users.id = base_progress.captured_by_user_id`
+
   const statements = {
-    find: db.prepare('SELECT * FROM base_progress WHERE player_tag = ? AND week_start = ?'),
+    find: db.prepare(`${BASE_PROGRESS_SELECT} WHERE player_tag = ? AND week_start = ?`),
     findPrior: db.prepare(
       `SELECT * FROM base_progress
         WHERE player_tag = ? AND week_start < ?
@@ -264,17 +291,17 @@ export function createProgressStore(db: DatabaseSync): ProgressStore {
         LIMIT 1`,
     ),
     listHistory: db.prepare(
-      'SELECT * FROM base_progress WHERE player_tag = ? ORDER BY week_start DESC',
+      `${BASE_PROGRESS_SELECT} WHERE player_tag = ? ORDER BY week_start DESC`,
     ),
     latestForTag: db.prepare(
-      'SELECT * FROM base_progress WHERE player_tag = ? ORDER BY week_start DESC LIMIT 1',
+      `${BASE_PROGRESS_SELECT} WHERE player_tag = ? ORDER BY week_start DESC LIMIT 1`,
     ),
     upsert: db.prepare(
       `INSERT INTO base_progress
          (player_tag, week_start, th_level, heroes_json, equipment_json, pets_json,
           troops_json, spells_json, walls_json, buildings_left, notes, auto_note,
-          captured_by, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          captured_by, captured_by_user_id, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(player_tag, week_start) DO UPDATE SET
          th_level = excluded.th_level,
          heroes_json = excluded.heroes_json,
@@ -287,6 +314,7 @@ export function createProgressStore(db: DatabaseSync): ProgressStore {
          notes = excluded.notes,
          auto_note = excluded.auto_note,
          captured_by = excluded.captured_by,
+         captured_by_user_id = excluded.captured_by_user_id,
          updated_at = excluded.updated_at`,
     ),
     upsertMaxLevel: db.prepare(
@@ -370,7 +398,8 @@ export function createProgressStore(db: DatabaseSync): ProgressStore {
         buildingsLeft,
         notes,
         autoNote,
-        capturedBy,
+        capturedBy.source,
+        capturedBy.source === 'manual' ? capturedBy.userId : null,
         now,
       )
 

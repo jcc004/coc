@@ -11,7 +11,7 @@ import {
 import { currentUser, type AuthContext, type AuthEnv } from '../auth/middleware.ts'
 import { errorBody } from '../http.ts'
 import type { CardInventoryStore } from './store.ts'
-import { mayWriteBaseCounts, type BaseOwnership } from './write-access.ts'
+import { mayWriteBaseCounts, type BaseOwnership, type BaseWriteDecision } from './write-access.ts'
 
 /**
  * `/api/cards/*` — reading and writing the shared card inventory.
@@ -123,6 +123,15 @@ export function ownershipOf(owners: BaseOwnerLookup, tag: string): BaseOwnership
   }
 }
 
+function writeForbidden(decision: BaseWriteDecision & { allowed: false }) {
+  return errorBody(
+    403,
+    'forbidden',
+    decision.message,
+    'Card counts are entered by the member who owns the base. Nothing was written.',
+  )
+}
+
 export function mountCardRoutes(
   app: Hono<AuthEnv>,
   store: CardInventoryStore,
@@ -144,19 +153,17 @@ export function mountCardRoutes(
    * Ownership is checked before the body is even parsed — whether a caller may
    * write a base has nothing to do with whether their payload is well formed, and
    * a 403 that depended on the body would be a strange thing to reason about.
+   *
+   * It is checked **again** right before the write, too. `readJson` below is a
+   * real event-loop yield, and ownership can change underneath an in-flight
+   * request — an admin reassigning this base via the synchronous
+   * `PUT /api/owners/:tag`, which has no such window. Without the second check, a
+   * caller's now-stale authorization from before the yield would still land.
    */
   app.put('/api/cards/inventory/:tag', async (c) => {
     const decision = mayWriteBaseCounts(currentUser(c), ownershipOf(owners, c.req.param('tag')))
     if (!decision.allowed) {
-      return c.json(
-        errorBody(
-          403,
-          'forbidden',
-          decision.message,
-          'Card counts are entered by the member who owns the base. Nothing was written.',
-        ),
-        403,
-      )
+      return c.json(writeForbidden(decision), 403)
     }
 
     const parsed = parseCounts((await readJson(c))['counts'])
@@ -170,6 +177,11 @@ export function mountCardRoutes(
         ),
         400,
       )
+    }
+
+    const stillAllowed = mayWriteBaseCounts(currentUser(c), ownershipOf(owners, c.req.param('tag')))
+    if (!stillAllowed.allowed) {
+      return c.json(writeForbidden(stillAllowed), 403)
     }
 
     const base = store.saveBase(CARD_SEASON, c.req.param('tag'), parsed.counts, currentUser(c).id)

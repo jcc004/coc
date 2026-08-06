@@ -7,7 +7,7 @@ import type {
 } from '@coc/shared'
 import { currentUser, type AuthContext, type AuthEnv } from '../auth/middleware.ts'
 import { ownershipOf, type BaseOwnerLookup } from '../cards/routes.ts'
-import { mayWriteBaseCounts } from '../cards/write-access.ts'
+import { mayWriteBaseCounts, type BaseWriteDecision } from '../cards/write-access.ts'
 import { errorBody } from '../http.ts'
 import type { ProgressStore } from './store.ts'
 
@@ -218,6 +218,15 @@ export function currentWeekStart(now: Date): string {
   return weekStart.toISOString().slice(0, 10)
 }
 
+function writeForbidden(decision: BaseWriteDecision & { allowed: false }) {
+  return errorBody(
+    403,
+    'forbidden',
+    decision.message,
+    'Base progress is entered by the member who owns the base. Nothing was written.',
+  )
+}
+
 export function mountProgressRoutes(
   app: Hono<AuthEnv>,
   store: ProgressStore,
@@ -305,19 +314,16 @@ export function mountProgressRoutes(
    * holds — see `upsertSnapshot`. Ownership is checked before the body is even
    * parsed, exactly as `cards/routes.ts` does: whether a caller may write a base
    * has nothing to do with whether their payload is well formed.
+   *
+   * It is checked **again** right before the write, too — same reasoning as
+   * `cards/routes.ts`'s inventory write: `readJson` is a real yield point, and an
+   * admin's synchronous `PUT /api/owners/:tag` could reassign this base while this
+   * request is suspended there.
    */
   app.put('/api/progress/:tag/manual', async (c) => {
     const decision = mayWriteBaseCounts(currentUser(c), ownershipOf(owners, c.req.param('tag')))
     if (!decision.allowed) {
-      return c.json(
-        errorBody(
-          403,
-          'forbidden',
-          decision.message,
-          'Base progress is entered by the member who owns the base. Nothing was written.',
-        ),
-        403,
-      )
+      return c.json(writeForbidden(decision), 403)
     }
 
     const tag = c.req.param('tag')
@@ -329,12 +335,17 @@ export function mountProgressRoutes(
       return c.json(errorBody(400, 'badRequest', parsed.problem, 'Nothing was written.'), 400)
     }
 
+    const stillAllowed = mayWriteBaseCounts(currentUser(c), ownershipOf(owners, c.req.param('tag')))
+    if (!stillAllowed.allowed) {
+      return c.json(writeForbidden(stillAllowed), 403)
+    }
+
     const weekStart = currentWeekStart(new Date())
     const snapshot = store.upsertSnapshot(
       tag,
       weekStart,
       { manual: parsed.payload },
-      String(currentUser(c).id),
+      { source: 'manual', userId: currentUser(c).id },
     )
     return c.json({ snapshot })
   })
