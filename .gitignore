@@ -27,7 +27,12 @@ data/
 # failed health check has something known-good to put back. Removed on success.
 web/dist.prev-*/
 
-# Claude Code. `.claude/settings.json` IS tracked — it is the shared permission
-# policy for this repo. What stays local is the personal override file, which
-# holds whatever grants one machine has accumulated and is nobody else's default.
+# Claude Code. `.claude/settings.json` IS tracked, but it is a model pin
+# (`sonnet`), not a permission policy — permissions still come top-down from
+# `~/.claude/settings.json` per `~/repos-jcc/CLAUDE.md`. This comment previously
+# claimed a tracked settings.json existed and called it the shared permission
+# policy; neither was true until the model pin was added on 2026-08-06, and even
+# now it is narrower than that claim. What stays local is the personal override
+# file, which holds whatever grants one machine has accumulated and is nobody
+# else's default.
 .claude/settings.local.json
