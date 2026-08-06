@@ -388,6 +388,15 @@ nothing.
 `#/whats-new` lists every change to the app, newest first, with the date and time. `WhatsNewView`
 in `web/src/components/WhatsNewView.tsx`; every rule behind it is `web/src/changelog.ts`, tested.
 
+**The listing rule is automatic — a commit appears if it touched `shared/`, `server/` or `web/` —
+except for one hand-typed opt-out.** A commit body containing a line reading `No-Changelog`
+(case-insensitive, an optional `: reason` after it is fine) is dropped even though it touched app
+code. Use it for the commit that changes a workspace file but nothing a reader would recognize as
+a feature — invisible bytes fixed, an internal rename with identical behavior — never for a commit
+that changes real behavior just because the behavior is small. The bar: would a member reading this
+page learn anything true about what changed for them? If yes, it belongs on the page even if it
+feels minor. See `skipsChangelog` in `web/src/changelog.ts`.
+
 **Two entry points, doing two different jobs.** The footer's "Updated …" stamp is the link, because
 that is the moment somebody is looking at a date and wondering what happened on it; and **What's
 new** sits directly under **Help** on the account menu, for somebody looking for the page without

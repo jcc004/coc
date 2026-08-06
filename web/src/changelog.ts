@@ -33,6 +33,15 @@
  * workspaces because those are declared in `package.json` and named in
  * `docs/layout.md`, so it is not a private notion of "app code".
  *
+ * **One deliberate exception**: a commit whose body carries a `No-Changelog` line
+ * (see `skipsChangelog`) is dropped even though it touched app code. This exists for
+ * the commit that touches a workspace but changes nothing a reader would recognize
+ * as a feature — fixing bytes nobody could see wrong, an internal rename with
+ * identical behavior. The bar is deliberately narrow ("would a member reading this
+ * page learn anything true about what changed for them") and the marker deliberately
+ * opt-in and rare, so this stays the one hand-typed exception to an otherwise
+ * automatic rule rather than the start of a second rule nobody maintains.
+ *
  * **A build with no git still has to work.** Every field degrades to an empty
  * string, the same way `BUILD_INFO` does, and every function here answers with an
  * empty list rather than throwing: a tarball deploy, a shallow clone or an image
@@ -107,6 +116,24 @@ export function touchesTheApp(paths: readonly string[]): boolean {
 }
 
 /**
+ * A commit body line reading `No-Changelog`, on its own line, case-insensitive,
+ * with an optional `: reason` trailing it — the one hand-typed opt-out from an
+ * otherwise fully automatic rule. Checked against the raw body, before
+ * {@link trimBody} runs, so leading/trailing blank lines cannot hide it or
+ * change its position.
+ *
+ * A trailer rather than a subject-line keyword on purpose: `git.md` already
+ * asks for a subject that reads as the change's cause, not a tag — folding a
+ * skip marker into it would be the same mistake a `[skip-ci]`-style prefix
+ * makes elsewhere, one more thing competing with the sentence for the reader's
+ * attention. It sits in the body instead, where nobody but this parser reads
+ * it.
+ */
+export function skipsChangelog(body: string): boolean {
+  return /^no-changelog\b/im.test(body)
+}
+
+/**
  * The listed commits, newest first, from the output of `git log` run with
  * `GIT_LOG_ARGS`.
  *
@@ -138,7 +165,10 @@ export function parseGitLog(raw: string): Change[] {
     const paths = (fields[4] ?? '').split('\n').filter((path) => path.trim() !== '')
     if (!touchesTheApp(paths)) continue
 
-    changes.push({ commit, date, subject, body: trimBody(fields[3] ?? '') })
+    const rawBody = fields[3] ?? ''
+    if (skipsChangelog(rawBody)) continue
+
+    changes.push({ commit, date, subject, body: trimBody(rawBody) })
   }
 
   return sortNewestFirst(changes)

@@ -8,6 +8,7 @@ import {
   parseGitLog,
   readChanges,
   RECORD_SEPARATOR,
+  skipsChangelog,
   touchesTheApp,
   type Change,
 } from './changelog.ts'
@@ -99,6 +100,31 @@ describe('touchesTheApp', () => {
   })
 })
 
+describe('skipsChangelog', () => {
+  it('recognizes the bare marker on its own line', () => {
+    assert.equal(skipsChangelog('Fixed some invisible bytes.\n\nNo-Changelog'), true)
+  })
+
+  it('recognizes the marker with a trailing reason', () => {
+    assert.equal(skipsChangelog('No-Changelog: nothing a reader would notice'), true)
+  })
+
+  it('is case-insensitive', () => {
+    assert.equal(skipsChangelog('no-changelog'), true)
+    assert.equal(skipsChangelog('NO-CHANGELOG: why'), true)
+  })
+
+  it('is false for an ordinary body, including one that just mentions changelogs', () => {
+    assert.equal(skipsChangelog(''), false)
+    assert.equal(skipsChangelog('Because the old behavior was wrong.'), false)
+    assert.equal(skipsChangelog('Updated the changelog page styling.'), false)
+  })
+
+  it('only matches at the start of a line, not mid-sentence', () => {
+    assert.equal(skipsChangelog('This is a No-Changelog kind of fix, sort of.'), false)
+  })
+})
+
 describe('parseGitLog', () => {
   it('reads a record into its hash, date, subject and body', () => {
     const [change] = parseGitLog(record({ body: 'Because it was wrong.' }))
@@ -137,6 +163,16 @@ describe('parseGitLog', () => {
 
   it('drops a commit that changed nothing in the three workspaces', () => {
     assert.deepEqual(parseGitLog(record({ paths: ['docs/ui.md', 'CLAUDE.md'] })), [])
+  })
+
+  it('drops a commit marked No-Changelog even though it touched app code', () => {
+    const body = 'Replaced four invisible null bytes with spaces.\n\nNo-Changelog'
+    assert.deepEqual(parseGitLog(record({ body, paths: ['web/src/progress-percent.ts'] })), [])
+  })
+
+  it('keeps an ordinary commit that merely mentions "changelog" in its body', () => {
+    const body = 'Fixed the changelog page failing to load on a fresh clone.'
+    assert.equal(parseGitLog(record({ body }))[0]?.body, body)
   })
 
   it('reads a whole log of several records', () => {
