@@ -75,11 +75,16 @@ session cookies cross the network in clear text.
 
 - `nginx-test.sh` — serves `nginx-coc.conf` for real in a container and checks what
   it *does*: that the login throttle fires, that an ordinary page render is not
-  throttled, and that the security headers reach API responses as well as the SPA.
-  Needs Docker, skips cleanly without it.
+  throttled, that the security headers reach API responses as well as the SPA, and
+  that the static-asset `Cache-Control` headers (`/assets/` cached long and
+  immutable, `/coc/` game art cached for a day, `/` never cached) don't cost those
+  same security headers on the way in — a location block that sets its own
+  `add_header` stops inheriting the server block's entirely, which is exactly the
+  kind of thing worth a real check rather than a read-through. Needs Docker, skips
+  cleanly without it.
 
   ```bash
-  ./deploy/nginx-test.sh       # 12 checks; `nginx -t` on the droplet is still the gate
+  ./deploy/nginx-test.sh       # 21 checks; `nginx -t` on the droplet is still the gate
   ```
 
 - `.env.production.example` — template for `/srv/coc/.env` on the server.

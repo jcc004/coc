@@ -60,8 +60,10 @@ OPT
 cat > "$WORK/entry.sh" <<'ENTRY'
 #!/bin/sh
 set -e
-mkdir -p /var/www/certbot /srv/coc/web/dist
+mkdir -p /var/www/certbot /srv/coc/web/dist/assets /srv/coc/web/dist/coc
 printf '<html><body>spa</body></html>\n' > /srv/coc/web/dist/index.html
+printf 'body{}\n' > /srv/coc/web/dist/assets/index-deadbeef.css
+printf '\x89PNG-stub\n' > /srv/coc/web/dist/coc/some-card.png
 cp /tmp/coc.conf /etc/nginx/conf.d/coc.conf
 rm -f /etc/nginx/conf.d/default.conf
 nginx -t 2>/dev/null || { echo "CONFIG REJECTED"; nginx -t; exit 1; }
@@ -84,6 +86,35 @@ code=$(curl -sk -o /dev/null -w '%{http_code}' -H "$H" https://127.0.0.1/)
 check "GET / serves the SPA" "$code" "200"
 body=$(curl -sk -H "$H" https://127.0.0.1/api/health)
 check "GET /api/health reaches the backend" "$body" "stub-api"
+
+echo
+echo "=== static-asset caching ==="
+# The trap this guards against: a location block that sets its own add_header
+# (Cache-Control here) stops inheriting the server block's add_headers
+# entirely, rather than merging with them — nginx does not merge. Losing that
+# silently would mean losing CSP and HSTS on every asset and on the SPA
+# itself, so this checks the cache header AND the security headers together,
+# on every path that sets its own Cache-Control.
+assets_hdrs=$(curl -skI -H "$H" https://127.0.0.1/assets/index-deadbeef.css)
+echo "$assets_hdrs" | grep -qi '^cache-control: *public, *max-age=31536000, *immutable' && r=0 || r=1
+check "/assets/ is cached long and marked immutable" "$r" "0"
+
+coc_hdrs=$(curl -skI -H "$H" https://127.0.0.1/coc/some-card.png)
+echo "$coc_hdrs" | grep -qi '^cache-control: *public, *max-age=86400' && r=0 || r=1
+check "/coc/ (game art) is cached for a day" "$r" "0"
+
+spa_hdrs=$(curl -skI -H "$H" https://127.0.0.1/)
+echo "$spa_hdrs" | grep -qi '^cache-control: *no-cache' && r=0 || r=1
+check "/ (index.html) is explicitly uncached" "$r" "0"
+
+for label_hdrs in "/assets/:$assets_hdrs" "/coc/:$coc_hdrs" "SPA /:$spa_hdrs"; do
+  label="${label_hdrs%%:*}"
+  hdrs="${label_hdrs#*:}"
+  for h in "content-security-policy" "strict-transport-security"; do
+    echo "$hdrs" | grep -qi "^$h:" && r=0 || r=1
+    check "$h still present on $label (survived its own Cache-Control)" "$r" "0"
+  done
+done
 
 echo
 echo "=== the login throttle: burst of 5, then 429 ==="
