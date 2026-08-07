@@ -102,11 +102,24 @@ function RoleBlock({
   scheme: ColorScheme
   onChoose: (next: ColorScheme) => void
 }) {
+  const stored = scheme[role]
+
   /* What is in the input, which is not the same as what is stored: a color the guard
      refuses stays visible with its reason rather than disappearing on the way in. */
   const [pending, setPending] = useState<string | null>(null)
+  // `pending` only means anything relative to the `stored` value it was set against.
+  // When `stored` changes for a reason other than this block's own `apply` — the
+  // "Reset to the shipped colors" button calls `choose` directly, bypassing `apply`
+  // — a leftover `pending` would keep the input showing a color this role is no
+  // longer set to. Adjusted during render (React's own pattern for resetting state
+  // when a prop changes) rather than in an effect, so there is no frame where the
+  // stale value is visible.
+  const [committedFor, setCommittedFor] = useState(stored)
+  if (stored !== committedFor) {
+    setCommittedFor(stored)
+    setPending(null)
+  }
 
-  const stored = scheme[role]
   const shown = pending ?? stored ?? SHIPPED[role]
   const outcome = roleOutcome(role, shown)
 

@@ -800,6 +800,14 @@ export function openDatabase(path: string): DatabaseSync {
   // WAL survives a crash better and lets a read run while a write is in flight.
   // It is a no-op on an in-memory database, which is why it is not conditional.
   db.exec('PRAGMA journal_mode = WAL')
+  // The API server and the standalone progress/capture-snapshot.ts and
+  // refresh-reference.ts scripts are separate OS processes that can each hold
+  // this file open at once. WAL lets them all read concurrently, but a writer
+  // still has to wait for another writer's transaction to finish. SQLite's
+  // default busy timeout is 0 — a losing writer throws SQLITE_BUSY instead of
+  // waiting — which turns an ordinary lock wait into an unhandled 500. This
+  // gives a losing writer a real window to wait its turn instead.
+  db.exec('PRAGMA busy_timeout = 5000')
   migrate(db)
   db.exec('PRAGMA foreign_keys = ON')
   return db

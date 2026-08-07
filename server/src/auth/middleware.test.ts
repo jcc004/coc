@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict'
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import { Hono } from 'hono'
+import { openDatabase } from '../db.ts'
 import {
   clientIp,
   cookieSecureFromEnv,
+  stillActiveAdmin,
   trustProxyFromEnv,
+  warnUntrustedProxyPeer,
   type AuthContext,
   type AuthEnv,
 } from './middleware.ts'
+import { createAuthStore } from './store.ts'
 
 /*
  * `clientIp` on its own, because it is the rate limiter's bucket key and a caller
@@ -112,5 +116,127 @@ describe('the trust boundary is opt-in', () => {
     assert.equal(trustProxyFromEnv({ NODE_ENV: 'production' }), false)
     assert.equal(cookieSecureFromEnv({ NODE_ENV: 'production' }), true)
     assert.equal(cookieSecureFromEnv({ TRUST_PROXY: 'true' }), false)
+  })
+})
+
+/*
+ * `requireAdminFor` checks a request's cached session snapshot once, before the
+ * handler's own `await`s run. `stillActiveAdmin` is the re-check a handler makes
+ * right before its actual write, so a concurrent demotion or disable in that
+ * window is caught rather than trusted. What is tested here is the helper's own
+ * logic; the app-level proof that each write route actually calls it lives in
+ * `app.test.ts`.
+ */
+describe('stillActiveAdmin re-reads the caller, not a cached snapshot', () => {
+  it('is true for an admin who is still active', async () => {
+    const db = openDatabase(':memory:')
+    const store = createAuthStore(db)
+    const admin = await store.createUser({
+      email: 'admin@example.com',
+      displayName: 'Admin',
+      password: 'a-perfectly-fine-password',
+      role: 'admin',
+    })
+    assert.equal(stillActiveAdmin(store, admin.id), true)
+    db.close()
+  })
+
+  it('is false the instant the role changes underneath a cached caller', async () => {
+    const db = openDatabase(':memory:')
+    const store = createAuthStore(db)
+    const admin = await store.createUser({
+      email: 'admin@example.com',
+      displayName: 'Admin',
+      password: 'a-perfectly-fine-password',
+      role: 'admin',
+    })
+    // Stands in for a second admin's concurrent request landing between this
+    // caller's own admin check and its write.
+    store.setRole(admin.id, 'user')
+    assert.equal(stillActiveAdmin(store, admin.id), false)
+    db.close()
+  })
+
+  it('is false for an admin who was disabled in the same window', async () => {
+    const db = openDatabase(':memory:')
+    const store = createAuthStore(db)
+    const admin = await store.createUser({
+      email: 'admin@example.com',
+      displayName: 'Admin',
+      password: 'a-perfectly-fine-password',
+      role: 'admin',
+    })
+    // The route layer guards against disabling the last active admin;
+    // `store.setDisabled` itself does not, so this alone is enough to set up
+    // the case.
+    store.setDisabled(admin.id, true)
+    assert.equal(stillActiveAdmin(store, admin.id), false)
+    db.close()
+  })
+
+  it('is false for an id that no longer resolves to any user', async () => {
+    const db = openDatabase(':memory:')
+    const store = createAuthStore(db)
+    assert.equal(stillActiveAdmin(store, 9999), false)
+    db.close()
+  })
+})
+
+/*
+ * `warnUntrustedProxyPeer` reads the same `getConnInfo` shape `clientIp` does — see
+ * that function's own doc comment for why `TRUST_PROXY=true` is only safe while
+ * nginx, not some other caller, is what is actually connecting. `app.request()`
+ * has no real socket, but `getConnInfo` reads `c.env.incoming.socket`, and Hono's
+ * `request()` takes a third argument that becomes `c.env` — so a fake socket
+ * shape stands in for a real one without needing an actual listening server.
+ */
+function requestWithPeer(remoteAddress: string, trustProxy: boolean) {
+  const app = new Hono<AuthEnv>()
+  app.use('*', warnUntrustedProxyPeer(trustProxy))
+  app.get('/ping', (c) => c.text('ok'))
+  return app.request(
+    '/ping',
+    {},
+    { incoming: { socket: { remoteAddress, remotePort: 1, remoteFamily: 'IPv4' } } },
+  )
+}
+
+describe('warnUntrustedProxyPeer', () => {
+  it('warns once when TRUST_PROXY is on but the peer is not loopback', async () => {
+    const warnings: string[] = []
+    const warn = mock.method(console, 'warn', (message: string) => {
+      warnings.push(message)
+    })
+
+    await requestWithPeer('203.0.113.9', true)
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0] ?? '', /TRUST_PROXY=true/)
+    assert.match(warnings[0] ?? '', /203\.0\.113\.9/)
+
+    warn.mock.restore()
+  })
+
+  it('stays quiet for a loopback peer, which is what nginx looks like', async () => {
+    const warnings: string[] = []
+    const warn = mock.method(console, 'warn', (message: string) => {
+      warnings.push(message)
+    })
+
+    await requestWithPeer('127.0.0.1', true)
+    assert.equal(warnings.length, 0)
+
+    warn.mock.restore()
+  })
+
+  it('stays quiet when TRUST_PROXY is off, regardless of the peer', async () => {
+    const warnings: string[] = []
+    const warn = mock.method(console, 'warn', (message: string) => {
+      warnings.push(message)
+    })
+
+    await requestWithPeer('203.0.113.9', false)
+    assert.equal(warnings.length, 0)
+
+    warn.mock.restore()
   })
 })

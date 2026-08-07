@@ -1,9 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 /** Shows a tag and copies it on click — tags are the app's primary key and are
  *  tedious to retype. */
 export function TagButton({ tag }: { tag: string }) {
   const [copied, setCopied] = useState(false)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  // Cleared on unmount as well as before every new copy, so navigating away
+  // within the 1200ms window cannot fire `setCopied` on an unmounted button.
+  useEffect(() => () => clearTimeout(timeoutRef.current), [])
 
   return (
     <button
@@ -13,7 +18,8 @@ export function TagButton({ tag }: { tag: string }) {
       onClick={() => {
         void navigator.clipboard.writeText(tag).then(() => {
           setCopied(true)
-          setTimeout(() => setCopied(false), 1200)
+          clearTimeout(timeoutRef.current)
+          timeoutRef.current = setTimeout(() => setCopied(false), 1200)
         })
       }}
     >

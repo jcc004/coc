@@ -25,13 +25,13 @@ it is usually recording an incident. Treat it as evidence, not decoration.
 The general rules are in `claude-kit`. These are this repo's instances of them.
 
 - **The season is never read from a request.** It is `CARD_SEASON`, `shared/src/card-types.ts:18`,
-  applied at `server/src/cards/routes.ts:132` and `:175` and echoed in every response.
+  applied at `server/src/cards/routes.ts:123` and `:169` and echoed in every response.
 - **Session rows are verifiers.** `sessions.id` is `sha256(token)` — `hashToken`,
-  `server/src/auth/store.ts:42`. The raw token exists only in the cookie.
+  `server/src/auth/store.ts:43`. The raw token exists only in the cookie.
 - **`/api/*` is deny-by-default.** The public allowlist is `PUBLIC_API_PATHS`,
-  `server/src/app.ts:146`. Adding to it is a security decision.
+  `server/src/app.ts:148`. Adding to it is a security decision.
 - **Migrations are append-only**, keyed on `PRAGMA user_version` — `MIGRATIONS`,
-  `server/src/db.ts:626`. `v1` creates a table `v9` drops; both must stay, because a fresh
+  `server/src/db.ts:744`. `v1` creates a table `v9` drops; both must stay, because a fresh
   database passes through both in one boot.
 - **The runtime pin lives in three files and they move together**: `.nvmrc` (22.23.2),
   `package.json` `engines` (`>=22.23.2 <23`), and `.npmrc` (`engine-strict=true`, which is what
@@ -50,15 +50,15 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
 - **Card counts are stored sparsely.** Absent means zero; a count of 0 deletes the row. Never
   store a 0. Sixty rows per base would be sixty times the writes to say almost nothing.
 - **Authorization lives in one pure function.** `mayWriteBaseCounts`,
-  `server/src/cards/write-access.ts:63`, is the only interesting auth decision in the app. Do not
+  `server/src/cards/write-access.ts:64`, is the only interesting auth decision in the app. Do not
   reimplement it inline in a handler.
 - **Rules live in pure modules with adjacent tests**, never inline in a component — see
   `docs/layout.md` for the list. A new rule gets a module and a `.test.ts`, not a `useMemo`.
 - **Prettier is deliberately not in CI.** `verify.yml` argues the case at length: the code was
   laid out by hand within the same 100 columns Prettier targets, and running it would rewrite
   ~1,100 lines and bury every real change. Do not run `npm run format` as a drive-by.
-- **There are no CSS modules here.** Styling is `styles.css` plus 25 inline `style={{}}`
-  occurrences across 13 components, which is why the CSP carries `'unsafe-inline'`
+- **There are no CSS modules here.** Styling is `styles.css` plus 34 inline `style={{}}`
+  occurrences across 17 components, which is why the CSP carries `'unsafe-inline'`
   (`deploy/nginx-coc.conf`). Do not introduce a third styling mechanism.
 - **A table's row-limit select and its pager are one control, not two.** They sit together in a
   `<div className="roster-footer">` below the table — see `CardsView.tsx`'s leaderboard or
@@ -72,15 +72,17 @@ measure reopens against, so a list claiming "most bugs live here" would be borro
 of evidence it does not have. These are named for a specific way each one has misled a reader, or
 can.
 
-- **`web/src/styles.css`** (~3.5k lines, the most-churned file in the repo) — **selectors recur far
-  apart, so grep to the end; the first match is not the last word.** `.topbar` is declared twice,
-  roughly 2,300 lines apart: once with no background, once painting it. A grep that stopped at the
-  first produced a confident, wrong answer about how the banner was styled, and that shaped a
-  design decision before it was caught. Brace-depth scanning is what found the truth.
+- **`web/src/styles.css`** (~4.3k lines, the most-churned file in the repo) — **selectors recur far
+  apart, so grep to the end; the first match is not the last word.** `.topbar` is declared three
+  times: twice at the top level roughly 2,900 lines apart — once with no background, once painting
+  it — and a third time, a narrower override, inside a `max-width: 600px` block near the end of the
+  file. A grep that stopped at the first produced a confident, wrong answer about how the banner
+  was styled, and that shaped a design decision before it was caught. Brace-depth scanning is what
+  found the truth.
 
   **Anchor searches with `^\s*`, not `^`.** Declarations inside a `@media` block are indented, so
   a line-start anchor silently skips them. `.card` is declared at the top level and again inside
-  the `max-width: 600px` block roughly 3,000 lines later, changing its padding — and a `^\.card`
+  the `max-width: 600px` block roughly 3,500 lines later, changing its padding — and a `^\.card`
   grep finds only the first. That one caught a reader on 2026-08-04 who had written this very
   bullet hours earlier.
 
@@ -103,16 +105,19 @@ can.
   and a loader that threw before returning a promise.
 - **`server/src/db.ts`** — migrations are append-only and an applied one can never be edited. The
   reasoning is in the file header; read it before adding a step, and never renumber.
-- **`web/src/components/CardsView.tsx`** (990 lines) — the card page's controller, sharing three
-  components with the player page (`BaseCardEditor`, `CardTile`, `TradeSuggestions`). A change here
-  frequently lands there too, and two people editing it at once do not compose.
+- **`web/src/components/CardsView.tsx`** (1,303 lines and growing — it was 990 when first added to
+  this list) — the card page's controller, sharing three components with the player page
+  (`BaseCardEditor`, `CardTile`, `TradeSuggestions`). A change here frequently lands there too, and
+  two people editing it at once do not compose. It is now the largest component in the app by a
+  wide margin and past the line count (`RosterTable.tsx`'s own doc comment cites 660) that file was
+  split out from `ClanView.tsx` at — a plausible next split, not yet done.
 
 The first two are recorded from incidents; the last two are reasoned from the code and have not yet
 cost anything. Add to this list when a file misleads you, and say what it did.
 
 ## Testing
 
-`npm test` runs all three workspaces — 1,629 tests (21 shared, 524 server, 1,084 web), `node:test`,
+`npm test` runs all three workspaces — 1,640 tests (21 shared, 532 server, 1,087 web), `node:test`,
 no framework. Tests sit adjacent
 to their module. Run the whole suite, not a workspace.
 
@@ -120,9 +125,13 @@ Run it on the pinned Node. A non-interactive shell does not fire the `fnm --use-
 silently gets whatever Node is on `PATH`, so a green suite there says nothing about the runtime
 production uses. `zsh -i -c 'cd <repo> && npm test'` is the form that pins it.
 
-Known gap, so it is not rediscovered as a surprise: **7 of 32 components have tests**. The pure
-modules are well covered, and `hooks.ts` and `api.ts` now are too; what remains untested is
-presentational.
+Known gap, so it is not rediscovered as a surprise: **8 of 32 components have tests**. The pure
+modules are well covered, and `hooks.ts` and `api.ts` now are too. What remains untested is not
+uniformly presentational, though — `Login.tsx`, `TradeTracker.tsx`, `TradeSuggestions.tsx`,
+`ProgressGridView.tsx` and `ForcedPasswordChange.tsx` each wire up real interaction or business
+logic (their *underlying* pure logic is tested elsewhere; the component wiring itself is not). A
+full-repo review found this framing overstating the gap's safety; treat "untested" as "the wiring
+around already-tested logic," not "nothing here can break."
 
 ## Deploying
 

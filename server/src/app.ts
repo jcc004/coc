@@ -5,6 +5,7 @@ import {
   requireAdmin,
   requireAuth,
   requirePasswordUpToDate,
+  warnUntrustedProxyPeer,
   withSession,
   type AuthEnv,
 } from './auth/middleware.ts'
@@ -224,6 +225,7 @@ export function createApp({
 
   // Order matters: middleware only runs ahead of a handler if it was registered
   // first, so both gates go on before any route.
+  app.use('/api/*', warnUntrustedProxyPeer(trustProxy))
   app.use('/api/*', withSession(auth))
   app.use('/api/*', async (c, next) =>
     // The `any` is Hono's own: a path-scoped `app.use` gives the handler a
@@ -244,7 +246,7 @@ export function createApp({
     trustProxy,
   })
 
-  mountSharedDataRoutes(app, sharedData)
+  mountSharedDataRoutes(app, sharedData, auth)
 
   // The card routes need the owner column to answer "may this caller write this
   // base", which is the one place the two shared stores meet.

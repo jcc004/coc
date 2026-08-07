@@ -274,5 +274,11 @@ if (isMainModule) {
   }
 
   db.close()
-  if (summary.failed.length > 0 && summary.succeeded.length === 0) process.exitCode = 1
+
+  // Any failure, not only a total wipeout: this is a headless job on a systemd
+  // timer, so a nonzero exit is what makes a *partial* failure show up in
+  // `systemctl status`/`--failed` rather than only in a log nobody is
+  // tailing. A run where 8 of 20 bases fail every week used to look exactly
+  // like a clean run to anything watching the unit instead of the output.
+  if (summary.failed.length > 0) process.exitCode = 1
 }

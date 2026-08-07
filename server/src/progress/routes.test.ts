@@ -459,6 +459,21 @@ describe("manual walls are checked against the base's known Town Hall", () => {
     assert.deepEqual(body.snapshot.walls, { '99': 9999 })
     harness.db.close()
   })
+
+  it('still rejects a non-digit wall-level key when this base has never been auto-captured', async () => {
+    const harness = await createHarness()
+    const admin = await signIn(harness, ADMIN)
+    await assignBase(harness, admin, BASE_A, idOf(harness, ADMIN.email))
+
+    const response = await harness.app.request(
+      ...putManual(manualPath(BASE_A), { walls: { foo: 3 } }, admin),
+    )
+    assert.equal(response.status, 400)
+    const body = (await response.json()) as { error: { message: string } }
+    assert.match(body.error.message, /walls\['foo'\] is not a valid wall level\./)
+    assert.deepEqual(harness.progress.getHistory(BASE_A), [])
+    harness.db.close()
+  })
 })
 
 describe('a weekStart in the body corrects a past week instead of the current one', () => {

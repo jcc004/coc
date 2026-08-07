@@ -8,6 +8,7 @@ import {
   type TradeRecord,
   type TradeStatus,
 } from '@coc/shared'
+import { asText, asTextOrNull } from '../row.ts'
 import type { CardInventoryStore } from './store.ts'
 
 /**
@@ -155,14 +156,6 @@ export interface TradeStore {
    *   card back is already at `MAX_CARD_COUNT`.
    */
   undo(season: string, id: number, userId: number): TradeUndoResolution
-}
-
-function asText(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function asTextOrNull(value: unknown): string | null {
-  return typeof value === 'string' ? value : null
 }
 
 function asInt(value: unknown): number {

@@ -8,8 +8,8 @@ import {
   normalizeTag,
   type CardCategory,
 } from '@coc/shared'
-import { currentUser, type AuthContext, type AuthEnv } from '../auth/middleware.ts'
-import { errorBody } from '../http.ts'
+import { currentUser, type AuthEnv } from '../auth/middleware.ts'
+import { errorBody, readJson } from '../http.ts'
 import { ownershipOf, type BaseOwnerLookup } from './routes.ts'
 import {
   mayProposeTrade,
@@ -52,15 +52,6 @@ import type { TradeProposal, TradeStore } from './trades-store.ts'
  * in `shared/`, the same rule the inventory routes follow, and it is echoed in
  * every response.
  */
-
-async function readJson(c: AuthContext): Promise<Record<string, unknown>> {
-  try {
-    const body: unknown = await c.req.json()
-    return typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
-  } catch {
-    return {}
-  }
-}
 
 function isCategory(value: unknown): value is CardCategory {
   return typeof value === 'string' && (CARD_CATEGORIES as readonly string[]).includes(value)

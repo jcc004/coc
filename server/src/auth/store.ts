@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { normalizeEmail, type AdminUser, type SessionUser, type UserRole } from '@coc/shared'
+import { asText, asTextOrNull } from '../row.ts'
 import { createAuthEventLog, type AuthEventInput, type AuthEventLog } from './events.ts'
 import { burnPasswordWork, hashPassword, verifyPassword } from './passwords.ts'
 
@@ -59,15 +60,9 @@ export function isValidDisplayName(name: string): boolean {
 }
 
 /* node:sqlite hands back `Record<string, null | number | bigint | string | Uint8Array>`,
-   so every column needs narrowing on the way out. */
-function asText(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function asTextOrNull(value: unknown): string | null {
-  return typeof value === 'string' ? value : null
-}
-
+   so every column needs narrowing on the way out. `asText`/`asTextOrNull` live in
+   `../row.ts`, shared across every store; `asInt` stays here because its
+   zero-default isn't what every store wants — see `row.ts`'s header. */
 function asInt(value: unknown): number {
   if (typeof value === 'number') return value
   if (typeof value === 'bigint') return Number(value)

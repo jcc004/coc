@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { normalizeTag, type BaseInventory, type CardCount } from '@coc/shared'
+import { asText, asTextOrNull } from '../row.ts'
 
 /**
  * Hand-entered card counts for the August event — the only code that touches
@@ -22,14 +23,6 @@ import { normalizeTag, type BaseInventory, type CardCount } from '@coc/shared'
  * safe enough is that `updated_at` and `updated_by` are recorded and shown, so a
  * surprise is at least explainable.
  */
-
-function asText(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function asTextOrNull(value: unknown): string | null {
-  return typeof value === 'string' ? value : null
-}
 
 function asInt(value: unknown): number {
   if (typeof value === 'number') return value

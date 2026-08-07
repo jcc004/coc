@@ -58,9 +58,12 @@ a route added later cannot become a hole by omission.
 | `GET /api/auth/me` | signed in — the UI's boot probe |
 | `POST /api/auth/password` | signed in; re-checks the current password, then revokes every *other* session |
 | `GET /api/admin/users` | admin |
+| `GET /api/admin/auth-events` | admin — paginated audit trail, `limit`/`before` query params |
 | `POST /api/admin/users` | admin — `{ email, displayName?, password, role }` |
 | `POST /api/admin/users/:id/disable` | admin — `{ disabled }`, so it re-enables too |
 | `PATCH /api/admin/users/:id/email` | admin — `{ email }`; corrects a login address |
+| `PATCH /api/admin/users/:id/display-name` | admin — `{ displayName }`; cosmetic, revokes nothing |
+| `PATCH /api/admin/users/:id/role` | admin — `{ role, confirm? }`; promotes or demotes |
 | `POST /api/admin/users/:id/temp-password` | admin — no body; the server mints the password |
 
 Disabling an account deletes its sessions immediately. Two guards sit in front of it: an admin
@@ -118,6 +121,22 @@ The route also revokes the target's sessions — otherwise the old password woul
 sparing the caller's own for the self-issue case, since revoking the session that is *reading*
 the one-time password would throw the value away. That spared session is not a way around the
 change: it is gated exactly like any other flagged session, as below.
+
+**`PATCH /api/admin/users/:id/display-name`** — purely cosmetic, unlike the email route: it
+revokes no sessions, because a display name is never a credential. Used to fix a typo or a
+rename without going near SQLite by hand, the same motivation as the email route.
+
+**`PATCH /api/admin/users/:id/role`** — promotes or demotes. It carries the same last-active-admin
+guard the disable route does: demoting the only active admin is refused, because there would be
+no route back but hand-editing SQLite. Demoting **yourself** is allowed — it is how the role gets
+handed over — but is one-way from your own side, so it additionally requires `confirm: "yes"` in
+the body rather than happening as a side effect of a dropdown.
+
+**`GET /api/admin/auth-events`** — the audit trail (`auth_events`, migration v10) as a read-only,
+cursor-paginated feed: `limit` (clamped, default 50, max 200) and `before` (walks backwards from
+an event id) are the only inputs, and there is no route that writes, edits or deletes a row from
+outside `recordAuthEvent` itself. Not yet wired into any screen — it exists and is tested, but the
+admin panel does not call it.
 
 ## The forced change is enforced, not cosmetic
 
@@ -272,6 +291,14 @@ schema changes) because v2 has to drop and re-create `users`.
   column here is, which meant it could never resolve to a display name without a second query.
   `captured_by` stays, narrowed to `'auto'` / `'import'` / `'manual'`; *who* made a manual save
   now lives in the new column, backfilled from the old digit-string rows. Same doc as v11.
+- **v14** — `trades.undone_by_user_id` / `trades.undone_at`, backing an admin's ability to undo a
+  completed trade. A rebuild rather than an `ALTER TABLE ADD COLUMN`, the same reason v7 needed
+  one: SQLite's column-add is limited to a bare, unconstrained addition, and the new `CHECK
+  (undone_at IS NULL OR status = 'undone')` needs the whole table remade. `resolved_by_user_id` /
+  `resolved_at` are left exactly as completion wrote them — undo is a third audited event, not a
+  rewrite of the second — and both indexes v7 created are recreated verbatim after the rebuild,
+  since neither survives a `DROP TABLE`. See
+  [Undoing a completed trade](trade-tracker.md#undoing-a-completed-trade).
 
 Backfill, per row:
 
@@ -304,9 +331,9 @@ workspace's working directory, so `npm run dev` puts it at `server/data/coc.db` 
 The directory is created if missing. Thirteen tables — `users`, `sessions`, `chat_messages`,
 `saved_clans`, `owner_assignments`, `card_inventory`, `card_base_updates`, `trades`,
 `auth_events`, `base_progress`, `max_level_reference`, `wall_reference`, `base_order` — created
-and migrated on boot by `user_version`, currently at **v13** (`SCHEMA_VERSION`,
+and migrated on boot by `user_version`, currently at **v14** (`SCHEMA_VERSION`,
 `server/src/db.ts`). Twelve of the thirteen are live; `chat_messages` is kept but unused, as
-above.
+above. (v14 rebuilds `trades` in place rather than adding a table, so the count stays thirteen.)
 
 `node:sqlite` is used rather than `better-sqlite3` because it is in the runtime from Node 22.5
 on: no native module, nothing to compile on the host, nothing to rebuild when Node is

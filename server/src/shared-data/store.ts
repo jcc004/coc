@@ -11,6 +11,7 @@ import {
   type SavedClanInput,
   type SavedClanRecord,
 } from '@coc/shared'
+import { asText, asTextOrNull } from '../row.ts'
 
 /**
  * Saved clans and owner assignments — the shared data.
@@ -30,14 +31,6 @@ import {
  * it as the label for a row that has never been matched to an account — see
  * migration v6. Writing either is an admin's job; the routes enforce that.
  */
-
-function asText(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function asTextOrNull(value: unknown): string | null {
-  return typeof value === 'string' ? value : null
-}
 
 function asIntOrUndefined(value: unknown): number | undefined {
   if (typeof value === 'number') return value
@@ -326,44 +319,65 @@ export function createSharedDataStore(db: DatabaseSync): SharedDataStore {
       const conflicts: OwnerBulkConflict[] = []
       const now = new Date().toISOString()
 
-      for (const row of rows) {
-        const tag = canonical(row.tag)
-        if (!tag) continue
+      // One transaction for the whole batch, not one autocommitted statement
+      // per row — `upsertMaxLevelReference`/`upsertWallReference` in
+      // `progress/store.ts` wrap their own bulk loops the same way. This
+      // does not change which rows conflict: a stale row still refuses and
+      // every other row in the batch still applies, per the interface doc.
+      db.exec('BEGIN')
+      try {
+        for (const row of rows) {
+          const tag = canonical(row.tag)
+          if (!tag) continue
 
-        const current = findOwner(tag)
-        const storedOwner = current?.owner.trim() ?? ''
-        const expected = row.expectedOwner.trim()
+          const current = findOwner(tag)
+          const storedOwner = current?.owner.trim() ?? ''
+          const expected = row.expectedOwner.trim()
 
-        /*
-         * The whole point: if the stored value is not what this client last saw,
-         * somebody else changed it in between. Refuse the write and hand back the
-         * real value so the UI can re-ask, rather than silently overwriting a
-         * decision the user never saw.
-         */
-        if (storedOwner !== expected) {
-          conflicts.push({
-            tag,
-            expectedOwner: expected,
-            currentOwner: storedOwner,
-            ...(current?.updatedAt ? { updatedAt: current.updatedAt } : {}),
-            updatedBy: current?.updatedBy ?? null,
-          })
-          continue
+          /*
+           * The whole point: if the stored value is not what this client last saw,
+           * somebody else changed it in between. Refuse the write and hand back the
+           * real value so the UI can re-ask, rather than silently overwriting a
+           * decision the user never saw.
+           *
+           * `storedOwner` is `current.owner`, which is the owning account's *live*
+           * display name for a resolved assignment (see `toOwner`) — so this can
+           * also fire when nobody touched ownership at all and the owning account
+           * simply renamed itself between this client's last read and its submit.
+           * That is a false conflict, not a false negative: it costs a re-ask, not
+           * a lost write, and closing it for real needs the client to send back an
+           * account id rather than a name it read a moment ago — a wire-contract
+           * change, not a fix that belongs in this pass.
+           */
+          if (storedOwner !== expected) {
+            conflicts.push({
+              tag,
+              expectedOwner: expected,
+              currentOwner: storedOwner,
+              ...(current?.updatedAt ? { updatedAt: current.updatedAt } : {}),
+              updatedBy: current?.updatedBy ?? null,
+            })
+            continue
+          }
+
+          const next = row.owner.trim()
+          if (!next) {
+            // Clearing removes the row rather than storing an empty owner, so
+            // "no owner" has exactly one representation.
+            if (current) statements.deleteOwner.run(tag)
+            cleared.push(tag)
+            continue
+          }
+
+          const resolved = resolveOwnerText(next)
+          statements.upsertOwner.run(tag, resolved.owner, resolved.ownerUserId, now, userId)
+          const saved = findOwner(tag)
+          if (saved) applied.push(saved)
         }
-
-        const next = row.owner.trim()
-        if (!next) {
-          // Clearing removes the row rather than storing an empty owner, so
-          // "no owner" has exactly one representation.
-          if (current) statements.deleteOwner.run(tag)
-          cleared.push(tag)
-          continue
-        }
-
-        const resolved = resolveOwnerText(next)
-        statements.upsertOwner.run(tag, resolved.owner, resolved.ownerUserId, now, userId)
-        const saved = findOwner(tag)
-        if (saved) applied.push(saved)
+        db.exec('COMMIT')
+      } catch (cause) {
+        db.exec('ROLLBACK')
+        throw cause
       }
 
       return { applied, cleared, conflicts }
@@ -374,52 +388,63 @@ export function createSharedDataStore(db: DatabaseSync): SharedDataStore {
       const owners: ImportCounts = { applied: 0, skipped: 0, invalid: 0 }
       const clans: ImportCounts = { applied: 0, skipped: 0, invalid: 0 }
 
-      /*
-       * Idempotent by construction: a second run finds every tag already present
-       * and counts it as skipped. There is no flag to get wrong on the server —
-       * the browser's flag only saves the round trip.
-       */
-      for (const entry of input.owners ?? []) {
-        const tag = canonical(entry.tag)
-        const owner = entry.owner.trim()
-        if (!tag || !owner) {
-          owners.invalid += 1
-          continue
+      // One transaction across both halves, the same "one atomic bring-my-
+      // browser-across" the route layer already treats this as (see the
+      // oversized-rows check in `shared-data/routes.ts`), rather than up to
+      // 400 separately-committed statements.
+      db.exec('BEGIN')
+      try {
+        /*
+         * Idempotent by construction: a second run finds every tag already present
+         * and counts it as skipped. There is no flag to get wrong on the server —
+         * the browser's flag only saves the round trip.
+         */
+        for (const entry of input.owners ?? []) {
+          const tag = canonical(entry.tag)
+          const owner = entry.owner.trim()
+          if (!tag || !owner) {
+            owners.invalid += 1
+            continue
+          }
+
+          const resolved = resolveOwnerText(owner)
+          const result = statements.insertOwnerIfAbsent.run(
+            tag,
+            resolved.owner,
+            resolved.ownerUserId,
+            now,
+            userId,
+          )
+          if (Number(result.changes) > 0) owners.applied += 1
+          else owners.skipped += 1
         }
 
-        const resolved = resolveOwnerText(owner)
-        const result = statements.insertOwnerIfAbsent.run(
-          tag,
-          resolved.owner,
-          resolved.ownerUserId,
-          now,
-          userId,
-        )
-        if (Number(result.changes) > 0) owners.applied += 1
-        else owners.skipped += 1
-      }
+        for (const entry of input.clans ?? []) {
+          const tag = canonical(entry.tag)
+          const name = entry.name?.trim()
+          if (!tag || !name) {
+            clans.invalid += 1
+            continue
+          }
 
-      for (const entry of input.clans ?? []) {
-        const tag = canonical(entry.tag)
-        const name = entry.name?.trim()
-        if (!tag || !name) {
-          clans.invalid += 1
-          continue
+          const result = statements.insertClanIfAbsent.run(
+            tag,
+            name,
+            entry.custom === true ? 1 : 0,
+            orNull(entry.clanLevel),
+            orNull(entry.members),
+            orNull(entry.clanPoints),
+            entry.warLeague ?? null,
+            now,
+            userId,
+          )
+          if (Number(result.changes) > 0) clans.applied += 1
+          else clans.skipped += 1
         }
-
-        const result = statements.insertClanIfAbsent.run(
-          tag,
-          name,
-          entry.custom === true ? 1 : 0,
-          orNull(entry.clanLevel),
-          orNull(entry.members),
-          orNull(entry.clanPoints),
-          entry.warLeague ?? null,
-          now,
-          userId,
-        )
-        if (Number(result.changes) > 0) clans.applied += 1
-        else clans.skipped += 1
+        db.exec('COMMIT')
+      } catch (cause) {
+        db.exec('ROLLBACK')
+        throw cause
       }
 
       return { owners, clans }

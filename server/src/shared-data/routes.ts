@@ -1,7 +1,14 @@
 import type { Hono } from 'hono'
 import { normalizeTag, type OwnerBulkRow, type SavedClanInput } from '@coc/shared'
-import { currentUser, requireAdminFor, type AuthContext, type AuthEnv } from '../auth/middleware.ts'
-import { errorBody } from '../http.ts'
+import {
+  currentUser,
+  requireAdminFor,
+  stillActiveAdmin,
+  type AuthContext,
+  type AuthEnv,
+} from '../auth/middleware.ts'
+import type { AuthStore } from '../auth/store.ts'
+import { errorBody, readJson } from '../http.ts'
 import type { SharedDataStore } from './store.ts'
 
 /**
@@ -56,15 +63,6 @@ const ownerWritesAreAdminOnly = requireAdminFor(
   ADMIN_ASSIGNS_OWNERSHIP,
   'Everyone can read every owner; only an admin can change one.',
 )
-
-async function readJson(c: AuthContext): Promise<Record<string, unknown>> {
-  try {
-    const body: unknown = await c.req.json()
-    return typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
-  } catch {
-    return {}
-  }
-}
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : ''
@@ -134,7 +132,23 @@ function tooManyRows(value: unknown, field: string): string | undefined {
   return `${field} carries ${value.length} rows; the most this endpoint accepts is ${MAX_BULK_ROWS}.`
 }
 
-export function mountSharedDataRoutes(app: Hono<AuthEnv>, store: SharedDataStore): void {
+function adminAccessRevoked(c: AuthContext) {
+  return c.json(
+    errorBody(
+      403,
+      'forbidden',
+      'Your admin access changed while this request was being handled.',
+      'Sign in again and retry.',
+    ),
+    403,
+  )
+}
+
+export function mountSharedDataRoutes(
+  app: Hono<AuthEnv>,
+  store: SharedDataStore,
+  auth: AuthStore,
+): void {
   /* ---------- saved clans ---------- */
 
   app.get('/api/saved/clans', (c) => c.json({ clans: store.listSavedClans() }))
@@ -214,6 +228,8 @@ export function mountSharedDataRoutes(app: Hono<AuthEnv>, store: SharedDataStore
       )
     }
 
+    if (!stillActiveAdmin(auth, currentUser(c).id)) return adminAccessRevoked(c)
+
     const owner = store.setOwner(c.req.param('tag'), userId, currentUser(c).id)
     if (!owner) {
       return c.json(
@@ -268,6 +284,8 @@ export function mountSharedDataRoutes(app: Hono<AuthEnv>, store: SharedDataStore
       rows.push({ tag, owner: asString(entry['owner']), expectedOwner: entry['expectedOwner'] })
     }
 
+    if (!stillActiveAdmin(auth, currentUser(c).id)) return adminAccessRevoked(c)
+
     return c.json(store.applyOwners(rows, currentUser(c).id))
   })
 
@@ -318,7 +336,14 @@ export function mountSharedDataRoutes(app: Hono<AuthEnv>, store: SharedDataStore
       .filter((entry): entry is SavedClanInput => entry !== undefined)
     const droppedClans = rawClans.length - clans.length
 
-    const mayWriteOwners = user.role === 'admin'
+    // Not behind `requireAdminFor` — this route is open to every signed-in
+    // caller, and only the owner half of the payload is admin-gated. Read
+    // fresh rather than off `user`'s request-start snapshot, for the same
+    // reason `stillActiveAdmin`'s other call sites do: the two `tooManyRows`
+    // checks and the `asRecordArray`/`map`/`filter` passes above ran since
+    // the session was resolved, and a concurrent demotion in that window
+    // should not let a no-longer-admin caller's owner rows through.
+    const mayWriteOwners = stillActiveAdmin(auth, user.id)
     const result = store.importFromBrowser(
       { owners: mayWriteOwners ? owners : [], clans },
       user.id,

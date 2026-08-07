@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import {
   isValidTag,
   normalizeTag,
@@ -265,6 +265,16 @@ export function SavedClansView({ user }: { user: Pick<SessionUser, 'role'> }) {
   const [refreshing, setRefreshing] = useState(false)
   const [refreshProblem, setRefreshProblem] = useState<string | null>(null)
 
+  // `refreshAll` is a sequential loop of network round trips, one per saved clan,
+  // so it can easily still be running when the homepage is navigated away from.
+  // The effect-based fetches elsewhere in the app abort via `AbortController`
+  // instead; this is a click handler's own loop rather than an effect, so there
+  // is nothing to abort — the mounted flag just stops it writing state after.
+  const mountedRef = useRef(true)
+  useEffect(() => () => {
+    mountedRef.current = false
+  }, [])
+
   const ordered = useMemo(
     () => sortClanEntries(clans, sortKey, ascending),
     [clans, sortKey, ascending],
@@ -294,6 +304,9 @@ export function SavedClansView({ user }: { user: Pick<SessionUser, 'role'> }) {
         failures.push(entry.tag)
       }
     }
+    // The loop above is several awaited round trips; the homepage can have been
+    // navigated away from by the time it finishes.
+    if (!mountedRef.current) return
     if (failures.length > 0) setRefreshProblem(`Could not refresh: ${failures.join(', ')}`)
     setRefreshing(false)
   }

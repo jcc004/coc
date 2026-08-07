@@ -1,4 +1,5 @@
-import type { UserRole } from '@coc/shared'
+import type { ApiErrorResponse, UserRole } from '@coc/shared'
+import { errorBody } from '../http.ts'
 
 /**
  * The one answer to "may this user change this base's card counts".
@@ -97,4 +98,23 @@ export function mayWriteBaseCounts(writer: BaseWriter, base: BaseOwnership): Bas
     refusal: 'unowned',
     message: `${base.tag} has no owner, so only an admin can change its card counts. Ask an admin to assign it to you.`,
   }
+}
+
+/**
+ * The 403 body for a refusal from {@link mayWriteBaseCounts}, shared by
+ * `cards/routes.ts` and `progress/routes.ts`. Both used to define this
+ * identically, differing only in the hint's noun ("Card counts" vs. "Base
+ * progress") — the same drift risk this file's own header argues against for
+ * the authorization decision itself, just one level down in a route's answer.
+ */
+export function writeForbiddenBody(
+  decision: BaseWriteDecision & { allowed: false },
+  noun: string,
+): ApiErrorResponse {
+  return errorBody(
+    403,
+    'forbidden',
+    decision.message,
+    `${noun} are entered by the member who owns the base. Nothing was written.`,
+  )
 }

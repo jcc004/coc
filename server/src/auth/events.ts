@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthEvent, AuthEventKind } from '@coc/shared'
+import { asText, asTextOrNull } from '../row.ts'
 
 /**
  * The audit trail for account actions: who signed in, who failed, who was locked
@@ -67,14 +68,6 @@ export interface AuthEventLog {
  */
 export const AUTH_EVENT_PAGE_MAX = 200
 export const AUTH_EVENT_PAGE_DEFAULT = 50
-
-function asText(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function asTextOrNull(value: unknown): string | null {
-  return typeof value === 'string' ? value : null
-}
 
 function asIntOrNull(value: unknown): number | null {
   if (typeof value === 'number') return value

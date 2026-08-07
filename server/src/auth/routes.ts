@@ -1,6 +1,6 @@
 import type { Hono } from 'hono'
 import { isValidEmail, MIN_PASSWORD_LENGTH, normalizeEmail, type UserRole } from '@coc/shared'
-import { errorBody } from '../http.ts'
+import { errorBody, readJson } from '../http.ts'
 import { AUTH_EVENT_PAGE_DEFAULT, AUTH_EVENT_PAGE_MAX } from './events.ts'
 import {
   clearSessionCookie,
@@ -8,6 +8,7 @@ import {
   currentUser,
   sessionTokenFromCookie,
   setSessionCookie,
+  stillActiveAdmin,
   type AuthContext,
   type AuthEnv,
 } from './middleware.ts'
@@ -27,15 +28,6 @@ import { generateTemporaryPassword } from './temp-password.ts'
 const LOGIN_FAILED = 'Email or password is incorrect.'
 
 const EMAIL_PROBLEM = 'Enter an email address — one @, no spaces.'
-
-async function readJson(c: AuthContext): Promise<Record<string, unknown>> {
-  try {
-    const body: unknown = await c.req.json()
-    return typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
-  } catch {
-    return {}
-  }
-}
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : ''
@@ -60,6 +52,24 @@ function badUserId(c: AuthContext) {
 
 function noSuchUser(c: AuthContext, id: number) {
   return c.json(errorBody(404, 'notFound', `No user with id ${id}.`), 404)
+}
+
+/**
+ * `requireAdminFor`'s check ran before this handler's own `await`s — see
+ * `stillActiveAdmin`'s doc comment. Every write below calls this immediately
+ * before the actual mutation and answers the same way `requireAdminFor`
+ * would if the caller had never been an admin to begin with.
+ */
+function adminAccessRevoked(c: AuthContext) {
+  return c.json(
+    errorBody(
+      403,
+      'forbidden',
+      'Your admin access changed while this request was being handled.',
+      'Sign in again and retry.',
+    ),
+    403,
+  )
 }
 
 export interface AuthRouteOptions {
@@ -294,6 +304,8 @@ export function mountAuthRoutes(
     const problem = passwordProblem(password)
     if (problem) return c.json(errorBody(400, 'badRequest', problem), 400)
 
+    if (!stillActiveAdmin(store, admin.id)) return adminAccessRevoked(c)
+
     try {
       const user = await store.createUser({
         email,
@@ -364,6 +376,8 @@ export function mountAuthRoutes(
       )
     }
 
+    if (!stillActiveAdmin(store, admin.id)) return adminAccessRevoked(c)
+
     const user = store.setDisabled(id, disabled)
     if (!user) return noSuchUser(c, id)
     store.recordAuthEvent({
@@ -391,6 +405,8 @@ export function mountAuthRoutes(
     if (!isValidEmail(email)) {
       return c.json(errorBody(400, 'badRequest', EMAIL_PROBLEM), 400)
     }
+
+    if (!stillActiveAdmin(store, admin.id)) return adminAccessRevoked(c)
 
     const before = store.findUser(id)
     let user
@@ -446,6 +462,8 @@ export function mountAuthRoutes(
         400,
       )
     }
+
+    if (!stillActiveAdmin(store, admin.id)) return adminAccessRevoked(c)
 
     const before = store.findUser(id)
     const user = store.setDisplayName(id, displayName)
@@ -508,6 +526,8 @@ export function mountAuthRoutes(
       )
     }
 
+    if (!stillActiveAdmin(store, admin.id)) return adminAccessRevoked(c)
+
     const user = store.setRole(id, role)
     if (!user) return noSuchUser(c, id)
     store.recordAuthEvent({
@@ -540,6 +560,8 @@ export function mountAuthRoutes(
      * it into; a client-supplied one would also mean this route could set a known
      * password on any account, which is a far worse primitive than it looks.
      */
+    if (!stillActiveAdmin(store, admin.id)) return adminAccessRevoked(c)
+
     const password = generateTemporaryPassword()
     const user = await store.setPassword(id, password, true)
     if (!user) return noSuchUser(c, id)

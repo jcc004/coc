@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { colorSchemeKey, fitAccent, fitBanner } from '../color-scheme.ts'
+import { colorSchemeKey, fitAccent, fitBanner, SHIPPED } from '../color-scheme.ts'
 import { installTestCleanup, sessionUser } from '../test-support.ts'
 import { ColorSchemeCard } from './ColorSchemeCard.tsx'
 
@@ -174,5 +174,29 @@ describe('reset', () => {
       assert.equal(rootValue(name), '', name)
     }
     assert.equal(stored(), JSON.stringify({ accent: null, chrome: null, banner: null }))
+  })
+
+  it('does not leave a refused custom color showing after it, since it bypasses apply', async () => {
+    const user = card()
+
+    // An accepted swatch first, so the scheme differs from default and Reset is enabled.
+    await user.click(screen.getByRole('button', { name: 'Accent: Teal' }))
+
+    // A color this role refuses — `pending` now holds it, and `stored` (still
+    // Teal) never does, because `apply` returns before calling `onChoose`.
+    fireEvent.change(screen.getByLabelText('Accent: choose any color'), {
+      target: { value: '#00ff00' },
+    })
+    assert.ok(screen.getByText(/Not available/))
+
+    // Reset calls `choose` directly rather than this block's own `apply`, which
+    // is exactly the path that used to leave the refused color on screen.
+    await user.click(screen.getByRole('button', { name: /Reset/ }))
+
+    assert.equal(
+      screen.getByLabelText<HTMLInputElement>('Accent: choose any color').value,
+      SHIPPED.accent,
+    )
+    assert.equal(screen.queryByText(/Not available/), null)
   })
 })

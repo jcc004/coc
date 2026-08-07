@@ -114,6 +114,24 @@ export function requireAdminFor(message: string, hint?: string): MiddlewareHandl
 
 export const requireAdmin = requireAdminFor('This endpoint is for admins only.')
 
+/**
+ * Re-reads the caller's own role and disabled status directly from the store,
+ * for a handler to call immediately before a privileged write that has run an
+ * `await` since `requireAdminFor` checked the request's cached snapshot.
+ *
+ * `mayWriteBaseCounts`'s callers already re-check base ownership after
+ * `readJson`'s event-loop yield, because ownership can change underneath an
+ * in-flight request — the admin gate has the identical shape and the same
+ * gap: `readJson`, and for the password-touching routes the scrypt work
+ * queue, both yield, and another admin's concurrent request can demote or
+ * disable this caller in that window. This is that same re-check applied to
+ * the gate itself, not a new kind of caution.
+ */
+export function stillActiveAdmin(store: AuthStore, callerId: number): boolean {
+  const fresh = store.findUser(callerId)
+  return fresh?.role === 'admin' && !fresh.disabledAt
+}
+
 /** Valid only downstream of `requireAuth`, which is what makes the throw unreachable. */
 export function currentUser(c: AuthContext): SessionUser {
   const user = c.get('user')
@@ -202,6 +220,50 @@ export function clearSessionCookie(c: AuthContext): void {
  * Empty matters: the limiter skips the IP bucket rather than filing every caller
  * under one shared key, because a shared key is a lockout for the whole app.
  */
+function isLoopbackAddress(address: string): boolean {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
+}
+
+/**
+ * `TRUST_PROXY=true` means "believe the forwarded headers, because a specific
+ * proxy is known to overwrite them" — see {@link clientIp}. That is only true
+ * while nginx is actually the thing connecting to this process: nginx and the
+ * app run on the same host, so a legitimate request always arrives from
+ * loopback. A request that reaches here directly from anywhere else, with the
+ * flag still on, means the assumption behind it does not hold — whatever is
+ * talking to this process could be a client that skipped nginx entirely and
+ * typed its own `X-Real-IP`, and the IP half of the rate limiter is then
+ * exactly as spoofable as it would be with the flag off, just without
+ * anything having said so.
+ *
+ * Logged once per process, not per request — the condition is a deployment
+ * fact, not something that changes request to request, and a line repeated
+ * on every hit would be exactly the noise a real operator learns to ignore.
+ */
+export function warnUntrustedProxyPeer(trustProxy: boolean): MiddlewareHandler<AuthEnv> {
+  let warned = false
+  return async (c, next) => {
+    if (trustProxy && !warned) {
+      let peer = ''
+      try {
+        // Absent under `app.request()` — see `clientIp`'s own try/catch for why.
+        peer = getConnInfo(c).remote.address ?? ''
+      } catch {
+        // peer stays ''
+      }
+      if (peer && !isLoopbackAddress(peer)) {
+        warned = true
+        console.warn(
+          `⚠ TRUST_PROXY=true, but a request arrived directly from ${peer} rather than ` +
+            'loopback — nginx is not what is talking to this process, so the forwarded ' +
+            'headers TRUST_PROXY tells the rate limiter to believe may not be trustworthy.',
+        )
+      }
+    }
+    await next()
+  }
+}
+
 export function clientIp(c: AuthContext, trustProxy: boolean): string {
   if (trustProxy) {
     const real = c.req.header('x-real-ip')?.trim()

@@ -8,10 +8,10 @@ import {
   type CardCount,
   type OwnerRecord,
 } from '@coc/shared'
-import { currentUser, type AuthContext, type AuthEnv } from '../auth/middleware.ts'
-import { errorBody } from '../http.ts'
+import { currentUser, type AuthEnv } from '../auth/middleware.ts'
+import { errorBody, readJson } from '../http.ts'
 import type { CardInventoryStore } from './store.ts'
-import { mayWriteBaseCounts, type BaseOwnership, type BaseWriteDecision } from './write-access.ts'
+import { mayWriteBaseCounts, writeForbiddenBody, type BaseOwnership } from './write-access.ts'
 
 /**
  * `/api/cards/*` — reading and writing the shared card inventory.
@@ -30,15 +30,6 @@ import { mayWriteBaseCounts, type BaseOwnership, type BaseWriteDecision } from '
  * looking at — and there is no UI that would want to. It is echoed in every
  * response so the page can say which event it is showing.
  */
-
-async function readJson(c: AuthContext): Promise<Record<string, unknown>> {
-  try {
-    const body: unknown = await c.req.json()
-    return typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
-  } catch {
-    return {}
-  }
-}
 
 /**
  * The whole submitted list, or the first thing wrong with it.
@@ -123,15 +114,6 @@ export function ownershipOf(owners: BaseOwnerLookup, tag: string): BaseOwnership
   }
 }
 
-function writeForbidden(decision: BaseWriteDecision & { allowed: false }) {
-  return errorBody(
-    403,
-    'forbidden',
-    decision.message,
-    'Card counts are entered by the member who owns the base. Nothing was written.',
-  )
-}
-
 export function mountCardRoutes(
   app: Hono<AuthEnv>,
   store: CardInventoryStore,
@@ -163,7 +145,7 @@ export function mountCardRoutes(
   app.put('/api/cards/inventory/:tag', async (c) => {
     const decision = mayWriteBaseCounts(currentUser(c), ownershipOf(owners, c.req.param('tag')))
     if (!decision.allowed) {
-      return c.json(writeForbidden(decision), 403)
+      return c.json(writeForbiddenBody(decision, 'Card counts'), 403)
     }
 
     const parsed = parseCounts((await readJson(c))['counts'])
@@ -181,7 +163,7 @@ export function mountCardRoutes(
 
     const stillAllowed = mayWriteBaseCounts(currentUser(c), ownershipOf(owners, c.req.param('tag')))
     if (!stillAllowed.allowed) {
-      return c.json(writeForbidden(stillAllowed), 403)
+      return c.json(writeForbiddenBody(stillAllowed, 'Card counts'), 403)
     }
 
     const base = store.saveBase(CARD_SEASON, c.req.param('tag'), parsed.counts, currentUser(c).id)

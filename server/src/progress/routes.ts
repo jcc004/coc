@@ -8,8 +8,8 @@ import type {
 } from '@coc/shared'
 import { currentUser, type AuthContext, type AuthEnv } from '../auth/middleware.ts'
 import { ownershipOf, type BaseOwnerLookup } from '../cards/routes.ts'
-import { mayWriteBaseCounts, type BaseWriteDecision } from '../cards/write-access.ts'
-import { errorBody } from '../http.ts'
+import { mayWriteBaseCounts, writeForbiddenBody } from '../cards/write-access.ts'
+import { errorBody, readJson } from '../http.ts'
 import type { ProgressStore } from './store.ts'
 
 /**
@@ -25,15 +25,6 @@ import type { ProgressStore } from './store.ts'
  * uses: the user decided base-progress writes should follow the exact rule
  * card counts do, not a second copy of it.
  */
-
-async function readJson(c: AuthContext): Promise<Record<string, unknown>> {
-  try {
-    const body: unknown = await c.req.json()
-    return typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
-  } catch {
-    return {}
-  }
-}
 
 /**
  * `buildingsLeft` is a digit string or one of the two literals a person types
@@ -80,10 +71,15 @@ function parseManualCapture(
         }
       }
 
+      // The key-format check runs regardless of whether there's a reference row
+      // to bound against — only the *cap* comparisons below need one. A base
+      // with no wallReference yet is still not a green light for a key that
+      // isn't a wall level at all.
+      if (!/^\d+$/.test(level) || Number(level) <= 0) {
+        return { problem: `walls['${level}'] is not a valid wall level.` }
+      }
+
       if (wallReference) {
-        if (!/^\d+$/.test(level) || Number(level) <= 0) {
-          return { problem: `walls['${level}'] is not a valid wall level.` }
-        }
         if (Number(level) > wallReference.maxWallLevel) {
           return {
             problem:
@@ -275,15 +271,6 @@ export function currentWeekStart(now: Date): string {
   return weekStart.toISOString().slice(0, 10)
 }
 
-function writeForbidden(decision: BaseWriteDecision & { allowed: false }) {
-  return errorBody(
-    403,
-    'forbidden',
-    decision.message,
-    'Base progress is entered by the member who owns the base. Nothing was written.',
-  )
-}
-
 export function mountProgressRoutes(
   app: Hono<AuthEnv>,
   store: ProgressStore,
@@ -387,7 +374,7 @@ export function mountProgressRoutes(
   app.put('/api/progress/:tag/manual', async (c) => {
     const decision = mayWriteBaseCounts(currentUser(c), ownershipOf(owners, c.req.param('tag')))
     if (!decision.allowed) {
-      return c.json(writeForbidden(decision), 403)
+      return c.json(writeForbiddenBody(decision, 'Base progress'), 403)
     }
 
     const tag = c.req.param('tag')
@@ -414,7 +401,7 @@ export function mountProgressRoutes(
 
     const stillAllowed = mayWriteBaseCounts(currentUser(c), ownershipOf(owners, c.req.param('tag')))
     if (!stillAllowed.allowed) {
-      return c.json(writeForbidden(stillAllowed), 403)
+      return c.json(writeForbiddenBody(stillAllowed, 'Base progress'), 403)
     }
 
     // Only a targeted (past-week) write leaves this trail — the default path into

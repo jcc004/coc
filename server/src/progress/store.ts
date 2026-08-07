@@ -12,6 +12,7 @@ import {
   type WallReferenceInput,
   type WallReferenceRow,
 } from '@coc/shared'
+import { asText, asTextOrNull } from '../row.ts'
 
 /**
  * Weekly per-base progress tracking — the only code that touches
@@ -32,14 +33,6 @@ import {
  * request. `computeAutoNote` is exported on its own because the diffing is the
  * one piece of this file worth testing without a database in the loop.
  */
-
-function asText(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function asTextOrNull(value: unknown): string | null {
-  return typeof value === 'string' ? value : null
-}
 
 function asInt(value: unknown): number {
   if (typeof value === 'number') return value
@@ -365,52 +358,70 @@ export function createProgressStore(db: DatabaseSync): ProgressStore {
   return {
     upsertSnapshot(playerTag, weekStart, capture, capturedBy) {
       const tag = normalizeTag(playerTag)
-      const existing = statements.find.get(tag, weekStart)
-      const prior = statements.findPrior.get(tag, weekStart)
 
-      // Per field, not per payload: an auto-capture naming only `heroes` must
-      // not blank out `troops` the previous capture already had, and the same
-      // goes for each manual field.
-      const thLevel = capture.auto?.thLevel ?? asIntOrNull(existing?.['th_level'])
-      const heroes = capture.auto?.heroes ?? parseUnitLevels(existing?.['heroes_json'])
-      const equipment = capture.auto?.equipment ?? parseUnitLevels(existing?.['equipment_json'])
-      const pets = capture.auto?.pets ?? parseUnitLevels(existing?.['pets_json'])
-      const troops = capture.auto?.troops ?? parseUnitLevels(existing?.['troops_json'])
-      const spells = capture.auto?.spells ?? parseUnitLevels(existing?.['spells_json'])
-      const walls = capture.manual?.walls ?? parseWalls(existing?.['walls_json'])
-      const buildingsLeft =
-        capture.manual?.buildingsLeft ?? asTextOrNull(existing?.['buildings_left'])
-      const notes = capture.manual?.notes ?? asTextOrNull(existing?.['notes'])
+      // BEGIN IMMEDIATE, not the plain BEGIN used elsewhere in this file: this
+      // merge reads `existing`/`prior` and then writes a value computed from
+      // that read, and the scheduled auto-capture job and a manual save are
+      // separate OS processes that can both be doing that at once (see the
+      // interface doc above). A plain BEGIN only takes SQLite's write lock at
+      // the first write, so both processes could still read the same stale
+      // `existing` row before either commits — a lost update, silently. BEGIN
+      // IMMEDIATE takes the write lock up front, so the second writer blocks
+      // (openDatabase's busy_timeout gives it something to wait *for*) until
+      // the first one's write has landed, and reads it fresh.
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        const existing = statements.find.get(tag, weekStart)
+        const prior = statements.findPrior.get(tag, weekStart)
 
-      const autoNote = computeAutoNote(
-        prior
-          ? {
-              thLevel: asIntOrNull(prior['th_level']),
-              heroes: parseUnitLevels(prior['heroes_json']),
-            }
-          : undefined,
-        { thLevel, heroes },
-      )
+        // Per field, not per payload: an auto-capture naming only `heroes` must
+        // not blank out `troops` the previous capture already had, and the same
+        // goes for each manual field.
+        const thLevel = capture.auto?.thLevel ?? asIntOrNull(existing?.['th_level'])
+        const heroes = capture.auto?.heroes ?? parseUnitLevels(existing?.['heroes_json'])
+        const equipment = capture.auto?.equipment ?? parseUnitLevels(existing?.['equipment_json'])
+        const pets = capture.auto?.pets ?? parseUnitLevels(existing?.['pets_json'])
+        const troops = capture.auto?.troops ?? parseUnitLevels(existing?.['troops_json'])
+        const spells = capture.auto?.spells ?? parseUnitLevels(existing?.['spells_json'])
+        const walls = capture.manual?.walls ?? parseWalls(existing?.['walls_json'])
+        const buildingsLeft =
+          capture.manual?.buildingsLeft ?? asTextOrNull(existing?.['buildings_left'])
+        const notes = capture.manual?.notes ?? asTextOrNull(existing?.['notes'])
 
-      const now = new Date().toISOString()
+        const autoNote = computeAutoNote(
+          prior
+            ? {
+                thLevel: asIntOrNull(prior['th_level']),
+                heroes: parseUnitLevels(prior['heroes_json']),
+              }
+            : undefined,
+          { thLevel, heroes },
+        )
 
-      statements.upsert.run(
-        tag,
-        weekStart,
-        thLevel,
-        heroes ? JSON.stringify(heroes) : null,
-        equipment ? JSON.stringify(equipment) : null,
-        pets ? JSON.stringify(pets) : null,
-        troops ? JSON.stringify(troops) : null,
-        spells ? JSON.stringify(spells) : null,
-        walls ? JSON.stringify(walls) : null,
-        buildingsLeft,
-        notes,
-        autoNote,
-        capturedBy.source,
-        capturedBy.source === 'manual' ? capturedBy.userId : null,
-        now,
-      )
+        const now = new Date().toISOString()
+
+        statements.upsert.run(
+          tag,
+          weekStart,
+          thLevel,
+          heroes ? JSON.stringify(heroes) : null,
+          equipment ? JSON.stringify(equipment) : null,
+          pets ? JSON.stringify(pets) : null,
+          troops ? JSON.stringify(troops) : null,
+          spells ? JSON.stringify(spells) : null,
+          walls ? JSON.stringify(walls) : null,
+          buildingsLeft,
+          notes,
+          autoNote,
+          capturedBy.source,
+          capturedBy.source === 'manual' ? capturedBy.userId : null,
+          now,
+        )
+        db.exec('COMMIT')
+      } catch (cause) {
+        db.exec('ROLLBACK')
+        throw cause
+      }
 
       const saved = statements.find.get(tag, weekStart)
       if (!saved) throw new Error('the progress row just upserted could not be read back')
@@ -427,12 +438,31 @@ export function createProgressStore(db: DatabaseSync): ProgressStore {
     },
 
     getLatestForClan(playerTags) {
-      const rows: ProgressSnapshot[] = []
-      for (const tag of playerTags) {
-        const row = statements.latestForTag.get(normalizeTag(tag))
-        if (row) rows.push(toSnapshot(row))
+      if (playerTags.length === 0) return []
+      const tags = playerTags.map(normalizeTag)
+      const placeholders = tags.map(() => '?').join(', ')
+      // One query, not one per tag: a correlated subquery picks each tag's max
+      // week_start, aliased so it isn't shadowed by its own FROM base_progress.
+      const rows = db
+        .prepare(
+          `SELECT bp.*, users.display_name AS captured_by_display_name
+             FROM base_progress bp
+             LEFT JOIN users ON users.id = bp.captured_by_user_id
+            WHERE bp.player_tag IN (${placeholders})
+              AND bp.week_start = (
+                SELECT MAX(prior.week_start) FROM base_progress prior
+                 WHERE prior.player_tag = bp.player_tag
+              )`,
+        )
+        .all(...tags)
+
+      const byTag = new Map(rows.map((row) => [asText(row['player_tag']), row]))
+      const result: ProgressSnapshot[] = []
+      for (const tag of tags) {
+        const row = byTag.get(tag)
+        if (row) result.push(toSnapshot(row))
       }
-      return rows
+      return result
     },
 
     upsertMaxLevelReference(rows) {

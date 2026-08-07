@@ -164,6 +164,11 @@ async function main() {
     console.log(`\n${labWarnings.length} Laboratory/Upgrade Chart warnings:`)
     for (const warning of labWarnings) console.log(`  ${warning}`)
   }
+
+  // capture-snapshot.ts and backfill-history.ts both close explicitly on exit;
+  // this one-shot script left the WAL file open for however long the process
+  // took to exit on its own.
+  db.close()
 }
 
 // Only runs when this file is executed directly (`tsx refresh-reference.ts`), never
