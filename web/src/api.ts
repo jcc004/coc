@@ -323,6 +323,15 @@ export const api = {
   declineTrade: (id: number) =>
     request<ResolveTradeResponse>('POST', `/api/cards/trades/${id}/decline`, { body: {} }),
 
+  /**
+   * Reverses a completed trade, moving the two cards back. Admin only — the server
+   * refuses anyone else with `forbidden`, not `notComplete`, so a caller can tell
+   * "you may not" from "there is nothing to undo" the same way `completeTrade`'s
+   * caller tells `alreadyResolved` from a genuine failure.
+   */
+  undoTrade: (id: number) =>
+    request<ResolveTradeResponse>('POST', `/api/cards/trades/${id}/undo`, { body: {} }),
+
   /* ---------- shared data: weekly base progress ---------- */
 
   /** One base's captured weeks, newest first — the server's own order. */

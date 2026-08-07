@@ -72,34 +72,70 @@ cards knows more than the table does, and refusing them would push the disagreem
 conversation nobody can see. If the spare has gone by the time it is completed, the route answers
 409 `countsChanged` and the tracker shows that message verbatim.
 
+## Undoing a completed trade
+
+**An admin, and only an admin — no party exception.** Every other action on a trade follows
+"either party, or an admin," because a mutual agreement belongs to both bases equally and either
+side is entitled to record it or close it. Undo breaks that pattern on purpose: it does not make
+a new decision about an open trade, it reopens one that already closed. Granting that to either
+party would let one side quietly reverse something both agreed to, without the other's knowledge
+at the moment it happens — so it is reserved for the same account that can already reassign a
+base's ownership or overwrite its counts outright, the way `write-access.ts` reasons about every
+other admin override in this app. A party who believes a completed trade needs reversing asks an
+admin, the same as for any other correction to the shared data.
+
+Undoing moves the two cards **back**: whatever base A received travels back to B, and whatever B
+received travels back to A — the mirror image of what completing did. It is checked again, the
+same "re-read at the moment of the write, not the moment of the click" rule completion itself
+follows: a base has to still hold the card it is being asked to give back (it may have been
+traded away again since), and the base receiving one back must have room for it. If either fails,
+the route answers 409 `countsChanged` and nothing is written, exactly as a stale completion does.
+
+`MIN_TRADEABLE_COUNT` — the floor that stops a *voluntary* trade from giving away a base's last
+copy — does **not** apply to an undo. That floor exists to protect a choice somebody is making;
+undoing is a correction, not a choice, and is allowed to bring a base back to zero of a card,
+which the sparse storage represents as no row at all rather than a stored zero.
+
+A trade can be undone **once**, and only while it is `complete`. Undoing a trade that is still
+pending, already declined, or already undone answers 409 `notComplete`, naming the state the
+route found — the same guarded-`UPDATE` shape that makes a second `complete` or `decline`
+impossible makes a second `undo` impossible too.
+
 ## The audit record
 
-Every row names **both** events: who proposed it and when, and — once resolved — who completed or
-declined it and when. Not just the latest one: "Bert completed it" without "Anna proposed it" loses
-which direction the agreement came from, which is the first thing somebody checks when a swap turns
-out to be wrong. Relative on screen, absolute in the `title`, as everywhere else in the app.
+Every row names **every** event that has happened to it, not just the latest one: who proposed
+it and when; once resolved, who completed or declined it and when; and, if a completed trade was
+later undone, who undid it and when. "Bert completed it" without "Anna proposed it" loses which
+direction the agreement came from, which is the first thing somebody checks when a swap turns out
+to be wrong — and the same is true of an undo without the completion beside it. Undoing a trade
+does **not** overwrite who completed it or when: those columns stay exactly as completion wrote
+them, and the undo is a third, separate pair of columns (`undone_by_user_id` / `undone_at`,
+migration v14) rather than a rewrite of the second event. A fully-audited trade can therefore name
+three people. Relative on screen, absolute in the `title`, as everywhere else in the app.
 
 A `null` name means that account has since been deleted, and it is said in words rather than left
-blank. Both user columns are `ON DELETE SET NULL` on purpose: the trade is the record of something
+blank. Every user column is `ON DELETE SET NULL` on purpose: the trade is the record of something
 that really happened, so deleting an account costs the attribution, not the record.
 
 ## Order
 
 Pending first, however old — it is the only status anybody has to act on. Within pending, **oldest
 first**, because a swap that has been waiting three days is the one being forgotten. Resolved rows
-read newest-first, which is the order you want when checking whether something just went through.
-The id breaks every remaining tie, so two trades proposed in the same second cannot swap places
-between polls. `sortTrades`, tested.
+read newest-first, which is the order you want when checking whether something just went through —
+and an undone trade reads by *when it was undone*, not when it was completed, for the same reason:
+`resolvedAt` is untouched by an undo, so a completion from weeks ago that was just reversed sorts by
+the reversal, not by its old completion date. The id breaks every remaining tie, so two trades
+proposed in the same second cannot swap places between polls. `sortTrades`, tested.
 
 ## What the counts do afterwards
 
-Completing writes both bases in one transaction in `trades-store.ts`, and the response carries the
-trade in its new state **plus both bases' current counts** — so one request is enough for a client
-to refresh two bases. `web/src/trades.ts` nonetheless reloads the inventory store rather than
-patching it from that payload: it is the same refresh every other write does, and patching would
-add a second path by which counts enter the cache — one no other write uses, and one that would be
-wrong in exactly the case that matters, a count that fell to zero and is therefore *absent* from
-the response rather than present as a zero.
+Completing (and undoing) writes both bases in one transaction in `trades-store.ts`, and the response
+carries the trade in its new state **plus both bases' current counts** — so one request is enough
+for a client to refresh two bases. `web/src/trades.ts` nonetheless reloads the inventory store
+rather than patching it from that payload: it is the same refresh every other write does, and
+patching would add a second path by which counts enter the cache — one no other write uses, and one
+that would be wrong in exactly the case that matters, a count that fell to zero and is therefore
+*absent* from the response rather than present as a zero.
 
 ### The other party's tab
 

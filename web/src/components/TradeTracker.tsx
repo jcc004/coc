@@ -12,8 +12,9 @@ import {
   sortTrades,
   tradeResolveAccess,
   tradesInvolving,
+  tradeUndoAccess,
 } from '../trade-tracker.ts'
-import { completeTrade, declineTrade, useTradesState } from '../trades.ts'
+import { completeTrade, declineTrade, undoTrade, useTradesState } from '../trades.ts'
 import { TradeResolutionRules } from './help-copy.tsx'
 import { GameIcon, Pager, RowLimitSelect } from './primitives.tsx'
 
@@ -83,13 +84,15 @@ function Stamp({ at }: { at: string }) {
 }
 
 /**
- * The audit half of the record: who did what, and when.
- *
- * Both events are named, not just the latest one — "Bert completed it" without "Anna
- * proposed it" loses which direction the agreement came from, and that is the thing
- * somebody checks when a swap turns out to be wrong. A `null` name means the account
- * has since been deleted, which is said rather than blanked: the trade is the record
- * of something that really happened and has to outlive the account.
+ * The audit half of the record: who did what, and when — up to **three** events
+ * now, not two. "Bert completed it" without "Anna proposed it" loses which
+ * direction the agreement came from, which is the thing somebody checks when a
+ * swap turns out to be wrong; an undone trade loses just as much if it stops
+ * saying who completed it, because `resolvedBy` / `resolvedAt` are left exactly as
+ * completion wrote them (undo is a third event, not a rewrite of the second — see
+ * `TradeRecord.undoneAt`). A `null` name means that account has since been
+ * deleted, which is said rather than blanked: the trade is the record of
+ * something that really happened and has to outlive every account it names.
  */
 function AuditLine({ trade }: { trade: TradeRecord }) {
   const gone = 'a deleted account'
@@ -100,17 +103,30 @@ function AuditLine({ trade }: { trade: TradeRecord }) {
       {trade.resolvedAt === null ? null : (
         <>
           {' · '}
-          {trade.status === 'complete' ? 'completed' : 'declined'} by{' '}
+          {trade.status === 'declined' ? 'declined' : 'completed'} by{' '}
           {trade.resolvedBy ?? gone} <Stamp at={trade.resolvedAt} />
+        </>
+      )}
+      {trade.undoneAt === null ? null : (
+        <>
+          {' · '}
+          undone by {trade.undoneBy ?? gone} <Stamp at={trade.undoneAt} />
         </>
       )}
     </span>
   )
 }
 
-/** `pending` / `complete` / `declined` as a badge, on the fixed status palette. */
+/** `pending` / `complete` / `declined` / `undone` as a badge, on the fixed status palette. */
 function StatusBadge({ status }: { status: TradeRecord['status'] }) {
-  const label = status === 'pending' ? 'Pending' : status === 'complete' ? 'Complete' : 'Declined'
+  const label =
+    status === 'pending'
+      ? 'Pending'
+      : status === 'complete'
+        ? 'Complete'
+        : status === 'declined'
+          ? 'Declined'
+          : 'Undone'
   return <span className={`trade-status trade-status--${status}`}>{label}</span>
 }
 
@@ -118,10 +134,11 @@ function StatusBadge({ status }: { status: TradeRecord['status'] }) {
  * The two buttons, or the reason there are none.
  *
  * **Completing asks first**, and the question says what it does to whom: it is the
- * only control in the app that changes *somebody else's* card counts, and it cannot
- * be undone from here — a trade resolves once, so there is no "actually, no" button
- * afterwards. Declining does not ask, because nothing moves; it is a state change
- * either party can make and the audit line records who made it.
+ * only control in this component that changes *somebody else's* card counts, and a
+ * trade resolves once, so there is no "actually, no" button afterwards *for the
+ * party who clicked it* — reversing it at all is `UndoAction`, an admin's alone,
+ * below. Declining does not ask, because nothing moves; it is a state change either
+ * party can make and the audit line records who made it.
  *
  * A refusal is shown rather than hidden. Somebody looking at a pending swap between
  * two other people should be told it is theirs to resolve, not left wondering why
@@ -192,6 +209,74 @@ function ResolveActions({
         title="Nothing moves; the trade is closed"
       >
         {busy === 'decline' ? 'Declining…' : 'Decline'}
+      </button>
+      {problem ? <p className="notice__hint">{problem}</p> : null}
+    </>
+  )
+}
+
+/**
+ * The Undo button — an admin's alone, and only on a `complete` trade. It sits
+ * beside `ResolveActions` rather than inside it because the two answer different
+ * questions with different actors: `ResolveActions` is "may either party close
+ * this", `UndoAction` is "may an admin reopen it", and `tradeUndoAccess` (mirroring
+ * the server's `mayUndoTrade`) has no party exception at all.
+ *
+ * Nothing is shown for any other status, `undone` included — an admin cannot start
+ * a second undo from here, the same reasoning that hides `ResolveActions` once a
+ * trade is resolved. There is no "here's who can" refusal note the way
+ * `ResolveActions` shows one for `notAParty`: an ordinary member is not missing a
+ * permission they might reasonably expect, so the button is simply absent rather
+ * than explained away.
+ *
+ * **Asks first**, like Complete, and the question says the same two things: what
+ * moves, and that it happens immediately for everyone — plus the one thing
+ * Complete's question does not need to say, that undoing itself has no further
+ * undo.
+ */
+function UndoAction({
+  trade,
+  user,
+}: {
+  trade: TradeRecord
+  user: Pick<SessionUser, 'id' | 'role'>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+
+  if (!tradeUndoAccess(user, trade).allowed) return null
+
+  async function act() {
+    const question =
+      `Undo this trade? It moves the card back on both bases straight away, for ` +
+      `everyone, and undoing cannot itself be undone.`
+    if (!window.confirm(question)) return
+
+    setBusy(true)
+    setProblem(null)
+    try {
+      await undoTrade(trade.id)
+    } catch (cause) {
+      /* The plausible failure is the same shape as a resolve failure: somebody
+         else already undid it, or the counts have moved since completion so a
+         base no longer holds what it would have to give back. The server's
+         message is the explanation and is shown verbatim. */
+      setProblem(cause instanceof ApiError ? cause.message : 'Could not reach the server.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="chip"
+        disabled={busy}
+        onClick={() => void act()}
+        title="Moves the card back on both bases — this changes the counts"
+      >
+        {busy ? 'Undoing…' : 'Undo'}
       </button>
       {problem ? <p className="notice__hint">{problem}</p> : null}
     </>
@@ -360,6 +445,7 @@ function TrackerTable({
                 </td>
                 <td className="row-actions" role="cell" data-label="Actions">
                   <ResolveActions trade={trade} user={user} />
+                  <UndoAction trade={trade} user={user} />
                 </td>
               </tr>
             ))}

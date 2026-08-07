@@ -9,6 +9,7 @@ import {
   tradeProposeAccess,
   tradeResolveAccess,
   tradesInvolving,
+  tradeUndoAccess,
   type TradeSides,
 } from './trade-tracker.ts'
 
@@ -58,6 +59,9 @@ function trade(over: Partial<TradeRecord> = {}): TradeRecord {
     resolvedByUserId: null,
     resolvedBy: null,
     resolvedAt: null,
+    undoneByUserId: null,
+    undoneBy: null,
+    undoneAt: null,
     ...over,
   }
 }
@@ -178,6 +182,66 @@ describe('tradeResolveAccess', () => {
   })
 })
 
+/* ---------- who may undo ---------- */
+
+describe('tradeUndoAccess', () => {
+  it('refuses either party — no party exception, unlike resolving', () => {
+    // Anna and Bert are ANNA_AND_BERT's owners and would both be allowed to
+    // resolve this trade; neither may undo it.
+    for (const id of [ANNA, BERT]) {
+      const decision = tradeUndoAccess(member(id), trade({ status: 'complete' }))
+      assert.equal(decision.allowed, false)
+      assert.equal(decision.allowed === false && decision.refusal, 'notAdmin')
+    }
+  })
+
+  it('lets an admin undo a complete trade', () => {
+    assert.equal(tradeUndoAccess(admin(CARL), trade({ status: 'complete' })).allowed, true)
+  })
+
+  it('refuses an admin while the trade is still pending', () => {
+    const decision = tradeUndoAccess(admin(CARL), trade({ status: 'pending' }))
+    assert.ok(decision.allowed === false)
+    assert.equal(decision.refusal, 'notComplete')
+    assert.match(decision.message, /still pending/)
+  })
+
+  it('refuses an admin on a declined trade', () => {
+    const decision = tradeUndoAccess(
+      admin(CARL),
+      trade({ status: 'declined', resolvedBy: 'Anna', resolvedAt: '2026-08-02T11:00:00.000Z' }),
+    )
+    assert.ok(decision.allowed === false)
+    assert.equal(decision.refusal, 'notComplete')
+    assert.match(decision.message, /declined/)
+  })
+
+  it('refuses a second undo, naming who undid it', () => {
+    const decision = tradeUndoAccess(
+      admin(CARL),
+      trade({
+        status: 'undone',
+        resolvedBy: 'Anna',
+        resolvedAt: '2026-08-02T11:00:00.000Z',
+        undoneBy: 'Bert',
+        undoneAt: '2026-08-03T09:00:00.000Z',
+      }),
+    )
+    assert.ok(decision.allowed === false)
+    assert.equal(decision.refusal, 'notComplete')
+    assert.match(decision.message, /Bert/)
+  })
+
+  it('says so plainly when the undoer’s account has since been deleted', () => {
+    const decision = tradeUndoAccess(
+      admin(CARL),
+      trade({ status: 'undone', undoneBy: null, undoneAt: '2026-08-03T09:00:00.000Z' }),
+    )
+    assert.ok(decision.allowed === false)
+    assert.match(decision.message, /account has since been deleted/)
+  })
+})
+
 /* ---------- order ---------- */
 
 describe('sortTrades', () => {
@@ -210,6 +274,21 @@ describe('sortTrades', () => {
 
   it('reads resolved newest-first, which is what "did that go through" wants', () => {
     assert.deepEqual(ids(sortTrades([doneOld, doneNew])), [4, 3])
+  })
+
+  it('reads an undone trade by when it was undone, not when it was completed', () => {
+    // Undo does not overwrite resolvedAt, so an old completion that was undone
+    // moments ago has to sort by undoneAt or it would look stale rather than like
+    // the thing that "just went through".
+    const oldCompletion = trade({
+      id: 5,
+      status: 'undone',
+      resolvedAt: '2026-08-01T00:00:00.000Z',
+      resolvedBy: 'Anna',
+      undoneAt: '2026-08-05T00:00:00.000Z',
+      undoneBy: 'Bert',
+    })
+    assert.deepEqual(ids(sortTrades([doneNew, oldCompletion])), [5, 4])
   })
 
   it('breaks a same-timestamp tie on the id, so polling cannot reshuffle it', () => {

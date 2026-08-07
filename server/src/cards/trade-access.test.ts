@@ -3,9 +3,11 @@ import { describe, it } from 'node:test'
 import {
   mayProposeTrade,
   mayResolveTrade,
+  mayUndoTrade,
   orientTrade,
   type ResolvableTrade,
   type TradeSides,
+  type UndoableTrade,
 } from './trade-access.ts'
 import type { BaseOwnership, BaseWriter } from './write-access.ts'
 
@@ -161,6 +163,81 @@ describe('who may resolve a trade', () => {
   it('refuses a disabled party before anything else', () => {
     const decision = mayResolveTrade({ ...OWNER_A, disabled: true }, pending, sides)
     assert.equal(refusal(decision), 'accountDisabled')
+  })
+})
+
+describe('who may undo a trade', () => {
+  const complete: UndoableTrade = { status: 'complete' }
+
+  function undoRefusal(decision: ReturnType<typeof mayUndoTrade>): string {
+    return decision.allowed === false ? decision.refusal : 'allowed'
+  }
+
+  function undoMessage(decision: ReturnType<typeof mayUndoTrade>): string {
+    return decision.allowed === false ? decision.message : ''
+  }
+
+  it('lets an admin undo a complete trade', () => {
+    assert.deepEqual(mayUndoTrade(ADMIN, complete), { allowed: true })
+  })
+
+  it('refuses either party — undo has no party exception', () => {
+    // Unlike resolving, owning one of the two bases is not enough: undo reopens a
+    // record that already closed rather than making the first decision on an open
+    // one, so it is admin-only even for the two people who agreed to the swap.
+    for (const actor of [OWNER_A, OWNER_B, STRANGER]) {
+      const decision = mayUndoTrade(actor, complete)
+      assert.equal(undoRefusal(decision), 'notAdmin', `${actor.id} must be refused`)
+    }
+  })
+
+  it('says plainly that undo is admin-only, not the party-or-admin wording', () => {
+    const decision = mayUndoTrade(OWNER_A, complete)
+    assert.match(undoMessage(decision), /admin-only/)
+    // Must not reuse notAParty's "only the owner of either base" phrasing — that
+    // would wrongly suggest the owner in front of it has some claim here.
+    assert.doesNotMatch(undoMessage(decision), /owner of either base/)
+  })
+
+  it('refuses a disabled admin before the role is even checked', () => {
+    const decision = mayUndoTrade({ ...ADMIN, disabled: true }, complete)
+    assert.equal(undoRefusal(decision), 'accountDisabled')
+  })
+
+  it('refuses an admin when the trade is still pending, naming the state', () => {
+    const decision = mayUndoTrade(ADMIN, { status: 'pending' })
+    assert.equal(undoRefusal(decision), 'notComplete')
+    assert.match(undoMessage(decision), /still pending/)
+  })
+
+  it('refuses an admin when the trade was declined, naming the state', () => {
+    const decision = mayUndoTrade(ADMIN, { status: 'declined' })
+    assert.equal(undoRefusal(decision), 'notComplete')
+    assert.match(undoMessage(decision), /declined/)
+  })
+
+  it('refuses a second undo, naming who undid it and when', () => {
+    const decision = mayUndoTrade(ADMIN, {
+      status: 'undone',
+      undoneBy: 'Sam',
+      undoneAt: '2026-08-05T09:00:00.000Z',
+    })
+    assert.equal(undoRefusal(decision), 'notComplete')
+    assert.match(undoMessage(decision), /Sam/)
+    assert.match(undoMessage(decision), /2026-08-05T09:00:00\.000Z/)
+    assert.match(undoMessage(decision), /cannot be undone twice/)
+  })
+
+  it('still refuses a second undo when the undoer’s account is gone', () => {
+    const decision = mayUndoTrade(ADMIN, { status: 'undone', undoneBy: null, undoneAt: '2026-08-05T09:00:00.000Z' })
+    assert.equal(undoRefusal(decision), 'notComplete')
+    assert.match(undoMessage(decision), /account has since been deleted/)
+  })
+
+  it('checks who before what state, matching mayResolveTrade', () => {
+    // A non-admin gets the same refusal whatever state the trade is in.
+    const decision = mayUndoTrade(STRANGER, { status: 'undone', undoneBy: 'Sam' })
+    assert.equal(undoRefusal(decision), 'notAdmin')
   })
 })
 

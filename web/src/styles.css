@@ -2339,13 +2339,17 @@ table.roster--divided tbody tr:not(:first-child) > td {
  * A tracked trade's state.
  *
  * On the **fixed status palette**, not the sequential ramp: pending / complete /
- * declined is a category rather than a magnitude, so the roles already declared for
- * status carry it — `--warning`, `--good-text`, `--ink-muted`, each defined in all
- * three theme scopes — and no new color is introduced here.
+ * declined / undone is a category rather than a magnitude, so the roles already
+ * declared for status carry it — `--warning`, `--good-text`, `--ink-muted`,
+ * `--accent`, each defined in all three theme scopes — and no new color is
+ * introduced here.
  *
  * Declined takes the muted ink, not `--critical`: it is a legitimate outcome somebody
  * chose, not a failure, and painting it red would make the ordinary answer "no
- * thanks" read as a broken row.
+ * thanks" read as a broken row. Undone takes `--accent` rather than `--critical` for
+ * the same reason: it is a deliberate correction an admin made, not something that
+ * went wrong, and `--accent` is otherwise unused on this palette so it reads as its
+ * own state rather than borrowing a color that already means something else here.
  *
  * **Color is never the only carrier.** The word is in the badge, so the state reads
  * the same in grayscale, and the audit line beside it says it again in a sentence.
@@ -2368,6 +2372,9 @@ table.roster--divided tbody tr:not(:first-child) > td {
 }
 .trade-status--declined {
   color: var(--ink-muted);
+}
+.trade-status--undone {
+  color: var(--accent);
 }
 
 /* Sits under the badge in the same cell, so it needs the gap a bare <br /> lacks. */

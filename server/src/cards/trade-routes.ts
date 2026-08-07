@@ -11,7 +11,13 @@ import {
 import { currentUser, type AuthContext, type AuthEnv } from '../auth/middleware.ts'
 import { errorBody } from '../http.ts'
 import { ownershipOf, type BaseOwnerLookup } from './routes.ts'
-import { mayProposeTrade, mayResolveTrade, orientTrade, type TradeSides } from './trade-access.ts'
+import {
+  mayProposeTrade,
+  mayResolveTrade,
+  mayUndoTrade,
+  orientTrade,
+  type TradeSides,
+} from './trade-access.ts'
 import type { TradeProposal, TradeStore } from './trades-store.ts'
 
 /**
@@ -29,10 +35,12 @@ import type { TradeProposal, TradeStore } from './trades-store.ts'
  * | `POST /api/cards/trades` | an admin, or the owner of **either** base |
  * | `POST /api/cards/trades/:id/complete` | an admin, or the owner of either base |
  * | `POST /api/cards/trades/:id/decline` | an admin, or the owner of either base |
+ * | `POST /api/cards/trades/:id/undo` | **an admin only** — no party exception |
  *
- * Both decisions are `mayProposeTrade` / `mayResolveTrade` in `trade-access.ts` —
- * pure functions with their own tests — so these handlers decide nothing on their
- * own, exactly as the inventory write defers to `mayWriteBaseCounts`.
+ * The three decisions are `mayProposeTrade` / `mayResolveTrade` / `mayUndoTrade` in
+ * `trade-access.ts` — pure functions with their own tests — so these handlers
+ * decide nothing on their own, exactly as the inventory write defers to
+ * `mayWriteBaseCounts`.
  *
  * Note the **inversion** against the inventory route: there, ownership is checked
  * before the body is even parsed, because whether you may write a base has nothing
@@ -291,4 +299,81 @@ export function mountTradeRoutes(
   resolveRoute('/api/cards/trades/:id/decline', (id, userId) =>
     trades.decline(CARD_SEASON, id, userId),
   )
+
+  /**
+   * Undo a completed trade. **Admin only, no party exception** — `mayUndoTrade`
+   * says why: this reopens a record that already closed rather than making the
+   * first decision about an open one, so it does not get `resolveRoute`'s
+   * party-or-admin shape. The refusal reasons differ too (`notAdmin`/`notComplete`
+   * rather than `forbidden`/`alreadyResolved`), which is the other reason this is
+   * its own route rather than a third call to `resolveRoute`.
+   *
+   * Same 409-for-state-conflict / 403-for-not-permitted split as `resolveRoute`:
+   * `notComplete` means somebody else already changed what this trade is, which a
+   * client must not treat as "sign in as somebody else".
+   */
+  app.post('/api/cards/trades/:id/undo', (c) => {
+    const id = tradeId(c.req.param('id'))
+    if (id === undefined) {
+      return c.json(errorBody(400, 'badRequest', 'A trade id is a positive whole number.'), 400)
+    }
+
+    const trade = trades.find(CARD_SEASON, id)
+    if (!trade) {
+      return c.json(errorBody(404, 'notFound', `No trade ${id} in season ${CARD_SEASON}.`), 404)
+    }
+
+    const decision = mayUndoTrade(currentUser(c), trade)
+    if (!decision.allowed) {
+      const status = decision.refusal === 'notComplete' ? 409 : 403
+      return c.json(
+        {
+          ...errorBody(
+            status,
+            status === 409 ? 'notComplete' : 'forbidden',
+            decision.message,
+            'Nothing was changed.',
+          ),
+          trade,
+        },
+        status,
+      )
+    }
+
+    const result = trades.undo(CARD_SEASON, id, currentUser(c).id)
+    if (!result.ok) {
+      if (result.reason === 'notFound') {
+        return c.json(errorBody(404, 'notFound', `No trade ${id} in season ${CARD_SEASON}.`), 404)
+      }
+      if (result.reason === 'notComplete') {
+        return c.json(
+          {
+            ...errorBody(
+              409,
+              'notComplete',
+              `Trade ${id} is ${result.trade.status}, not complete, so there is nothing to undo.`,
+              'Nothing was changed.',
+            ),
+            trade: result.trade,
+          },
+          409,
+        )
+      }
+
+      return c.json(
+        {
+          ...errorBody(
+            409,
+            'countsChanged',
+            result.message,
+            'A base must hold the card it is being asked to give back, with room on the other side to receive its own back.',
+          ),
+          trade: result.trade,
+        },
+        409,
+      )
+    }
+
+    return c.json({ season: CARD_SEASON, trade: result.trade, bases: result.bases })
+  })
 }

@@ -6,6 +6,7 @@ import {
   type BaseInventory,
   type CardCategory,
   type TradeRecord,
+  type TradeStatus,
 } from '@coc/shared'
 import type { CardInventoryStore } from './store.ts'
 
@@ -33,6 +34,12 @@ import type { CardInventoryStore } from './store.ts'
  *
  * What is deliberately *not* re-checked is whether the receiver still lacks the
  * card. See `complete`.
+ *
+ * 3. **Undoing a trade re-reads the counts too, in the opposite direction**, and
+ *    for a different reason than `MIN_TRADEABLE_COUNT`: an undo is not a voluntary
+ *    trade, so it may bring a base to zero of a card, but it still has to find the
+ *    card it is being asked to give back and room on the other side to receive it.
+ *    See `undo`.
  */
 
 /** A proposal, already oriented and validated by the route. */
@@ -44,15 +51,29 @@ export interface TradeProposal {
   category: CardCategory
 }
 
-/** How a resolution ended. `ok: false` always means nothing at all was written. */
-export type TradeResolution =
+/**
+ * A guarded status change, shared by `complete`/`decline` and `undo`: it succeeds,
+ * or refuses leaving nothing written, or loses a state-conflict `R` says which way.
+ *
+ * `R` is the literal reason for that state conflict — `'alreadyResolved'` for
+ * `complete`/`decline`, whose guard is "must still be pending", and `'notComplete'`
+ * for `undo`, whose guard is "must still be complete". One shared shape rather than
+ * two near-identical ones, since the only thing that differs is that one word.
+ */
+type TransitionResult<R extends string> =
   | { ok: true; trade: TradeRecord; bases: BaseInventory[] }
   /** No such trade this season — or it vanished between the read and the write. */
   | { ok: false; reason: 'notFound' }
-  /** Someone else resolved it first; `trade` is its real current state. */
-  | { ok: false; reason: 'alreadyResolved'; trade: TradeRecord }
+  /** Someone else changed its status first; `trade` is its real current state. */
+  | { ok: false; reason: R; trade: TradeRecord }
   /** The current counts can no longer honor it; `message` says what changed. */
   | { ok: false; reason: 'countsChanged'; trade: TradeRecord; message: string }
+
+/** How completing or declining ended. `ok: false` always means nothing was written. */
+export type TradeResolution = TransitionResult<'alreadyResolved'>
+
+/** How an undo ended. `ok: false` always means nothing was written. */
+export type TradeUndoResolution = TransitionResult<'notComplete'>
 
 export interface TradeStore {
   /**
@@ -106,6 +127,34 @@ export interface TradeStore {
    * novelty, so the ceiling is the only thing checked on the receiving side.
    */
   complete(season: string, id: number, userId: number): TradeResolution
+
+  /**
+   * Reverses a `complete` trade **and moves the cards back**, in one transaction.
+   * Marks it `undone` without touching `resolved_by_user_id` / `resolved_at` — that
+   * pair stays the record of who completed it and when; undoing is a third, later
+   * event, not a rewrite of the second (see migration v14).
+   *
+   * The legs are `complete`'s, reversed: base A loses one of `cardFromB` and gains
+   * one of `cardFromA`; base B the mirror. Re-validated against the counts as they
+   * are *now*, the same "re-read at the moment of the write" rule `complete` itself
+   * follows — the trade may have been re-traded since, and the check has to look at
+   * what is actually there.
+   *
+   * `MIN_TRADEABLE_COUNT` does **not** apply here. It exists to stop a *voluntary*
+   * trade from destroying a base's last copy; an undo is a correction, not a trade,
+   * and is allowed to bring a count to zero — which is the correct sparse-storage
+   * representation, not a special case.
+   *
+   * Refusals, all leaving the database untouched:
+   *
+   * - `notComplete` — the trade is not currently `complete` (still pending, already
+   *   declined, or already undone once). The status change is a guarded UPDATE, so
+   *   two simultaneous undos cannot both apply their reversal.
+   * - `countsChanged` — a base being asked to give back a card no longer holds one
+   *   (it may have been traded away again since completion), or a base receiving a
+   *   card back is already at `MAX_CARD_COUNT`.
+   */
+  undo(season: string, id: number, userId: number): TradeUndoResolution
 }
 
 function asText(value: unknown): string {
@@ -133,10 +182,12 @@ function asIntOrNull(value: unknown): number | null {
 const TRADE_SELECT = `
   SELECT t.id, t.season, t.base_a, t.base_b, t.card_from_a, t.card_from_b, t.category,
          t.status, t.proposed_by_user_id, t.proposed_at, t.resolved_by_user_id, t.resolved_at,
-         p.display_name AS proposed_by, r.display_name AS resolved_by
+         t.undone_by_user_id, t.undone_at,
+         p.display_name AS proposed_by, r.display_name AS resolved_by, u.display_name AS undone_by
     FROM trades t
     LEFT JOIN users p ON p.id = t.proposed_by_user_id
     LEFT JOIN users r ON r.id = t.resolved_by_user_id
+    LEFT JOIN users u ON u.id = t.undone_by_user_id
 `
 
 function toTrade(row: Record<string, unknown>): TradeRecord {
@@ -157,6 +208,9 @@ function toTrade(row: Record<string, unknown>): TradeRecord {
     resolvedByUserId: asIntOrNull(row['resolved_by_user_id']),
     resolvedBy: asTextOrNull(row['resolved_by']),
     resolvedAt: asTextOrNull(row['resolved_at']),
+    undoneByUserId: asIntOrNull(row['undone_by_user_id']),
+    undoneBy: asTextOrNull(row['undone_by']),
+    undoneAt: asTextOrNull(row['undone_at']),
   }
 }
 
@@ -193,6 +247,15 @@ export function createTradeStore(db: DatabaseSync, cards: CardInventoryStore): T
     resolve: db.prepare(
       `UPDATE trades SET status = ?, resolved_by_user_id = ?, resolved_at = ?
         WHERE season = ? AND id = ? AND status = 'pending'`,
+    ),
+    /* The guarded status change for undo. `resolved_by_user_id` / `resolved_at`
+       are not touched — they stay the record of who completed the trade, and this
+       is a separate, later event with its own columns. `AND status = 'complete'`
+       is what makes two simultaneous undos safe, the same way `AND status =
+       'pending'` protects `resolve` above. */
+    undo: db.prepare(
+      `UPDATE trades SET status = 'undone', undone_by_user_id = ?, undone_at = ?
+        WHERE season = ? AND id = ? AND status = 'complete'`,
     ),
     countOf: db.prepare(
       'SELECT count FROM card_inventory WHERE season = ? AND player_tag = ? AND card_id = ?',
@@ -284,35 +347,84 @@ export function createTradeStore(db: DatabaseSync, cards: CardInventoryStore): T
   }
 
   /**
-   * Both halves of a resolution share this: read the trade, guard the status
-   * change, optionally move the cards, commit or roll the whole thing back.
+   * Why the current counts cannot honor giving these two cards back, or `undefined`
+   * if they can. `complete`'s legs, reversed: a base that received a card during
+   * completion is the one asked to give it back now.
+   *
+   * `MIN_TRADEABLE_COUNT` does not appear here — see `undo`'s doc comment for why:
+   * an undo is a correction, not a trade, and is allowed to bring a base to zero.
+   * What it still cannot do is give back a card the base does not hold at all, or
+   * hand one to a base that has no room left for it.
+   */
+  function whyNotUndoable(season: string, trade: TradeRecord): string | undefined {
+    const legs: Leg[] = [
+      { from: trade.baseB, to: trade.baseA, cardId: trade.cardFromA },
+      { from: trade.baseA, to: trade.baseB, cardId: trade.cardFromB },
+    ]
+
+    for (const leg of legs) {
+      const held = countOf(season, leg.from, leg.cardId)
+      if (held < 1) {
+        return (
+          `${leg.from} now holds ${held} ${held === 1 ? 'copy' : 'copies'} of card ${leg.cardId}, ` +
+          'so it has none to give back — it must have been traded away again since this ' +
+          'trade completed. Nothing was moved.'
+        )
+      }
+
+      const receiving = countOf(season, leg.to, leg.cardId)
+      if (receiving >= MAX_CARD_COUNT) {
+        return (
+          `${leg.to} already holds the maximum ${MAX_CARD_COUNT} of card ${leg.cardId}, ` +
+          'so it cannot take another. Nothing was moved.'
+        )
+      }
+    }
+
+    return undefined
+  }
+
+  /**
+   * The shape every guarded status change shares: read the trade, guard the change
+   * against a required current status, optionally move the cards, commit or roll
+   * the whole thing back. `complete`, `decline` and `undo` are three callers of
+   * this with different guards, different columns and, for `complete` and `undo`,
+   * different card movement — the transaction shape underneath is identical.
    *
    * `apply` runs **inside** the transaction, after the guarded UPDATE has proved
-   * this caller is the one resolving it, and may still refuse — which rolls back
-   * the status change with it.
+   * this caller is the one changing it, and may still refuse — which rolls back the
+   * status change with it, so a refusal always leaves the database exactly as it
+   * found it.
+   *
+   * `runGuardedUpdate` is the caller's own `UPDATE ... WHERE status = <required>`,
+   * already bound to its own columns; this function only reads its `changes` count
+   * to tell a successful change from a race lost to somebody else's write.
    */
-  function resolve(
+  function transition<R extends string>(
     season: string,
     id: number,
-    userId: number,
-    status: 'complete' | 'declined',
+    requiredStatus: TradeStatus,
+    conflictReason: R,
+    runGuardedUpdate: (now: string) => number | bigint,
     apply?: (trade: TradeRecord, now: string) => string | undefined,
-  ): TradeResolution {
+  ): TransitionResult<R> {
     const existing = find(season, id)
     if (!existing) return { ok: false, reason: 'notFound' }
-    if (existing.status !== 'pending') return { ok: false, reason: 'alreadyResolved', trade: existing }
+    if (existing.status !== requiredStatus) {
+      return { ok: false, reason: conflictReason, trade: existing }
+    }
 
     const now = new Date().toISOString()
 
     db.exec('BEGIN')
     try {
-      const changed = statements.resolve.run(status, userId, now, season, id).changes
+      const changed = runGuardedUpdate(now)
       if (Number(changed) !== 1) {
-        // Somebody resolved it between the read above and this write.
+        // Somebody changed its status between the read above and this write.
         db.exec('ROLLBACK')
         const current = find(season, id)
         return current
-          ? { ok: false, reason: 'alreadyResolved', trade: current }
+          ? { ok: false, reason: conflictReason, trade: current }
           : { ok: false, reason: 'notFound' }
       }
 
@@ -382,34 +494,82 @@ export function createTradeStore(db: DatabaseSync, cards: CardInventoryStore): T
     },
 
     decline(season, id, userId) {
-      return resolve(season, id, userId, 'declined')
+      return transition(season, id, 'pending', 'alreadyResolved', (now) =>
+        statements.resolve.run('declined', userId, now, season, id).changes,
+      )
     },
 
     complete(season, id, userId) {
-      return resolve(season, id, userId, 'complete', (trade, now) => {
-        // Re-validated here, inside the transaction, against the counts as they
-        // are *now* — never against the proposal, which may be days old.
-        const problem = whyNotHonorable(season, trade)
-        if (problem) return problem
+      return transition(
+        season,
+        id,
+        'pending',
+        'alreadyResolved',
+        (now) => statements.resolve.run('complete', userId, now, season, id).changes,
+        (trade, now) => {
+          // Re-validated here, inside the transaction, against the counts as they
+          // are *now* — never against the proposal, which may be days old.
+          const problem = whyNotHonorable(season, trade)
+          if (problem) return problem
 
-        const legs: Leg[] = [
-          { from: trade.baseA, to: trade.baseB, cardId: trade.cardFromA },
-          { from: trade.baseB, to: trade.baseA, cardId: trade.cardFromB },
-        ]
+          const legs: Leg[] = [
+            { from: trade.baseA, to: trade.baseB, cardId: trade.cardFromA },
+            { from: trade.baseB, to: trade.baseA, cardId: trade.cardFromB },
+          ]
 
-        for (const leg of legs) {
-          const giving = countOf(season, leg.from, leg.cardId)
-          const taking = countOf(season, leg.to, leg.cardId)
-          setCount(season, leg.from, leg.cardId, giving - 1, now, userId)
-          setCount(season, leg.to, leg.cardId, taking + 1, now, userId)
-        }
+          for (const leg of legs) {
+            const giving = countOf(season, leg.from, leg.cardId)
+            const taking = countOf(season, leg.to, leg.cardId)
+            setCount(season, leg.from, leg.cardId, giving - 1, now, userId)
+            setCount(season, leg.to, leg.cardId, taking + 1, now, userId)
+          }
 
-        for (const tag of [trade.baseA, trade.baseB]) {
-          statements.upsertStamp.run(season, tag, now, userId)
-        }
+          for (const tag of [trade.baseA, trade.baseB]) {
+            statements.upsertStamp.run(season, tag, now, userId)
+          }
 
-        return undefined
-      })
+          return undefined
+        },
+      )
+    },
+
+    undo(season, id, userId) {
+      return transition(
+        season,
+        id,
+        'complete',
+        'notComplete',
+        (now) => statements.undo.run(userId, now, season, id).changes,
+        (trade, now) => {
+          // Re-validated here, inside the transaction, against the counts as they
+          // are *now* — the same "never trust the read that happened before the
+          // write" rule `complete` follows above.
+          const problem = whyNotUndoable(season, trade)
+          if (problem) return problem
+
+          // `complete`'s legs, reversed: A gives back what it received (cardFromB)
+          // and gets back what it gave (cardFromA); B the mirror.
+          const legs: Leg[] = [
+            { from: trade.baseB, to: trade.baseA, cardId: trade.cardFromA },
+            { from: trade.baseA, to: trade.baseB, cardId: trade.cardFromB },
+          ]
+
+          for (const leg of legs) {
+            const giving = countOf(season, leg.from, leg.cardId)
+            const taking = countOf(season, leg.to, leg.cardId)
+            setCount(season, leg.from, leg.cardId, giving - 1, now, userId)
+            setCount(season, leg.to, leg.cardId, taking + 1, now, userId)
+          }
+
+          // Undo edits both bases' counts too, so their edit stamps move with it —
+          // same reasoning as `complete`'s.
+          for (const tag of [trade.baseA, trade.baseB]) {
+            statements.upsertStamp.run(season, tag, now, userId)
+          }
+
+          return undefined
+        },
+      )
     },
   }
 }

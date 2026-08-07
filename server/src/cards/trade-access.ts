@@ -28,6 +28,10 @@ import type { BaseOwnership, BaseWriter } from './write-access.ts'
  * anything, exactly as in `write-access.ts`. The label is a note about a person,
  * not a permission held by a session, so such a trade is an admin's to resolve
  * until an admin links the base to an account.
+ *
+ * A fourth function, `mayUndoTrade`, answers a different question: not who may act
+ * on an *open* trade, but who may reopen a *closed* one. It is admin-only, with no
+ * party exception — see its own doc comment for why.
  */
 
 /** Both sides of a trade, as the owner column reports them. */
@@ -138,6 +142,85 @@ export function mayResolveTrade(
   }
 
   return ALLOWED
+}
+
+/** Just enough of a stored trade to say whether it can be undone. */
+export interface UndoableTrade {
+  status: TradeStatus
+  /** Display name of whoever already undid it, for the refusal message. */
+  undoneBy?: string | null
+  undoneAt?: string | null
+}
+
+export type TradeUndoRefusal = 'accountDisabled' | 'notAdmin' | 'notComplete'
+
+export type TradeUndoDecision =
+  | { allowed: true }
+  | { allowed: false; refusal: TradeUndoRefusal; message: string }
+
+const UNDO_ALLOWED: TradeUndoDecision = { allowed: true }
+
+/**
+ * May this session undo this trade?
+ *
+ * **Admin only, with no party exception.** Proposing and resolving both trust
+ * either side of the swap, because a mutual agreement belongs to both bases
+ * equally — that is the whole premise of `partyDecision` above. Undo is not one
+ * more step either party is entitled to take: the agreement was carried out and
+ * closed, so reopening it is a correction to a settled record rather than a new
+ * decision about an open one. The app grants that only to the account that can
+ * already reassign a base's ownership or overwrite its counts outright — an admin
+ * — for the same reason `partyDecision` grants an admin everything: refusing them
+ * would stop nothing and remove the only way to fix a mistake once it is found.
+ * A party who believes a completed trade should be reversed asks an admin, the
+ * same as for any other correction to the shared data.
+ *
+ * Who is checked before what state the trade is in, matching `mayResolveTrade`:
+ * the state is public to every signed-in reader, so nothing leaks either way, and
+ * "this is admin-only" is the more useful refusal to hand a party than a status
+ * they cannot act on regardless.
+ */
+export function mayUndoTrade(actor: BaseWriter, trade: UndoableTrade): TradeUndoDecision {
+  if (actor.disabled) {
+    return {
+      allowed: false,
+      refusal: 'accountDisabled',
+      message: 'Your account has been disabled, so it cannot undo a trade.',
+    }
+  }
+
+  if (actor.role !== 'admin') {
+    return {
+      allowed: false,
+      refusal: 'notAdmin',
+      message:
+        'Undoing a trade is admin-only — unlike completing or declining it, there is no ' +
+        'party exception. Ask an admin to reverse it.',
+    }
+  }
+
+  if (trade.status === 'undone') {
+    const who = trade.undoneBy ?? 'someone whose account has since been deleted'
+    const when = trade.undoneAt ? ` on ${trade.undoneAt}` : ''
+    return {
+      allowed: false,
+      refusal: 'notComplete',
+      message: `This trade was already undone by ${who}${when}. It cannot be undone twice.`,
+    }
+  }
+
+  if (trade.status !== 'complete') {
+    return {
+      allowed: false,
+      refusal: 'notComplete',
+      message:
+        trade.status === 'pending'
+          ? 'This trade is still pending, so there is nothing to undo yet.'
+          : 'This trade was declined, so nothing moved and there is nothing to undo.',
+    }
+  }
+
+  return UNDO_ALLOWED
 }
 
 /**

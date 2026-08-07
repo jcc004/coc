@@ -216,6 +216,12 @@ async function resolve(
   return harness.app.request(...post(resolvePath(id, action), {}, cookie))
 }
 
+const undoPath = (id: number) => `/api/cards/trades/${id}/undo`
+
+async function undo(harness: Harness, cookie: string | undefined, id: number): Promise<Response> {
+  return harness.app.request(...post(undoPath(id), {}, cookie))
+}
+
 /** One base's counts as a plain map, so a test can assert one card at a time. */
 function countsOf(harness: Harness, tag: string): Map<number, number> {
   const base = harness.cards.getInventory(CARD_SEASON, tag)
@@ -785,6 +791,219 @@ describe('declining a trade', () => {
     assert.equal(body.error.reason, 'alreadyResolved')
     assert.match(body.error.message, /declined/)
     assert.deepEqual([...countsOf(harness, BASE_A)], [[CARD_A, 2]])
+    harness.db.close()
+  })
+})
+
+describe('undoing a completed trade', () => {
+  it('moves the cards back to exactly where they started, admin only', async () => {
+    const harness = await createHarness()
+    const { admin, a, b } = await seeded(harness)
+    const id = await proposed(harness, a)
+    assert.equal((await resolve(harness, b, id, 'complete')).status, 200)
+    const afterComplete = totalCards(harness)
+
+    const response = await undo(harness, admin, id)
+    assert.equal(response.status, 200)
+    const body = (await response.json()) as {
+      season: string
+      trade: TradeRecord
+      bases: BaseInventory[]
+    }
+    assert.equal(body.season, CARD_SEASON)
+    assert.equal(body.trade.status, 'undone')
+    assert.equal(body.trade.undoneBy, ADMIN_NAME)
+    assert.equal(body.trade.undoneByUserId, idOf(harness, ADMIN.email))
+    assert.ok(body.trade.undoneAt, 'an undo has to carry when it happened')
+
+    // Undo does not touch who completed it or when — a third event, not a
+    // rewrite of the second.
+    assert.equal(body.trade.resolvedBy, MEMBER_B_NAME)
+    assert.ok(body.trade.resolvedAt)
+
+    // The swap unwinds exactly: back to the seeded state, two of its own card
+    // each, none of the other's.
+    assert.deepEqual([...countsOf(harness, BASE_A)], [[CARD_A, 2]])
+    assert.deepEqual([...countsOf(harness, BASE_B)], [[CARD_B, 2]])
+    assert.equal(totalCards(harness), afterComplete, 'undoing conserves cards too')
+
+    assert.deepEqual(
+      body.bases.map((base) => base.tag),
+      [BASE_A, BASE_B],
+    )
+    // Undo edits both bases, so both edit stamps move with it and name the admin.
+    assert.equal(body.bases[0]?.updatedBy, ADMIN_NAME)
+    assert.equal(body.bases[1]?.updatedBy, ADMIN_NAME)
+    harness.db.close()
+  })
+
+  it('never stores a zero, even though undo is allowed to reach one', async () => {
+    const harness = await createHarness()
+    const { admin, a, b } = await seeded(harness)
+    const id = await proposed(harness, a)
+    assert.equal((await resolve(harness, b, id, 'complete')).status, 200)
+    assert.equal((await undo(harness, admin, id)).status, 200)
+
+    // Both bases end up back at exactly one card apiece — the received card's
+    // count reaches zero and has to be a deleted row, not a stored 0, unlike
+    // MIN_TRADEABLE_COUNT's floor of two which a voluntary trade may never reach.
+    const rows = harness.db
+      .prepare('SELECT COUNT(*) AS n FROM card_inventory WHERE count <= 0')
+      .get()
+    assert.equal(Number(rows?.['n']), 0, 'an undo must never store a zero')
+    harness.db.close()
+  })
+
+  it('refuses either party — undo has no party exception', async () => {
+    const harness = await createHarness()
+    const { a, b } = await seeded(harness)
+    const id = await proposed(harness, a)
+    assert.equal((await resolve(harness, b, id, 'complete')).status, 200)
+    const beforeA = [...countsOf(harness, BASE_A)]
+
+    for (const cookie of [a, b]) {
+      const response = await undo(harness, cookie, id)
+      assert.equal(response.status, 403, 'a party is not an admin and must be refused')
+      const body = (await response.json()) as { error: { reason: string; message: string } }
+      assert.equal(body.error.reason, 'forbidden')
+      assert.match(body.error.message, /admin-only/)
+    }
+
+    assert.deepEqual([...countsOf(harness, BASE_A)], beforeA, 'nothing moved')
+    assert.equal((await listTrades(harness, a)).find((t) => t.id === id)?.status, 'complete')
+    harness.db.close()
+  })
+
+  it('refuses an outsider the same way', async () => {
+    const harness = await createHarness()
+    const { a, b, outsider } = await seeded(harness)
+    const id = await proposed(harness, a)
+    assert.equal((await resolve(harness, b, id, 'complete')).status, 200)
+
+    const response = await undo(harness, outsider, id)
+    assert.equal(response.status, 403)
+    harness.db.close()
+  })
+
+  it('refuses a trade that is still pending, and changes nothing', async () => {
+    const harness = await createHarness()
+    const { admin, a } = await seeded(harness)
+    const id = await proposed(harness, a)
+
+    const response = await undo(harness, admin, id)
+    assert.equal(response.status, 409)
+    const body = (await response.json()) as { error: { reason: string; message: string } }
+    assert.equal(body.error.reason, 'notComplete')
+    assert.match(body.error.message, /still pending/)
+    assert.equal((await listTrades(harness, a))[0]?.status, 'pending')
+    harness.db.close()
+  })
+
+  it('refuses a declined trade, and changes nothing', async () => {
+    const harness = await createHarness()
+    const { admin, a, b } = await seeded(harness)
+    const id = await proposed(harness, a)
+    assert.equal((await resolve(harness, b, id, 'decline')).status, 200)
+
+    const response = await undo(harness, admin, id)
+    assert.equal(response.status, 409)
+    const body = (await response.json()) as { error: { reason: string; message: string } }
+    assert.equal(body.error.reason, 'notComplete')
+    assert.match(body.error.message, /declined/)
+    harness.db.close()
+  })
+
+  it('refuses a second undo rather than moving the cards twice', async () => {
+    const harness = await createHarness()
+    const { admin, a, b } = await seeded(harness)
+    const id = await proposed(harness, a)
+    assert.equal((await resolve(harness, b, id, 'complete')).status, 200)
+    assert.equal((await undo(harness, admin, id)).status, 200)
+    const afterFirstUndo = [...countsOf(harness, BASE_A)]
+
+    const response = await undo(harness, admin, id)
+    assert.equal(response.status, 409)
+    const body = (await response.json()) as { error: { reason: string; message: string } }
+    assert.equal(body.error.reason, 'notComplete')
+    assert.match(body.error.message, /already undone/)
+    assert.match(body.error.message, /cannot be undone twice/)
+
+    assert.deepEqual([...countsOf(harness, BASE_A)], afterFirstUndo, 'the cards moved back exactly once')
+    assert.equal((await listTrades(harness, a))[0]?.status, 'undone')
+    harness.db.close()
+  })
+
+  it('refuses when a base no longer holds the card it would have to give back', async () => {
+    const harness = await createHarness()
+    const { admin, a, b } = await seeded(harness)
+    const id = await proposed(harness, a)
+    assert.equal((await resolve(harness, b, id, 'complete')).status, 200)
+
+    // A holds one of card 2 (received in the completion) and would have to give it
+    // back to undo; it has since traded that copy away too.
+    await saveCounts(harness, a, BASE_A, [{ cardId: CARD_A, count: 1 }])
+    const before = totalCards(harness)
+
+    const response = await undo(harness, admin, id)
+    assert.equal(response.status, 409)
+    const body = (await response.json()) as { error: { reason: string; message: string } }
+    assert.equal(body.error.reason, 'countsChanged')
+    assert.match(body.error.message, /#AAABBB now holds 0 copies of card 2/)
+    assert.match(body.error.message, /Nothing was moved/)
+
+    // The status change rolled back with the counts check, so the trade is still
+    // complete and can be undone once the situation is sorted out.
+    assert.equal((await listTrades(harness, a))[0]?.status, 'complete')
+    assert.equal(totalCards(harness), before)
+    harness.db.close()
+  })
+
+  it('refuses when the receiving base is already at the count ceiling', async () => {
+    const harness = await createHarness()
+    const { admin, a, b } = await seeded(harness)
+    const id = await proposed(harness, a)
+    assert.equal((await resolve(harness, b, id, 'complete')).status, 200)
+
+    // A would receive card 1 back; push it to the ceiling first.
+    await saveCounts(harness, a, BASE_A, [
+      { cardId: CARD_A, count: MAX_CARD_COUNT },
+      { cardId: CARD_B, count: 1 },
+    ])
+
+    const response = await undo(harness, admin, id)
+    assert.equal(response.status, 409)
+    const body = (await response.json()) as { error: { reason: string; message: string } }
+    assert.equal(body.error.reason, 'countsChanged')
+    assert.match(body.error.message, /already holds the maximum 10 of card 1/)
+    assert.equal(countsOf(harness, BASE_A).get(CARD_A), MAX_CARD_COUNT, 'untouched')
+    harness.db.close()
+  })
+
+  it('404s an unknown trade and 400s an id that is not one', async () => {
+    const harness = await createHarness()
+    const { admin } = await seeded(harness)
+
+    const missing = await undo(harness, admin, 4242)
+    assert.equal(missing.status, 404)
+
+    for (const raw of ['abc', '0', '-1', '1.5']) {
+      const response = await harness.app.request(
+        ...post(`/api/cards/trades/${raw}/undo`, {}, admin),
+      )
+      assert.equal(response.status, 400, `${raw} is not a trade id`)
+    }
+    harness.db.close()
+  })
+
+  it('needs a session, changing nothing', async () => {
+    const harness = await createHarness()
+    const { a, b } = await seeded(harness)
+    const id = await proposed(harness, a)
+    assert.equal((await resolve(harness, b, id, 'complete')).status, 200)
+
+    const response = await harness.app.request(...post(undoPath(id), {}))
+    assert.equal(response.status, 401)
+    assert.equal((await listTrades(harness, a)).find((t) => t.id === id)?.status, 'complete')
     harness.db.close()
   })
 })

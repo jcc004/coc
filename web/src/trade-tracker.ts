@@ -134,6 +134,59 @@ export function tradeResolveAccess(
   return ALLOWED
 }
 
+export type TradeUndoRefusal = 'notAdmin' | 'notComplete'
+
+export type TradeUndoAccess =
+  | { allowed: true }
+  | { allowed: false; refusal: TradeUndoRefusal; message: string }
+
+const UNDO_ALLOWED: TradeUndoAccess = { allowed: true }
+
+/**
+ * May this session undo this trade?
+ *
+ * **Admin only — no party exception**, unlike `tradeResolveAccess`. Undo reopens a
+ * trade that already closed rather than making the first decision about an open
+ * one, so it is not one more thing either party gets to do; it is granted only to
+ * the account that can already reassign a base's ownership or overwrite its counts
+ * outright. Mirrors the server's `mayUndoTrade`; this only stops the UI offering a
+ * button the server would refuse.
+ */
+export function tradeUndoAccess(
+  user: Pick<SessionUser, 'role'>,
+  trade: Pick<TradeRecord, 'status' | 'undoneBy' | 'undoneAt'>,
+): TradeUndoAccess {
+  if (user.role !== 'admin') {
+    return {
+      allowed: false,
+      refusal: 'notAdmin',
+      message: 'Undoing a trade is admin-only. Ask an admin if this one needs to be reversed.',
+    }
+  }
+
+  if (trade.status === 'undone') {
+    const who = trade.undoneBy ?? 'someone whose account has since been deleted'
+    return {
+      allowed: false,
+      refusal: 'notComplete',
+      message: `Already undone by ${who}. A trade can be undone once.`,
+    }
+  }
+
+  if (trade.status !== 'complete') {
+    return {
+      allowed: false,
+      refusal: 'notComplete',
+      message:
+        trade.status === 'pending'
+          ? 'This trade is still pending — there is nothing to undo yet.'
+          : 'This trade was declined, so nothing moved and there is nothing to undo.',
+    }
+  }
+
+  return UNDO_ALLOWED
+}
+
 /* ---------- what order, and which rows ---------- */
 
 /**
@@ -157,7 +210,10 @@ export function sortTrades(trades: readonly TradeRecord[]): TradeRecord[] {
       return a.proposedAt.localeCompare(b.proposedAt) || a.id - b.id
     }
 
-    const resolved = (trade: TradeRecord) => trade.resolvedAt ?? trade.proposedAt
+    // An undone trade keeps its original `resolvedAt` (undo is a third event, not a
+    // rewrite of the second — see `TradeRecord.undoneAt`), so it sorts by *that*
+    // stamp here rather than by when it was undone unless `undoneAt` is read first.
+    const resolved = (trade: TradeRecord) => trade.undoneAt ?? trade.resolvedAt ?? trade.proposedAt
     return resolved(b).localeCompare(resolved(a)) || b.id - a.id
   })
 }

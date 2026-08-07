@@ -64,7 +64,7 @@ export async function proposeTrade(proposal: ProposeTradeRequest): Promise<Trade
 }
 
 /**
- * Completes or declines a trade, and refreshes the counts it moved.
+ * Completes, declines or undoes a trade, and refreshes the counts it moved.
  *
  * The response carries both bases' new counts, but the inventory store is reloaded
  * rather than patched from them: it is one request, it is the same request the page
@@ -74,7 +74,7 @@ export async function proposeTrade(proposal: ProposeTradeRequest): Promise<Trade
  * from the response rather than present as a zero).
  *
  * A decline moves nothing, so the refresh is strictly unnecessary there. It happens
- * anyway: two branches would mean the harmless one is the one nobody exercises.
+ * anyway: three branches would mean the harmless one is the one nobody exercises.
  */
 async function resolve(
   id: number,
@@ -91,6 +91,15 @@ export function completeTrade(id: number): Promise<TradeRecord> {
 
 export function declineTrade(id: number): Promise<TradeRecord> {
   return resolve(id, api.declineTrade)
+}
+
+/**
+ * Undoes a completed trade, moving the two cards back. Shares `resolve` with
+ * `completeTrade` / `declineTrade` on purpose: an undo edits both bases' counts
+ * exactly as a completion does, so it needs the same inventory reload afterwards.
+ */
+export function undoTrade(id: number): Promise<TradeRecord> {
+  return resolve(id, api.undoTrade)
 }
 
 export function reloadTrades(): Promise<void> {

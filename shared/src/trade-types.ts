@@ -15,17 +15,22 @@ import type { BaseInventory, CardCategory } from './card-types.ts'
  */
 
 /**
- * A trade's life: proposed, then resolved exactly once.
+ * A trade's life: proposed, then resolved exactly once, and a `complete` trade may
+ * later be **undone** — a fourth state, not a return to `pending`, because the
+ * agreement was real and carried out; undo is the record that it was reversed, not
+ * that it never happened.
  *
  * There is no `canceled` distinct from `declined`. Either party — and an admin
  * — may resolve a trade, so "I have changed my mind" and "no thanks" are the
  * same event with the same consequence (nothing moves), and `resolvedBy` says
- * which side it came from.
+ * which side it came from. Undo has no such symmetry: only an admin may do it,
+ * because it reopens a record that already closed rather than making the first
+ * decision about it (`mayUndoTrade` in `server/src/cards/trade-access.ts`).
  */
-export type TradeStatus = 'pending' | 'complete' | 'declined'
+export type TradeStatus = 'pending' | 'complete' | 'declined' | 'undone'
 
-/** Restated as a `CHECK` in the schema (migration v7). */
-export const TRADE_STATUSES: readonly TradeStatus[] = ['pending', 'complete', 'declined']
+/** Restated as a `CHECK` in the schema (migration v14). */
+export const TRADE_STATUSES: readonly TradeStatus[] = ['pending', 'complete', 'declined', 'undone']
 
 /**
  * The fewest copies a base must hold to give one away: **two**.
@@ -82,6 +87,21 @@ export interface TradeRecord {
    * trade. `null` exactly while the status is `pending`, which the schema checks.
    */
   resolvedAt: string | null
+  /**
+   * Who undid it, if anyone. `null` for every trade that has not been undone —
+   * which is most of them — and, once it has been, `null` again only if that
+   * account is gone.
+   *
+   * Undoing does **not** overwrite `resolvedByUserId` / `resolvedAt`: those stay
+   * the record of who completed the trade and when, and undo is a third, later
+   * event rather than a correction to the second. A fully-audited trade can name
+   * three people — who proposed it, who completed it, who undid it.
+   */
+  undoneByUserId: number | null
+  /** Display name of whoever undid it; `null` if that account is gone. */
+  undoneBy: string | null
+  /** When it was undone. `null` unless the status is `undone`, which the schema checks. */
+  undoneAt: string | null
 }
 
 export interface TradesResponse {

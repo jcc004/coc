@@ -665,7 +665,83 @@ UPDATE base_progress
 `)
 }
 
-const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13]
+/**
+ * v14 — `undone_by_user_id` / `undone_at` on `trades`, and `'undone'` joins the
+ * status `CHECK`: the Trade Tracker's admin-only Undo.
+ *
+ * The table is rebuilt rather than ALTERed, the same reason v2 rebuilds `users`:
+ * SQLite can add a column with a plain `ALTER TABLE`, but it cannot widen an
+ * existing `CHECK`'s list of allowed values, and `'undone'` has to join `'pending'`
+ * / `'complete'` / `'declined'` in the one `CHECK` v7 wrote. `foreign_keys` is OFF
+ * for every migration step (see `migrate`, below), so the `DROP TABLE` here is as
+ * safe as v2's `DROP TABLE users` was — confirmed still true by reading `migrate`
+ * rather than assumed.
+ *
+ * Undo is a **third** audited event, not a rewrite of the second. `resolved_by_user_id`
+ * / `resolved_at` are left exactly as completion wrote them — they are the record of
+ * who completed the trade and when, and undoing it must not cost that attribution
+ * any more than completing a trade costs the record of who proposed it. The new
+ * pair records the separate, later fact: who reversed it, and when. Both are `ON
+ * DELETE SET NULL`, matching every other user reference in this schema, for the
+ * same reason every one of them is: the row is the record of something that really
+ * happened, so losing the account must cost the attribution, not the row.
+ *
+ * `CHECK (undone_at IS NULL OR status = 'undone')` is one-directional, unlike v7's
+ * two-way `(status = 'pending') = (resolved_at IS NULL)`. It rules out a row that
+ * claims an undo timestamp while its status disagrees, but does not also require
+ * `undone_at` for every `'undone'` row — because there is exactly one way to reach
+ * that status, the `undo()` transaction in `trades-store.ts`, and it always writes
+ * the timestamp in the same guarded `UPDATE` that sets the status. A two-way check
+ * would guarantee nothing this file's own code does not already guarantee, at the
+ * cost of a reader having to notice the asymmetry is deliberate rather than a typo.
+ *
+ * Both indexes v7 created live on the table itself and do not survive `DROP TABLE`,
+ * so they are recreated verbatim after the rename. Easy to forget — nothing about
+ * adding two columns suggests an index went missing with them.
+ */
+const v14: Migration = (db) => {
+  db.exec(`
+CREATE TABLE trades_v14 (
+  id                  INTEGER PRIMARY KEY,
+  season              TEXT NOT NULL,
+  base_a              TEXT NOT NULL,
+  base_b              TEXT NOT NULL,
+  card_from_a         INTEGER NOT NULL CHECK (card_from_a BETWEEN 1 AND 60),
+  card_from_b         INTEGER NOT NULL CHECK (card_from_b BETWEEN 1 AND 60),
+  category            TEXT NOT NULL,
+  status              TEXT NOT NULL CHECK (status IN ('pending', 'complete', 'declined', 'undone')),
+  proposed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  proposed_at         TEXT NOT NULL,
+  resolved_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  resolved_at         TEXT,
+  undone_by_user_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  undone_at           TEXT,
+  CHECK (base_a <> base_b),
+  CHECK (card_from_a <> card_from_b),
+  CHECK ((status = 'pending') = (resolved_at IS NULL)),
+  CHECK (undone_at IS NULL OR status = 'undone')
+);
+
+INSERT INTO trades_v14
+  (id, season, base_a, base_b, card_from_a, card_from_b, category, status,
+   proposed_by_user_id, proposed_at, resolved_by_user_id, resolved_at)
+SELECT id, season, base_a, base_b, card_from_a, card_from_b, category, status,
+       proposed_by_user_id, proposed_at, resolved_by_user_id, resolved_at
+  FROM trades;
+
+DROP TABLE trades;
+ALTER TABLE trades_v14 RENAME TO trades;
+
+-- Both indexes v7 created, recreated on the rebuilt table.
+CREATE INDEX trades_season_status ON trades (season, status, id);
+
+CREATE UNIQUE INDEX trades_one_pending_per_swap
+  ON trades (season, base_a, base_b, card_from_a, card_from_b)
+  WHERE status = 'pending';
+`)
+}
+
+const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14]
 
 /** The version a fully migrated database reports. */
 export const SCHEMA_VERSION = MIGRATIONS.length

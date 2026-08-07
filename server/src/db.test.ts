@@ -884,7 +884,9 @@ CREATE INDEX chat_messages_user_id ON chat_messages (user_id);
     await createV6Database(path)
 
     const db = openDatabase(path)
-    assert.deepEqual(migrate(db), [], 'opening it applied v7 already')
+    assert.deepEqual(migrate(db), [], 'opening it applied every outstanding step already')
+    // `openDatabase` runs every migration to the head, so this is v7's shape *as
+    // v14 leaves it* — the undo columns included — not v7 in isolation.
     assert.deepEqual(columnsOf(path, 'trades'), [
       'id',
       'season',
@@ -898,6 +900,8 @@ CREATE INDEX chat_messages_user_id ON chat_messages (user_id);
       'proposed_at',
       'resolved_by_user_id',
       'resolved_at',
+      'undone_by_user_id',
+      'undone_at',
     ])
     assert.equal(userVersion(path), SCHEMA_VERSION)
     db.close()
@@ -1309,6 +1313,157 @@ describe('migration v13 — base_progress.captured_by_user_id', () => {
     const path = join(tempDir(), 'coc.db')
     const db = openDatabase(path)
     assert.ok(columnsOf(path, 'base_progress').includes('captured_by_user_id'))
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+    db.close()
+  })
+})
+
+describe('migration v14 — trades.undone_by_user_id / undone_at', () => {
+  const NOW = '2026-08-01T10:00:00.000Z'
+
+  /**
+   * A v13-shaped `trades` table: the schema v7 created, before this migration adds
+   * the undo columns and widens the status `CHECK`. Built by migrating a fresh
+   * database all the way to the head — which now includes v14 — and then
+   * rewinding just this one table back to what v7 actually left it as, the same
+   * approach the v7 block above uses and for the same reason: retyping an old
+   * schema by hand risks drifting from what the real migration produced, where
+   * dropping back to it cannot.
+   */
+  async function createV13Database(path: string): Promise<{ userId: number }> {
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const db = new DatabaseSync(path)
+    migrate(db)
+    const userId = Number(db.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
+
+    db.exec('PRAGMA foreign_keys = OFF')
+    db.exec(`
+CREATE TABLE trades_v13 (
+  id                  INTEGER PRIMARY KEY,
+  season              TEXT NOT NULL,
+  base_a              TEXT NOT NULL,
+  base_b              TEXT NOT NULL,
+  card_from_a         INTEGER NOT NULL CHECK (card_from_a BETWEEN 1 AND 60),
+  card_from_b         INTEGER NOT NULL CHECK (card_from_b BETWEEN 1 AND 60),
+  category            TEXT NOT NULL,
+  status              TEXT NOT NULL CHECK (status IN ('pending', 'complete', 'declined')),
+  proposed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  proposed_at         TEXT NOT NULL,
+  resolved_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  resolved_at         TEXT,
+  CHECK (base_a <> base_b),
+  CHECK (card_from_a <> card_from_b),
+  CHECK ((status = 'pending') = (resolved_at IS NULL))
+);
+INSERT INTO trades_v13
+  (id, season, base_a, base_b, card_from_a, card_from_b, category, status,
+   proposed_by_user_id, proposed_at, resolved_by_user_id, resolved_at)
+SELECT id, season, base_a, base_b, card_from_a, card_from_b, category, status,
+       proposed_by_user_id, proposed_at, resolved_by_user_id, resolved_at
+  FROM trades;
+DROP TABLE trades;
+ALTER TABLE trades_v13 RENAME TO trades;
+CREATE INDEX trades_season_status ON trades (season, status, id);
+CREATE UNIQUE INDEX trades_one_pending_per_swap
+  ON trades (season, base_a, base_b, card_from_a, card_from_b)
+  WHERE status = 'pending';
+`)
+    db.exec('PRAGMA foreign_keys = ON')
+    db.exec('PRAGMA user_version = 13')
+
+    db.prepare(
+      `INSERT INTO trades
+         (season, base_a, base_b, card_from_a, card_from_b, category, status,
+          proposed_by_user_id, proposed_at, resolved_by_user_id, resolved_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'complete', ?, ?, ?, ?)`,
+    ).run('2026-08', '#AAABBB', '#CCCDDD', 1, 2, 'Elixir', userId, NOW, userId, NOW)
+
+    assert.equal(Number(db.prepare('PRAGMA user_version').get()?.['user_version']), 13)
+    db.close()
+    return { userId }
+  }
+
+  it('adds the undo columns as NULL and leaves the existing row intact', async () => {
+    const path = join(tempDir(), 'coc.db')
+    const { userId } = await createV13Database(path)
+
+    const db = openDatabase(path)
+    const row = db.prepare('SELECT * FROM trades').get()
+    assert.equal(row?.['status'], 'complete')
+    assert.equal(row?.['resolved_by_user_id'], userId)
+    assert.equal(row?.['resolved_at'], NOW)
+    assert.equal(row?.['undone_by_user_id'], null)
+    assert.equal(row?.['undone_at'], null)
+    assert.deepEqual(
+      columnsOf(path, 'trades').filter((name) => name.startsWith('undone')),
+      ['undone_by_user_id', 'undone_at'],
+    )
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+    db.close()
+  })
+
+  it('lets a row move to undone, which the old CHECK would have refused', async () => {
+    const path = join(tempDir(), 'coc.db')
+    const { userId } = await createV13Database(path)
+    const db = openDatabase(path)
+
+    const id = Number(db.prepare('SELECT id FROM trades').get()?.['id'])
+    assert.doesNotThrow(() =>
+      db
+        .prepare(
+          `UPDATE trades SET status = 'undone', undone_by_user_id = ?, undone_at = ? WHERE id = ?`,
+        )
+        .run(userId, NOW, id),
+    )
+    assert.equal(
+      db.prepare('SELECT status FROM trades WHERE id = ?').get(id)?.['status'],
+      'undone',
+    )
+    db.close()
+  })
+
+  it('refuses an undone_at that disagrees with the status', async () => {
+    const path = join(tempDir(), 'coc.db')
+    await createV13Database(path)
+    const db = openDatabase(path)
+
+    const id = Number(db.prepare('SELECT id FROM trades').get()?.['id'])
+    assert.throws(
+      () => db.prepare(`UPDATE trades SET undone_at = ? WHERE id = ?`).run(NOW, id),
+      /CHECK constraint failed/,
+      'a complete row cannot carry an undo timestamp without the status to match',
+    )
+    db.close()
+  })
+
+  it('still refuses a second pending proposal of the same swap', async () => {
+    const path = join(tempDir(), 'coc.db')
+    await createV13Database(path)
+    const db = openDatabase(path)
+
+    const insertPending = () =>
+      db
+        .prepare(
+          `INSERT INTO trades
+             (season, base_a, base_b, card_from_a, card_from_b, category, status, proposed_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
+        )
+        .run('2026-08', '#EEEFFF', '#GGGHHH', 5, 6, 'Elixir', NOW)
+
+    insertPending()
+    assert.throws(
+      insertPending,
+      /UNIQUE constraint failed/,
+      'the recreated index must still guard one pending swap per pair',
+    )
+    db.close()
+  })
+
+  it('takes a fresh database straight to the widened status check', async () => {
+    const path = join(tempDir(), 'coc.db')
+    const db = openDatabase(path)
+    assert.ok(columnsOf(path, 'trades').includes('undone_by_user_id'))
     assert.equal(userVersion(path), SCHEMA_VERSION)
     db.close()
   })

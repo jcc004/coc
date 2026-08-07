@@ -148,10 +148,10 @@ export function TradeResolutionRules() {
         unlinked text label is an admin's to resolve until an admin links it to an account.
       </p>
       <p className="empty-hint">
-        <strong>Complete moves one card each way on both bases — immediately, for everyone, and it
-        cannot be undone from here.</strong> That is why it asks first. <strong>Decline</strong>{' '}
-        closes the trade and moves nothing, so it does not ask. A trade is{' '}
-        <strong>resolved once</strong>: re-completing would move the same two cards a second time.
+        <strong>Complete moves one card each way on both bases — immediately, for everyone —</strong>{' '}
+        which is why it asks first. <strong>Decline</strong> closes the trade and moves nothing, so
+        it does not ask. A trade is <strong>resolved once</strong>: re-completing would move the
+        same two cards a second time.
       </p>
       <p className="empty-hint">
         The rule is checked again <strong>at completion, against the counts as they are then</strong>{' '}
@@ -161,9 +161,20 @@ export function TradeResolutionRules() {
         when it is made: somebody who has just looked at their cards knows more than the table does.
       </p>
       <p className="empty-hint">
+        <strong>An admin can undo a completed trade</strong>, moving the two cards back — the one
+        exception to "either owner, or an admin" above, because undoing reopens a record that
+        already closed rather than making the first decision about it. It is checked again the
+        same way completing is, against the counts as they are at that moment, except the floor
+        that stops a voluntary trade giving away a last copy does not apply: undoing is a
+        correction, not a trade, so it may bring a base back to none of a card. Undoing does not
+        rewrite who completed the trade or when — it is a third event, recorded beside the first
+        two, not instead of the second.
+      </p>
+      <p className="empty-hint">
         Pending trades come first however old they are, oldest first, because a swap that has been
         waiting three days is the one being forgotten; resolved rows read newest first. Every row
-        names <strong>both</strong> events — who proposed it and when, and who resolved it and when.
+        names <strong>every</strong> event that has happened to it — who proposed it and when, who
+        resolved it and when, and, if it was later undone, who undid it and when.
       </p>
     </>
   )
