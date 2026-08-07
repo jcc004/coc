@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { applyBaseOrder, moveTag, reconcileOrder } from './base-order.ts'
+import { alphabetizeTags, applyBaseOrder, moveTag, reconcileOrder } from './base-order.ts'
 
 describe('reconcileOrder', () => {
   it('keeps the saved order when it matches what is owned', () => {
@@ -80,6 +80,39 @@ describe('moveTag', () => {
     const original = ['#A', '#B', '#C']
     const copy = [...original]
     moveTag(original, 0, 2)
+    assert.deepEqual(original, copy)
+  })
+})
+
+describe('alphabetizeTags', () => {
+  const labels: Record<string, string> = { '#A': 'Charlie', '#B': 'alpha', '#C': 'Bravo' }
+  const labelOf = (tag: string) => labels[tag] ?? tag
+
+  it('an empty list is unaffected', () => {
+    assert.deepEqual(alphabetizeTags([], labelOf), [])
+  })
+
+  it('a single-item list is unaffected', () => {
+    assert.deepEqual(alphabetizeTags(['#A'], labelOf), ['#A'])
+  })
+
+  it('leaves an already-sorted list as is', () => {
+    assert.deepEqual(alphabetizeTags(['#B', '#C', '#A'], labelOf), ['#B', '#C', '#A'])
+  })
+
+  it('reorders tags whose labels are out of order', () => {
+    assert.deepEqual(alphabetizeTags(['#A', '#B', '#C'], labelOf), ['#B', '#C', '#A'])
+  })
+
+  it('sorts case-insensitively', () => {
+    const caseLabels: Record<string, string> = { '#X': 'bravo', '#Y': 'Alpha' }
+    assert.deepEqual(alphabetizeTags(['#X', '#Y'], (tag) => caseLabels[tag] ?? tag), ['#Y', '#X'])
+  })
+
+  it('returns a new array rather than mutating the input', () => {
+    const original = ['#A', '#B', '#C']
+    const copy = [...original]
+    alphabetizeTags(original, labelOf)
     assert.deepEqual(original, copy)
   })
 })

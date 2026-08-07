@@ -168,12 +168,17 @@ there yet.
 `base_order`; two others only read it (`CardsView`'s Mine picker and `ProgressGridView`'s "just
 me" Owner filter, both via `applyBaseOrder`/`useBaseOrder` in `web/src/base-order.ts`).
 Reordering is native HTML5 drag-and-drop rather than a library — the first interaction in this
-app to need it — paired with explicit **Move up / Move down** buttons on every row, because a
-mouse drag has no keyboard or screen-reader equivalent at all; without the buttons the page would
-have a control only some visitors could use. Every reorder saves immediately rather than behind
-a Save button: the server already accepts a partial list, so there's no correctness reason to
-batch, and a page that has to be told to keep what it's already showing you is one more step to
-forget.
+app to need it — paired with explicit **Move up / Move down** buttons on every row (bracketed by
+**send-to-top / send-to-bottom**, `⇈`/`⇊`, for jumping a base to either end without repeated
+clicks), because a mouse drag has no keyboard or screen-reader equivalent at all; without the
+buttons the page would have a control only some visitors could use. An **Alphabetize** button
+above the list sorts every base by its display label, case-insensitively — never by the tag
+itself, which is an opaque `#XXXXXXX` id nobody reads by. `moveTag` (`web/src/base-order.ts`)
+backs the single-step and jump moves alike, called with `toIndex = 0` or `toIndex = tags.length`
+for the jumps; `alphabetizeTags` in the same module backs the sort. Every reorder saves
+immediately rather than behind a Save button: the server already accepts a partial list, so
+there's no correctness reason to batch, and a page that has to be told to keep what it's already
+showing you is one more step to forget.
 
 ## What's out of scope here
 

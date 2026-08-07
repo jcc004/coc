@@ -96,6 +96,22 @@ export function applyBaseOrder<T extends { tag: string }>(
   return [...ordered, ...rest]
 }
 
+/**
+ * `tags` sorted by their display label rather than the tag itself — tags are
+ * opaque `#XXXXXXX` identifiers nobody reads them by, so an "Alphabetize"
+ * action has to sort by what is actually on screen, and only the caller knows
+ * how to turn a tag into that label. Case-insensitive (`sensitivity: 'base'`)
+ * so `'Alpha'` and `'alpha'` sort together rather than by case.
+ */
+export function alphabetizeTags(
+  tags: readonly string[],
+  labelOf: (tag: string) => string,
+): string[] {
+  return [...tags].sort((a, b) =>
+    labelOf(a).localeCompare(labelOf(b), undefined, { sensitivity: 'base' }),
+  )
+}
+
 export type BaseOrderStatus = 'loading' | 'error' | 'ready'
 
 function toApiError(cause: unknown): ApiError {

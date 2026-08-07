@@ -1,7 +1,7 @@
 import { useMemo, useState, type DragEvent } from 'react'
 import type { SessionUser } from '@coc/shared'
 import { useBaseLabels } from '../base-labels.ts'
-import { moveTag, useBaseOrder } from '../base-order.ts'
+import { alphabetizeTags, moveTag, useBaseOrder } from '../base-order.ts'
 import { tagsInScope } from '../base-scope.ts'
 import { useOwners, useOwnersState } from '../owners.ts'
 import { ErrorPanel, Loading } from './primitives.tsx'
@@ -49,6 +49,8 @@ function BaseOrderRow({
   onDrop,
   onDragEnd,
   onMove,
+  onSendToTop,
+  onSendToEnd,
 }: {
   tag: string
   label: string
@@ -61,6 +63,8 @@ function BaseOrderRow({
   onDrop: (event: DragEvent<HTMLLIElement>) => void
   onDragEnd: () => void
   onMove: (delta: -1 | 1) => void
+  onSendToTop: () => void
+  onSendToEnd: () => void
 }) {
   const className = [
     'base-order-list__item',
@@ -86,6 +90,15 @@ function BaseOrderRow({
         <button
           type="button"
           className="icon-button"
+          onClick={onSendToTop}
+          disabled={index === 0}
+          aria-label={`Move ${label} to top`}
+        >
+          ⇈
+        </button>
+        <button
+          type="button"
+          className="icon-button"
           onClick={() => onMove(-1)}
           disabled={index === 0}
           aria-label={`Move ${label} up`}
@@ -100,6 +113,15 @@ function BaseOrderRow({
           aria-label={`Move ${label} down`}
         >
           ↓
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={onSendToEnd}
+          disabled={index === count - 1}
+          aria-label={`Move ${label} to bottom`}
+        >
+          ⇊
         </button>
       </span>
     </li>
@@ -165,6 +187,18 @@ export function BaseOrderView({ user }: { user: SessionUser }) {
     order.reorder(moveTag(order.tags, index, index + delta))
   }
 
+  function sendToTop(index: number) {
+    order.reorder(moveTag(order.tags, index, 0))
+  }
+
+  function sendToEnd(index: number) {
+    order.reorder(moveTag(order.tags, index, order.tags.length))
+  }
+
+  function alphabetize() {
+    order.reorder(alphabetizeTags(order.tags, labelOf))
+  }
+
   const loading = !ownersReady || order.status === 'loading'
 
   return (
@@ -174,6 +208,14 @@ export function BaseOrderView({ user }: { user: SessionUser }) {
         Drag a base — or use the arrows — to set the order your own bases are listed in.{' '}
         {order.saving ? 'Saving…' : null}
       </p>
+
+      {!loading && order.tags.length > 1 ? (
+        <p>
+          <button type="button" className="chip" onClick={alphabetize}>
+            Alphabetize
+          </button>
+        </p>
+      ) : null}
 
       {order.error ? <ErrorPanel error={order.error} /> : null}
 
@@ -201,6 +243,8 @@ export function BaseOrderView({ user }: { user: SessionUser }) {
               onDrop={(event) => handleDrop(event, index)}
               onDragEnd={handleDragEnd}
               onMove={(delta) => moveBy(index, delta)}
+              onSendToTop={() => sendToTop(index)}
+              onSendToEnd={() => sendToEnd(index)}
             />
           ))}
         </ol>
