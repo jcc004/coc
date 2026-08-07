@@ -826,18 +826,36 @@ select {
    which for the select labels means the *select itself*, since the caption sits
    above it. Centering this one within the row's full height — caption to
    select-bottom — put it floating between the two, level with neither. Left to
-   inherit flex-end, its bottom edge lands on the same line as the selects'. */
+   inherit flex-end, its bottom edge lands on the same line as the selects'.
+
+   Baseline was never the mismatch (measured: both bottoms land on the same
+   line). The chip styling below is what was missing — matching background,
+   border, radius and padding to `.roster-filters select` so this reads as a
+   control at the same visual weight instead of bare text floating beside two
+   bordered boxes. `line-height: 18px` isn't arbitrary: the select's content
+   box (its own rendered height minus this same padding and border) measures
+   18px, so matching it there makes both chips exactly 32px tall rather than
+   a couple of pixels off from an inherited line-height. */
 .roster-filters > label.roster-filters__check {
   flex-direction: row;
   align-items: center;
   gap: 8px;
   font-size: 13px;
+  line-height: 18px;
   color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
 }
 .roster-filters__check input[type='checkbox'] {
   accent-color: var(--accent);
   width: 16px;
   height: 16px;
+  /* Browsers give a checkbox a default margin (Chrome: ~3px on every side);
+     left in, it inflates this label's flex row past the select's height even
+     with line-height matched above. */
+  margin: 0;
   cursor: pointer;
 }
 .roster-filters input:not([type='checkbox']),
