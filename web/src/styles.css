@@ -51,6 +51,57 @@
   --warning: #e8a022;
   --critical: #c4342c;
 
+  /*
+   * Chart series — the dataviz skill's validated eight-hue categorical order
+   * (blue, orange, aqua, yellow, magenta, green, violet, red), fixed order,
+   * never cycled — used by `components/charts.tsx`'s line chart for heroes,
+   * pets, spells and troops on the progress-history charts, and by the
+   * progress-grid comparison section for its base-to-base lines.
+   *
+   * Re-validated here against *this app's* own `--surface` (warm parchment,
+   * not the skill's neutral gray default) with
+   * `node scripts/validate_palette.js "<hexes>" --mode light --surface
+   * "#f6efdc"`: lightness band, chroma floor and both CVD floors all PASS
+   * (worst adjacent CVD ΔE 9.1, worst normal-vision ΔE 19.6); contrast WARNs
+   * on four slots (orange 2.79:1, aqua 2.45:1, yellow 1.89:1, magenta
+   * 2.35:1), which is why every chart using these also ships a legend
+   * (text identity, never color-only) and a "Show as table" fallback —
+   * the relief the WARN requires. Not the same eight hexes as `--accent`
+   * (this app's sequential blue) — a categorical palette and a sequential
+   * ramp are different jobs and must not share a hue's exact step.
+   */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
+
+  /*
+   * The wall chart's sequential ramp — five anchor hues, amber to deep
+   * teal-blue, each pair of neighbors ~30° apart on the hue wheel (see
+   * `chart-colors.ts`'s `wallLevelColor` doc for why this is multi-hue at
+   * all: a single-hue ramp read as indistinguishable "shades of blue" once
+   * a base held more than five or six wall levels at once). Generated in
+   * OKLCH (L 0.70→0.32, C ~0.10–0.135, H 85°→200°) and validated with the
+   * dataviz skill's `validateOrdinal` check against this surface
+   * (`--surface: #f6efdc`): lightness monotone, every adjacent gap clears
+   * the 0.06 ΔL floor, light end clears the 2:1 contrast floor at 2.34:1.
+   * ("Single hue" fails by design, the same way running the categorical
+   * checks on a sequential ramp fails by design — this is the documented
+   * multi-hue exception, not an oversight.) Two of the five (`-4`, `-5`)
+   * are gamut-clipped off their OKLCH targets — sRGB can't hit a fully
+   * saturated dark teal — which cost `-5` some chroma (0.075, under the
+   * usual 0.10 floor) but not its place in the ramp.
+   */
+  --wall-ramp-1: #c59720;
+  --wall-ramp-2: #7b8c13;
+  --wall-ramp-3: #187a3b;
+  --wall-ramp-4: #005f4c;
+  --wall-ramp-5: #004046;
+
   /* chrome: gold plating for panel edges and buttons */
   --gold: var(--user-gold-light, #f2b431);
   --gold-deep: var(--user-gold-deep-light, #d1900f);
@@ -171,6 +222,29 @@
     --good-text: #6cc74a;
     --warning: #f0b03c;
     --critical: #e2564c;
+    /* Same eight-hue order, stepped for the dark surface — see the light
+       block's comment for the validator run (dark: --surface "#241d14",
+       worst adjacent CVD ΔE 8.4, worst normal-vision ΔE 19.3, all 8 clear
+       3:1 contrast). */
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+    /* Same wall-ramp concept, re-stepped for the dark surface — see the
+       light block's comment for the validator run. This one runs the
+       opposite direction (rank 0 dim/close to `--surface`, rank max
+       bright/bold), same relationship as the old single-hue ramp had via
+       color-mix, just with the hue sweep added: L 0.55→0.90, H 85°→200°,
+       validated against `--surface: #241d14` (light-end contrast 3.38:1). */
+    --wall-ramp-1: #916a00;
+    --wall-ramp-2: #84961b;
+    --wall-ramp-3: #5dbe76;
+    --wall-ramp-4: #3fdec2;
+    --wall-ramp-5: #7af4fb;
     --gold: var(--user-gold-dark, #f5c04a);
     --gold-deep: var(--user-gold-deep-dark, #c9930f);
     --gold-edge: var(--user-gold-edge-dark, #6b4708);
@@ -214,6 +288,22 @@
   --good-text: #6cc74a;
   --warning: #f0b03c;
   --critical: #e2564c;
+  /* Same dark-mode series steps as the media-query block above — see its
+     comment for the validator run. */
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  /* Same dark-mode wall-ramp steps as the media-query block above. */
+  --wall-ramp-1: #916a00;
+  --wall-ramp-2: #84961b;
+  --wall-ramp-3: #5dbe76;
+  --wall-ramp-4: #3fdec2;
+  --wall-ramp-5: #7af4fb;
   --gold: var(--user-gold-dark, #f5c04a);
   --gold-deep: var(--user-gold-deep-dark, #c9930f);
   --gold-edge: var(--user-gold-edge-dark, #6b4708);
@@ -2423,6 +2513,11 @@ table.roster--divided tbody tr:not(:first-child) > td {
   color: var(--ink-muted);
   margin: 0 0 4px;
 }
+/* `CurrentWeekDetail`'s restored per-unit list (`CategorySection`/`WallsSection`,
+   `PlayerProgressPanel.tsx`) — icon, name, level/fraction, one row per unit. Removed
+   during the chart rewrite along with the per-week block these classes belonged to,
+   restored alongside it once live review asked for the current week's full detail
+   back (see that file's module doc). */
 .progress-category__units {
   list-style: none;
   margin: 0;
@@ -2441,9 +2536,9 @@ table.roster--divided tbody tr:not(:first-child) > td {
 }
 /* A maxed unit: same icon+name+value shape as every other row (see
    `.progress-category__units li`), just picked out by color/weight — no
-   layout override needed here, unlike the earlier icon-only design this
-   replaced, which needed its own centering to avoid the icon reading as
-   the *next* cell's, not its own. */
+   layout override needed here, unlike an earlier icon-only design, which
+   needed its own centering to avoid the icon reading as the *next* cell's,
+   not its own. */
 .progress-unit--maxed {
   color: var(--good-text);
   font-weight: 600;
@@ -2453,6 +2548,186 @@ table.roster--divided tbody tr:not(:first-child) > td {
 .progress-category__units .art-icon {
   width: 40px;
   height: 40px;
+}
+
+/* The always-visible Town Hall summary — sits above and outside the
+   `<details>` disclosure (`PlayerProgressPanel.tsx`'s `OverallProgress`),
+   so it needs its own top margin rather than `.progress-category`'s, which
+   assumes a chart directly above it inside the disclosure body. */
+.progress-overview {
+  margin-top: 10px;
+}
+.progress-overview .th-badge {
+  margin-top: 2px;
+}
+.progress-th-upgrades {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* ---------- historical progress charts (components/charts.tsx) ----------
+ *
+ * The categorical/sequential colors themselves are `--series-N` and
+ * `color-mix(... var(--accent) ...)` — see the token comment beside
+ * `--series-1` near the top of this file and `chart-colors.ts`. Everything
+ * below is chrome: axes, gridlines, the crosshair, the legend and the
+ * tooltip, all in ink/surface tokens so the marks stay the only colored
+ * thing on the page, per this app's existing "text never wears the data
+ * color" stance (`.meter-row__level` does the same split for magnitude).
+ */
+.chart {
+  margin-top: 6px;
+}
+.chart__plot {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* The plot area is the hover/keyboard target — a focus ring earns its
+     keep here since arrow keys move the crosshair, unlike a plain <svg>. */
+  border-radius: var(--radius);
+}
+.chart__plot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.chart__gridline {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+.chart__axis {
+  stroke: var(--baseline);
+  stroke-width: 1;
+}
+.chart__crosshair {
+  stroke: var(--ink-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.chart__tick {
+  fill: var(--ink-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart__tooltip {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--plane);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  max-width: 320px;
+}
+.chart__tooltip-week {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.chart__tooltip-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chart__tooltip-rows li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chart__tooltip-key {
+  width: 10px;
+  height: 2px;
+  flex: none;
+  border-radius: 1px;
+}
+.chart__tooltip-label {
+  flex: 1;
+  color: var(--ink-2);
+}
+.chart__tooltip-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* One button per series — a legend entry both keys the color and toggles
+   visibility, so the "identity channel" and the interaction live on the
+   same control rather than a separate row of checkboxes. */
+.chart__legend {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.chart__legend-item--hidden {
+  color: var(--ink-muted);
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+.chart__legend-swatch {
+  width: 14px;
+  height: 0;
+  border-top-width: 2px;
+  border-top-style: solid;
+  flex: none;
+}
+
+.chart__table-toggle {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.chart__table-toggle > summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.chart__table-toggle .table-wrap {
+  margin-top: 6px;
+}
+
+/* ---------- the troop x week heatmap ---------- */
+
+table.heatmap th[scope='col'],
+table.heatmap td {
+  text-align: center;
+  white-space: nowrap;
+}
+table.heatmap th[scope='row'] {
+  text-align: left;
+  white-space: nowrap;
+}
+.heatmap__cell {
+  min-width: 52px;
+}
+/* The halo, not the background, is what keeps this legible across the whole
+   ramp in both themes — see the doc comment on `TroopHeatmap` for why a
+   fixed ink color plus a surface-colored halo was chosen over computing
+   per-cell contrast against a `color-mix` fill. */
+.heatmap__value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink);
+  text-shadow:
+    0 0 3px var(--surface),
+    0 0 3px var(--surface);
 }
 
 /* The manual-entry form, sitting above the read-only weeks in the same disclosure —

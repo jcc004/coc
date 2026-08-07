@@ -3,22 +3,27 @@ import { CARD_SEASON } from '@coc/shared'
 import { HELP_SECTIONS, type HelpSectionId } from '../help.ts'
 import { hrefFor } from '../hooks.ts'
 import {
+  BaseOrderReachRules,
   CardEntryRules,
   OwnershipRules,
+  ProgressCapRules,
   ScoringRules,
   SharedDataRules,
   SwapRules,
   TradeResolutionRules,
 } from './help-copy.tsx'
+import { MAX_TREND_BASES } from './ProgressTrendsSection.tsx'
 
 /**
  * `#/help` — what the card event is, who may do what, and how the numbers work.
  *
  * It is here because of what people actually get wrong, not as a feature tour. The
- * four questions this exists to answer, in the order they come up: who owns a base
- * and why that decides anything; the difference between a suggested swap and an
- * agreed trade; what the leaderboard is measuring; and that there is one copy of
- * the data and it is everybody's.
+ * questions this exists to answer, in the order they come up: who owns a base and
+ * why that decides anything; the difference between a suggested swap and an agreed
+ * trade; what the leaderboard is measuring; why a level's percent on the progress
+ * page doesn't match some other tool's number; why reordering your bases on one
+ * page moves things on three others; and that there is one copy of the data and it
+ * is everybody's.
  *
  * **Nothing is written twice.** Every rule block is a component in `help-copy.tsx`,
  * rendered here *and* in a collapsed disclosure under the panel it governs, so the
@@ -57,14 +62,15 @@ export function HelpView({ section }: { section: HelpSectionId | null }) {
       <section className="card">
         <h1 className="section-title">Help</h1>
         <p className="empty-hint help-prose">
-          This app is a Clash of Clans explorer with one thing bolted on that the game gives us no
-          help with at all: the <strong>card event</strong>, currently season{' '}
-          <strong>{CARD_SEASON}</strong>. Everything below is about the parts people ask about
-          twice.
+          This app is a Clash of Clans explorer with two things bolted onto it that the game itself
+          doesn't provide: the <strong>card event</strong>, currently season{' '}
+          <strong>{CARD_SEASON}</strong>, and a week-by-week progress history the game's own API
+          never keeps — plus wall levels, which it doesn't report at all. Everything below is about
+          the parts people ask about twice.
         </p>
-        {/* An in-page list rather than a sidebar: six items is a paragraph's worth,
-            and a second column would be chrome on a page that is already prose. Each
-            entry is the same link the `?` beside the panel is, so the two cannot
+        {/* An in-page list rather than a sidebar: eight items is still a paragraph's
+            worth, and a second column would be chrome on a page that is already prose.
+            Each entry is the same link the `?` beside the panel is, so the two cannot
             point at different places. */}
         <nav aria-label="Help contents">
           <ul className="help-contents">
@@ -118,6 +124,49 @@ export function HelpView({ section }: { section: HelpSectionId | null }) {
 
       <HelpSection id="leaderboard">
         <ScoringRules />
+      </HelpSection>
+
+      <HelpSection id="progress">
+        <p className="empty-hint">
+          <strong>Progress</strong> in the topbar is a second, unrelated feature riding alongside the
+          card event: a weekly snapshot of Town Hall, heroes, pets, troops, spells, equipment and
+          walls for every tracked base — read-only for everyone, and writable only by a base's own
+          owner or an admin, the same rule the card grid uses.
+        </p>
+        <ProgressCapRules />
+        <p className="empty-hint">
+          Town Hall, heroes, pets, troops, spells and equipment are captured automatically once a
+          week; walls, buildings left and notes are the three fields a person has to type in, because
+          the game's API never reports wall levels at all. A base with plenty of hero history and no
+          wall history yet is not broken — nobody has opened its page and entered a week.
+        </p>
+        <p className="empty-hint">
+          A captured week is not fixed forever: <strong>"Correct a past week's walls"</strong>, a
+          disclosure at the bottom of a base's own page, lets its owner or an admin fix an old week's
+          wall counts rather than living with a typo for good. It edits that week in place and leaves
+          an audit note behind — nothing is silently rewritten.
+        </p>
+        <p className="empty-hint">
+          Below the spreadsheet-shaped grid, <strong>Compare bases over time</strong> plots one stat
+          across several bases at once — the thing the grid's columns can't show: who's catching up,
+          not just who's ahead today. It caps how many lines it will draw at once (currently{' '}
+          {MAX_TREND_BASES}) and picks which bases survive that cap from this account's own saved
+          order first — see <a href={hrefFor({ view: 'help', section: 'base-order' })}>base order</a>{' '}
+          below.
+        </p>
+      </HelpSection>
+
+      <HelpSection id="base-order">
+        <p className="empty-hint">
+          This is the one with an effect you won't see on this page at all.
+        </p>
+        <BaseOrderReachRules />
+        <p className="empty-hint">
+          Drag a row, or use the four buttons beside it — top, up, down, bottom — or{' '}
+          <strong>Alphabetize</strong>. Every change saves immediately; there is no separate Save. The
+          list is only ever this account's own bases: an account that owns nothing sees a note to ask
+          an admin, not an empty list pretending there was something to order.
+        </p>
       </HelpSection>
 
       <HelpSection id="shared">

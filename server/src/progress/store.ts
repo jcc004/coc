@@ -226,6 +226,15 @@ export interface ProgressStore {
   getHistory(playerTag: string): ProgressSnapshot[]
 
   /**
+   * One base's row for exactly one week, or `null` if that `(playerTag, weekStart)`
+   * pair has never been captured. This is what `PUT /api/progress/:tag/manual`
+   * checks a caller-supplied `weekStart` against — a past-week correction may only
+   * target a week that already has a row, never invent one, so the route needs a
+   * single-row lookup rather than pulling the whole history to search it.
+   */
+  getWeek(playerTag: string, weekStart: string): ProgressSnapshot | null
+
+  /**
    * The single latest row per tag, in the order the tags were given. A tag
    * with no rows at all is simply absent — there is no placeholder to filter
    * back out.
@@ -410,6 +419,11 @@ export function createProgressStore(db: DatabaseSync): ProgressStore {
 
     getHistory(playerTag) {
       return statements.listHistory.all(normalizeTag(playerTag)).map(toSnapshot)
+    },
+
+    getWeek(playerTag, weekStart) {
+      const row = statements.find.get(normalizeTag(playerTag), weekStart)
+      return row ? toSnapshot(row) : null
     },
 
     getLatestForClan(playerTags) {

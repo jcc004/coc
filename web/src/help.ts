@@ -32,7 +32,15 @@
  */
 
 /** One section of the help page. Each is a deep-link target. */
-export type HelpSectionId = 'cards' | 'owners' | 'trades' | 'tracker' | 'leaderboard' | 'shared'
+export type HelpSectionId =
+  | 'cards'
+  | 'owners'
+  | 'trades'
+  | 'tracker'
+  | 'leaderboard'
+  | 'progress'
+  | 'base-order'
+  | 'shared'
 
 export interface HelpSection {
   id: HelpSectionId
@@ -47,8 +55,10 @@ export interface HelpSection {
  *
  * Ordered as a narrative rather than by importance: what the event is, then who
  * owns a base (which decides what anybody may do), then the two halves of trading,
- * then how the board scores, and last the thing that surprises people about all of
- * it — that there is one copy of the data and it is everybody's.
+ * then how the board scores, then the app's other tracked feature — weekly progress,
+ * and the base order that quietly feeds three other pages — and last the thing that
+ * surprises people about all of it: that there is one copy of the data and it is
+ * everybody's.
  */
 export const HELP_SECTIONS: readonly HelpSection[] = [
   {
@@ -75,6 +85,16 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     id: 'leaderboard',
     title: 'How the leaderboard scores',
     summary: 'Ten points for a card you did not have, one for a spare past the tenth',
+  },
+  {
+    id: 'progress',
+    title: "Weekly progress: what's automatic, and what you type in",
+    summary: "A level's percent is against this Town Hall's own cap, not the game's flat maximum",
+  },
+  {
+    id: 'base-order',
+    title: "Your base order, and where else it's read",
+    summary: 'One list, but three other pages read it — reordering here moves more than this page',
   },
   {
     id: 'shared',

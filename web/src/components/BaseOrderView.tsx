@@ -4,7 +4,8 @@ import { useBaseLabels } from '../base-labels.ts'
 import { alphabetizeTags, moveTag, useBaseOrder } from '../base-order.ts'
 import { tagsInScope } from '../base-scope.ts'
 import { useOwners, useOwnersState } from '../owners.ts'
-import { ErrorPanel, Loading } from './primitives.tsx'
+import { BaseOrderReachRules } from './help-copy.tsx'
+import { ErrorPanel, HelpLink, Loading } from './primitives.tsx'
 
 /**
  * `#/base-order` — the order this account's own bases appear in, wherever a
@@ -203,11 +204,14 @@ export function BaseOrderView({ user }: { user: SessionUser }) {
 
   return (
     <section className="card">
-      <h1 className="section-title">Base order</h1>
+      <h1 className="section-title">
+        Base order <HelpLink section="base-order" topic="where else this order is read" />
+      </h1>
       <p className="empty-hint">
         Drag a base — or use the arrows — to set the order your own bases are listed in.{' '}
         {order.saving ? 'Saving…' : null}
       </p>
+      <BaseOrderReachRules />
 
       {!loading && order.tags.length > 1 ? (
         <p>

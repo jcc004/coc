@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type {
-  ManualCapturePayload,
+  ManualCaptureRequest,
   MaxLevelReferenceRow,
   ProgressSnapshot,
   WallReferenceRow,
@@ -39,14 +39,18 @@ export function useProgressLatestState(): StoreSnapshot<ProgressSnapshot> {
 }
 
 /**
- * Saves this week's hand-entered fields for one base, then refreshes the shared
- * latest-week list so it carries the server's own `updatedAt` / `capturedBy` rather
- * than a guess — the same shape `saveBaseCounts` takes in `card-inventory.ts`.
- * Rethrows on failure so the form can say the write did not happen.
+ * Saves one base's hand-entered fields, then refreshes the shared latest-week list
+ * so it carries the server's own `updatedAt` / `capturedBy` rather than a guess —
+ * the same shape `saveBaseCounts` takes in `card-inventory.ts`. Rethrows on failure
+ * so the form can say the write did not happen.
+ *
+ * `payload.weekStart` omitted writes into the caller's current week, same as always.
+ * Given, it targets an already-captured week instead — a past-week wall correction —
+ * and the server rejects it if that week has no row yet; see `ManualCaptureRequest`.
  */
 export async function saveProgressManual(
   tag: string,
-  payload: ManualCapturePayload,
+  payload: ManualCaptureRequest,
 ): Promise<ProgressSnapshot> {
   const { snapshot } = await store.mutate(() => api.saveProgressManual(tag, payload))
   return snapshot
@@ -72,6 +76,35 @@ export function useProgressHistory(
   return useAsync(
     (signal) => api.progressHistory(tag, signal).then((response) => response.history),
     [tag, reloadToken],
+  )
+}
+
+/**
+ * Many bases' full history at once — `ProgressTrendsSection`'s base-to-base
+ * comparison chart, one fetch per base in the filtered/selected set. There is
+ * no batch endpoint for this: `GET /api/progress/:tag` already exists and
+ * answers exactly what one line needs, and this section's own base filter
+ * (mirroring the grid's Owner filter) keeps the fetched set to something a
+ * handful of parallel requests can cover — building server-side batching for
+ * a comparison view that already defaults to a narrowed slice would be
+ * infrastructure ahead of a real need. `tags` should already be capped by the
+ * caller (see `MAX_TREND_BASES` in `progress-trends.ts`) before it reaches
+ * this hook; nothing here imposes its own limit.
+ */
+export function useMultiProgressHistory(
+  tags: readonly string[],
+): AsyncState<{ tag: string; history: ProgressSnapshot[] }[]> {
+  const key = tags.join(',')
+  return useAsync(
+    tags.length === 0
+      ? null
+      : async (signal) => {
+          const entries = await Promise.all(
+            tags.map(async (tag) => ({ tag, history: (await api.progressHistory(tag, signal)).history })),
+          )
+          return entries
+        },
+    [key],
   )
 }
 

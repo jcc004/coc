@@ -16,6 +16,8 @@ const LINKED_FROM: Record<HelpSectionId, string> = {
   trades: 'the trade suggestions panel',
   tracker: 'the trade tracker panel',
   leaderboard: 'the collection leaderboard',
+  progress: 'the progress board and the weekly progress panel',
+  'base-order': 'the base order page',
   shared: 'the help page contents only',
 }
 

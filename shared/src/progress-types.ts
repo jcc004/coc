@@ -55,6 +55,25 @@ export interface ManualCapturePayload {
 }
 
 /**
+ * The request body `PUT /api/progress/:tag/manual` accepts — the stored fields
+ * above, plus an optional target week. `weekStart` is routing, not a stored
+ * field: it says *which* week's row to merge into, never travels into
+ * `ManualCapturePayload` itself, and is never echoed back on `ProgressSnapshot`.
+ *
+ * Omitted, the write lands in the caller's current week — the server's own
+ * clock decides that (`currentWeekStart`), the same "never from the request"
+ * stance every other server-owned value in this app takes. Given, it targets an
+ * already-captured week instead, for correcting a past entry mistake (walls are
+ * hand-typed and do get mistyped) — but only a week that already has a
+ * `base_progress` row for this tag; the server rejects anything else with a 400
+ * rather than let a typo in `weekStart` invent a week that was never captured.
+ */
+export interface ManualCaptureRequest extends ManualCapturePayload {
+  /** ISO date (`YYYY-MM-DD`) of the already-captured week to correct. */
+  weekStart?: string
+}
+
+/**
  * Who or what made one write to `base_progress` — `upsertSnapshot`'s fourth
  * argument. A closed union rather than a free-text label, so a caller cannot
  * invent a fourth kind of writer the read side does not know how to resolve.

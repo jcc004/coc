@@ -461,6 +461,164 @@ describe("manual walls are checked against the base's known Town Hall", () => {
   })
 })
 
+describe('a weekStart in the body corrects a past week instead of the current one', () => {
+  it('writes into the named week, not the current one, when that week already has a row', async () => {
+    const harness = await createHarness()
+    const admin = await signIn(harness, ADMIN)
+    await assignBase(harness, admin, BASE_A, idOf(harness, ADMIN.email))
+    const pastWeek = '2026-07-28'
+    harness.progress.upsertSnapshot(BASE_A, pastWeek, { auto: { thLevel: 16 } }, { source: 'auto' })
+
+    const response = await harness.app.request(
+      ...putManual(manualPath(BASE_A), { weekStart: pastWeek, walls: { '15': 10 } }, admin),
+    )
+    assert.equal(response.status, 200)
+    const body = (await response.json()) as { snapshot: { weekStart: string; walls: Record<string, number> | null } }
+    assert.equal(body.snapshot.weekStart, pastWeek)
+    assert.deepEqual(body.snapshot.walls, { '15': 10 })
+
+    // The current week must not have been touched by a request naming a past one.
+    const currentRow = harness.progress.getWeek(BASE_A, currentWeekStart(new Date()))
+    assert.equal(currentRow, null)
+    harness.db.close()
+  })
+
+  it('rejects a weekStart this tag has no row for, and writes nothing', async () => {
+    const harness = await createHarness()
+    const admin = await signIn(harness, ADMIN)
+    await assignBase(harness, admin, BASE_A, idOf(harness, ADMIN.email))
+
+    const response = await harness.app.request(
+      ...putManual(manualPath(BASE_A), { weekStart: '2026-01-06', walls: { '15': 10 } }, admin),
+    )
+    assert.equal(response.status, 400)
+    const body = (await response.json()) as { error: { reason: string; message: string } }
+    assert.equal(body.error.reason, 'badRequest')
+    assert.match(body.error.message, /has never been captured|already captured/)
+    assert.deepEqual(harness.progress.getHistory(BASE_A), [])
+    harness.db.close()
+  })
+
+  it('rejects a weekStart that only exists for a different tag', async () => {
+    const harness = await createHarness()
+    const admin = await signIn(harness, ADMIN)
+    await assignBase(harness, admin, BASE_A, idOf(harness, ADMIN.email))
+    const sharedWeek = '2026-07-28'
+    // BASE_B has a row for this week; BASE_A does not.
+    harness.progress.upsertSnapshot(BASE_B, sharedWeek, { auto: { thLevel: 16 } }, { source: 'auto' })
+
+    const response = await harness.app.request(
+      ...putManual(manualPath(BASE_A), { weekStart: sharedWeek, walls: { '15': 10 } }, admin),
+    )
+    assert.equal(response.status, 400)
+    assert.deepEqual(
+      harness.progress.getHistory(BASE_A).filter((s) => s.walls !== null),
+      [],
+    )
+    harness.db.close()
+  })
+
+  it('rejects a malformed weekStart before touching the store', async () => {
+    const harness = await createHarness()
+    const admin = await signIn(harness, ADMIN)
+    await assignBase(harness, admin, BASE_A, idOf(harness, ADMIN.email))
+
+    const response = await harness.app.request(
+      ...putManual(manualPath(BASE_A), { weekStart: 'not-a-date', walls: { '15': 10 } }, admin),
+    )
+    assert.equal(response.status, 400)
+    const body = (await response.json()) as { error: { message: string } }
+    assert.match(body.error.message, /weekStart/)
+    harness.db.close()
+  })
+
+  it('still refuses a member correcting a base they do not own', async () => {
+    const harness = await createHarness()
+    const admin = await signIn(harness, ADMIN)
+    const member = await signIn(harness, SECOND)
+    await assignBase(harness, admin, BASE_A, idOf(harness, ADMIN.email))
+    const pastWeek = '2026-07-28'
+    harness.progress.upsertSnapshot(BASE_A, pastWeek, { auto: { thLevel: 16 } }, { source: 'auto' })
+
+    const response = await harness.app.request(
+      ...putManual(manualPath(BASE_A), { weekStart: pastWeek, walls: { '15': 10 } }, member),
+    )
+    assert.equal(response.status, 403)
+    assert.deepEqual(
+      harness.progress.getWeek(BASE_A, pastWeek)?.walls ?? null,
+      null,
+      'the forbidden request must not have changed the target week',
+    )
+    harness.db.close()
+  })
+
+  it("scores the wall cap against that week's own Town Hall, not the base's latest one", async () => {
+    const harness = await createHarness()
+    const admin = await signIn(harness, ADMIN)
+    await assignBase(harness, admin, BASE_A, idOf(harness, ADMIN.email))
+    const pastWeek = '2026-07-28'
+    // This base was TH14 the week being corrected, and has since reached TH16.
+    harness.progress.upsertSnapshot(BASE_A, pastWeek, { auto: { thLevel: 14 } }, { source: 'auto' })
+    harness.progress.upsertSnapshot(
+      BASE_A,
+      currentWeekStart(new Date()),
+      { auto: { thLevel: 16 } },
+      { source: 'auto' },
+    )
+    harness.progress.upsertWallReference([
+      { thLevel: 14, maxWallLevel: 14, totalWallCount: 100 },
+      { thLevel: 16, maxWallLevel: 16, totalWallCount: 200 },
+    ])
+
+    // Level 16 is valid for the base's *current* TH but not for TH14, which is
+    // what the corrected week actually held at the time.
+    const response = await harness.app.request(
+      ...putManual(manualPath(BASE_A), { weekStart: pastWeek, walls: { '16': 1 } }, admin),
+    )
+    assert.equal(response.status, 400)
+    const body = (await response.json()) as { error: { message: string } }
+    assert.match(body.error.message, /above the max wall level \(14\) for TH14/)
+    harness.db.close()
+  })
+
+  it('appends an honest correction note rather than replacing whatever was already there', async () => {
+    const harness = await createHarness()
+    const admin = await signIn(harness, ADMIN)
+    await assignBase(harness, admin, BASE_A, idOf(harness, ADMIN.email))
+    const pastWeek = '2026-07-28'
+    harness.progress.upsertSnapshot(
+      BASE_A,
+      pastWeek,
+      { auto: { thLevel: 14 }, manual: { notes: 'original note' } },
+      { source: 'manual', userId: idOf(harness, ADMIN.email) },
+    )
+
+    const response = await harness.app.request(
+      ...putManual(manualPath(BASE_A), { weekStart: pastWeek, walls: { '14': 3 } }, admin),
+    )
+    assert.equal(response.status, 200)
+    const body = (await response.json()) as { snapshot: { notes: string | null } }
+    assert.match(body.snapshot.notes ?? '', /original note/)
+    assert.match(body.snapshot.notes ?? '', /Walls corrected on \d{4}-\d{2}-\d{2}\./)
+    harness.db.close()
+  })
+
+  it('leaves the ordinary current-week path (no weekStart) exactly as before', async () => {
+    const harness = await createHarness()
+    const admin = await signIn(harness, ADMIN)
+    await assignBase(harness, admin, BASE_A, idOf(harness, ADMIN.email))
+
+    const response = await harness.app.request(
+      ...putManual(manualPath(BASE_A), { buildingsLeft: '2' }, admin),
+    )
+    assert.equal(response.status, 200)
+    const body = (await response.json()) as { snapshot: { weekStart: string; notes: string | null } }
+    assert.equal(body.snapshot.weekStart, currentWeekStart(new Date()))
+    assert.equal(body.snapshot.notes, null, 'no correction note on an ordinary current-week save')
+    harness.db.close()
+  })
+})
+
 describe('the hand-entered reference categories (pet, equipment) are admin-only', () => {
   it('lets an admin write rows, and they show up in the shared reference table', async () => {
     const harness = await createHarness()

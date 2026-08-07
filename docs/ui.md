@@ -291,11 +291,13 @@ declaration rather than the plate's ink by coincidence.
 
 ## In-app help
 
-`#/help` is one page of prose about the four things people ask about twice: who owns a base, the
-difference between a suggested swap and an agreed trade, what the leaderboard is measuring, and that
-there is one copy of the data and it is everybody's. `HelpView` in
+`#/help` is one page of prose about the things people ask about twice: who owns a base, the
+difference between a suggested swap and an agreed trade, what the leaderboard is measuring, why a
+progress percent doesn't match some other tool's number, why reordering your bases on one page moves
+things on three others, and that there is one copy of the data and it is everybody's. `HelpView` in
 `web/src/components/HelpView.tsx`; reachable from the account menu, and from a `?` beside each panel
-it describes.
+it describes. Eight sections as of the weekly-progress and base-order additions — `cards`, `owners`,
+`trades`, `tracker`, `leaderboard`, `progress`, `base-order`, `shared` in `web/src/help.ts`.
 
 It is **not a feature tour**. Every claim on it was checked against the module that enforces the
 rule rather than against the README, and the numbers in it are *computed* — `MIN_TRADEABLE_COUNT`,
@@ -335,6 +337,14 @@ the curve itself is in the disclosure and on the help page from one source.
 rendered by the disclosure *and* by its help-page section. They are fragments — no headings, no
 wrappers, no margins — so the caller supplies the container.
 
+The same pattern extended when weekly progress tracking and base order shipped, both of which had
+**zero** help coverage until then: `ProgressCapRules` (levels are scored against this Town Hall's
+own cap, not the unit's absolute maximum, and troops/spells/equipment start with almost no history)
+sits under the weekly progress panel's history charts as well as in `#/help`, and `BaseOrderReachRules`
+(this account's saved order also feeds the card page's Mine picker and the progress trends
+comparison, not just the base order page itself) sits directly on `#/base-order` as well as in
+`#/help`.
+
 ### Deep links: `#/help/<section>`, and the scroll is ours
 
 `{ view: 'help'; section }` was added exactly as `{ view: 'admin' }` was — the union in
@@ -358,14 +368,18 @@ keyboard user back through the whole page to reach what they clicked for. An unr
 **not** an error: it falls back to the top of the page, because somebody following an old link should
 get the help page rather than a 404 for a heading that was renamed.
 
-Verified in a browser at 390px and 1280px, in both themes: all six sections render, all six deep
-links land with the heading at the top of the viewport and holding focus, `#/help/nonsense` opens the
-page at `scrollY` 0, and every disclosure opens and closes.
+Verified in a browser at 390px and 1280px, in both themes: the original six sections render, their
+deep links land with the heading at the top of the viewport and holding focus, `#/help/nonsense`
+opens the page at `scrollY` 0, and every disclosure opens and closes. The `progress` and `base-order`
+sections added afterward were checked the same way — render, deep link, focus, fallback — at one
+viewport rather than the full matrix above, since nothing about the scroll/focus mechanism is
+per-section.
 
 ### The `?` mark
 
 `HelpLink` in `web/src/components/primitives.tsx`, on the card grid's header, the trade suggestions,
-the trade tracker, the collection leaderboard and under the roster's Owner column.
+the trade tracker, the collection leaderboard, under the roster's Owner column, the progress board
+header, the weekly progress panel header, and the base order page.
 
 **The glyph is not the name.** `?` is a mark, so it is `aria-hidden` and the accessible name is a
 `.visually-hidden` sentence naming the topic — `Help: what makes a swap legal`. Same split as the
@@ -400,8 +414,8 @@ feels minor. See `skipsChangelog` in `web/src/changelog.ts`.
 **Two entry points, doing two different jobs.** The footer's "Updated …" stamp is the link, because
 that is the moment somebody is looking at a date and wondering what happened on it; and **What's
 new** sits directly under **Help** on the account menu, for somebody looking for the page without
-knowing the stamp is a link. It is deliberately *not* on the help page (all six sections are
-feature topics and a changelog there is filler), not in the topbar (five controls already, wrapping
+knowing the stamp is a link. It is deliberately *not* on the help page (every section there is a
+feature topic and a changelog would be filler), not in the topbar (five controls already, wrapping
 at 390px), and there is **no "new since you last looked" dot** — most commits change nothing a
 reader can see, so a badge on every deploy would be wrong more often than right, and it would need
 per-account last-seen state to be wrong with.

@@ -15,7 +15,7 @@ import {
   type HandEnteredReferenceCategory,
   type ImportRequest,
   type ImportResponse,
-  type ManualCapturePayload,
+  type ManualCaptureRequest,
   type MaxLevelReferenceRow,
   type MeResponse,
   type OwnerAssignResponse,
@@ -354,11 +354,14 @@ export const api = {
     ),
 
   /**
-   * This week's hand-entered fields, merged into whatever the current week already
-   * holds. Never the auto-captured fields (TH, heroes, equipment, pets, troops,
-   * spells) — those come from the scheduled job, not this route.
+   * The hand-entered fields, merged into whatever the target week already holds.
+   * Never the auto-captured fields (TH, heroes, equipment, pets, troops, spells) —
+   * those come from the scheduled job, not this route. `payload.weekStart` omitted
+   * targets the caller's current week (the server's own clock decides that); given,
+   * it corrects an already-captured week instead — see `ManualCaptureRequest`'s own
+   * doc comment and `server/src/progress/routes.ts`'s `resolveTargetWeek`.
    */
-  saveProgressManual: (tag: string, payload: ManualCapturePayload) =>
+  saveProgressManual: (tag: string, payload: ManualCaptureRequest) =>
     request<{ snapshot: ProgressSnapshot }>('PUT', `/api/progress/${tagPath(tag)}/manual`, {
       body: payload,
     }),

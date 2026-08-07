@@ -234,6 +234,44 @@ export function ScoringRules() {
   )
 }
 
+/* ---------- weekly progress ---------- */
+
+export function ProgressCapRules() {
+  return (
+    <>
+      <p className="empty-hint">
+        Every percent on this page is a level held against <strong>this Town Hall's own cap</strong>,
+        not the unit's absolute maximum. A hero, pet, troop, spell or piece of equipment can report a
+        higher cap in some other tool that only knows the unit's own ceiling — that number is the
+        same whatever Town Hall you're at, so it is not what "100%" means here.
+      </p>
+      <p className="empty-hint">
+        Troops, spells and equipment have very little history yet. The historical import that
+        backfilled everything else on this page came from an old hand-kept spreadsheet that never
+        tracked those three categories, so their charts only start filling in from whenever
+        auto-capture first ran for a given base — a troop chart with one point, or a heatmap with a
+        single column, is new data behaving correctly, not a broken chart.
+      </p>
+    </>
+  )
+}
+
+/* ---------- base order ---------- */
+
+export function BaseOrderReachRules() {
+  return (
+    <>
+      <p className="empty-hint">
+        This page only sets an order — nothing on it changes because of what you pick here. Three
+        other pages read the order instead: the card page's <strong>Mine</strong> picker, the
+        progress board's <strong>"just me"</strong> Owner filter, and the bases-over-time
+        comparison's base selection. Reordering here changes what all three show, which is easy to
+        miss if this page is the only one of the four you ever open.
+      </p>
+    </>
+  )
+}
+
 /* ---------- shared data ---------- */
 
 export function SharedDataRules() {

@@ -26,7 +26,17 @@ import {
 import { useProgressLatest, useProgressLatestState, useProgressReference } from '../progress.ts'
 import { nextSortState, paginate, type RowLimit } from '../saved-table.ts'
 import { artFor } from '../wiki-art.ts'
-import { ErrorPanel, GameIcon, Loading, Pager, RowLimitSelect, SortControl, TownHallBadge } from './primitives.tsx'
+import {
+  ErrorPanel,
+  GameIcon,
+  HelpLink,
+  Loading,
+  Pager,
+  RowLimitSelect,
+  SortControl,
+  TownHallBadge,
+} from './primitives.tsx'
+import { ProgressTrendsSection } from './ProgressTrendsSection.tsx'
 
 /**
  * Every clan member's weekly progress, spreadsheet-shaped: one row per base, one
@@ -313,142 +323,147 @@ export function ProgressGridView({ user }: { user: SessionUser }) {
   const trackedCount = rows.filter((row) => row.tracked).length
 
   return (
-    <section className="card">
-      <div className="card-header">
-        <h2 className="section-title" style={{ margin: 0 }}>
-          Progress board{rows.length > 0 ? ` · ${trackedCount}/${rows.length} tracked` : ''}
-        </h2>
-      </div>
+    <>
+      <section className="card">
+        <div className="card-header">
+          <h2 className="section-title" style={{ margin: 0 }}>
+            Progress board{rows.length > 0 ? ` · ${trackedCount}/${rows.length} tracked` : ''}{' '}
+            <HelpLink section="progress" topic="what's captured automatically, and what you type in" />
+          </h2>
+        </div>
 
-      {ownersState.status === 'error' && ownersState.error ? <ErrorPanel error={ownersState.error} /> : null}
-      {progressState.status === 'error' && progressState.error ? (
-        <ErrorPanel error={progressState.error} />
-      ) : null}
+        {ownersState.status === 'error' && ownersState.error ? <ErrorPanel error={ownersState.error} /> : null}
+        {progressState.status === 'error' && progressState.error ? (
+          <ErrorPanel error={progressState.error} />
+        ) : null}
 
-      {rows.length === 0 && (ownersState.status === 'loading' || progressState.status === 'loading') ? (
-        <Loading what="the progress board" />
-      ) : rows.length === 0 && ownersState.status === 'idle' ? null : rows.length === 0 ? (
-        <p className="empty-hint">No bases tracked yet. Assign an owner to a base to have it show up here.</p>
-      ) : (
-        <>
-          {stacked ? (
-            <SortControl
-              id="progress-grid-sort"
-              columns={PROGRESS_GRID_COLUMNS}
-              sortKey={sortKey}
-              ascending={ascending}
-              onSort={toggleSort}
-            />
-          ) : null}
+        {rows.length === 0 && (ownersState.status === 'loading' || progressState.status === 'loading') ? (
+          <Loading what="the progress board" />
+        ) : rows.length === 0 && ownersState.status === 'idle' ? null : rows.length === 0 ? (
+          <p className="empty-hint">No bases tracked yet. Assign an owner to a base to have it show up here.</p>
+        ) : (
+          <>
+            {stacked ? (
+              <SortControl
+                id="progress-grid-sort"
+                columns={PROGRESS_GRID_COLUMNS}
+                sortKey={sortKey}
+                ascending={ascending}
+                onSort={toggleSort}
+              />
+            ) : null}
 
-          {ownerOptions.length > 2 ? (
-            <div className="roster-filters">
-              <label htmlFor="progress-grid-owner">
-                Owner
-                <select
-                  id="progress-grid-owner"
-                  value={chosenOwner}
-                  onChange={(event) => {
-                    chooseOwner(event.target.value)
-                    setPage(1)
-                    setSortOverridden(false)
-                  }}
-                >
-                  {ownerOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
+            {ownerOptions.length > 2 ? (
+              <div className="roster-filters">
+                <label htmlFor="progress-grid-owner">
+                  Owner
+                  <select
+                    id="progress-grid-owner"
+                    value={chosenOwner}
+                    onChange={(event) => {
+                      chooseOwner(event.target.value)
+                      setPage(1)
+                      setSortOverridden(false)
+                    }}
+                  >
+                    {ownerOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : null}
+
+            {usingCustomOrder ? (
+              <p className="empty-hint">
+                Sorted by your saved base order. Pick a column to sort differently — see{' '}
+                <a href={hrefFor({ view: 'base-order' })}>Base order</a> to change it.
+              </p>
+            ) : null}
+
+            <div className="table-wrap">
+              <table className="roster roster--stack progress-grid" role="table">
+                <thead role="rowgroup">
+                  <tr role="row">
+                    {PROGRESS_GRID_COLUMNS.map((column) => {
+                      const art = columnArt(column.key)
+                      return (
+                        <th
+                          key={column.key}
+                          className={column.numeric ? 'num' : undefined}
+                          role="columnheader"
+                          title={column.long ?? column.label}
+                          aria-sort={
+                            !usingCustomOrder && sortKey === column.key
+                              ? ascending
+                                ? 'ascending'
+                                : 'descending'
+                              : 'none'
+                          }
+                        >
+                          {stacked ? (
+                            column.label
+                          ) : (
+                            <button
+                              type="button"
+                              className="progress-grid__head"
+                              onClick={() => toggleSort(column.key)}
+                              aria-label={`Sort by ${column.long ?? column.label}`}
+                            >
+                              {/* A hero or pet column's icon already names it — the BK/AQ/L/O
+                                  shorthand next to it was redundant with the icon and the
+                                  `title` tooltip both, and cluttered a header row that already
+                                  has twenty-odd columns in it. A column with no vendored art
+                                  (Base, TH, Buildings, Walls) still needs its text label, since
+                                  there is nothing else standing in for it. */}
+                              {art ? <GameIcon src={art} className="art-icon" /> : column.label}
+                              {!usingCustomOrder && sortKey === column.key ? (
+                                <span className="sort-caret"> {ascending ? '↑' : '↓'}</span>
+                              ) : null}
+                            </button>
+                          )}
+                        </th>
+                      )
+                    })}
+                    <th role="columnheader">Notes</th>
+                  </tr>
+                </thead>
+                <tbody role="rowgroup">
+                  {view.rows.map((row) => (
+                    <ProgressGridRowView key={row.tag} row={row} />
                   ))}
-                </select>
-              </label>
+                </tbody>
+              </table>
             </div>
-          ) : null}
 
-          {usingCustomOrder ? (
-            <p className="empty-hint">
-              Sorted by your saved base order. Pick a column to sort differently — see{' '}
-              <a href={hrefFor({ view: 'base-order' })}>Base order</a> to change it.
+            {/* At the bottom, beside the pager, exactly as the clan roster's and the card
+                leaderboard's are — see CLAUDE.md's "row limit and pager sit together"
+                local rule. */}
+            <div className="roster-footer">
+              <RowLimitSelect
+                id="progress-grid-limit"
+                options={LIMIT_OPTIONS}
+                value={limit}
+                onChange={(next) => {
+                  setLimit(next)
+                  setPage(1)
+                }}
+              />
+              <Pager view={view} noun="bases" onPage={setPage} />
+            </div>
+
+            <p className="empty-hint" style={{ marginTop: 12, fontSize: 13 }}>
+              Click a row to open that base's own page, where its weekly progress is entered.
             </p>
-          ) : null}
 
-          <div className="table-wrap">
-            <table className="roster roster--stack progress-grid" role="table">
-              <thead role="rowgroup">
-                <tr role="row">
-                  {PROGRESS_GRID_COLUMNS.map((column) => {
-                    const art = columnArt(column.key)
-                    return (
-                      <th
-                        key={column.key}
-                        className={column.numeric ? 'num' : undefined}
-                        role="columnheader"
-                        title={column.long ?? column.label}
-                        aria-sort={
-                          !usingCustomOrder && sortKey === column.key
-                            ? ascending
-                              ? 'ascending'
-                              : 'descending'
-                            : 'none'
-                        }
-                      >
-                        {stacked ? (
-                          column.label
-                        ) : (
-                          <button
-                            type="button"
-                            className="progress-grid__head"
-                            onClick={() => toggleSort(column.key)}
-                            aria-label={`Sort by ${column.long ?? column.label}`}
-                          >
-                            {/* A hero or pet column's icon already names it — the BK/AQ/L/O
-                                shorthand next to it was redundant with the icon and the
-                                `title` tooltip both, and cluttered a header row that already
-                                has twenty-odd columns in it. A column with no vendored art
-                                (Base, TH, Buildings, Walls) still needs its text label, since
-                                there is nothing else standing in for it. */}
-                            {art ? <GameIcon src={art} className="art-icon" /> : column.label}
-                            {!usingCustomOrder && sortKey === column.key ? (
-                              <span className="sort-caret"> {ascending ? '↑' : '↓'}</span>
-                            ) : null}
-                          </button>
-                        )}
-                      </th>
-                    )
-                  })}
-                  <th role="columnheader">Notes</th>
-                </tr>
-              </thead>
-              <tbody role="rowgroup">
-                {view.rows.map((row) => (
-                  <ProgressGridRowView key={row.tag} row={row} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+            <ProgressGridLegend />
+          </>
+        )}
+      </section>
 
-          {/* At the bottom, beside the pager, exactly as the clan roster's and the card
-              leaderboard's are — see CLAUDE.md's "row limit and pager sit together"
-              local rule. */}
-          <div className="roster-footer">
-            <RowLimitSelect
-              id="progress-grid-limit"
-              options={LIMIT_OPTIONS}
-              value={limit}
-              onChange={(next) => {
-                setLimit(next)
-                setPage(1)
-              }}
-            />
-            <Pager view={view} noun="bases" onPage={setPage} />
-          </div>
-
-          <p className="empty-hint" style={{ marginTop: 12, fontSize: 13 }}>
-            Click a row to open that base's own page, where its weekly progress is entered.
-          </p>
-
-          <ProgressGridLegend />
-        </>
-      )}
-    </section>
+      <ProgressTrendsSection user={user} />
+    </>
   )
 }

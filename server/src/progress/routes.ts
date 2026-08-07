@@ -3,6 +3,7 @@ import type {
   HandEnteredReferenceCategory,
   ManualCapturePayload,
   OwnerRecord,
+  ProgressSnapshot,
   WallReferenceRow,
 } from '@coc/shared'
 import { currentUser, type AuthContext, type AuthEnv } from '../auth/middleware.ts'
@@ -126,6 +127,62 @@ function parseManualCapture(
   }
 
   return { payload }
+}
+
+const WEEK_START_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Which week `PUT /api/progress/:tag/manual` writes into, and — for a past-week
+ * correction — the row already there.
+ *
+ * No `weekStart` in the body is the default, common path: the caller's current
+ * week, from the server's own clock, exactly as this route always worked.
+ * A `weekStart` names a **correction** to a week already on record — walls are
+ * hand-typed and do get mistyped, and this is how that gets fixed after the
+ * fact — so it is checked against `store.getWeek` rather than trusted: a week
+ * this tag has never had a row for is rejected outright, the same "editing
+ * history, not inventing it" stance the whole feature takes. Deliberately
+ * returns the existing row rather than just a boolean, so the caller can score
+ * the wall-cap check against *that week's own* Town Hall instead of the base's
+ * latest known one — a base that has since upgraded should not have an old
+ * week's walls validated against a cap it did not hold at the time.
+ */
+function resolveTargetWeek(
+  body: Record<string, unknown>,
+  tag: string,
+  store: ProgressStore,
+): { weekStart: string; existing: ProgressSnapshot | null } | { problem: string } {
+  const raw = body['weekStart']
+  if (raw === undefined) {
+    return { weekStart: currentWeekStart(new Date()), existing: null }
+  }
+  if (typeof raw !== 'string' || !WEEK_START_PATTERN.test(raw)) {
+    return { problem: `weekStart must be a YYYY-MM-DD date string, got ${JSON.stringify(raw)}.` }
+  }
+
+  const existing = store.getWeek(tag, raw)
+  if (!existing) {
+    return {
+      problem:
+        `No progress has been captured for ${tag} at week ${raw}. A past-week ` +
+        'correction can only edit a week that was already captured, not invent one.',
+    }
+  }
+  return { weekStart: raw, existing }
+}
+
+/**
+ * `notes`, with a short trail appended saying this week's row was corrected after
+ * the fact — the honest-record convention this app already gives every other
+ * correction (`auto_note`'s own diff, `captured_by`'s attribution). Appended
+ * rather than replacing whatever was already there, the same "never blank out
+ * what the other writer holds" stance `upsertSnapshot`'s field-by-field merge
+ * takes, just applied within one field instead of across the whole row.
+ */
+function withCorrectionNote(existingNotes: string | null, when: Date): string {
+  const marker = `Walls corrected on ${when.toISOString().slice(0, 10)}.`
+  const base = (existingNotes ?? '').trim()
+  return base ? `${base} — ${marker}` : marker
 }
 
 /** Like `readJson`, but for a route whose body is a JSON array rather than an object. */
@@ -319,6 +376,13 @@ export function mountProgressRoutes(
    * `cards/routes.ts`'s inventory write: `readJson` is a real yield point, and an
    * admin's synchronous `PUT /api/owners/:tag` could reassign this base while this
    * request is suspended there.
+   *
+   * The target week defaults to the caller's current one — the server's own clock,
+   * never the request — but a body naming `weekStart` can instead correct a week
+   * already on record; see `resolveTargetWeek` for the validation that keeps that
+   * from inventing history rather than fixing it. No ownership or auth difference
+   * between the two paths: a past-week correction is still gated by the exact
+   * `mayWriteBaseCounts` decision below, not a looser or separate check.
    */
   app.put('/api/progress/:tag/manual', async (c) => {
     const decision = mayWriteBaseCounts(currentUser(c), ownershipOf(owners, c.req.param('tag')))
@@ -327,10 +391,23 @@ export function mountProgressRoutes(
     }
 
     const tag = c.req.param('tag')
-    const knownThLevel = store.getLatestThLevel(tag)
+    const body = await readJson(c)
+
+    const target = resolveTargetWeek(body, tag, store)
+    if ('problem' in target) {
+      return c.json(errorBody(400, 'badRequest', target.problem, 'Nothing was written.'), 400)
+    }
+    const { weekStart, existing } = target
+
+    // A past-week correction scores walls against *that week's* own Town Hall
+    // (the row `resolveTargetWeek` already found), not the base's latest known
+    // one — see that function's doc comment for why the two can legitimately
+    // differ. The default (no `weekStart`) path is unchanged: the base's latest
+    // known TH, exactly as before.
+    const knownThLevel = existing ? existing.thLevel : store.getLatestThLevel(tag)
     const wallReference = knownThLevel === null ? null : store.getWallReference(knownThLevel)
 
-    const parsed = parseManualCapture(await readJson(c), wallReference)
+    const parsed = parseManualCapture(body, wallReference)
     if ('problem' in parsed) {
       return c.json(errorBody(400, 'badRequest', parsed.problem, 'Nothing was written.'), 400)
     }
@@ -340,7 +417,13 @@ export function mountProgressRoutes(
       return c.json(writeForbidden(stillAllowed), 403)
     }
 
-    const weekStart = currentWeekStart(new Date())
+    // Only a targeted (past-week) write leaves this trail — the default path into
+    // the current week is ordinary, current-week entry, not a correction to
+    // anything. See `withCorrectionNote` for why this appends rather than replaces.
+    if (existing) {
+      parsed.payload.notes = withCorrectionNote(parsed.payload.notes ?? existing.notes, new Date())
+    }
+
     const snapshot = store.upsertSnapshot(
       tag,
       weekStart,

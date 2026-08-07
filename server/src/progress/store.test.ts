@@ -326,4 +326,33 @@ describe('progress store', () => {
     const { store } = harness()
     assert.equal(store.getLatestThLevel('#NOROWS1'), null)
   })
+
+  it('getWeek finds one base one week — the single-row lookup a past-week edit validates against', () => {
+    const { store, userId } = harness()
+    store.upsertSnapshot(
+      TAG,
+      '2026-07-28',
+      { manual: { walls: { '17': 4 }, notes: 'first pass' } },
+      { source: 'manual', userId },
+    )
+
+    const found = store.getWeek(TAG, '2026-07-28')
+    assert.deepEqual(found?.walls, { '17': 4 })
+    assert.equal(found?.notes, 'first pass')
+  })
+
+  it('getWeek is null for a week this tag has never had a row for', () => {
+    const { store, userId } = harness()
+    store.upsertSnapshot(TAG, '2026-07-28', { manual: { notes: 'only week captured' } }, { source: 'manual', userId })
+
+    assert.equal(store.getWeek(TAG, '2026-08-04'), null)
+  })
+
+  it('getWeek is scoped to its own tag, not any base that happens to have that week', () => {
+    const { store, userId } = harness()
+    const OTHER_TAG = '#OTHERBASE'
+    store.upsertSnapshot(OTHER_TAG, '2026-07-28', { manual: { notes: 'a different base' } }, { source: 'manual', userId })
+
+    assert.equal(store.getWeek(TAG, '2026-07-28'), null)
+  })
 })
