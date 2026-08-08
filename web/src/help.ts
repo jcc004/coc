@@ -84,7 +84,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
   {
     id: 'leaderboard',
     title: 'How the leaderboard scores',
-    summary: 'Ten points for a card you did not have, one for a spare past the tenth',
+    summary: 'Seven boards behind one picker — points, rarity, full rows, and four more',
   },
   {
     id: 'progress',

@@ -2,7 +2,13 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { CARD_SEASON, type BaseInventory, type ClanMember, type OwnerRecord } from '@coc/shared'
+import {
+  CARD_SEASON,
+  type BaseInventory,
+  type ClanMember,
+  type OwnerRecord,
+  type TradeRecord,
+} from '@coc/shared'
 import { CARD_JUMP_TARGETS } from '../card-sections.ts'
 import { installTestCleanup, sessionUser, stubApi, type ApiStubs } from '../test-support.ts'
 import { CardsView } from './CardsView.tsx'
@@ -51,6 +57,34 @@ const inventory = (
   counts: BaseInventory['counts'],
   updatedAt?: string,
 ): BaseInventory => ({ tag, counts, ...(updatedAt === undefined ? {} : { updatedAt }) })
+
+/**
+ * A minimal `TradeRecord`, following `trader-standings.test.ts`'s own `trade()`
+ * helper — only `baseA`/`baseB`/`status` matter to the "Most active trader" board,
+ * so every other field is a fixed, arbitrary value overridable per test.
+ */
+function trade(over: Partial<TradeRecord> = {}): TradeRecord {
+  return {
+    id: 1,
+    season: CARD_SEASON,
+    baseA: '#AAA',
+    baseB: '#BBB',
+    cardFromA: 3,
+    cardFromB: 7,
+    category: 'Elixir',
+    status: 'complete',
+    proposedByUserId: 1,
+    proposedBy: 'Anna',
+    proposedAt: '2026-08-02T10:00:00.000Z',
+    resolvedByUserId: 1,
+    resolvedBy: 'Anna',
+    resolvedAt: '2026-08-02T11:00:00.000Z',
+    undoneByUserId: null,
+    undoneBy: null,
+    undoneAt: null,
+    ...over,
+  }
+}
 
 async function cards(
   owners: OwnerRecord[],
@@ -444,6 +478,130 @@ describe('the leaderboard’s owner filter and staleness column', () => {
   })
 })
 
+/**
+ * The View picker — seven rankings sharing one table shell (`LeaderboardTable`) and
+ * one Owner/row-limit/pager instance (`Leaderboard`). The rankings themselves are
+ * pure and tested in their own modules (`rarity-standings.ts`, `row-standings.ts`,
+ * and so on); what is here is the wiring those modules cannot test themselves — that
+ * the picker actually swaps the table, that the choice persists, that the Deck
+ * sub-picker only appears for "By category," and that the shared chrome still works
+ * once the active board is not Overall.
+ */
+describe('the leaderboard view picker', () => {
+  const OWNERS: OwnerRecord[] = [
+    { tag: '#AAA', owner: 'Rae', ownerUserId: RAE.id },
+    { tag: '#BBB', owner: 'Sam', ownerUserId: 2 },
+  ]
+
+  it('offers all seven boards, in order, and opens on Overall', async () => {
+    await cards(OWNERS, [inventory('#AAA', [{ cardId: 1, count: 1 }])])
+
+    const picker = await screen.findByLabelText('View')
+    assert.deepEqual(
+      within(picker)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+      [
+        'Overall',
+        'Rarity',
+        'By category',
+        'Full rows',
+        'Full decks',
+        'Spares on hand',
+        'Most active trader',
+      ],
+    )
+    assert.equal((picker as HTMLSelectElement).value, 'overall')
+    await screen.findByRole('table', { name: 'Collection leaderboard' })
+  })
+
+  it('switches to a different board’s own table and columns', async () => {
+    const user = await cards(OWNERS, [inventory('#AAA', [{ cardId: 1, count: 1 }])])
+
+    await user.selectOptions(await screen.findByLabelText('View'), 'Rarity')
+
+    const table = await screen.findByRole('table', { name: 'Rarity leaderboard' })
+    assert.ok(within(table).getByRole('columnheader', { name: 'Rarity score' }))
+    // The old board is gone, not just relabeled — this is a different table.
+    assert.equal(screen.queryByRole('table', { name: 'Collection leaderboard' }), null)
+  })
+
+  it('remembers the chosen board after a reload', async () => {
+    const user = await cards(OWNERS, [inventory('#AAA', [{ cardId: 1, count: 1 }])])
+
+    await user.selectOptions(await screen.findByLabelText('View'), 'Spares on hand')
+    assert.equal(localStorage.getItem('coc:cardLeaderboardView'), 'spares')
+
+    cleanup()
+    render(<CardsView user={RAE} />)
+
+    const picker = await screen.findByLabelText('View')
+    await waitFor(() => assert.equal((picker as HTMLSelectElement).value, 'spares'))
+    await screen.findByRole('table', { name: 'Spares on hand leaderboard' })
+  })
+
+  it('shows a Deck sub-picker only for By category, defaulting to the first deck', async () => {
+    const user = await cards(OWNERS, [inventory('#AAA', [{ cardId: 1, count: 1 }])])
+    assert.equal(screen.queryByLabelText('Deck'), null)
+
+    await user.selectOptions(await screen.findByLabelText('View'), 'By category')
+
+    const deck = await screen.findByLabelText('Deck')
+    assert.equal((deck as HTMLSelectElement).value, 'Elixir')
+    await screen.findByRole('table', { name: 'Elixir leaderboard' })
+
+    await user.selectOptions(deck, 'Dark Elixir')
+    await screen.findByRole('table', { name: 'Dark Elixir leaderboard' })
+    // Switching away and back must not lose the picker entirely.
+    await user.selectOptions(await screen.findByLabelText('View'), 'Overall')
+    assert.equal(screen.queryByLabelText('Deck'), null)
+  })
+
+  it('keeps the Owner filter working under a non-overall view, without renumbering', async () => {
+    const user = await cards(OWNERS, [
+      inventory('#AAA', [{ cardId: 1, count: 1 }]),
+      inventory('#BBB', [{ cardId: 20, count: 1 }]),
+    ])
+    await user.selectOptions(await screen.findByLabelText('View'), 'Rarity')
+    const table = await screen.findByRole('table', { name: 'Rarity leaderboard' })
+    await within(table).findByText('Brix')
+
+    await user.selectOptions(await screen.findByLabelText('Owner'), 'Rae')
+
+    assert.ok(within(table).getByText('Alda'))
+    assert.equal(within(table).queryByText('Brix'), null)
+  })
+
+  it('ranks the "Most active trader" board by completed trades, base by base', async () => {
+    const user = await cards(OWNERS, [], RAE, {
+      trades: () =>
+        Promise.resolve({
+          season: CARD_SEASON,
+          trades: [
+            trade({ id: 1, baseA: '#AAA', baseB: '#BBB' }),
+            trade({
+              id: 2,
+              baseA: '#AAA',
+              baseB: '#BBB',
+              status: 'pending',
+              resolvedAt: null,
+              resolvedBy: null,
+              resolvedByUserId: null,
+            }),
+          ],
+        }),
+    })
+
+    await user.selectOptions(await screen.findByLabelText('View'), 'Most active trader')
+
+    const table = await screen.findByRole('table', { name: 'Most active trader leaderboard' })
+    // One complete trade each; the pending one must not count.
+    const alda = (await within(table).findByText('Alda')).closest('tr')
+    const cells = within(alda as HTMLElement).getAllByRole('cell')
+    assert.equal(cells[3]?.textContent, '1')
+  })
+})
+
 describe('the clan-wide card totals', () => {
   it('says in words that nobody holds a card, rather than only graying the tile', async () => {
     await cards([{ tag: '#AAA', owner: 'Rae', ownerUserId: RAE.id }], [
@@ -454,6 +612,76 @@ describe('the clan-wide card totals', () => {
     // the tile's own accessible name.
     await screen.findByLabelText('Barbarian, Elixir — 3 held across the clan')
     assert.ok(screen.getByLabelText('Archer, Elixir — none held across the clan'))
+  })
+
+  /*
+   * Regression: switching the totals grid's sort control more than once used to
+   * *append* the next sort's tiles below the previous ones instead of replacing
+   * them, worse with every further switch. The cause was `CardTotalsGrid`'s
+   * per-deck grouping assuming its input was always deck-contiguous — true for
+   * "Grid order" but not once a sort interleaves the four decks by count — so
+   * several sibling `<div key={deck.category}>` groups ended up sharing one key.
+   * React does not tolerate a duplicate key among siblings, and the reported
+   * symptom (grows on each subsequent switch) is exactly what that produces.
+   * These tests exercise the actual sequence that broke it, not just one switch.
+   */
+  describe('the sort control', () => {
+    async function openTotals(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(await screen.findByText(/All 60 cards, in grid order/))
+    }
+
+    function totalTiles() {
+      return screen.getAllByRole('button', { name: /held across the clan/ })
+    }
+
+    it('never duplicates a tile across repeated sort switches', async () => {
+      const user = await cards([{ tag: '#AAA', owner: 'Rae', ownerUserId: RAE.id }], [
+        inventory('#AAA', [
+          { cardId: 1, count: 3 },
+          { cardId: 2, count: 1 },
+        ]),
+      ])
+      await openTotals(user)
+      assert.equal(totalTiles().length, 60)
+
+      const sort = screen.getByLabelText('Sort')
+      await user.selectOptions(sort, 'Highest to lowest')
+      assert.equal(totalTiles().length, 60)
+
+      // The transition that broke it: switching a *second* time, to the other
+      // non-default sort.
+      await user.selectOptions(sort, 'Lowest to highest')
+      assert.equal(totalTiles().length, 60)
+
+      await user.selectOptions(sort, 'Grid order')
+      assert.equal(totalTiles().length, 60)
+    })
+
+    /** Just the totals grid's own deck groups — `BaseCardEditor`'s entry grid
+     *  above it on the same page has four `role="group"` sections of its own
+     *  (`card-deck-*`), so an unscoped `getAllByRole('group')` would count
+     *  both grids' groups together. The totals grid's headings are their own
+     *  id family, `card-total-deck-*` (`CardTotalsGrid`), which is what makes
+     *  the two distinguishable at all. */
+    function totalsDeckGroups() {
+      return document.querySelectorAll('[aria-labelledby^="card-total-deck-"]')
+    }
+
+    it('groups tiles by deck only in grid order, never in a sorted view', async () => {
+      const user = await cards([{ tag: '#AAA', owner: 'Rae', ownerUserId: RAE.id }], [
+        inventory('#AAA', [{ cardId: 1, count: 3 }]),
+      ])
+      await openTotals(user)
+
+      // Four decks, four groups, in grid order.
+      assert.equal(totalsDeckGroups().length, 4)
+
+      await user.selectOptions(screen.getByLabelText('Sort'), 'Highest to lowest')
+
+      // No deck structure at all once the order is no longer the grid's — there
+      // is no coherent way to group four decks' worth of interleaved cards.
+      assert.equal(totalsDeckGroups().length, 0)
+    })
   })
 })
 
@@ -837,7 +1065,11 @@ describe('jumping about the card page', () => {
     const scrolls = captureScrolls()
     try {
       const user = await cards(OWNERS, BASES)
-      await user.click(await screen.findByRole('button', { name: 'Tracker' }))
+      /* Scoped to the top jump row: the Trade Suggestions heading now carries its
+         own "Tracker" chip (`HeadingJumpChip`, `CardsView.tsx`) pointing at the same
+         section, so an unscoped query for the name is ambiguous. */
+      const row = await screen.findByRole('navigation', { name: 'Jump to a section' })
+      await user.click(within(row).getByRole('button', { name: 'Tracker' }))
 
       assert.deepEqual(
         scrolls.calls.map((call) => call.target),

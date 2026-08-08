@@ -1,4 +1,6 @@
 import type { BaseInventory, CardCategory } from '@coc/shared'
+import { cardRarity, rarityPoints } from './card-rarity.ts'
+import { cardTotals } from './card-standings.ts'
 
 /**
  * Which two bases should swap which two cards.
@@ -6,8 +8,13 @@ import type { BaseInventory, CardCategory } from '@coc/shared'
  * This is the only part of the card feature with real rules in it, so it is a
  * pure module with its own tests and no knowledge of React, the server, or the
  * generated card list. Categories arrive through a resolver rather than an
- * import, which is what lets the tests exercise the rules against three made-up
- * cards instead of sixty real ones.
+ * import, which is what lets the *matching* rules below be tested against
+ * three made-up cards instead of sixty real ones. Ordering is a separate
+ * concern from matching, though: `suggestTrades` ranks its output by rarity,
+ * and rarity is scarcity *within the real 60-card manifest* — `cardTotals`'s
+ * default card list — so a test asserting anything about order needs holdings
+ * built from real card ids, even though the four matching rules above never
+ * do.
  *
  * A trade is a **swap**, not a gift: both sides give one card and receive one.
  * The four rules, and why each is there:
@@ -91,6 +98,16 @@ function spares(holdings: Holdings): number[] {
  * suggestions with several partners. That is intended: these are options to
  * choose between, not a plan. Committing to one does not invalidate the others
  * until the counts are re-entered, at which point the list is recomputed.
+ *
+ * **Ordered by trade value first, alphabetically second.** The single rarest
+ * card either side would give away is what makes a trade worth doing, so that
+ * — `max(rarityPoints(cardFromA), rarityPoints(cardFromB))`, descending — is
+ * the primary sort key. The previous alphabetical-by-tag ordering is kept as
+ * the tiebreak, both because two trades can genuinely tie on value and because
+ * a comparator that only sometimes orders its inputs is not a total order —
+ * `Array.sort` would then be free to leave equal-value trades in whatever
+ * order it likes, which is exactly the flakiness the old tiebreak already
+ * existed to avoid.
  */
 export function suggestTrades(
   bases: BaseInventory[],
@@ -129,8 +146,18 @@ export function suggestTrades(
     }
   }
 
+  // Computed once per call rather than inside the comparator below: `cardTotals`
+  // walks every base and `cardRarity` sorts all 60 cards into tiers, and
+  // `Array.sort`'s comparator runs O(n log n) times for n suggestions — redoing
+  // either from inside it would repeat that work on every comparison instead of
+  // once.
+  const rarity = cardRarity(cardTotals(bases))
+  const value = (s: TradeSuggestion): number =>
+    Math.max(rarityPoints(rarity, s.cardFromA), rarityPoints(rarity, s.cardFromB))
+
   return suggestions.sort(
     (x, y) =>
+      value(y) - value(x) ||
       x.baseA.localeCompare(y.baseA) ||
       x.baseB.localeCompare(y.baseB) ||
       x.cardFromA - y.cardFromA ||
@@ -144,6 +171,18 @@ export function suggestTrades(
  * The flat list is the tested thing; this is presentation, because "these two
  * should talk, and here are the four ways" is what someone actually acts on,
  * rather than four rows repeating the same two tags.
+ *
+ * **Pairs come out ordered by their best trade's value too, with no sort of
+ * its own.** This falls out of `suggestTrades` sorting the flat list by value
+ * descending first: a `Map`'s insertion order is first-occurrence order, and
+ * in a list already sorted descending by value, the first entry seen for any
+ * given pair can only be that pair's highest-value entry — a lower-value
+ * entry for the same pair sorts strictly after every higher-value entry
+ * anywhere in the list, including its own pair's max, so it can never be seen
+ * first. That makes first-occurrence order for pairs and best-value order for
+ * pairs the same order, which is what the pairing loop below already
+ * produces. A second `.sort()` here would be sorting output that is already
+ * sorted, just to re-derive a property it already has.
  */
 export interface TradePair {
   baseA: string

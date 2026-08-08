@@ -1,7 +1,9 @@
 import { MAX_CARD_COUNT, MIN_TRADEABLE_COUNT } from '@coc/shared'
+import { RARITY_TIER_COUNT } from '../card-rarity.ts'
 import { cardPoints } from '../card-standings.ts'
 import { ALL_CARDS } from '../cards.ts'
 import { formatFull } from '../format.ts'
+import { ROW_SIZE } from '../row-standings.ts'
 
 /**
  * The rules, written once.
@@ -229,6 +231,142 @@ export function ScoringRules() {
         The board is the <strong>whole clan</strong> and is not affected by the{' '}
         <strong>Show</strong> filter: a leaderboard of one base answers nothing. A base nobody has
         ever saved stays on it, last, and says so rather than printing a score.
+      </p>
+    </>
+  )
+}
+
+export function RarityScoringRules() {
+  return (
+    <>
+      <p className="empty-hint">
+        A second axis beside the points board, sitting next to it rather than replacing it: instead
+        of rewarding depth, it rewards <strong>breadth of scarcity</strong>. A base scores once per
+        distinct card it holds at least one copy of, weighted by how scarce that card is{' '}
+        <strong>across the whole clan right now</strong> — a tenth copy of a card already held adds
+        nothing here, which is exactly what the points board already rewards.
+      </p>
+      <p className="empty-hint">
+        Scarcity is recomputed live off current holdings, split into {RARITY_TIER_COUNT} equal-sized
+        tiers from rarest to most common. As the clan collects more of a card it can drift into a
+        more common tier and score less than it did last week — this board reads the clan's
+        holdings as they stand today, not a fixed table.
+      </p>
+      <p className="empty-hint">
+        Level on rarity score, more distinct cards held overall goes first; level on both, by name
+        and then tag. A rank is <strong>shared on a genuine tie</strong> and then skips, the same
+        rule the points board uses.
+      </p>
+    </>
+  )
+}
+
+export function CategoryScoringRules() {
+  return (
+    <>
+      <p className="empty-hint">
+        The same points curve as the Overall board, computed <strong>separately for each of the
+        four decks</strong> — so a base's Elixir hoard cannot carry it up the Dark Elixir board, or
+        the reverse. Choose a deck below the picker to see that deck's own ranking.
+      </p>
+      <p className="empty-hint">
+        Level on points within the chosen deck, more distinct cards of that deck goes first; level
+        on both, by name and then tag. A rank is shared on a genuine tie within that deck and then
+        skips — each of the four boards ranks and ties entirely on its own, independently of the
+        other three.
+      </p>
+    </>
+  )
+}
+
+export function RowScoringRules() {
+  const rowCount = Math.ceil(ALL_CARDS.length / ROW_SIZE)
+
+  return (
+    <>
+      <p className="empty-hint">
+        Ranked by the real game's own collection screen, which is {ROW_SIZE} cards wide and flows
+        continuously across deck boundaries — {ALL_CARDS.length} cards make {rowCount} rows exactly.
+        A row is <strong>full</strong> when a base holds at least one copy of every card in it.
+      </p>
+      <p className="empty-hint">
+        The score rewards both breadth and finishing rows <strong>together</strong>: 10 points for
+        every full row, plus 5 more for each row of the longest unbroken run of full rows. Five full
+        rows scattered across the grid score 50; the same five rows finished end-to-end score
+        75 — the extra 25 is for the streak.
+      </p>
+      <p className="empty-hint">
+        Level on score, more full rows outright goes first — the same score is reachable by
+        different routes (a run of three plus a streak bonus, or four scattered ones), and the base
+        that completed more rows outright is the better position even when the arithmetic agrees. A
+        rank is shared on a genuine tie in score and then skips.
+      </p>
+    </>
+  )
+}
+
+export function DeckCompletionScoringRules() {
+  return (
+    <>
+      <p className="empty-hint">
+        How many of the four decks a base holds <strong>outright</strong> — 0 through 4 — not how
+        far into any one of them it has got. A deck counts once every card in it is held, the same
+        boundary its own progress plaque on the grid reaches when it reads full.
+      </p>
+      <p className="empty-hint">
+        Level on decks complete, more distinct cards held <strong>overall</strong> goes first — the
+        quantity that has to grow before another deck can complete, so among bases tied on whole
+        decks finished, the one closer to a set across the rest of its collection is the one
+        genuinely ahead. A rank is shared on a genuine tie and then skips.
+      </p>
+    </>
+  )
+}
+
+export function SpareScoringRules() {
+  return (
+    <>
+      <p className="empty-hint">
+        A different question from every other board: not who's furthest along, but{' '}
+        <strong>who's actually worth asking for a trade right now</strong>. Ranked by total
+        tradeable spares — copies beyond the one a base keeps of each card, summed across all{' '}
+        {ALL_CARDS.length}. A base never gives away its last copy, so a card held once contributes
+        nothing here, only from its second copy on.
+      </p>
+      <p className="empty-hint">
+        Level on spares, more <strong>spare variety</strong> goes first — the count of distinct
+        cards a base holds at least two of. A base offering three spares each on three different
+        cards can answer three different requests; a base offering nine spares of one card can only
+        ever answer one.
+      </p>
+      <p className="empty-hint">
+        No fraction is printed on this board, unlike the others: total spares has no ceiling worth
+        reading it against, since there is no "fully spared" to reach. A rank is shared on a genuine
+        tie in spares and then skips.
+      </p>
+    </>
+  )
+}
+
+export function TraderScoringRules() {
+  return (
+    <>
+      <p className="empty-hint">
+        The Trade Tracker's own leaderboard, ranking which <strong>bases</strong> — never rolled up
+        to the owner — have completed the most trades, so running several bases does not out-rank
+        someone trading everything they can on one.
+      </p>
+      <p className="empty-hint">
+        Counts a trade once it reaches <strong>complete</strong>, and keeps counting it even if an
+        admin later <strong>undoes</strong> it — undoing corrects a mistake, it does not erase the
+        work of having completed the trade in the first place. A trade that was only ever proposed,
+        or was declined, never happened and does not count.
+      </p>
+      <p className="empty-hint">
+        Level on completed trades, more <strong>distinct trading partners</strong> goes first — a
+        base that traded five times with the same partner and one that traded five different
+        partners are not equally established in the trade network. A rank is shared on a genuine tie
+        and then skips.
       </p>
     </>
   )

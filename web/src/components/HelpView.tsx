@@ -5,11 +5,17 @@ import { hrefFor } from '../hooks.ts'
 import {
   BaseOrderReachRules,
   CardEntryRules,
+  CategoryScoringRules,
+  DeckCompletionScoringRules,
   OwnershipRules,
   ProgressCapRules,
+  RarityScoringRules,
+  RowScoringRules,
   ScoringRules,
   SharedDataRules,
+  SpareScoringRules,
   SwapRules,
+  TraderScoringRules,
   TradeResolutionRules,
 } from './help-copy.tsx'
 import { MAX_TREND_BASES } from './ProgressTrendsSection.tsx'
@@ -123,7 +129,26 @@ export function HelpView({ section }: { section: HelpSectionId | null }) {
       </HelpSection>
 
       <HelpSection id="leaderboard">
+        <p className="empty-hint">
+          A picker at the top of the leaderboard switches between seven boards. All seven rank
+          every tracked base, group-wide and unaffected by the <strong>Show</strong> filter — only
+          the board's own <strong>Owner</strong> select narrows which rows are drawn, and it never
+          renumbers what it narrows.
+        </p>
+        <h3>Overall</h3>
         <ScoringRules />
+        <h3>Rarity</h3>
+        <RarityScoringRules />
+        <h3>By category</h3>
+        <CategoryScoringRules />
+        <h3>Full rows</h3>
+        <RowScoringRules />
+        <h3>Full decks</h3>
+        <DeckCompletionScoringRules />
+        <h3>Spares on hand</h3>
+        <SpareScoringRules />
+        <h3>Most active trader</h3>
+        <TraderScoringRules />
       </HelpSection>
 
       <HelpSection id="progress">

@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
-import { MAX_CARD_COUNT, type BaseInventory, type SessionUser } from '@coc/shared'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { MAX_CARD_COUNT, type BaseInventory, type CardCategory, type SessionUser } from '@coc/shared'
 import { useBaseLabels } from '../base-labels.ts'
 import { applyBaseOrder, useBaseOrder } from '../base-order.ts'
 import { activeTag, ownsAnyBase, tagsInScope, type BaseScope } from '../base-scope.ts'
-import { baseOwnerOf } from '../card-entry.ts'
 import { cardDemand, cardHolders, type CardDemand, type CardHolder } from '../card-holders.ts'
+import { baseOwnerOf } from '../card-entry.ts'
 import { cardColumnOptions } from '../card-scale.ts'
 import { searchCards } from '../card-search.ts'
 import {
   CARD_JUMP_TARGETS,
   CARD_TOP_ID,
+  scrollAndFocus,
   scrollBehaviorFor,
   type CardSectionId,
 } from '../card-sections.ts'
@@ -26,8 +27,18 @@ import {
   standingOwnerOptions,
   type BaseStanding,
   type CardTotal,
+  type StandingBase,
 } from '../card-standings.ts'
-import { deckSlug } from '../cards.ts'
+import {
+  CARD_TOTAL_SORTS,
+  cardTotalSortLabel,
+  parseCardTotalSort,
+  sortCardTotalsForDisplay,
+  type CardTotalSort,
+} from '../card-total-sort.ts'
+import { ALL_CARDS, cardCategoriesInOrder, deckSlug, type GeneratedCard } from '../cards.ts'
+import { categoryStandings, type CategoryStanding } from '../category-standings.ts'
+import { deckCompletionStandings, type DeckCompletionStanding } from '../deck-completion-standings.ts'
 import { formatDateTime, formatFull, formatRelative } from '../format.ts'
 import {
   hrefFor,
@@ -37,12 +48,31 @@ import {
   useRowLimit,
 } from '../hooks.ts'
 import { lastBaseKey, rememberedBaseTag } from '../last-base.ts'
+import {
+  LEADERBOARD_VIEWS,
+  parseLeaderboardCategory,
+  parseLeaderboardView,
+  type LeaderboardView,
+} from '../leaderboard-view.ts'
 import { ownerRecordFor, useOwners, useOwnersState } from '../owners.ts'
+import { rarityStandings, type RarityStanding } from '../rarity-standings.ts'
+import { ROW_SIZE, rowStandings, type RowStanding } from '../row-standings.ts'
 import { paginate, type RowLimit } from '../saved-table.ts'
+import { spareStandings, type SpareStanding } from '../spares-standings.ts'
+import { traderStandings, type TraderStanding } from '../trader-standings.ts'
+import { useTrades } from '../trades.ts'
 import { useCardRefresh } from '../use-card-refresh.ts'
 import { BaseCardEditor } from './BaseCardEditor.tsx'
 import { CardTile } from './CardTile.tsx'
-import { ScoringRules } from './help-copy.tsx'
+import {
+  CategoryScoringRules,
+  DeckCompletionScoringRules,
+  RarityScoringRules,
+  RowScoringRules,
+  ScoringRules,
+  SpareScoringRules,
+  TraderScoringRules,
+} from './help-copy.tsx'
 import {
   ErrorPanel,
   GameIcon,
@@ -113,7 +143,10 @@ const STANDING_LIMITS: RowLimit[] = [5, 10, 20, 50]
 const LAST_UPDATED_LABEL = 'Last updated'
 
 /**
- * When this base's counts were last saved.
+ * When this base's counts were last saved — the cell's **content**, not the whole
+ * `<td>`: every ranking that carries a Last-updated column (today, only Overall)
+ * renders it through {@link LeaderboardColumn.cell}, which supplies its own `<td>`,
+ * so this hands back the inner markup alone.
  *
  * The words and the "Never" state are `lastUpdatedCell`'s, tested there; what is here
  * is which of the two it draws. A base nobody has ever entered gets `.role-pill`, the
@@ -122,61 +155,448 @@ const LAST_UPDATED_LABEL = 'Last updated'
  * age with the exact moment on its `title`, as the attribution line above the grid and
  * the build stamp in the footer both do.
  */
-function LastUpdated({ updatedAt }: { updatedAt: string | null }) {
+function lastUpdatedContent(updatedAt: string | null): ReactNode {
   const cell = lastUpdatedCell(updatedAt, formatRelative, formatDateTime)
 
-  return (
-    <td role="cell" data-label={LAST_UPDATED_LABEL}>
-      {cell.never ? (
-        <span className="role-pill">{cell.text}</span>
-      ) : (
-        <span className="card-meta" title={cell.exact ?? undefined}>
-          {cell.text}
-        </span>
-      )}
-    </td>
+  return cell.never ? (
+    <span className="role-pill">{cell.text}</span>
+  ) : (
+    <span className="card-meta" title={cell.exact ?? undefined}>
+      {cell.text}
+    </span>
   )
 }
 
 /**
- * How far every tracked base has got, best first.
+ * One column beyond Rank/Member/Owner, which every ranking's table shares — see
+ * {@link LeaderboardTable}. `numeric` drives the same `.num` class the shared three
+ * columns already use, so a numeric column from any ranking right-aligns the same way
+ * Points/Cards/Copies always have.
+ */
+interface LeaderboardColumn<T> {
+  /** React key and `data-label` both — the column head and the stacked label share
+   *  this, on the same "one spelling" reasoning `LAST_UPDATED_LABEL` already carries. */
+  key: string
+  label: string
+  numeric?: boolean
+  cell: (row: T) => ReactNode
+}
+
+/** The shape every leaderboard row carries — what {@link LeaderboardTable} needs to
+ *  draw Rank, Member and Owner without knowing anything about a specific ranking. */
+type LeaderboardRow = StandingBase & { rank: number }
+
+/**
+ * Ten small marks — filled where a row of the grid is full, hollow where it is not —
+ * beside the numeric count on the "Full rows" board. The count and the streak are
+ * still printed as numbers in their own columns; this is the one thing none of the
+ * other six rankings has an equivalent of, since `RowStanding.fullRows` is the only
+ * per-row (not per-card) detail any of them computed, and a caller with nothing to
+ * shade would be throwing it away.
+ */
+function RowMarks({ fullRows, label }: { fullRows: readonly boolean[]; label: string }) {
+  return (
+    <span className="row-marks" role="img" aria-label={label}>
+      {fullRows.map((full, index) => (
+        <span
+          key={index}
+          aria-hidden="true"
+          className={full ? 'row-marks__mark row-marks__mark--full' : 'row-marks__mark'}
+        />
+      ))}
+    </span>
+  )
+}
+
+/**
+ * The Overall board's own columns, unchanged from before the picker existed:
+ * Points, Cards, Copies, Last updated — exactly the cells the table used to hard-code.
+ */
+const OVERALL_COLUMNS: LeaderboardColumn<BaseStanding>[] = [
+  {
+    key: 'points',
+    label: 'Points',
+    numeric: true,
+    cell: (row) =>
+      /*
+       * Kept beside `17/60` rather than replacing it: a bare score does not say how
+       * far through the sixty a base is, and the fraction alone no longer explains
+       * why one row outranks another.
+       *
+       * The best possible score comes from the curve rather than a literal 55, so
+       * raising `MAX_CARD_COUNT` cannot leave this tooltip quoting a ceiling that no
+       * longer exists.
+       */
+      row.recorded ? (
+        <span
+          title={`${formatFull(row.points)} of ${formatFull(
+            row.size * cardPoints(MAX_CARD_COUNT),
+          )} possible`}
+        >
+          {formatFull(row.points)}
+        </span>
+      ) : (
+        <span className="card-meta">—</span>
+      ),
+  },
+  {
+    key: 'cards',
+    label: 'Cards',
+    numeric: true,
+    cell: (row) =>
+      /* A base nobody has ever saved is not a base holding zero of everything — the
+         same distinction the grid's attribution line draws — so it says so in words
+         instead of printing `0/60`. */
+      row.recorded ? (
+        <div className="donation-cell">
+          <span>
+            {row.distinct}/{row.size}
+          </span>
+          <Meter
+            value={row.distinct}
+            max={row.size}
+            label={`${row.label} holds ${row.distinct} of ${row.size} cards`}
+          />
+        </div>
+      ) : (
+        <span className="card-meta">Nothing recorded yet</span>
+      ),
+  },
+  {
+    key: 'copies',
+    label: 'Copies',
+    numeric: true,
+    cell: (row) => (row.recorded ? row.total : '—'),
+  },
+  {
+    key: 'updated',
+    label: LAST_UPDATED_LABEL,
+    cell: (row) => lastUpdatedContent(row.updatedAt),
+  },
+]
+
+/** Rarity: the score itself, and the same distinct-cards fraction Overall's Cards
+ *  column prints, against the full {@link ALL_CARDS} count — `RarityStanding` has no
+ *  `size` of its own, unlike `BaseStanding`, because it ranks over the whole sixty
+ *  rather than one deck. */
+const RARITY_COLUMNS: LeaderboardColumn<RarityStanding>[] = [
+  {
+    key: 'rarityScore',
+    label: 'Rarity score',
+    numeric: true,
+    cell: (row) => formatFull(row.rarityScore),
+  },
+  {
+    key: 'distinct',
+    label: 'Cards',
+    numeric: true,
+    cell: (row) => (
+      <div className="donation-cell">
+        <span>
+          {row.distinct}/{ALL_CARDS.length}
+        </span>
+        <Meter
+          value={row.distinct}
+          max={ALL_CARDS.length}
+          label={`${row.label} holds ${row.distinct} of ${ALL_CARDS.length} cards`}
+        />
+      </div>
+    ),
+  },
+]
+
+/** By category: points and the distinct fraction *within the chosen deck* —
+ *  `CategoryStanding.size` is that deck's own card count, so `7/19` reads as the
+ *  deck being viewed, not the whole event. */
+const CATEGORY_COLUMNS: LeaderboardColumn<CategoryStanding>[] = [
+  {
+    key: 'points',
+    label: 'Points',
+    numeric: true,
+    cell: (row) => formatFull(row.points),
+  },
+  {
+    key: 'distinct',
+    label: 'Cards',
+    numeric: true,
+    cell: (row) => (
+      <div className="donation-cell">
+        <span>
+          {row.distinct}/{row.size}
+        </span>
+        <Meter
+          value={row.distinct}
+          max={row.size}
+          label={`${row.label} holds ${row.distinct} of ${row.size} cards`}
+        />
+      </div>
+    ),
+  },
+]
+
+/** Full rows: the fraction plus the ten marks, then the two numbers behind the
+ *  score, both printed regardless of whether the marks are worth a glance. */
+const ROWS_COLUMNS: LeaderboardColumn<RowStanding>[] = [
+  {
+    key: 'fullRows',
+    label: 'Full rows',
+    numeric: true,
+    cell: (row) => (
+      <div className="donation-cell">
+        <span>
+          {row.fullRowCount}/{row.fullRows.length}
+        </span>
+        <RowMarks
+          fullRows={row.fullRows}
+          label={`${row.label} holds ${row.fullRowCount} of ${row.fullRows.length} rows in full`}
+        />
+      </div>
+    ),
+  },
+  {
+    key: 'streak',
+    label: 'Longest streak',
+    numeric: true,
+    cell: (row) => formatFull(row.longestStreak),
+  },
+  {
+    key: 'score',
+    label: 'Score',
+    numeric: true,
+    cell: (row) => formatFull(row.score),
+  },
+]
+
+/** Full decks: how many (as a fraction of the four), which ones by name, and the
+ *  distinct-cards tiebreak — a bare `2` would throw away the "which" half of what
+ *  `deckCompletionStandings()` already computed. */
+const DECK_CATEGORY_COUNT = cardCategoriesInOrder().length
+
+const DECKS_COLUMNS: LeaderboardColumn<DeckCompletionStanding>[] = [
+  {
+    key: 'completed',
+    label: 'Decks complete',
+    numeric: true,
+    cell: (row) => `${row.completedCount}/${DECK_CATEGORY_COUNT}`,
+  },
+  {
+    key: 'which',
+    label: 'Which decks',
+    cell: (row) =>
+      row.completedDecks.length === 0 ? (
+        <span className="card-meta">None yet</span>
+      ) : (
+        <span className="recents recents--stacked">
+          {row.completedDecks.map((category) => (
+            <span key={category} className="chip chip--static">
+              {category}
+            </span>
+          ))}
+        </span>
+      ),
+  },
+  {
+    key: 'distinct',
+    label: 'Distinct cards',
+    numeric: true,
+    cell: (row) => formatFull(row.distinct),
+  },
+]
+
+/** Spares on hand: the two numbers `spareStandings()` computes, nothing more —
+ *  the module's own doc explains why no fraction is printed here. */
+const SPARES_COLUMNS: LeaderboardColumn<SpareStanding>[] = [
+  { key: 'spares', label: 'Spares', numeric: true, cell: (row) => formatFull(row.spares) },
+  {
+    key: 'variety',
+    label: 'Spare variety',
+    numeric: true,
+    cell: (row) => formatFull(row.spareVariety),
+  },
+]
+
+/** Most active trader: completed trades and distinct partners, straight off
+ *  `TraderStanding`. */
+const TRADERS_COLUMNS: LeaderboardColumn<TraderStanding>[] = [
+  {
+    key: 'completed',
+    label: 'Completed trades',
+    numeric: true,
+    cell: (row) => formatFull(row.completedTrades),
+  },
+  {
+    key: 'partners',
+    label: 'Distinct partners',
+    numeric: true,
+    cell: (row) => formatFull(row.distinctPartners),
+  },
+]
+
+/**
+ * A single choice persisted per browser, read once on mount and written on change —
+ * the shape `useCardTotalSort` (below, unrelated to this section) already uses for
+ * the totals panel's own sort control. Lifted to a small generic here because the
+ * leaderboard's View and Deck pickers are a second and third instance of exactly the
+ * same shape, and a third hand-copied body is the point this app's own conventions
+ * say to stop and share one instead.
+ */
+function usePersistedChoice<T extends string>(
+  key: string,
+  parse: (stored: string | null) => T,
+): [T, (next: T) => void] {
+  const [value, setValue] = useState<T>(() => parse(localStorage.getItem(key)))
+
+  const choose = useCallback(
+    (next: T) => {
+      setValue(next)
+      localStorage.setItem(key, next)
+    },
+    [key],
+  )
+
+  return [value, choose]
+}
+
+/** Where the chosen leaderboard ranking is remembered — `coc:`-prefixed, the same
+ *  convention `coc:cardTotalSort` and `coc:cardStandingLimit` already use. */
+const LEADERBOARD_VIEW_KEY = 'coc:cardLeaderboardView'
+
+/** Where the "By category" board's chosen deck is remembered, separately from the
+ *  view itself: switching away from "By category" and back should not lose which
+ *  deck was open. */
+const LEADERBOARD_CATEGORY_KEY = 'coc:cardLeaderboardCategory'
+
+/**
+ * The table shared by every ranking: Rank, Member and Owner, drawn once here, plus
+ * whatever `columns` the active ranking supplies. This is the "share the markup and
+ * the reasoning, differ on the rest" split the task asked for — the accessible-naming
+ * comment below, the `roster--stack` phone behavior, and the `stack-title`/`data-label`
+ * pairing are all one piece of markup now instead of seven copies of it.
+ */
+function LeaderboardTable<T extends LeaderboardRow>({
+  rows,
+  ariaLabel,
+  columns,
+}: {
+  rows: readonly T[]
+  ariaLabel: string
+  columns: readonly LeaderboardColumn<T>[]
+}) {
+  return (
+    <div className="table-wrap">
+      {/*
+       * Named with `aria-label` rather than pointed at the section's own `<h2>`.
+       * `.section-title` is `text-transform: uppercase`, and Chrome computes an
+       * accessible name from the *transformed* text — read back off the computed
+       * tree, `aria-labelledby` gave this table the name "COLLECTION LEADERBOARD".
+       * The visible heading is the same words, so label-in-name still holds. Each
+       * ranking's own `ariaLabel` follows the same rule.
+       */}
+      <table className="roster roster--stack" role="table" aria-label={ariaLabel}>
+        <thead role="rowgroup">
+          <tr role="row">
+            <th className="num" role="columnheader">
+              Rank
+            </th>
+            <th role="columnheader">Member</th>
+            <th role="columnheader">Owner</th>
+            {columns.map((column) => (
+              <th
+                key={column.key}
+                className={column.numeric ? 'num' : undefined}
+                role="columnheader"
+              >
+                {column.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody role="rowgroup">
+          {rows.map((row) => (
+            <tr key={row.tag} role="row">
+              <td className="num" role="cell" data-label="Rank">
+                {row.rank}
+              </td>
+              <td className="stack-title" role="cell">
+                <a href={hrefFor({ view: 'player', tag: row.tag })}>{row.label}</a>
+                {/* The tag, again as secondary text rather than as the heading. */}
+                {row.label === row.tag ? null : (
+                  <>
+                    <br />
+                    <span className="card-meta">{row.tag}</span>
+                  </>
+                )}
+              </td>
+              <td role="cell" data-label="Owner">
+                {row.owner ?? <span className="role-pill">no owner set</span>}
+              </td>
+              {columns.map((column) => (
+                <td
+                  key={column.key}
+                  className={column.numeric ? 'num' : undefined}
+                  role="cell"
+                  data-label={column.label}
+                >
+                  {column.cell(row)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/**
+ * How far every tracked base has got, on whichever of the seven boards is chosen —
+ * generic over the ranking's own row shape, so this one component is the Owner
+ * filter, the row limit, the pager and the table shell for all of them.
  *
  * **Group-wide by default, and never filtered by the picker.** The Mine/All select at
  * the top of the page chooses which base you can *type into*; it has no business
  * narrowing a board about the whole clan's progress, and it still does not touch it.
  * The board sits directly under the trade suggestions because "who should trade with
  * whom" and "who is furthest ahead" are the same question asked two ways — the base
- * near the top with spares is the one worth messaging.
+ * near the top with spares is the one worth messaging. That framing does not depend
+ * on which of the seven rankings is showing.
  *
  * **Its own Owner filter is a separate control, and it exists for a question the
- * picker cannot answer.** This comment used to argue that the board must never be
- * narrowed to one person, on the grounds that a leaderboard of one answers nothing.
- * That is still true of *ranking* — which is why the ranking is untouched, below — but
- * it was the wrong conclusion about *reading*. An owner with several bases has a
- * maintenance question, "which of mine has nobody entered counts for lately", and the
- * only place that fact was shown was the attribution line above the grid, one base at
- * a time behind a `<select>`. Answering it meant clicking through the picker and
- * remembering what each one said. The Last updated column plus this filter is that
- * same fact for every base at once. The board still opens on **Everyone**, so nobody
- * who came for the clan's progress has to put the filter back.
- *
- * The order is `baseStandings`', not this component's: **points** descending, then
- * distinct descending, then member name and tag. Ties are the *normal* case early in
- * an event, which is why the comparator is total and lives somewhere tested. (This
- * note used to say "distinct descending, then copies descending", which was the
- * measure before `cardPoints` — the same staleness the intro line under the heading
- * below was carrying.)
+ * picker cannot answer.** An owner with several bases has a maintenance question,
+ * "which of mine has nobody entered counts for lately", and the Owner select plus
+ * (on Overall) the Last-updated column is that fact for every base at once. The board
+ * still opens on **Everyone**, so nobody who came for the clan's progress has to put
+ * the filter back — and the choice is shared across every ranking, since it is a
+ * question about accounts, not about how any one board scores.
  *
  * **Neither paging nor the owner filter touches the rank.** The number in the first
- * column is `baseStanding.rank` — computed once over the whole board, shared on a
- * genuine tie and skipping the numbers a tie consumes — so rank 6 reads 6 wherever it
- * is printed. Numbering the visible rows instead would restart at 1 on page 2, and
+ * column is each ranking's own `rank` — computed once over the whole board, shared on
+ * a genuine tie and skipping the numbers a tie consumes — so rank 6 reads 6 wherever
+ * it is printed. Numbering the visible rows instead would restart at 1 on page 2, and
  * ranking the filtered rows would renumber somebody's four bases to 1–4 and read as if
  * they were the clan; either turns the one column that means something into a row
  * counter. `filterStandingsByOwner` therefore only ever removes rows from a board
- * `baseStandings` has already numbered.
+ * already numbered.
+ *
+ * The row limit and the Owner filter are shared **across every view**, not reset when
+ * the picker changes: "how many rows" and "which owner" are questions about how you
+ * read a board, not about which board you are reading, and switching views is not a
+ * reason to make you re-pick either. A page number left past the end by a shorter
+ * board is repaired by the same `paginate` clamp the owner filter already relies on.
  */
-function Leaderboard({ rows }: { rows: BaseStanding[] }) {
+function Leaderboard<T extends LeaderboardRow>({
+  rows,
+  ariaLabel,
+  columns,
+  filters,
+}: {
+  rows: readonly T[]
+  ariaLabel: string
+  columns: readonly LeaderboardColumn<T>[]
+  /** Extra content in the same filter row as Owner — the Deck picker for "By
+   *  category", reusing the slot rather than a second row of chrome. */
+  filters?: ReactNode
+}) {
   const [limit, setLimit] = useRowLimit('coc:cardStandingLimit', 5)
   const [page, setPage] = useState(1)
   /* Transient, like the card search and unlike the row limit: a filter that survived a
@@ -208,130 +628,32 @@ function Leaderboard({ rows }: { rows: BaseStanding[] }) {
        * table holds — and drawn only where it has something to choose between. One
        * owner and no unowned bases is two options that select the same board, which is
        * the control that answers a press by doing nothing that this page refuses to
-       * hand out.
+       * hand out. `filters` (the Deck picker) always has a real choice when it is
+       * passed at all, so it draws the row on its own even when Owner would not.
        */}
-      {ownerOptions.length > 2 ? (
+      {filters !== undefined || ownerOptions.length > 2 ? (
         <div className="roster-filters">
-          <label htmlFor="leaderboard-owner">
-            Owner
-            <select
-              id="leaderboard-owner"
-              value={chosenOwner}
-              onChange={(event) => setOwner(event.target.value)}
-            >
-              {ownerOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {filters}
+          {ownerOptions.length > 2 ? (
+            <label htmlFor="leaderboard-owner">
+              Owner
+              <select
+                id="leaderboard-owner"
+                value={chosenOwner}
+                onChange={(event) => setOwner(event.target.value)}
+              >
+                {ownerOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
         </div>
       ) : null}
 
-      <div className="table-wrap">
-        {/*
-         * Named with `aria-label` rather than pointed at the section's own `<h2>`.
-         * `.section-title` is `text-transform: uppercase`, and Chrome computes an
-         * accessible name from the *transformed* text — read back off the computed
-         * tree, `aria-labelledby` gave this table the name "COLLECTION LEADERBOARD".
-         * The visible heading is the same words, so label-in-name still holds.
-         */}
-        <table className="roster roster--stack" role="table" aria-label="Collection leaderboard">
-          <thead role="rowgroup">
-            <tr role="row">
-              <th className="num" role="columnheader">
-                Rank
-              </th>
-              <th role="columnheader">Member</th>
-              <th role="columnheader">Owner</th>
-              {/* First of the numbers because it is what the ranking is on. */}
-              <th className="num" role="columnheader">
-                Points
-              </th>
-              <th className="num" role="columnheader">
-                Cards
-              </th>
-              <th className="num" role="columnheader">
-                Copies
-              </th>
-              {/* Last, after the three numbers: it is about the record rather than
-                  about the collection, and it is the one column somebody scans down
-                  rather than compares across. */}
-              <th role="columnheader">{LAST_UPDATED_LABEL}</th>
-            </tr>
-          </thead>
-          <tbody role="rowgroup">
-            {view.rows.map((row) => (
-              <tr key={row.tag} role="row">
-                <td className="num" role="cell" data-label="Rank">
-                  {row.rank}
-                </td>
-                <td className="stack-title" role="cell">
-                  <a href={hrefFor({ view: 'player', tag: row.tag })}>{row.label}</a>
-                  {/* The tag, again as secondary text rather than as the heading. */}
-                  {row.label === row.tag ? null : (
-                    <>
-                      <br />
-                      <span className="card-meta">{row.tag}</span>
-                    </>
-                  )}
-                </td>
-                <td role="cell" data-label="Owner">
-                  {row.owner ?? <span className="role-pill">no owner set</span>}
-                </td>
-                <td className="num" role="cell" data-label="Points">
-                  {/*
-                   * Kept beside `17/60` rather than replacing it: a bare score does
-                   * not say how far through the sixty a base is, and the fraction
-                   * alone no longer explains why one row outranks another.
-                   *
-                   * The best possible score comes from the curve rather than a
-                   * literal 55, so raising `MAX_CARD_COUNT` cannot leave this
-                   * tooltip quoting a ceiling that no longer exists.
-                   */}
-                  {row.recorded ? (
-                    <span
-                      title={`${formatFull(row.points)} of ${formatFull(
-                        row.size * cardPoints(MAX_CARD_COUNT),
-                      )} possible`}
-                    >
-                      {formatFull(row.points)}
-                    </span>
-                  ) : (
-                    <span className="card-meta">—</span>
-                  )}
-                </td>
-                <td className="num" role="cell" data-label="Cards">
-                  {/*
-                   * A base nobody has ever saved is not a base holding zero of
-                   * everything — the same distinction the grid's attribution line
-                   * draws — so it says so in words instead of printing `0/60`.
-                   */}
-                  {row.recorded ? (
-                    <div className="donation-cell">
-                      <span>
-                        {row.distinct}/{row.size}
-                      </span>
-                      <Meter
-                        value={row.distinct}
-                        max={row.size}
-                        label={`${row.label} holds ${row.distinct} of ${row.size} cards`}
-                      />
-                    </div>
-                  ) : (
-                    <span className="card-meta">Nothing recorded yet</span>
-                  )}
-                </td>
-                <td className="num" role="cell" data-label="Copies">
-                  {row.recorded ? row.total : '—'}
-                </td>
-                <LastUpdated updatedAt={row.updatedAt} />
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <LeaderboardTable rows={view.rows} ariaLabel={ariaLabel} columns={columns} />
 
       {/* At the bottom, beside the pager, exactly as the clan roster's is. */}
       <div className="roster-footer">
@@ -365,11 +687,16 @@ function heldAcrossTheClan(total: number): string {
  * `CardTile`, so the art, the crop, the deck frame and the grayscale cannot drift
  * from the grid's; what differs is the badge and where the name comes from.
  *
- * **The order is the grid's, fixed, and never the counts'.** It comes from
- * `cardsInGridOrder()` — the same `cardCategoriesInOrder()` then
+ * **By default, the order is the grid's, fixed, and never the counts'.** It comes
+ * from `cardsInGridOrder()` — the same `cardCategoriesInOrder()` then
  * `cardsInCategory()` the tiles above are drawn from — so this can be scanned
  * card-for-card against them. Sorting it by count would make it a different grid
- * that happened to hold the same numbers, and the one thing it is for would be gone.
+ * that happened to hold the same numbers, and the one thing it is for would be
+ * gone — which is exactly why the sort control the panel now offers is opt-in
+ * and off by default: `totals` arrives here already reordered, or not, by
+ * `sortCardTotalsForDisplay()` in `../card-total-sort.ts`, called from
+ * `CardsView` before this component ever sees it. This component itself stays
+ * agnostic of the choice; it only ever draws `totals` in the order it is handed.
  *
  * **The badge appears on every count, including 1.** The opposite of the entry
  * grid, where `×1` on fifty tiles is noise: here the totals *are* the point, and a
@@ -379,8 +706,9 @@ function heldAcrossTheClan(total: number): string {
  * **A card nobody holds is grayscale with no badge** — which is a color cue and a
  * missing cue, so it cannot be the whole story. The words are in the tile's own
  * accessible name (`Barbarian, Elixir — none held across the clan`) and in its
- * `title`, and the disclosure line above counts them. The tile stays exactly where
- * it is: nothing sorts, in any mode.
+ * `title`, and the disclosure line above counts them. In the default sort the tile
+ * stays exactly where it is; the two count-ranked modes are the deliberate,
+ * named exception to that, and only apply once somebody has chosen one.
  *
  * **Every tile is a button**, and pressing one lists the bases holding that card
  * below the grid — see `CardHolders`. Including the 38 of sixty nobody holds, which
@@ -415,41 +743,145 @@ const NARROW_GRID_WIDTH = 600
  */
 const HOLDERS_ID = 'card-holders'
 
+/**
+ * The tile in a real `<button>`, rather than click handling inside `CardTile`.
+ *
+ * Two reasons. The entry grid is the other caller and must not become
+ * clickable — its tiles hold two stepper buttons under the frame, so a press
+ * target around the whole tile would nest a button inside a button, which is
+ * invalid HTML. And a `<button>` is keyboard-operable, focusable,
+ * Enter/Space-activated and focus-ringed by the stylesheet's one
+ * `:focus-visible` rule without any of that being written here; a `div` with
+ * `onClick` would be four attributes and a key handler pretending to be one.
+ *
+ * `aria-pressed`, not `aria-expanded`: there is one table below the grid and
+ * the sixty tiles take turns owning it, so this is which tile is selected
+ * rather than sixty independent disclosures. It also means the selected
+ * state is not carried by the ring alone. The button's accessible name is
+ * the tile's own `aria-label` by name-from-content, so nothing is duplicated
+ * and the count — or the "none held" — is still what a screen reader reads
+ * out.
+ *
+ * Extracted to its own function, shared by both branches of `CardTotalsGrid`
+ * below (grouped by deck, and the flat sorted list) — the tile markup does
+ * not change between them, only what wraps it.
+ */
+function CardTotalPick({
+  card,
+  total,
+  isPicked,
+  onPick,
+}: {
+  card: GeneratedCard
+  total: number
+  isPicked: boolean
+  onPick: (cardId: number | null) => void
+}) {
+  const held = heldAcrossTheClan(total)
+  return (
+    <button
+      type="button"
+      className="card-total__pick"
+      aria-pressed={isPicked}
+      aria-controls={isPicked ? HOLDERS_ID : undefined}
+      /* Pressing the selected tile again closes the table. It is the control
+         that opened it, so it is the one somebody reaches for to put it
+         away, and without that the table could only ever be swapped for
+         another card's. */
+      onClick={() => onPick(isPicked ? null : card.id)}
+    >
+      <CardTile
+        card={card}
+        held={total > 0}
+        badge={total > 0 ? `×${total}` : undefined}
+        title={`${card.name} · ${card.category} · ${held}`}
+        /* The tile's own name, because nothing inside it is a control that
+           could carry one — and because it is where the zero is said in
+           words. */
+        label={`${card.name}, ${card.category} — ${held}`}
+      />
+    </button>
+  )
+}
+
 function CardTotalsGrid({
   totals,
   columns,
   picked,
   onPick,
+  grouped,
 }: {
   totals: CardTotal[]
   columns: number
   /** The card whose holders are shown below, or `null` for none. */
   picked: number | null
   onPick: (cardId: number | null) => void
+  /**
+   * Whether to break the grid into per-deck `role="group"` sections with a
+   * hidden heading — only correct when `totals` arrives in deck-contiguous
+   * order, i.e. the default "Grid order" — never for a `totals` sorted by
+   * clan-wide count (`sortCardTotalsForDisplay`, `card-total-sort.ts`).
+   *
+   * **Why this exists, and the bug it replaces.** The grouping loop used to
+   * assume its input was always deck-contiguous — it built one group per
+   * *consecutive run* of the same category, keyed on that category. That
+   * held for "Grid order" (decks never interleave there) but broke the
+   * moment a sort reordered `totals` by count: cards from different decks
+   * now interleave, so the same category can start a fresh run many times
+   * over, producing several sibling `<div key={deck.category}>` elements
+   * that all share one key. React does not tolerate duplicate keys among
+   * siblings — reported symptom was tiles from a later sort *appending*
+   * below the previous ones instead of replacing them, worse with every
+   * subsequent switch, which is exactly what broken reconciliation over a
+   * duplicate key looks like. The fix is not a different key (there is no
+   * key that makes "four decks, sixty groups" a coherent structure) — it is
+   * to stop grouping at all once deck order is no longer what `totals`
+   * means. A reader who explicitly asked to see cards ordered by count
+   * across every deck has already said "deck" is not the structure they
+   * want; the flat list below is the honest shape of that request.
+   */
+  grouped: boolean
 }) {
-  /* Grouped by deck exactly as the grid is: `display: contents`, so the tiles stay
-     direct children of the one grid, named by a hidden heading. Walking `totals` in
-     the order it arrives is what guarantees the two grids agree — grouping cannot
-     reorder. The heading ids are its own: `BaseCardEditor` is mounted on this page
-     too and carries `card-deck-*`.
-
-     Memoized on `totals` alone: `picked` changes on every tile press, and without
-     this the grouping loop would re-run on every one of those for a grid that did
-     not change shape. */
+  /* Memoized on `totals` alone: `picked` changes on every tile press, and
+     without this the grouping loop would re-run on every one of those for a
+     grid that did not change shape. `display: contents` on `.card-deck` is
+     what keeps the tiles direct children of the one grid, named by a hidden
+     heading — the heading ids are its own: `BaseCardEditor` is mounted on
+     this page too and carries `card-deck-*`. */
   const decks = useMemo(() => {
-    const grouped: { category: string; slug: string; entries: CardTotal[] }[] = []
+    if (!grouped) return null
+    const result: { category: string; slug: string; entries: CardTotal[] }[] = []
     for (const entry of totals) {
-      const last = grouped[grouped.length - 1]
+      const last = result[result.length - 1]
       if (last?.category === entry.card.category) last.entries.push(entry)
       else
-        grouped.push({
+        result.push({
           category: entry.card.category,
           slug: deckSlug(entry.card.category),
           entries: [entry],
         })
     }
-    return grouped
-  }, [totals])
+    return result
+  }, [totals, grouped])
+
+  if (!grouped || decks === null) {
+    /* No deck sections, no hidden headings — every tile is a direct grid
+       child keyed on the one thing guaranteed unique across all sixty
+       regardless of order: the card's own id. */
+    return (
+      <div className="card-grid" style={{ '--card-columns': columns } as CSSProperties}>
+        {totals.map(({ card, total }) => (
+          <CardTotalPick
+            key={card.id}
+            card={card}
+            total={total}
+            isPicked={picked === card.id}
+            onPick={onPick}
+          />
+        ))}
+      </div>
+    )
+  }
 
   return (
     <div className="card-grid" style={{ '--card-columns': columns } as CSSProperties}>
@@ -460,56 +892,15 @@ function CardTotalsGrid({
             <h4 id={headingId} className="visually-hidden">
               {deck.category}
             </h4>
-            {deck.entries.map(({ card, total }) => {
-              const held = heldAcrossTheClan(total)
-              const isPicked = picked === card.id
-              return (
-                /*
-                 * The tile in a real `<button>`, rather than click handling inside
-                 * `CardTile`.
-                 *
-                 * Two reasons. The entry grid is the other caller and must not
-                 * become clickable — its tiles hold two stepper buttons under the
-                 * frame, so a press target around the whole tile would nest a button
-                 * inside a button, which is invalid HTML. And a
-                 * `<button>` is keyboard-operable, focusable, Enter/Space-activated
-                 * and focus-ringed by the stylesheet's one `:focus-visible` rule
-                 * without any of that being written here; a `div` with `onClick`
-                 * would be four attributes and a key handler pretending to be one.
-                 *
-                 * `aria-pressed`, not `aria-expanded`: there is one table below the
-                 * grid and the sixty tiles take turns owning it, so this is which
-                 * tile is selected rather than sixty independent disclosures. It
-                 * also means the selected state is not carried by the ring alone.
-                 * The button's accessible name is the tile's own `aria-label` by
-                 * name-from-content, so nothing is duplicated and the count — or the
-                 * "none held" — is still what a screen reader reads out.
-                 */
-                <button
-                  key={card.id}
-                  type="button"
-                  className="card-total__pick"
-                  aria-pressed={isPicked}
-                  aria-controls={isPicked ? HOLDERS_ID : undefined}
-                  /* Pressing the selected tile again closes the table. It is the
-                     control that opened it, so it is the one somebody reaches for to
-                     put it away, and without that the table could only ever be
-                     swapped for another card's. */
-                  onClick={() => onPick(isPicked ? null : card.id)}
-                >
-                  <CardTile
-                    card={card}
-                    held={total > 0}
-                    badge={total > 0 ? `×${total}` : undefined}
-                    title={`${card.name} · ${card.category} · ${held}`}
-                    /* The tile's own name, because nothing inside it is a control
-                       that could carry one — and because it is where the zero is
-                       said in words. */
-                    label={`${card.name}, ${card.category} — ${held}`}
-                  />
-                </button>
-              )
-            })}
+            {deck.entries.map(({ card, total }) => (
+              <CardTotalPick
+                key={card.id}
+                card={card}
+                total={total}
+                isPicked={picked === card.id}
+                onPick={onPick}
+              />
+            ))}
           </div>
         )
       })}
@@ -700,11 +1091,12 @@ function CardHolders({
  * and the headings agree — which is what its tests are for — but this runs inside a
  * click handler on a page with no error boundary above it, and "the arrow did nothing"
  * is a far better failure than a blank page.
+ *
+ * The reusable half — find the element, scroll it into view, focus it — is
+ * `scrollAndFocus` in `card-sections.ts`. What stays here is the one case that isn't
+ * that: `cards-top`.
  */
 function jumpToSection(id: CardSectionId): void {
-  const target = document.getElementById(id)
-  if (target === null) return
-
   /* Read at press time rather than subscribed to: it is one decision per click, so
      there is no state to keep in step and no listener to unsubscribe. */
   const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -721,12 +1113,19 @@ function jumpToSection(id: CardSectionId): void {
    *
    * Focus still moves to the heading, and that is the whole reason `cards-top` is an
    * anchored section at all — see `card-sections.ts`. Scrolling instead of focusing is
-   * the trap; scrolling *and* focusing is not.
+   * the trap; scrolling *and* focusing is not. `scrollAndFocus` cannot be reused for
+   * this one case because it always scrolls the *element*, and this is the one target
+   * that must not be.
    */
-  if (id === CARD_TOP_ID) window.scrollTo({ top: 0, behavior })
-  else target.scrollIntoView({ block: 'start', behavior })
+  if (id === CARD_TOP_ID) {
+    const target = document.getElementById(id)
+    if (target === null) return
+    window.scrollTo({ top: 0, behavior })
+    target.focus({ preventScroll: true })
+    return
+  }
 
-  target.focus({ preventScroll: true })
+  scrollAndFocus(id, behavior)
 }
 
 /**
@@ -795,6 +1194,58 @@ function BackToTop({ from }: { from: string }) {
 }
 
 /**
+ * A cross-link chip beside a heading's back-to-top arrow, pointing at the *other*
+ * half of the propose-then-track workflow: "Tracker" in the suggestions heading,
+ * "Suggestions" in the tracker's. The two panels are read downwards as one
+ * sequence — see the comment above the tracker section — and this is the way back
+ * up one of them without scrolling past it by hand.
+ *
+ * `.chip`, the same class the jump row below already wears, plus
+ * `.section-title__jump-chip` so this claims the heading's leftover flex space
+ * instead of `.section-title__top` splitting it with the arrow that follows — the
+ * CSS comment on that class has the reasoning for why it is not done by editing
+ * `.section-title__top` itself.
+ */
+function HeadingJumpChip({ label, to }: { label: string; to: CardSectionId }) {
+  return (
+    <button
+      type="button"
+      className="chip section-title__jump-chip"
+      onClick={() => jumpToSection(to)}
+    >
+      {label}
+    </button>
+  )
+}
+
+/** Where the chosen display order for "Cards across the clan" is remembered. */
+const TOTAL_SORT_KEY = 'coc:cardTotalSort'
+
+/**
+ * The chosen display order for "Cards across the clan", remembered per browser —
+ * the same mechanism `useRowLimit`/`useCardColumns` use in `hooks.ts` (a reading
+ * preference about one panel, so `localStorage` rather than the server: nobody
+ * else's view of the shared data should change because you wanted the grid
+ * ranked). Kept local to this file rather than added to `hooks.ts`, since nothing
+ * else on the page reads it.
+ */
+function useCardTotalSort(key: string): [CardTotalSort, (next: CardTotalSort) => void] {
+  const [sort, setSort] = useState<CardTotalSort>(() =>
+    parseCardTotalSort(localStorage.getItem(key)),
+  )
+
+  const choose = useCallback(
+    (next: CardTotalSort) => {
+      setSort(next)
+      localStorage.setItem(key, next)
+    },
+    [key],
+  )
+
+  return [sort, choose]
+}
+
+/**
  * The totals grid and, once a tile is pressed, the table of who holds that card.
  *
  * The selection lives here rather than in `CardsView` because the grid and the table
@@ -809,18 +1260,28 @@ function CardTotals({
   columns,
   bases,
   labelOf,
+  grouped,
 }: {
   totals: CardTotal[]
   columns: number
   bases: readonly BaseInventory[]
   labelOf: (tag: string) => string
+  /** Passed straight through to `CardTotalsGrid` — see its own doc comment
+   *  for why this must be `false` whenever `totals` is not in deck order. */
+  grouped: boolean
 }) {
   const [picked, setPicked] = useState<number | null>(null)
   const entry = useMemo(() => totals.find((row) => row.card.id === picked), [totals, picked])
 
   return (
     <>
-      <CardTotalsGrid totals={totals} columns={columns} picked={picked} onPick={setPicked} />
+      <CardTotalsGrid
+        totals={totals}
+        columns={columns}
+        picked={picked}
+        onPick={setPicked}
+        grouped={grouped}
+      />
       {/* Below the grid, not above it: the tiles are what the panel is, and a table
           that pushed sixty tiles down the page every time one was pressed would move
           the tile you had just pressed out from under the pointer. */}
@@ -959,22 +1420,77 @@ export function CardsView({ user }: { user: SessionUser }) {
   const active = activeTag(options, selected)
 
   /* Group-wide, both of them, whatever the filter says — narrowed to one person's
-     bases they would stop meaning anything. `tags` and `bases`, never `options`. */
-  const standings = useMemo(
+     bases they would stop meaning anything. `tags` and `bases`, never `options`.
+     Shared across all seven rankings below: every one of them takes the same
+     `(bases, inventory)` shape `baseStandings` does, so this is computed once rather
+     than seven times over the same `tags.map`. */
+  const standingBases = useMemo(
     () =>
-      baseStandings(
-        tags.map((tag) => ({
-          tag,
-          label: labelOf(tag),
-          owner: ownerOf(tag) ?? null,
-          ownerUserId: ownerUserIdOf(tag),
-        })),
-        bases,
-      ),
-    [tags, labelOf, ownerOf, ownerUserIdOf, bases],
+      tags.map((tag) => ({
+        tag,
+        label: labelOf(tag),
+        owner: ownerOf(tag) ?? null,
+        ownerUserId: ownerUserIdOf(tag),
+      })),
+    [tags, labelOf, ownerOf, ownerUserIdOf],
   )
+  const standings = useMemo(
+    () => baseStandings(standingBases, bases),
+    [standingBases, bases],
+  )
+  /* The Trade Tracker's rows, mirrored client-side — the same store `TradeSuggestions`
+     and `TradeTracker` already read, needed here only for the "Most active trader"
+     board. */
+  const trades = useTrades()
+  const rarityRankings = useMemo(
+    () => rarityStandings(standingBases, bases),
+    [standingBases, bases],
+  )
+  const categoryRankings = useMemo(
+    () => categoryStandings(standingBases, bases),
+    [standingBases, bases],
+  )
+  const rowRankings = useMemo(() => rowStandings(standingBases, bases), [standingBases, bases])
+  const deckRankings = useMemo(
+    () => deckCompletionStandings(standingBases, bases),
+    [standingBases, bases],
+  )
+  const spareRankings = useMemo(
+    () => spareStandings(standingBases, bases),
+    [standingBases, bases],
+  )
+  const traderRankings = useMemo(
+    () => traderStandings(standingBases, trades),
+    [standingBases, trades],
+  )
+
+  /* Which of the seven boards the picker shows, and which deck "By category" is
+     showing — both remembered per browser, the same `coc:`-prefixed `localStorage`
+     mechanism as the row limit and the totals panel's own sort control. */
+  const [leaderboardView, setLeaderboardView] = usePersistedChoice(
+    LEADERBOARD_VIEW_KEY,
+    parseLeaderboardView,
+  )
+  const [leaderboardCategory, setLeaderboardCategory] = usePersistedChoice(
+    LEADERBOARD_CATEGORY_KEY,
+    parseLeaderboardCategory,
+  )
+
   const totals = useMemo(() => cardTotals(bases, cardsInGridOrder()), [bases])
   const absentCount = useMemo(() => totals.filter((entry) => entry.absent).length, [totals])
+
+  /*
+   * Display order for "Cards across the clan" alone — `cardTotals()` above still
+   * never sorts itself, for every other reader of `totals`. This is a deliberate,
+   * opt-in exception layered on top, in `sortCardTotalsForDisplay()`; see that
+   * function's doc comment, and `cardTotals()`'s own, for why the two do not
+   * contradict each other.
+   */
+  const [totalSort, setTotalSort] = useCardTotalSort(TOTAL_SORT_KEY)
+  const sortedTotals = useMemo(
+    () => sortCardTotalsForDisplay(totals, totalSort),
+    [totals, totalSort],
+  )
 
   const emptyMine = scope === 'mine' && options.length === 0 && tags.length > 0
 
@@ -1191,6 +1707,7 @@ export function CardsView({ user }: { user: SessionUser }) {
       <section className="card">
         <h2 className="section-title section-title--jump" id="cards-suggestions" tabIndex={-1}>
           Trade suggestions <HelpLink section="trades" topic="what makes a swap legal" />
+          <HeadingJumpChip label="Tracker" to="cards-tracker" />
           <BackToTop from="Trade suggestions" />
         </h2>
         <TradeSuggestions bases={bases} labelOf={labelOf} ownerOf={ownerOf} user={user} />
@@ -1208,6 +1725,7 @@ export function CardsView({ user }: { user: SessionUser }) {
         <h2 className="section-title section-title--jump" id="cards-tracker" tabIndex={-1}>
           Trade tracker{' '}
           <HelpLink section="tracker" topic="who can complete a trade, and what it does" />
+          <HeadingJumpChip label="Suggestions" to="cards-suggestions" />
           <BackToTop from="Trade tracker" />
         </h2>
         <TradeTracker user={user} labelOf={labelOf} />
@@ -1218,6 +1736,29 @@ export function CardsView({ user }: { user: SessionUser }) {
           Collection leaderboard <HelpLink section="leaderboard" topic="how the leaderboard scores" />
           <BackToTop from="Collection leaderboard" />
         </h2>
+
+        {/*
+         * The picker, at the top of the leaderboard table: seven boards over the same
+         * tracked bases, sharing the row-limit/Owner/pager chrome in `Leaderboard`
+         * below and differing only in what they rank by. Matches the compact-select
+         * pattern `RowLimitSelect` and `#card-total-sort` already use on this page,
+         * and persists the same way that control does — see `usePersistedChoice`.
+         */}
+        <label className="row-limit" htmlFor="leaderboard-view" style={{ marginBottom: 12 }}>
+          View
+          <select
+            id="leaderboard-view"
+            value={leaderboardView}
+            onChange={(event) => setLeaderboardView(event.target.value as LeaderboardView)}
+          >
+            {LEADERBOARD_VIEWS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
         {/*
          * This line said "by distinct cards out of 60. Level on that, more copies goes
          * first", which stopped being true when the measure became points in 42a5df9.
@@ -1231,20 +1772,147 @@ export function CardsView({ user }: { user: SessionUser }) {
          * (54) comfortably.
          *
          * The curve itself is in the disclosure below, where it can be read without
-         * turning this intro into a paragraph, and on the help page — one source.
+         * turning this intro into a paragraph, and on the help page — one source. The
+         * six paragraphs below it are that board's own equivalent, one per view, so a
+         * reader who never opens the disclosure still gets the one sentence that
+         * matters for whichever board they are looking at.
          */}
-        <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
-          Every tracked base, by <strong>points</strong>: {cardPoints(1)} for the first copy of a
-          card and less for every copy after it, so breadth outranks hoarding. Level on points, more
-          distinct cards of {totals.length} goes first. Not affected by <strong>Show</strong>: this
-          is the whole clan. <strong>Owner</strong> narrows which rows are drawn — the rank stays
-          each base's place on the whole board, so it never renumbers.
-        </p>
-        <Leaderboard rows={standings} />
+        {leaderboardView === 'overall' ? (
+          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+            Every tracked base, by <strong>points</strong>: {cardPoints(1)} for the first copy of a
+            card and less for every copy after it, so breadth outranks hoarding. Level on points,
+            more distinct cards of {totals.length} goes first. Not affected by <strong>Show</strong>:
+            this is the whole clan. <strong>Owner</strong> narrows which rows are drawn — the rank
+            stays each base's place on the whole board, so it never renumbers.
+          </p>
+        ) : leaderboardView === 'rarity' ? (
+          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+            Every tracked base, by <strong>rarity score</strong>: one distinct card scores once,
+            weighted by how scarce it is across the whole clan right now — a spare of a card already
+            held adds nothing here. Level on rarity score, more distinct cards overall goes first.
+            Not affected by <strong>Show</strong>: this is the whole clan. <strong>Owner</strong>{' '}
+            narrows which rows are drawn — the rank stays each base's place on the whole board, so
+            it never renumbers.
+          </p>
+        ) : leaderboardView === 'category' ? (
+          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+            {leaderboardCategory}, by <strong>points in this deck alone</strong> — a base's other
+            three decks do not count here. Level on points, more distinct {leaderboardCategory} cards
+            goes first. Not affected by <strong>Show</strong>: this is the whole clan.{' '}
+            <strong>Owner</strong> narrows which rows are drawn — the rank stays each base's place
+            on this deck's board, so it never renumbers.
+          </p>
+        ) : leaderboardView === 'rows' ? (
+          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+            Every tracked base, by the real game's own {ROW_SIZE}-wide collection screen:{' '}
+            <strong>10 points</strong> for every row held in full, plus <strong>5 more</strong> for
+            each row of the longest unbroken streak of full rows — so finishing a stretch of decks
+            end-to-end beats the same rows scattered. Level on score, more full rows outright goes
+            first. Not affected by <strong>Show</strong>: this is the whole clan.{' '}
+            <strong>Owner</strong> narrows which rows are drawn — the rank stays each base's place
+            on the whole board, so it never renumbers.
+          </p>
+        ) : leaderboardView === 'decks' ? (
+          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+            Every tracked base, by how many of the four decks it holds <strong>outright</strong> — 0
+            through 4, not how far into any one it has got. Level on decks complete, more distinct
+            cards held overall goes first. Not affected by <strong>Show</strong>: this is the whole
+            clan. <strong>Owner</strong> narrows which rows are drawn — the rank stays each base's
+            place on the whole board, so it never renumbers.
+          </p>
+        ) : leaderboardView === 'spares' ? (
+          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+            Every tracked base, by <strong>tradeable spares</strong> — copies beyond the one kept of
+            each card, summed across all {totals.length}. A base never counts its last copy. Level
+            on spares, more spare variety (distinct cards with a spare) goes first. Not affected by{' '}
+            <strong>Show</strong>: this is the whole clan. <strong>Owner</strong> narrows which rows
+            are drawn — the rank stays each base's place on the whole board, so it never renumbers.
+          </p>
+        ) : (
+          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+            Every tracked base, by <strong>completed trades</strong> — the Trade Tracker's own board,
+            counted by base rather than by owner, so running several bases does not inflate the
+            count. Level on trades, more distinct trading partners goes first. Not affected by{' '}
+            <strong>Show</strong>: this is the whole clan. <strong>Owner</strong> narrows which rows
+            are drawn — the rank stays each base's place on the whole board, so it never renumbers.
+          </p>
+        )}
+
+        {leaderboardView === 'overall' ? (
+          <Leaderboard rows={standings} ariaLabel="Collection leaderboard" columns={OVERALL_COLUMNS} />
+        ) : leaderboardView === 'rarity' ? (
+          <Leaderboard
+            rows={rarityRankings}
+            ariaLabel="Rarity leaderboard"
+            columns={RARITY_COLUMNS}
+          />
+        ) : leaderboardView === 'category' ? (
+          <Leaderboard
+            rows={categoryRankings[leaderboardCategory]}
+            ariaLabel={`${leaderboardCategory} leaderboard`}
+            columns={CATEGORY_COLUMNS}
+            filters={
+              /* Same slot Owner already sits in, reused rather than a second filter
+                 row — see `Leaderboard`'s own doc for why `filters` draws unconditionally
+                 whenever it is passed at all: the four decks are always a real choice. */
+              <label htmlFor="leaderboard-category">
+                Deck
+                <select
+                  id="leaderboard-category"
+                  value={leaderboardCategory}
+                  onChange={(event) =>
+                    setLeaderboardCategory(event.target.value as CardCategory)
+                  }
+                >
+                  {cardCategoriesInOrder().map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            }
+          />
+        ) : leaderboardView === 'rows' ? (
+          <Leaderboard rows={rowRankings} ariaLabel="Full rows leaderboard" columns={ROWS_COLUMNS} />
+        ) : leaderboardView === 'decks' ? (
+          <Leaderboard
+            rows={deckRankings}
+            ariaLabel="Full decks leaderboard"
+            columns={DECKS_COLUMNS}
+          />
+        ) : leaderboardView === 'spares' ? (
+          <Leaderboard
+            rows={spareRankings}
+            ariaLabel="Spares on hand leaderboard"
+            columns={SPARES_COLUMNS}
+          />
+        ) : (
+          <Leaderboard
+            rows={traderRankings}
+            ariaLabel="Most active trader leaderboard"
+            columns={TRADERS_COLUMNS}
+          />
+        )}
+
         <details className="group">
-          <summary>How the points work</summary>
+          <summary>{leaderboardView === 'overall' ? 'How the points work' : 'How this board scores'}</summary>
           <div className="group__body help-prose">
-            <ScoringRules />
+            {leaderboardView === 'overall' ? (
+              <ScoringRules />
+            ) : leaderboardView === 'rarity' ? (
+              <RarityScoringRules />
+            ) : leaderboardView === 'category' ? (
+              <CategoryScoringRules />
+            ) : leaderboardView === 'rows' ? (
+              <RowScoringRules />
+            ) : leaderboardView === 'decks' ? (
+              <DeckCompletionScoringRules />
+            ) : leaderboardView === 'spares' ? (
+              <SpareScoringRules />
+            ) : (
+              <TraderScoringRules />
+            )}
           </div>
         </details>
       </section>
@@ -1268,7 +1936,10 @@ export function CardsView({ user }: { user: SessionUser }) {
         </h2>
         <details className="group">
           <summary>
-            All {totals.length} cards, in grid order
+            All {totals.length} cards
+            {totalSort === 'default'
+              ? ', in grid order'
+              : `, sorted ${cardTotalSortLabel(totalSort).toLowerCase()}`}
             <span
               className={
                 absentCount > 0 ? 'card-panel__trades card-total__none' : 'card-panel__trades card-meta'
@@ -1281,19 +1952,61 @@ export function CardsView({ user }: { user: SessionUser }) {
             </span>
           </summary>
           <div className="group__body">
+            {/*
+             * Off by default, and deliberately so: the panel's whole reason for
+             * existing is scanning it tile-for-tile against the entry grid above,
+             * which only holds in `Grid order`. This is a named, opt-in exception
+             * to that — see the doc comments on `cardTotals()` in
+             * `card-standings.ts` and `sortCardTotalsForDisplay()` in
+             * `card-total-sort.ts` — not a quiet reversal of it, which is why the
+             * summary line and the paragraph below both say out loud when it is
+             * in effect.
+             */}
+            <label
+              className="row-limit"
+              htmlFor="card-total-sort"
+              style={{ marginBottom: 12 }}
+            >
+              Sort
+              <select
+                id="card-total-sort"
+                value={totalSort}
+                onChange={(event) => setTotalSort(event.target.value as CardTotalSort)}
+              >
+                {CARD_TOTAL_SORTS.map((sort) => (
+                  <option key={sort} value={sort}>
+                    {cardTotalSortLabel(sort)}
+                  </option>
+                ))}
+              </select>
+            </label>
             {/* The last sentence is what tells anybody the tiles are pressable. A grid
                 of sixty buttons has no other affordance at this size — there is no room
                 for a caption on a 52px tile — so the panel says it once, in the line
                 that is already explaining what the badges mean. */}
             <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
               The same grid as above, with the copies held across <strong>every</strong> tracked
-              base — linked to an account or not — as the badge in each tile's corner. The order is
-              the grid's and never changes with the counts, so the two can be read tile for tile. A
-              tile in <strong>gray with no badge</strong> is a card nobody in the clan holds; it
+              base — linked to an account or not — as the badge in each tile's corner.{' '}
+              {totalSort === 'default' ? (
+                <>The order is the grid's, so the two can be read tile for tile.</>
+              ) : (
+                <>
+                  Sorted by clan-wide total ({cardTotalSortLabel(totalSort).toLowerCase()}), so
+                  tiles no longer line up with the grid above — choose{' '}
+                  <strong>Grid order</strong> to restore that.
+                </>
+              )}{' '}
+              A tile in <strong>gray with no badge</strong> is a card nobody in the clan holds; it
               cannot be got by trading, only from the game. <strong>Choose a card</strong> to list
               the bases holding it below.
             </p>
-            <CardTotals totals={totals} columns={columns} bases={bases} labelOf={labelOf} />
+            <CardTotals
+              totals={sortedTotals}
+              columns={columns}
+              bases={bases}
+              labelOf={labelOf}
+              grouped={totalSort === 'default'}
+            />
           </div>
         </details>
       </section>

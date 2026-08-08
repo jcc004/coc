@@ -16,10 +16,13 @@ import { UNASSIGNED_OWNER } from './saved-table.ts'
  *   edge one — and a comparator that stops at the first key leaves the tied rows
  *   in whatever order the array happened to arrive in, which is a list that
  *   reshuffles itself between renders;
- * - the totals list must stay in the **grid's** order whatever the counts are. It
- *   only earns its place by scanning card-for-card against the sixty tiles above
- *   it, and a list that sorted itself by count would be a different list that
- *   happened to hold the same numbers;
+ * - `cardTotals()` itself must stay in the **grid's** order whatever the counts
+ *   are — it is what the default view earns its place by, scanning card-for-card
+ *   against the sixty tiles above it, and a function that sorted itself by count
+ *   would be a different list that happened to hold the same numbers. The one
+ *   panel that reads this list now offers an explicit, opt-in display sort on top
+ *   of it (`card-total-sort.ts`) — layered after this function returns, never
+ *   inside it, so the invariant below still describes `cardTotals()` itself;
  * - the board's **owner filter runs after the ranking, never before it**, so a
  *   narrowed board still carries each base's standing among all of them. Ranking
  *   the survivors instead would renumber four bases to 1–4 and read as if they
@@ -416,7 +419,17 @@ export function cardsInGridOrder(): readonly GeneratedCard[] {
  *
  * **Nothing is sorted here, in any mode.** The output is one entry per input card,
  * in the input's order, which is the property the tests pin down — the counts
- * decide what each row *says* and never where it sits.
+ * decide what each row *says* and never where it sits. That is still true of this
+ * function itself, for every caller, unconditionally.
+ *
+ * What changed: the "Cards across the clan" panel now offers an explicit, opt-in
+ * display sort (highest/lowest by `total`) — a deliberate, acknowledged reversal
+ * of the reasoning above, requested for that one panel rather than discovered as
+ * a gap in it. It is implemented in `card-total-sort.ts`, entirely *after* this
+ * function returns, over a copy of its output — never by changing what this
+ * function does. The panel's **default** state is still this function's own
+ * order, unchanged, which is what keeps it scannable tile-for-tile against the
+ * entry grid; sorting is something a reader now has to ask for.
  *
  * `inventory` should be every tracked base, including the ones whose owner is
  * still only a text label: they are bases somebody is collecting on, their cards

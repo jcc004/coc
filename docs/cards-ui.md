@@ -13,10 +13,14 @@ the three panels under them are the whole clan and are deliberately *not* filter
 1. the base picker, with the **Mine / All** filter to its left, and the 60-tile grid for the base
    it chooses;
 2. **Trade suggestions** — who should swap what with whom, 5 pairs at a time;
-3. **Collection leaderboard** — every tracked base, furthest along first, 5 rows at a time, with a
-   last-updated column and an Owner filter of its own that does not renumber it;
+3. **Collection leaderboard** — a **View** picker over seven boards (Overall, Rarity, By category,
+   Full rows, Full decks, Spares on hand, Most active trader), each ranking every tracked base by
+   its own measure, 5 rows at a time, sharing one Owner filter and pager that never renumber — see
+   [Seven boards: the View picker](#seven-boards-the-view-picker);
 4. **Cards across the clan** — an expandable copy of the same grid, every tile badged with the
-   clan's total, and every tile a button: press one for the bases holding that card.
+   clan's total, and every tile a button: press one for the bases holding that card. Grid order by
+   default; an opt-in sort control can rank it by total instead — see
+   [A sort control, opt-in](#a-sort-control-opt-in).
 
 **Trades sit directly under the grid** because the spares you have just typed in are what the
 suggestions are made of, and because they are the only panel on the page that asks you to *do*
@@ -281,6 +285,13 @@ the base near the top with spares is the one worth messaging. Member name, tag, 
 copies and **last updated**; the `17/60` is printed and a `.meter` bar on the sequential blue ramp is
 a second telling of it, never the only one.
 
+That is the **Overall** board — the one that existed before a **View** picker sat above the table
+offering six more. Everything below through [Last updated, and the Owner
+filter](#last-updated-and-the-owner-filter) describes Overall specifically; the other six boards,
+what each one measures, and the picker itself are in [Seven boards: the View
+picker](#seven-boards-the-view-picker) below. The Rows select, the Owner filter and the pager are
+shared machinery every board reuses unchanged — described once here rather than seven times.
+
 **A Rows select at the bottom of the table**, defaulting to **5** (5 / 10 / 20 / **50**), persisted
 at `coc:cardStandingLimit`. No `All`: 50 already covers every tracked base with room to spare, so
 it would be a second name for the option next to it. Same helpers as every other paged table.
@@ -375,6 +386,59 @@ has nobody entered counts for lately" is a maintenance question, not a ranking o
 place that fact was shown was the attribution line for the *selected* base — one at a time, behind a
 `<select>`, with the reader left to remember what each said. The column plus this filter is that
 same fact for every base at once.
+
+### Seven boards: the View picker
+
+A **View** select at the top of the leaderboard table (`CardsView.tsx`, styled like `RowLimitSelect`
+and the totals panel's own `#card-total-sort`) switches between seven rankings, in this fixed order:
+**Overall**, **Rarity**, **By category**, **Full rows**, **Full decks**, **Spares on hand**,
+**Most active trader**. The choice is remembered per browser at `coc:cardLeaderboardView`, the same
+mechanism as `coc:cardStandingLimit` and `coc:cardTotalSort`.
+
+Every ranking is a pure module beside `card-standings.ts`, computed from the same `bases`/`inventory`
+already on the page (plus, for the trader board, the Trade Tracker's own `trades`) — nothing is
+re-fetched when the picker changes. Each returns rows carrying a **shared-and-skipped `rank`**, the
+same convention `BaseStanding.rank` uses: tied on the board's own measure, ties share a number and
+the next rank skips ahead. `categoryStandings()` did not carry a `rank` when it was first written,
+on the grounds that array position was enough; it does now, added for this picker on the same
+reasoning every sibling module already had — see `category-standings.ts`.
+
+**The table is per-view, not one universal shape.** `LeaderboardTable` draws Rank, Member and Owner
+identically for all seven — the same accessible-naming, `roster--stack` phone behavior and
+`stack-title`/`data-label` markup `card-standings.ts`'s original table used — and each board supplies
+its own columns beyond that:
+
+| Board | Columns beyond Rank / Member / Owner | Measure |
+|---|---|---|
+| Overall | Points, Cards (`n/60` + meter), Copies, Last updated | Points — see above |
+| Rarity | Rarity score, Cards (`n/60` + meter) | Sum of `rarityPoints()` over distinct cards held, weighted by clan-wide scarcity right now |
+| By category | Points, Cards (`n`/deck size + meter) | Points, computed separately for the chosen deck alone |
+| Full rows | Full rows (`n/10` + ten fill marks), Longest streak, Score | `fullRowCount × 10 + longestStreak × 5` over the real game's six-wide rows |
+| Full decks | Decks complete (`n/4`), Which decks (chips), Distinct cards | How many of the four decks are held outright |
+| Spares on hand | Spares, Spare variety | Tradeable spares (copies beyond the one kept) summed across all 60 |
+| Most active trader | Completed trades, Distinct partners | Completed trades a base was party to, from the Trade Tracker |
+
+**By category has a second picker.** A **Deck** select appears only while "By category" is active,
+in the same filter row Owner already occupies (`Leaderboard`'s `filters` slot) — Elixir, Dark Elixir,
+Builder Base, Super Troop, defaulting to the first and remembered separately at
+`coc:cardLeaderboardCategory`, so switching away and back does not lose which deck was open. Unlike
+the other six, "By category" is really four independently-ranked boards; `categoryStandings()`
+returns all four at once, keyed by category, and the picker selects which key's rows to show.
+
+**The Rows select, Owner filter and pager are the same instance across every view**, not reset when
+the picker changes — `Leaderboard` is one generic component parameterized by the active board's row
+type and column list, so "how many rows" and "which owner" stay put while "which board" changes
+underneath them. Only the Deck sub-picker is per-board, since it has no meaning outside "By
+category." Every board's table gets its own `aria-label` (`Rarity leaderboard`, `Elixir leaderboard`
+for the currently-chosen deck, and so on) — Overall keeps the original `Collection leaderboard` name
+unchanged, so nothing that already looked it up by that name broke when the picker shipped.
+
+**The explanatory paragraph above the table, and the "How this board scores" disclosure below it,
+are both conditional on the active view.** Overall's paragraph and its `ScoringRules` disclosure are
+verbatim what they were before the picker; the other six each get their own short paragraph and their
+own rule component in `help-copy.tsx` (`RarityScoringRules`, `CategoryScoringRules`,
+`RowScoringRules`, `DeckCompletionScoringRules`, `SpareScoringRules`, `TraderScoringRules`) — reused,
+unchanged, on the help page's `leaderboard` section, so the app never states a board's rule twice.
 
 ## Getting about the page
 
@@ -497,7 +561,9 @@ gap. No horizontal overflow at either width.
 The **last** panel, and an expandable one: the same 60-tile grid as above, every tile carrying the
 copies held across **every** tracked base as a small badge in its lower-right corner — exactly where
 the per-base count badge sits. Collapsed by default, and its summary line carries the headline —
-`All 60 cards, in grid order · 38 nobody holds`.
+`All 60 cards, in grid order · 38 nobody holds` by default, or `All 60 cards, sorted highest to
+lowest · …` once the sort control below is used (see
+[A sort control, opt-in](#a-sort-control-opt-in)).
 
 **Every tile is a button, and pressing one lists the bases holding that card** in a table under the
 grid — see [Who holds a card](#who-holds-a-card). The badge says a trade is arithmetically possible;
@@ -528,14 +594,42 @@ inside still draws the border, background and padding. A button is inline-block 
 would shrink-wrap and leave the tile narrower than its column — that pair of declarations is what
 keeps the swap invisible, and it is the thing to check in a browser if the columns ever look wrong.
 
-**The order is fixed by design and never changes with the counts.** It comes from
+**By default, the order is fixed by design and never changes with the counts.** It comes from
 `cardsInGridOrder()`, which is literally the grid's own two calls — `cardCategoriesInOrder()` then
 `cardsInCategory()` — rather than a second ordering that agrees with it today and drifts the next
 time the manifest is regenerated. The whole reason the panel earns its place is that it can be
-scanned tile-for-tile against the grid above it, so **nothing here sorts by count, in any mode**.
-That is asserted directly: a test puts all the copies on the *last* card and none on the first and
-checks the output order still matches the input's. And read back off the DOM: the two grids' 60
-tiles, compared by name in document order, match card for card at 390, 600 and 1280px.
+scanned tile-for-tile against the grid above it, so **`cardTotals()` itself never sorts by count, in
+any mode** — that is still an unconditional property of the function. That is asserted directly: a
+test puts all the copies on the *last* card and none on the first and checks the output order still
+matches the input's. And read back off the DOM at the default sort: the two grids' 60 tiles, compared
+by name in document order, match card for card at 390, 600 and 1280px.
+
+### A sort control, opt-in
+
+The panel also carries a small `Sort` select, styled like the row-count controls elsewhere on this
+page (`.row-limit`) rather than the multi-column `SortControl` the stacked tables use — there is only
+one sortable value here (the clan-wide total), so a three-option dropdown is the whole control:
+**Grid order** (the default above, unchanged), **Highest to lowest**, and **Lowest to highest**, both
+of the latter by `total` from `cardTotals()`.
+
+This is a **deliberate, acknowledged reversal** of the "nothing sorts by count" reasoning two
+paragraphs up — asked for on this specific panel, not a quiet drift away from it. The reversal is
+scoped tightly on purpose:
+
+- `cardTotals()` in `card-standings.ts` is untouched and still never sorts, for every caller. The
+  reordering happens afterward, over a copy of its output, in `sortCardTotalsForDisplay()` —
+  `web/src/card-total-sort.ts`, pure and tested on its own — so the invariant the entry-grid
+  comparison depends on is not weakened, only opted out of by one panel when asked to be.
+- Ties keep their grid position in either ranked mode (`Array.prototype.sort` is stable), so two
+  cards level on total do not reshuffle between renders.
+- **Grid order is still the default on first load**, and the panel says so out loud whenever it is
+  not: the summary line and the explanatory paragraph both name the active sort, so a reader who
+  left it ranked from a previous visit is told the tiles no longer line up with the grid above,
+  rather than left to notice the mismatch on their own.
+- The choice is remembered per browser at `coc:cardTotalSort` — the same `localStorage` mechanism as
+  the row-count and column-density controls elsewhere on this page (`coc:cardStandingLimit`,
+  `coc:cardColumns`), not the server: nobody else's view of the shared data should change because one
+  reader wanted the grid ranked.
 
 **The badge appears on every count, including 1** — the opposite of the entry grid, where `×1` on
 fifty tiles is noise. Here the totals *are* the point, and a card exactly one person in the clan
@@ -564,7 +658,14 @@ is the first tile in grid order and nobody holds it, and it stays first.
 
 Each deck is a `role="group"` labeled by a `.visually-hidden` heading exactly as the entry grid's
 `.card-deck` is, with its own `card-total-deck-*` ids — both grids are mounted on this page at once,
-so the ids cannot be shared.
+so the ids cannot be shared. **Only in Grid order.** The sort control below can reorder these tiles
+by clan-wide count instead (see "A sort control, opt-in"), and once that happens the four decks are
+no longer contiguous — grouping by deck stops making sense, and stops happening: a sorted view is a
+flat sixty-tile list, no `role="group"`, no heading. This is not just a display choice; grouping by
+*consecutive* deck while the order can be non-deck-contiguous was the exact bug this app shipped and
+fixed on 2026-08-08 — several sibling groups ended up sharing one `key={deck.category}`, and React's
+handling of a duplicate key among siblings is what produced tiles appearing to pile up under a
+previous sort instead of replacing it.
 
 It stays **collapsed** because sixty more tiles left open would push everything above them off a
 phone. It costs no extra art either way: measured, its sixty image URLs are byte-for-byte the entry

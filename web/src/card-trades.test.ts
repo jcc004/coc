@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { BaseInventory, CardCategory } from '@coc/shared'
 import { groupTradesByPair, suggestTrades, type TradeSuggestion } from './card-trades.ts'
+import { ALL_CARDS, categoryOfCard } from './cards.ts'
 
 /*
  * A five-card toy deck, so every rule can be exercised on its own instead of
@@ -29,6 +30,50 @@ function base(tag: string, counts: Record<number, number>): BaseInventory {
 /** Compact form for assertions: who gives what to whom. */
 function shape(trades: TradeSuggestion[]): string[] {
   return trades.map((t) => `${t.baseA}:${t.cardFromA} <-> ${t.baseB}:${t.cardFromB} (${t.category})`)
+}
+
+/*
+ * The rarity-ordering tests below cannot use the toy deck above. `suggestTrades`
+ * gets its rarity map from `cardTotals(bases)`, whose default card list is the
+ * real 60-card manifest (`cardsInGridOrder()`), not whatever `categoryOf` a
+ * caller happens to pass in — so a made-up id like the toy deck's `5` would just
+ * be an id `cardTotals` never sees priced at all, no matter what
+ * `categoryOf(5)` claims about it. These tests use real ids and `categoryOfCard`
+ * (`cards.ts`) instead, so a base's holdings are also what the rarity engine
+ * measures them as.
+ */
+
+/**
+ * One base holding every real card, so `cardTotals`/`cardRarity` never see a
+ * card absent (total zero) — without this, ~56 of the 60 real cards would tie
+ * at zero and, since zero-total cards alone already fill 9 of the 10 tiers,
+ * swallow every card a test actually trades into that same single bottom tier
+ * together, leaving no room for a test to tell a "rare" trade from a "common"
+ * one.
+ *
+ * `rareIds` get a padding count of 1 — enough to make this base immune (see
+ * below) but too small to be a spare, so a test's own bases decide their real
+ * total via however many copies *they* hold. Every other id gets `1000 + id`:
+ * larger than any count a test base plausibly holds, and spread out by id so
+ * ties among them are impossible. That guarantees `rareIds` sort as the
+ * smallest totals in the whole 60-card set — tier 1, the rarest, however many
+ * of them there are (as long as it's within the tier's 6-card width) — while
+ * anything a test wants to read as "common" needs no special-casing at all:
+ * left out of `rareIds`, its `1000 + id` floor already puts it at the
+ * opposite end.
+ *
+ * This base can never itself appear in a suggestion, regardless of which ids
+ * are in `rareIds`: holding a *positive* count of literally every id (1 or
+ * `1000 + id`, never 0) means it can never satisfy rule 2 ("the receiver must
+ * hold zero") on either side of any pair, for any card. So it inflates the
+ * totals `cardRarity` sees without adding any noise to the trade list itself.
+ */
+function paddingBase(rareIds: readonly number[]): BaseInventory {
+  const rare = new Set(rareIds)
+  const counts = Object.fromEntries(
+    ALL_CARDS.map((card) => [card.id, rare.has(card.id) ? 1 : 1000 + card.id]),
+  )
+  return base('#PAD', counts)
 }
 
 describe('suggestTrades — the core swap', () => {
@@ -275,7 +320,100 @@ describe('suggestTrades — several bases and several options', () => {
   })
 })
 
+describe('suggestTrades — ordered by rarity value', () => {
+  it('sorts a trade moving a rare card ahead of one moving only common cards', () => {
+    // #AAA/#BBB swap cards padded up to the clan's most-common tier; #YYY/#ZZZ
+    // swap cards left near the padding floor, the clan's rarest tier. Alphabetically
+    // AAA/BBB would sort first ('A' < 'Y'); rarity should override that.
+    const trades = suggestTrades(
+      [
+        paddingBase([1, 2]),
+        base('#AAA', { 58: 2 }), // Super Troop — common: no special padding, so its 1000+id floor stands
+        base('#BBB', { 59: 2 }), // Super Troop partner
+        base('#YYY', { 1: 2 }), // Elixir — rare: in `rareIds`, so its total is just this base's count
+        base('#ZZZ', { 2: 2 }), // Elixir partner
+      ],
+      categoryOfCard,
+    )
+
+    assert.deepEqual(shape(trades), [
+      '#YYY:1 <-> #ZZZ:2 (Elixir)',
+      '#AAA:58 <-> #BBB:59 (Super Troop)',
+    ])
+  })
+
+  it('still breaks a tie on rarity value by tag, when two different pairs tie', () => {
+    // Cards 1-4 are all in `rareIds`, so all four tie at the same low total —
+    // these two trades tie on value, and the old alphabetical-by-tag order is
+    // what has to decide it.
+    //
+    // #EEE/#FFF and #CCC/#DDD also each hold a single (non-spare) copy of the
+    // *other* pair's cards. That is not padding noise, it is what keeps the two
+    // pairs from cross-trading with each other: without it, #EEE (spare 1) and
+    // #CCC (spare 3, category Elixir like 1) would satisfy rule 2 for each
+    // other too, and every one of the four bases would trade with every other
+    // one instead of just its intended partner.
+    const trades = suggestTrades(
+      [
+        paddingBase([1, 2, 3, 4]),
+        base('#EEE', { 1: 2, 3: 1, 4: 1 }),
+        base('#FFF', { 2: 2, 3: 1, 4: 1 }),
+        base('#CCC', { 3: 2, 1: 1, 2: 1 }),
+        base('#DDD', { 4: 2, 1: 1, 2: 1 }),
+      ],
+      categoryOfCard,
+    )
+
+    assert.deepEqual(shape(trades), [
+      '#CCC:3 <-> #DDD:4 (Elixir)',
+      '#EEE:1 <-> #FFF:2 (Elixir)',
+    ])
+  })
+
+  it('still breaks a tie on rarity value by card id, for two options on one pair', () => {
+    // Same reasoning as above, but both options are between the same two bases,
+    // so it is the cardFromA/cardFromB tiebreak doing the work this time. Cards
+    // 1 and 2 are Elixir, 20 and 21 are Dark Elixir, so category (rule 3) keeps
+    // this to exactly the two intended combinations rather than all four
+    // cross-category ones.
+    const trades = suggestTrades(
+      [paddingBase([1, 2, 20, 21]), base('#GGG', { 1: 2, 20: 2 }), base('#HHH', { 2: 2, 21: 2 })],
+      categoryOfCard,
+    )
+
+    assert.deepEqual(shape(trades), [
+      '#GGG:1 <-> #HHH:2 (Elixir)',
+      '#GGG:20 <-> #HHH:21 (Dark Elixir)',
+    ])
+  })
+})
+
 describe('groupTradesByPair', () => {
+  it('orders pairs by their best trade’s value, not alphabetically', () => {
+    // Same rare-vs-common setup as the suggestTrades rarity test above: #AAA/#BBB
+    // sorts first alphabetically but #YYY/#ZZZ holds the rarer card, so the pair
+    // list should come out with #YYY/#ZZZ first too.
+    const trades = suggestTrades(
+      [
+        paddingBase([1, 2]),
+        base('#AAA', { 58: 2 }),
+        base('#BBB', { 59: 2 }),
+        base('#YYY', { 1: 2 }),
+        base('#ZZZ', { 2: 2 }),
+      ],
+      categoryOfCard,
+    )
+    const pairs = groupTradesByPair(trades)
+
+    assert.deepEqual(
+      pairs.map((pair) => [pair.baseA, pair.baseB]),
+      [
+        ['#YYY', '#ZZZ'],
+        ['#AAA', '#BBB'],
+      ],
+    )
+  })
+
   it('collects a pair’s options under one heading, in order', () => {
     const trades = suggestTrades(
       [base('#AAA', { 1: 2, 3: 2 }), base('#BBB', { 2: 2, 4: 2 }), base('#CCC', { 2: 2 })],

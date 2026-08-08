@@ -687,6 +687,40 @@ select {
 }
 
 /*
+ * The cross-link chip beside two of the four headings — "Tracker" in the
+ * suggestions heading, "Suggestions" in the tracker's — pointing at each other.
+ * `HeadingJumpChip` in `CardsView.tsx` renders it as a sibling before
+ * `.section-title__top`'s arrow, and without help both would sit in normal flow:
+ * `.section-title__top`'s `margin-left: auto` would still push the *arrow* to the
+ * right edge, but the chip before it would be left stranded in the middle of the
+ * row, with a gap opening up between the two instead of them sitting flush
+ * together at the end.
+ *
+ * The fix is here rather than on `.section-title__top` itself: that class is worn
+ * by all four headings' arrows, including the leaderboard's and the totals', which
+ * have no adjacent chip and still need their own arrow pushed right on its own —
+ * adding a chip-shaped assumption to a class every heading shares would be wrong
+ * for half of them.
+ *
+ * Two rules, not one. `margin-left: auto` on the chip claims the row's leftover
+ * space for itself, and the adjacent-sibling rule below then zeroes the arrow's
+ * *own* auto margin when it immediately follows this chip — otherwise flexbox
+ * would split the leftover space across both auto margins and open a gap between
+ * chip and arrow instead of the 6px `gap` every other pair of items gets. Written
+ * as `.section-title__jump-chip + .section-title__top` rather than relying on
+ * source order for the same reason `.card-jump .card-jump__wide` is a compound
+ * selector further down this file: it outranks `.section-title__top` on
+ * specificity, so it cannot be undone by a later `.section-title__top` recurrence
+ * appended below it.
+ */
+.section-title__jump-chip {
+  margin-left: auto;
+}
+.section-title__jump-chip + .section-title__top {
+  margin-left: 0;
+}
+
+/*
  * The jump row: a second line under the header's controls, aligned to their right edge.
  *
  * A **sibling** of `.card-header` rather than a fourth child of `.card-header__tools`,
@@ -2499,6 +2533,27 @@ table.roster--divided tbody tr:not(:first-child) > td {
   line-height: 1.4;
 }
 
+/*
+ * "On the tracker ↓" once a suggestion has been proposed (or was already pending) —
+ * a `<button>` now, so it can scroll to and focus the specific row, but it must not
+ * read as a second `Propose`. Reset to plain text at `.card-meta`'s own size rather
+ * than reusing `.chip`'s bordered pill, and colored like the app's ordinary `a`
+ * (`--accent`, underlined only on hover, declared near the top of this file) so it
+ * reads as a link to somewhere rather than an action to take.
+ */
+.trade-tracker-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.trade-tracker-link:hover {
+  text-decoration: underline;
+}
+
 /* ---------- weekly progress ---------- */
 
 .progress-week {
@@ -2888,6 +2943,30 @@ table.roster th button:hover {
   margin-top: 0;
 }
 
+/*
+ * Ten small marks, filled where a row of the "Full rows" grid is complete — the
+ * one piece of per-row detail that ranking computes and none of the other six
+ * leaderboards has an equivalent of. Sits under the `n/10` text in the same
+ * `.donation-cell` column `.meter` already uses on the Overall and By-category
+ * boards, so the three "measure plus a small visual" cells all line up the same
+ * way. `role="img"` on the wrapper carries the one accessible name for the whole
+ * row of marks; the marks themselves are `aria-hidden`, the same split `.meter`
+ * uses between its `role="progressbar"` wrapper and its bare fill `div`.
+ */
+.row-marks {
+  display: inline-flex;
+  gap: 2px;
+}
+.row-marks__mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.row-marks__mark--full {
+  background: var(--good);
+}
+
 /* The progress grid's hero/pet column heads: an icon ahead of the sort button's
    own label rather than beside it, so a header carries the same "icon
    supplements the text, never replaces it" rule `.meter-row__name` does. The
@@ -3062,6 +3141,17 @@ table.roster th button:hover {
 }
 .help-prose > :last-child {
   margin-bottom: 0;
+}
+/* Sub-headings inside one section — the leaderboard section names each of the
+   seven boards this way, so "Rarity" and "Spares on hand" read as their own
+   named rule rather than running together in one wall of paragraphs. */
+.help-prose h3 {
+  margin: 20px 0 6px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.help-prose h3:first-child {
+  margin-top: 0;
 }
 
 /*
@@ -3263,6 +3353,55 @@ table.roster th button:hover {
   color: var(--ink-2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* ---------- propose a change ---------- */
+
+/*
+ * Reuses `.changelog`'s list shape for "My requests" — same one-entry-per-row,
+ * dated, disclosed-body idiom `WhatsNewView` uses, because a change request and
+ * a changelog entry are the same kind of thing to read: a date, a subject, a
+ * body of prose.
+ *
+ * The status badge is its own class rather than a reuse of `.trade-status`,
+ * even though the CSS is identical in shape: the two are unrelated features on
+ * the same fixed-badge palette, and a shared class would mean redesigning one
+ * risks silently redesigning the other. Declared once, here, deliberately next
+ * to `.changelog`'s own rules rather than far below them — see this file's own
+ * warning at the top of `CLAUDE.md` about selectors recurring far apart.
+ */
+.request-status {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--radius);
+  border: 1px solid currentColor;
+}
+.request-status--open {
+  color: var(--warning);
+}
+.request-status--resolved {
+  color: var(--good-text);
+}
+.request-status--canceled {
+  color: var(--ink-muted);
+}
+.request-status--resolvedCanceled {
+  color: var(--accent);
+}
+
+/* A later amendment, set off from the original body and from the one before it. */
+.request-amendment {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--grid);
+}
+
+.request-resolution {
+  margin-top: 8px;
 }
 
 /* ==========================================================================
