@@ -7,6 +7,7 @@ import {
   type TradeRecord,
 } from '@coc/shared'
 import { ApiError } from '../api.ts'
+import { scrollAndFocusFirst, scrollBehaviorFor } from '../card-sections.ts'
 import {
   groupTradesByPair,
   suggestTrades,
@@ -24,7 +25,12 @@ import {
   ownersInPairs,
   tradeFilterSummary,
 } from '../trade-filters.ts'
-import { findPendingSwap, sidesOfTrade, tradeProposeAccess } from '../trade-tracker.ts'
+import {
+  findPendingSwap,
+  sidesOfTrade,
+  tradeProposeAccess,
+  tradeRowId,
+} from '../trade-tracker.ts'
 import { completeTrade, proposeTrade, useTrades } from '../trades.ts'
 import { SwapRules } from './help-copy.tsx'
 import { GameIcon, Pager, RowLimitSelect } from './primitives.tsx'
@@ -43,6 +49,29 @@ import { GameIcon, Pager, RowLimitSelect } from './primitives.tsx'
  * is no second component and no second layout: the narrow context gets the same
  * table, filtered.
  */
+
+/**
+ * Scrolls to and focuses a specific trade's row on the tracker below, falling back
+ * to the tracker's own section heading when the row itself isn't there to find.
+ *
+ * **The row won't always be rendered.** `sortTrades` puts pending trades first but
+ * *oldest* first within that group, so a trade just proposed lands at the *end* of
+ * the pending block — off the tracker's current page if it paginates, since the
+ * tracker's own page state is internal to it and nothing outside the component can
+ * reach it. And on a player page, `TradeSuggestions` and `TradeTracker` are mounted
+ * together inside one disclosure (see this module's own doc comment); if that panel
+ * is closed the tracker never rendered its rows at all. Either way, `cards-tracker`
+ * — the card page's own tracker heading id — does not exist there either, so
+ * `scrollAndFocusFirst` trying it as a fallback is a no-op rather than a mistake.
+ *
+ * `scrollAndFocusFirst` already answers "missing is a no-op, not a throw" for both
+ * ids it tries — this runs inside a click handler on a page with no error boundary
+ * above it (`hooks.ts`, per this repo's `CLAUDE.md`).
+ */
+function jumpToTrackedTrade(id: number): void {
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  scrollAndFocusFirst([tradeRowId(id), 'cards-tracker'], scrollBehaviorFor(reducedMotion))
+}
 
 /** One side of a suggested swap: the card, named, with its picture if we have it. */
 function TradeCard({ cardId }: { cardId: number }) {
@@ -95,9 +124,12 @@ function ProposeButton({
 }) {
   const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle')
   const [problem, setProblem] = useState<string | null>(null)
+  /* Set from `proposeTrade`'s own response, the moment this exact click proposes it.
+     A fallback for `pending?.id` below, not the primary source — see there for why. */
+  const [sentId, setSentId] = useState<number | null>(null)
 
   const access = tradeProposeAccess(user, sidesOfTrade(trade, owners))
-  const already = findPendingSwap(tracked, trade) !== undefined
+  const pending = findPendingSwap(tracked, trade)
 
   if (!access.allowed) {
     return (
@@ -107,10 +139,27 @@ function ProposeButton({
     )
   }
 
-  /* `sent` and `already` are the same fact one render apart — the store refresh that
+  /* `sent` and `pending` are the same fact one render apart — the store refresh that
      follows a proposal is what turns the first into the second — so both read the
      same way and the label cannot flicker between them. */
-  if (already || state === 'sent') return <span className="card-meta">On the tracker ↓</span>
+  if (pending !== undefined || state === 'sent') {
+    /* `pending?.id` first: it comes from the tracker's own store, which
+       `proposeTrade` already refreshed before resolving (`server-store.ts`'s
+       `mutate` awaits `load()`), so by the time either condition above is true it is
+       normally there. `sentId` only covers the render in between, before that
+       refreshed snapshot has propagated down as this component's `tracked` prop. */
+    const rowId = pending?.id ?? sentId
+    return (
+      <button
+        type="button"
+        className="trade-tracker-link"
+        onClick={rowId === null ? undefined : () => jumpToTrackedTrade(rowId)}
+        disabled={rowId === null}
+      >
+        On the tracker ↓
+      </button>
+    )
+  }
 
   return (
     <>
@@ -128,7 +177,10 @@ function ProposeButton({
             cardFromB: trade.cardFromB,
             category: trade.category,
           })
-            .then(() => setState('sent'))
+            .then((proposed) => {
+              setSentId(proposed.id)
+              setState('sent')
+            })
             .catch((cause: unknown) => {
               setProblem(cause instanceof ApiError ? cause.message : 'Could not reach the server.')
               setState('idle')

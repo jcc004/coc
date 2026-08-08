@@ -4,9 +4,46 @@ import {
   CARD_JUMP_TARGETS,
   CARD_SECTIONS,
   CARD_TOP_ID,
+  scrollAndFocus,
+  scrollAndFocusFirst,
   scrollBehaviorFor,
   type CardSectionId,
 } from './card-sections.ts'
+
+/**
+ * jsdom implements neither `scrollIntoView` nor `focus` scrolling — `test-dom.ts`
+ * documents why nothing here fakes a viewport instead — so `scrollIntoView` is
+ * stubbed the same way `CardsView.test.tsx`'s `captureScrolls` does: recorded, not
+ * asserted against real layout, because there is none to have an opinion about.
+ */
+function captureScrollCalls() {
+  const calls: string[] = []
+  const before = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    configurable: true,
+    writable: true,
+    value: function scrollIntoView(this: Element) {
+      calls.push(this.id)
+    },
+  })
+
+  return {
+    calls,
+    restore: () => {
+      if (before) Object.defineProperty(Element.prototype, 'scrollIntoView', before)
+    },
+  }
+}
+
+/** A focusable element (needs `tabIndex` in jsdom, same as the real headings and rows). */
+function focusTarget(id: string): HTMLDivElement {
+  const el = document.createElement('div')
+  el.id = id
+  el.tabIndex = -1
+  document.body.appendChild(el)
+  return el
+}
 
 /*
  * The consistency half. That each id is a heading the page *draws* is asserted in
@@ -119,5 +156,81 @@ describe('scrollBehaviorFor', () => {
     /* Not "a shorter slide" — `auto` is an instant scroll. A long smooth scroll down a
        page this tall is exactly the motion the preference exists to refuse. */
     assert.equal(scrollBehaviorFor(true), 'auto')
+  })
+})
+
+describe('scrollAndFocus', () => {
+  it('scrolls the element into view and moves the caret there, when it exists', () => {
+    const target = focusTarget('present')
+    const scrolls = captureScrollCalls()
+    try {
+      const found = scrollAndFocus('present', 'auto')
+
+      assert.equal(found, true)
+      assert.deepEqual(scrolls.calls, ['present'])
+      assert.equal(document.activeElement, target)
+    } finally {
+      scrolls.restore()
+      target.remove()
+    }
+  })
+
+  it('returns false and touches nothing when the id is not on the page', () => {
+    const scrolls = captureScrollCalls()
+    const activeBefore = document.activeElement
+    try {
+      /* The whole point: a caller reaching for a row that is off the current page,
+         or a section that only exists on a different one, gets told so rather than
+         handed an exception — this runs inside click handlers with no error
+         boundary above them. */
+      const found = scrollAndFocus('not-on-the-page', 'auto')
+
+      assert.equal(found, false)
+      assert.deepEqual(scrolls.calls, [])
+      assert.equal(document.activeElement, activeBefore)
+    } finally {
+      scrolls.restore()
+    }
+  })
+})
+
+describe('scrollAndFocusFirst', () => {
+  it('stops at the first id that exists, and never tries the rest', () => {
+    const target = focusTarget('second')
+    const scrolls = captureScrollCalls()
+    try {
+      const found = scrollAndFocusFirst(['first-missing', 'second', 'third-unreachable'], 'auto')
+
+      assert.equal(found, 'second')
+      assert.deepEqual(scrolls.calls, ['second'])
+      assert.equal(document.activeElement, target)
+    } finally {
+      scrolls.restore()
+      target.remove()
+    }
+  })
+
+  it('falls back to a later id when the first is missing', () => {
+    /* The shape `TradeSuggestions.tsx`'s "On the tracker" link needs: the specific
+       row first, the tracker's section heading if the row isn't rendered. */
+    const target = focusTarget('cards-tracker')
+    const scrolls = captureScrollCalls()
+    try {
+      const found = scrollAndFocusFirst(['trade-row-9999', 'cards-tracker'], 'auto')
+
+      assert.equal(found, 'cards-tracker')
+      assert.equal(document.activeElement, target)
+    } finally {
+      scrolls.restore()
+      target.remove()
+    }
+  })
+
+  it('returns null, and touches nothing, when none of the ids are on the page', () => {
+    const activeBefore = document.activeElement
+    const found = scrollAndFocusFirst(['nope-one', 'nope-two'], 'auto')
+
+    assert.equal(found, null)
+    assert.equal(document.activeElement, activeBefore)
   })
 })

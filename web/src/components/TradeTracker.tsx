@@ -11,6 +11,7 @@ import {
   sidesOfTrade,
   sortTrades,
   tradeResolveAccess,
+  tradeRowId,
   tradesInvolving,
   tradeUndoAccess,
 } from '../trade-tracker.ts'
@@ -422,7 +423,16 @@ function TrackerTable({
           </thead>
           <tbody role="rowgroup">
             {view.rows.map((trade) => (
-              <tr key={trade.id} role="row">
+              <tr
+                key={trade.id}
+                id={tradeRowId(trade.id)}
+                role="row"
+                /* A valid focus target, the same way the card page's section
+                   headings are (see `jumpToSection`, `CardsView.tsx`) — so
+                   `ProposeButton`'s "On the tracker" link can land the caret on
+                   this exact row rather than merely scrolling near it. */
+                tabIndex={-1}
+              >
                 <td className="stack-title" role="cell">
                   <BaseLabel tag={trade.baseA} label={labelOf(trade.baseA)} />
                 </td>

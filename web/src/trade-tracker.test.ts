@@ -8,6 +8,7 @@ import {
   sortTrades,
   tradeProposeAccess,
   tradeResolveAccess,
+  tradeRowId,
   tradesInvolving,
   tradeUndoAccess,
   type TradeSides,
@@ -373,5 +374,20 @@ describe('findPendingSwap', () => {
     // the bug instead of letting it show.
     const mirrored = { baseA: '#BBB', baseB: '#AAA', cardFromA: 7, cardFromB: 3 }
     assert.equal(findPendingSwap([trade()], mirrored), undefined)
+  })
+})
+
+/* ---------- the tracker row's DOM id ---------- */
+
+describe('tradeRowId', () => {
+  it('names a row after the trade it belongs to', () => {
+    assert.equal(tradeRowId(9), 'trade-row-9')
+  })
+
+  it('gives two different trades two different ids', () => {
+    // The one property that actually matters here: `TrackerTable` and
+    // `TradeSuggestions`'s "On the tracker" link both call this and must land on
+    // the same element for the same id, and never on each other's.
+    assert.notEqual(tradeRowId(9), tradeRowId(10))
   })
 })

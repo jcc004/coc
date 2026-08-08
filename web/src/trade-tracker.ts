@@ -234,6 +234,16 @@ export function pendingCount(trades: readonly TradeRecord[]): number {
 }
 
 /**
+ * The DOM id `TrackerTable` gives a trade's row, so a control elsewhere on the page
+ * — `ProposeButton`'s "On the tracker" link — can look it up by `document.getElementById`
+ * rather than a second copy of this string template drifting from the one the row
+ * itself uses.
+ */
+export function tradeRowId(id: number): string {
+  return `trade-row-${id}`
+}
+
+/**
  * The pending row for this exact swap, if the tracker already holds one.
  *
  * The same four columns the server's partial unique index is on, so "already

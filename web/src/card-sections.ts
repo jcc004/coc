@@ -155,3 +155,47 @@ export const CARD_TOP_ID: CardSectionId = 'cards-top'
 export function scrollBehaviorFor(prefersReducedMotion: boolean): ScrollBehavior {
   return prefersReducedMotion ? 'auto' : 'smooth'
 }
+
+/**
+ * Scrolls one element into view and puts the caret on it. Returns whether there was
+ * an element to find.
+ *
+ * The reusable half of `jumpToSection` (`CardsView.tsx`) — everything except that
+ * function's one special case, the window-scroll substitution `cards-top` needs
+ * because it is not the actual top of the page. Every other jump, on this page or
+ * off it, is exactly "find this id, scroll it into view, focus it," so it lives here
+ * once rather than a second time wherever the next jump control is written.
+ *
+ * **A missing element is a `false`, not a throw.** The same reasoning as
+ * `jumpToSection`'s own doc comment: a caller may be reaching for an id that is not
+ * currently rendered — off the current page of a paginated table, or a section that
+ * only exists on a different page entirely — and this runs inside click handlers on
+ * pages with no error boundary above them (`hooks.ts`, per this repo's `CLAUDE.md`).
+ */
+export function scrollAndFocus(id: string, behavior: ScrollBehavior): boolean {
+  const target = document.getElementById(id)
+  if (target === null) return false
+
+  target.scrollIntoView({ block: 'start', behavior })
+  target.focus({ preventScroll: true })
+  return true
+}
+
+/**
+ * Tries each id in turn and stops at the first one found on the page.
+ *
+ * The shape a jump control needs once its precise target might not be rendered but
+ * a broader fallback usually is — a specific trade row that may be off the current
+ * page of the tracker, falling back to the tracker's own section heading. Returns
+ * the id that worked, or `null` if none of them are on the page, which is still not
+ * a throw: the same "missing is a no-op" rule `scrollAndFocus` follows.
+ */
+export function scrollAndFocusFirst(
+  ids: readonly string[],
+  behavior: ScrollBehavior,
+): string | null {
+  for (const id of ids) {
+    if (scrollAndFocus(id, behavior)) return id
+  }
+  return null
+}
