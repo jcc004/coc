@@ -115,6 +115,18 @@ export function createServerStore<T>(fetchAll: () => Promise<T[]>): ServerStore<
         // show that it is stale, rethrown so the button that was pressed can say
         // the write did not happen.
         commit({ status: 'error', entries: snapshot.entries, error })
+        // A failed write is very often a conflict — somebody else's write landed
+        // first, which is exactly the case where the local snapshot is not just
+        // stale but *wrong*: the caller's own row still reads its pre-conflict
+        // state, so a control gated on that state (a resolve button checking
+        // `status === 'pending'`) stays live and invites the retry that "fixes"
+        // it. Refreshing here, not just on success, is what makes a rejected
+        // trade-completion actually show as resolved instead of silently
+        // requiring a second click — see the trade tracker's own bug writeup,
+        // 2026-08-08. `.catch` because `load()` already turns its own failure
+        // into a committed error state; it cannot throw here in a way that
+        // should replace the original `error` this call is about to rethrow.
+        await load().catch(() => {})
         throw error
       }
     },
