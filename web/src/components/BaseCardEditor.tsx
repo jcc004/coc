@@ -8,7 +8,6 @@ import {
   type RefObject,
 } from 'react'
 import {
-  MAX_CARD_COUNT,
   normalizeTag,
   type BaseInventory,
   type CardCategory,
@@ -33,7 +32,6 @@ import {
   ALL_CARDS,
   cardCategoriesInOrder,
   categoryOfCard,
-  clampCardCount,
   countMap,
   deckSlug,
   inventorySummary,
@@ -90,8 +88,9 @@ function Attribution({ base }: { base: BaseInventory | undefined }) {
  *
  * `cardCountStep` decides both whether the press is offered and where it lands, so
  * `to === null` is a bound reached — see the note there for why that is **`disabled`**
- * rather than a press that clamps. A read-only base disables both ends as well as the
- * box; the box is where the reason is spelled out, for the reason given below.
+ * rather than a press that clamps. A read-only base disables both ends — the two
+ * steppers are the whole of this cell, since the badge over the art is decoration,
+ * never a control; see the note on `CardEntryTile` below.
  */
 function StepButton({
   count,
@@ -99,7 +98,8 @@ function StepButton({
   glyph,
   label,
   onCount,
-  boxRef,
+  buttonRef,
+  siblingRef,
   readOnlyReason,
 }: {
   count: number
@@ -109,8 +109,15 @@ function StepButton({
   /** The whole accessible name, e.g. `One more Barbarian`. */
   label: string
   onCount: (next: number) => void
-  /** The count box beside it, for the one press that takes this button away. */
-  boxRef: RefObject<HTMLInputElement | null>
+  /** This button's own node, so its sibling can hand focus to it — see `siblingRef`. */
+  buttonRef: RefObject<HTMLButtonElement | null>
+  /**
+   * The *other* stepper in this cell, for the one press that takes this button away.
+   * There used to be a count box to fall back on; now the only other control in the
+   * cell that is always operable — never disabled by the same press, and never hidden
+   * by width — is the sibling button.
+   */
+  siblingRef: RefObject<HTMLButtonElement | null>
   /** Why this base cannot be typed into, or `null` when it can. */
   readOnlyReason: string | null
 }) {
@@ -118,6 +125,7 @@ function StepButton({
 
   return (
     <button
+      ref={buttonRef}
       type="button"
       className="card-tile__step"
       disabled={readOnlyReason !== null || to === null}
@@ -127,10 +135,10 @@ function StepButton({
       aria-label={readOnlyReason === null ? label : `${label}, read-only`}
       /*
        * Safari does not focus a button when it is clicked, and the commit is "focus
-       * left this cell": without this the box would blur to nothing, save, and then
-       * the press would change a count that nothing was left focused to commit. So
-       * the press takes focus explicitly rather than relying on the default that two
-       * of three engines happen to give.
+       * left this cell": without this the sibling would blur to nothing, save, and
+       * then the press would change a count that nothing was left focused to commit.
+       * So the press takes focus explicitly rather than relying on the default that
+       * two of three engines happen to give.
        */
       onMouseDown={(event) => {
         event.currentTarget.focus()
@@ -138,13 +146,14 @@ function StepButton({
       onClick={() => {
         if (to === null) return
         /*
-         * The press that empties this button hands focus to the box beside it. A
-         * `disabled` element cannot hold focus, so the browser would drop it on
-         * `<body>` — which loses the user's place, and counts as leaving the cell,
-         * firing a save in the middle of a run of presses. The box is the control in
-         * this cell that is still operable, so it is where focus belongs.
+         * The press that empties this button hands focus to its sibling. A `disabled`
+         * element cannot hold focus, so the browser would drop it on `<body>` —
+         * which loses the user's place, and counts as leaving the cell, firing a save
+         * in the middle of a run of presses. The sibling stepper is the control in
+         * this cell that is guaranteed still operable — it only disables at the
+         * *opposite* bound — so it is where focus belongs.
          */
-        if (cardCountStep(to, by) === null) boxRef.current?.focus()
+        if (cardCountStep(to, by) === null) siblingRef.current?.focus()
         onCount(to)
       }}
     >
@@ -154,22 +163,26 @@ function StepButton({
 }
 
 /**
- * One card, with the row you set its count in: `−`, the number, `+`.
+ * One card, with the row you set its count in: `−`, `+`.
  *
  * The picture, the frame, the deck color and the desaturation are all `CardTile`,
  * shared with the clan-totals grid on the card page. What is added here is that row
  * and the one thing that has to be said at a tile: a save that did not happen.
  *
- * **The count is still typed.** The buttons are beside the box, never instead of it:
- * sixty cards is sixty numbers, and somebody entering them types `7` rather than
- * pressing `+` seven times. The buttons are for the nudge afterwards — 2 to 3 — which
- * is the part a phone keyboard makes tedious out of all proportion to the change.
+ * **There is no way to type a count, at any tile width.** Sixty cards is sixty
+ * numbers, and a number box or a tap-to-edit badge were both tried and both dropped:
+ * the cap is 10, so a run of taps on `+` is never more than ten presses, which is the
+ * whole reason this grid can afford to make the steppers the *only* way to change a
+ * count rather than a convenience beside a typed one. Nothing on the tile is a target
+ * for typing, so nothing has to reserve space, hide itself at a width, or manage a
+ * second focus state — the badge over the art (`CardTile`'s `badge` prop) is once
+ * again pure decoration, exactly as it is on the totals grid.
  *
  * **The row sits under the frame, not over the art.** Overlaid controls would put a
  * tap target on top of the one thing on the tile that identifies the card, and the
  * art is the identity here — there is no name to fall back on.
  *
- * ## Three controls, and what each of them is called
+ * ## Two controls, and what each of them is called
  *
  * The tile shows no card name; the art is the identity, which is how the event itself
  * presents these. The name is on the tile's `title` as a pointer tooltip and — the
@@ -177,35 +190,27 @@ function StepButton({
  * a tooltip does not appear on a touch tap and assistive tech mostly ignores a `title`
  * on a plain container.
  *
- * Sixty tiles times three controls is 180 things a screen reader can land on, so how
- * they are named is the difference between a usable page and an unusable one:
+ * Sixty tiles times two controls is 120 things a screen reader can land on:
  *
  * - `−` is **`One fewer Barbarian`** and `+` is **`One more Barbarian`**. The card's
- *   name, because somebody landing on a `+` has to know which card it belongs to, and
- *   nothing else — the deck and the range are not what a stepper needs to say.
- * - the box keeps the full **`Barbarian, Elixir — copies held, 0 to 10`**. It is the
- *   control the whole cell is about, so it is the one that spells out the deck (the
- *   tiles carry no heading and the frame color is the only *visible* grouping) and
- *   the range.
+ *   name, because somebody landing on a `+` has to know which card it belongs to.
  *
- * The card's name is therefore said three times per cell and everything else once,
- * which is the trade this makes. Two alternatives were weighed and are worse. Naming all
- * three in full triples the deck and the range as well, so crossing one deck reads out
- * `Elixir` nineteen times over and `0 to 10` fifty-seven times. Wrapping the row in a
- * `role="group"` named for the card and leaving the buttons as bare `One more` says the
- * name once — but a group is announced when focus *enters* it, and `+` is the third
- * control in, so the one place the card most needs naming is exactly where the group
- * has already stopped saying it.
+ * Naming carries less than it used to, on purpose: there is no third control left to
+ * spell out the deck or the range in words, because the badge that would have carried
+ * them is `aria-hidden`. The deck still reaches a screen reader nowhere but the tile's
+ * `title`, which assistive tech mostly ignores — an honest cost of dropping the count
+ * box's accessible name along with the box, recorded rather than papered over. What a
+ * sighted reader gets that a screen reader does not: the frame's deck color, and the
+ * badge's own count past a spare.
  *
- * The tile itself is still given **no** `label`. The controls inside it are the named
- * things; naming the container as well would announce every card a fourth time.
+ * The tile itself is still given **no** `label`. The two steppers are the named
+ * things; naming the container as well would announce every card a third time.
  *
- * Held-vs-not is still not carried by color alone. `--locked` desaturates the art,
- * and the **number box** says it independently: 0 for a card the base lacks, n for
- * one it holds. That box is visible at every breakpoint, which is why the `Have n` /
- * `None` line that used to repeat it a third time has gone — and why, where a tile is
- * too narrow to hold a stepper at a real target size, it is the *buttons* that are not
- * drawn and never the box. See `.card-tile__step` in styles.css.
+ * Held-vs-not still is not carried by color alone for a sighted reader: `--locked`
+ * desaturates the art, and the badge — past a spare — prints the exact count in words
+ * on top of it. Below that (a card held once, or not at all) the grayscale is what is
+ * left to say so, which is the same trade the totals grid already makes for every card
+ * on that grid, not a new one introduced here.
  */
 function CardEntryTile({
   card,
@@ -228,17 +233,19 @@ function CardEntryTile({
   /** Set on the one tile whose blur triggered a save that did not happen. */
   failed: boolean
 }) {
-  /* So a press that disables its own button can hand focus back to the one control in
-     the cell that is always operable. Read only from event handlers. */
-  const boxRef = useRef<HTMLInputElement>(null)
+  /* So a press that disables its own button can hand focus to the one control in the
+     cell guaranteed still operable: its sibling. See `StepButton`'s note on
+     `siblingRef` — the badge is never a focus target, so it is never a candidate. */
+  const minusRef = useRef<HTMLButtonElement>(null)
+  const plusRef = useRef<HTMLButtonElement>(null)
 
   return (
     <CardTile
       card={card}
       held={count > 0}
       // Only past one copy: `×1` on fifty tiles would be noise, where a spare is
-      // the fact worth spotting. The totals grid makes the opposite choice, which
-      // is why this is the caller's decision and not the tile's.
+      // the fact worth spotting. The totals grid makes the same choice, for the
+      // same reason — see `CardTile`.
       badge={count > 1 ? `×${count}` : undefined}
       // Names the tile for a pointer now that no text does. The category rides
       // along because the decks draw no heading any more, leaving the frame color
@@ -247,15 +254,16 @@ function CardEntryTile({
       className={failed ? 'card-tile--failed' : undefined}
     >
       {/*
-       * The save, and the reason this row is an element at all rather than three
-       * siblings: **leaving the cell is the commit**, not leaving the box. `focusout`
-       * bubbles, so one handler here sees focus move off any of the three, and
-       * `relatedTarget` says where it went — still inside this row, or out. Pressing
-       * `+` five times is one departure and one write; without this it would be five
-       * writes of the whole base, each moving the `updated_at` the attribution line
-       * above the grid reads out. The decision itself is `blurDecision`, so the
-       * "a stepper press is not a departure" skip sits with `unchanged` and `busy`
-       * rather than being a second, quieter rule living in here.
+       * The save, and the reason this row is an element at all rather than two
+       * siblings: **leaving the cell is the commit**, not leaving one stepper.
+       * `focusout` bubbles, so one handler here sees focus move off either button,
+       * and `relatedTarget` says where it went — still inside this row, or out.
+       * Pressing `+` five times is one departure and one write; without this it
+       * would be five writes of the whole base, each moving the `updated_at` the
+       * attribution line above the grid reads out. The decision itself is
+       * `blurDecision`, so the "a stepper press is not a departure" skip sits with
+       * `unchanged` and `busy` rather than being a second, quieter rule living in
+       * here.
        */}
       <div
         className="card-tile__count"
@@ -269,34 +277,9 @@ function CardEntryTile({
           glyph="−"
           label={`One fewer ${card.name}`}
           onCount={onCount}
-          boxRef={boxRef}
+          buttonRef={minusRef}
+          siblingRef={plusRef}
           readOnlyReason={readOnlyReason}
-        />
-
-        <input
-          ref={boxRef}
-          className="card-tile__input"
-          type="number"
-          inputMode="numeric"
-          min={0}
-          max={MAX_CARD_COUNT}
-          value={String(count)}
-          disabled={readOnlyReason !== null}
-          onChange={(event) => onCount(clampCardCount(event.target.value))}
-          aria-invalid={failed || undefined}
-          /* Carries the name, the deck and the range, since the tile prints none of
-             them — and the refusal too when there is one: a disabled control that
-             does not say why is a dead end, and sixty of them is sixty dead ends.
-             It is said here and not on the buttons as well because the sentence is
-             about the *base*, not this card: it is the same sentence on all sixty
-             tiles, the panel above states it once in full, and repeating it three
-             times a tile would cost more than it tells anyone. */
-          title={readOnlyReason ?? undefined}
-          aria-label={
-            readOnlyReason === null
-              ? `${card.name}, ${card.category} — copies held, 0 to ${MAX_CARD_COUNT}`
-              : `${card.name}, ${card.category} — copies held, read-only. ${readOnlyReason}`
-          }
         />
 
         <StepButton
@@ -305,7 +288,8 @@ function CardEntryTile({
           glyph="+"
           label={`One more ${card.name}`}
           onCount={onCount}
-          boxRef={boxRef}
+          buttonRef={plusRef}
+          siblingRef={minusRef}
           readOnlyReason={readOnlyReason}
         />
       </div>
@@ -343,16 +327,15 @@ function ReadOnlyNotice({ access }: { access: CardEntryAccess }) {
 /**
  * The grid and the entry form for one base, saved in a single request.
  *
- * **Leaving a cell is the save.** There is no Save button: a count is typed or stepped
- * and then committed when focus leaves the card it belongs to, which is also what
- * happens when the user tabs on to another card, clicks elsewhere, or navigates away.
- * Three things that has to get right, and all three are in `card-entry.ts` rather than
- * here:
+ * **Leaving a cell is the save.** There is no Save button: a count is stepped and then
+ * committed when focus leaves the card it belongs to, which is also what happens when
+ * the user tabs on to another card, clicks elsewhere, or navigates away. Three things
+ * that has to get right, and all three are in `card-entry.ts` rather than here:
  *
- * - **the cell, not the box.** A cell holds three controls — `−`, the number, `+` — so
- *   focus moving between them is not a departure and must not write. That is the
+ * - **the cell, not either stepper alone.** A cell holds two — `−`, `+` — so focus
+ *   moving between them is not a departure and must not write. That is the
  *   difference between five presses of `+` being one request and being five;
- * - **an unchanged field writes nothing.** Tabbing across sixty boxes must not fire
+ * - **an unchanged field writes nothing.** Tabbing across sixty tiles must not fire
  *   sixty requests, because every one of them moves `updated_at`, and `updated_at`
  *   is what the attribution line above the grid reads out. The comparison is against
  *   `savedRef` — the counts the server is known to hold — so retyping the same
@@ -514,7 +497,7 @@ export function BaseCardEditor({
     setFailure(null)
     try {
       /*
-       * A loop, so a box changed while the request was in flight is not dropped:
+       * A loop, so a count changed while the request was in flight is not dropped:
        * that blur decided `busy` and did nothing, and this is where the deferral is
        * picked up. It terminates because only typing can reopen the gap, and
        * `savedRef` only ever records what the server actually took.
@@ -595,8 +578,8 @@ export function BaseCardEditor({
           {/* The only status left where the Save button was. It says what the form
               is doing, not what it wants you to do — there is nothing to press. */}
           <span className="card-meta" aria-live="polite">
-            {/* "card", not "box": a cell is three controls now, and stepping between
-                them is deliberately not a save — see `blurDecision`. */}
+            {/* "card", not "box": there is no box any more, a cell is the two steppers,
+                and stepping between them is deliberately not a save — see `blurDecision`. */}
             {saving ? 'Saving…' : writable ? 'Counts save as you leave each card' : 'Read-only'}
           </span>
           {/* Beside the status rather than beside the heading, because the heading is

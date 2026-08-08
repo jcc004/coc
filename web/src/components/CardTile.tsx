@@ -23,29 +23,31 @@ import { GameIcon } from './primitives.tsx'
  *
  * Three things the callers vary, and nothing else:
  *
- * - **the badge.** The entry grid shows one only past a second copy, because `×1`
- *   on fifty tiles is noise where a spare is the fact worth spotting. The totals
- *   grid shows every count including 1, because the totals *are* what it is for.
- * - **what sits under the frame.** The entry grid's count row — a typeable number box
- *   between a `−` and a `+`, all three named for the card — or nothing at all. It was
- *   one number box until the steppers arrived; the slot has never cared how many
- *   controls go in it, which is why they went in as `children` and not as a prop here.
- * - **where the accessible name comes from.** In the entry grid the controls under the
- *   frame are the named things and the tile needs no name of its own — three of them
- *   already say which card this is, and a name on the container would be a fourth. In
- *   the totals grid the tile holds no control, so `label` names the tile and is the
- *   only place "nobody holds this" is stated in words — grayscale with no badge would
- *   otherwise be color alone.
+ * - **the badge.** Both grids show one only past a copy — `×1` on fifty tiles is
+ *   noise where a spare is the fact worth spotting — and it is always plain,
+ *   decorative text: see the note on `badge` below for why the entry grid's copy is
+ *   not a control despite living in a grid full of them.
+ * - **what sits under the frame.** The entry grid's count row — two stepper buttons,
+ *   `−` and `+`, arranged stacked or side by side depending on the tile's width — or
+ *   nothing at all. The slot has never cared how many controls go in it, which is why
+ *   they went in as `children` and not as a prop here.
+ * - **where the accessible name comes from.** In the entry grid the two steppers are
+ *   the named things, and the tile needs no name of its own — both already say which
+ *   card this is, and a name on the container would be a third. In the totals grid the
+ *   tile holds no control, so `label` names the tile and is the only place "nobody
+ *   holds this" is stated in words — grayscale with no badge would otherwise be color
+ *   alone.
  *
  * **Nothing here is clickable, and that is a decision rather than an omission.** The
  * totals grid does make its tiles pressable — a press lists the bases holding that
  * card — but it does so by wrapping this in a `<button>` of its own. Handling the
  * press in here would make the entry grid's tiles pressable too, where the target
- * would sit around a number box people are typing into **and around that cell's own
- * `−` and `+`** — a button inside a button, which is not even markup a browser will
- * keep — and it would mean re-implementing keyboard activation, focus and the pressed
- * state that a real button has already. So the caller wrapping it is the contract: this
- * stays a picture, and `label` is the name that button computes from its content.
+ * would sit around this cell's own `−` and `+` — a button inside a button, which is
+ * not even markup a browser will keep. So the caller wrapping it is the contract: this
+ * stays a picture, and `label` is the name that button computes from its content. The
+ * badge is part of that picture, not an exception to it: max count is 10, so a run of
+ * taps on the steppers is the whole answer to changing it, and the badge only ever
+ * needs to be looked at, never touched.
  *
  * `GameIcon` is used without a `fallback` on purpose: the card art is gitignored,
  * so a fresh clone has none of it, and the element removes itself on error rather
@@ -64,7 +66,16 @@ export function CardTile({
   card: GeneratedCard
   /** Drives the desaturation: a card that is not held shows the same art in gray. */
   held: boolean
-  /** Corner badge text, lower right over the art. Omit for no badge at all. */
+  /**
+   * Corner badge text, bottom-center over the art, straddling its lower edge. Omit
+   * for no badge at all.
+   *
+   * Sized, shaped and placed off the real game's own card-collection screen — a
+   * wide, chamfered bar roughly half the art's width, centered on the art's bottom
+   * edge — rather than an app-invented convention, which is why it reads larger and
+   * more prominent than a typical corner-chip badge. See `.card-tile__badge` in
+   * styles.css for the measurements.
+   */
   badge?: string
   /** Pointer tooltip. A convenience for a mouse — never the only carrier of anything. */
   title: string
@@ -109,7 +120,14 @@ export function CardTile({
       aria-label={label}
     >
       <div className="card-tile__frame" data-crop={framing.kind} style={frameStyle}>
-        <GameIcon src={card.image} className="card-tile__art" />
+        {/* The art's own rounded-corner clip, split out from the frame so the
+            badge below — a sibling, not a child of this — can straddle the
+            frame's bottom edge without being clipped along with the art. See
+            `.card-tile__badge`'s doc comment in styles.css for why that overlap
+            is the point. */}
+        <div className="card-tile__art-clip">
+          <GameIcon src={card.image} className="card-tile__art" />
+        </div>
         {badge === undefined ? null : (
           <span className="card-tile__badge" aria-hidden="true">
             {badge}

@@ -469,10 +469,9 @@ function CardTotalsGrid({
                  * `CardTile`.
                  *
                  * Two reasons. The entry grid is the other caller and must not
-                 * become clickable — its tiles hold a number box and, wherever the
-                 * tile is wide enough for them, two stepper buttons, so a press
-                 * target around all that would both compete with typing and nest a
-                 * button inside a button, which is invalid HTML. And a
+                 * become clickable — its tiles hold two stepper buttons under the
+                 * frame, so a press target around the whole tile would nest a button
+                 * inside a button, which is invalid HTML. And a
                  * `<button>` is keyboard-operable, focusable, Enter/Space-activated
                  * and focus-ringed by the stylesheet's one `:focus-visible` rule
                  * without any of that being written here; a `div` with `onClick`

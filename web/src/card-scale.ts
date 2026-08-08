@@ -29,8 +29,8 @@ export const DEFAULT_CARD_COLUMNS = 6
  *
  * 64 rather than the ~48px that six columns yields on a small phone: this is a floor
  * on choices the user opts into, and a denser view is only worth having if the art is
- * still recognizable and the count box still typeable. The mandated six-column
- * baseline is deliberately not held to it — see the module note.
+ * still recognizable and the badge and steppers still comfortably tappable. The
+ * mandated six-column baseline is deliberately not held to it — see the module note.
  */
 export const MIN_OPTIONAL_TILE = 64
 

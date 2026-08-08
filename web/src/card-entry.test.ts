@@ -205,7 +205,7 @@ describe('blurDecision', () => {
 
   it('writes nothing while focus is only moving inside the one card', () => {
     /* The stepper case, and the reason this skip outranks every other: a press on `+`
-       blurs the box, and five presses would otherwise be five whole-base writes. It is
+       blurs `−`, and five presses would otherwise be five whole-base writes. It is
        checked with a *real* change pending, since that is the only state where the
        other three skips would not have caught it anyway. */
     const draft = new Map(saved).set(1, 4)

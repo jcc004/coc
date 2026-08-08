@@ -57,34 +57,42 @@ option are two people's names in one label, and the reader cannot tell which is 
   costs no box, no gap and no change to the column alignment. Anything other than `contents` there
   splits the sixty tiles back into four grids and the seams reappear.
   Tiles are **picture only**: no card name. A card the base holds renders in color; one it lacks
-  renders the same file under `grayscale(1)`. That is **never the only cue** — the number box under
-  the art reads 0 for a card the base lacks and n for one it holds, at every breakpoint, so
-  held-vs-not survives with no color vision at all. The name is on the tile's `title` and in the
-  accessible name of every control in the cell, so nothing that reads the page aloud has lost it.
+  renders the same file under `grayscale(1)`. For a sighted reader that is **never the only cue** —
+  the badge over the art prints the exact count past a spare, so a held-once-or-more card is never
+  told apart from an unheld one by color alone. A screen reader, though, gets nothing at all here:
+  there is no longer a number box or an accessible badge to read the count from, only the two
+  steppers' bare card names — see [The count row](#the-count-row) for the honest accounting of
+  what that costs and why it was accepted anyway. The name is on the tile's `title` and in the
+  accessible name of both steppers, so *which card* is never lost even where *how many* is.
   The cost is real and worth knowing: the card art is gitignored, so on a checkout with no art a
   tile is an empty frame over a count.
-- **The count badge** sits in the art's lower right and appears **only past one copy**: `×1` on
-  fifty tiles would be noise, where a spare is the fact worth spotting. The clan-totals grid makes
-  the opposite call and badges every count — see [Cards across the clan](#cards-across-the-clan).
+- **The count badge** sits in a wide bar straddling the art's lower edge and appears **only past
+  one copy**: `×1` on fifty tiles would be noise, where a spare is the fact worth spotting. The
+  clan-totals grid makes the opposite call and badges every count — see
+  [Cards across the clan](#cards-across-the-clan). Sized and placed off the real game's own
+  card-collection screen; see [The count row](#the-count-row) for the measurements.
 - **The tile border carries the deck**, in the event's own frame colors —
   `--deck-elixir`, `--deck-dark-elixir`, `--deck-builder-base`, `--deck-super-troop`, declared
   in all three theme scopes and lightened for dark mode, where the deep purple would otherwise
   vanish. Categorical color on a border only, never on text. With the drawn headings and the names
-  gone it is the only *visible* cue to deck, which is a real narrowing — the fallbacks are that
-  the cards stay in deck order so each color arrives as one unbroken run, that each run is a
-  named group with a hidden heading, and that every tile's `title` and its box's accessible name
-  spell the deck out in words. **Color is never the only carrier**, which is the rule this page
-  would otherwise have been the first to break. It also settles the one case
-  where two cards share a picture, since the home and Builder Base Baby Dragons sit in different
-  decks; with the names gone, that pair is otherwise indistinguishable. The nominal
-  values are recorded in `CARD_CATEGORY_BORDER` in `shared/src/card-types.ts`; what the page
-  paints is the CSS token, because a color that must work on parchment *and* dark wood is a
-  theme decision.
-- **Entry** is a **count row under each frame** — `−`, a capped 0–10 number box, `+` — kept in a
-  local draft so typing sixty boxes is one write, not sixty. The draft re-seeds when the base
-  changes or when somebody else's save lands — but never while there are unsaved edits, because
-  silently replacing what someone is typing is worse than showing a stale number they are about to
-  overwrite. See [The count row](#the-count-row) for the three things that row has to get right.
+  gone it is the only *visible* cue to deck, which is a real narrowing — the fallback for a sighted
+  reader is that the cards stay in deck order so each color arrives as one unbroken run, and that
+  each run is a named group with a hidden heading. For a screen reader there is no fallback left on
+  the entry grid: the badge that once spelled the deck out in words is decoration now, so `title`
+  (which assistive tech mostly ignores) is what remains — see
+  [The count row](#the-count-row). It also settles the one case where two cards share a picture,
+  since the home and Builder Base Baby Dragons sit in different decks; with the names gone, that
+  pair is otherwise indistinguishable to a sighted reader. The nominal values are recorded in
+  `CARD_CATEGORY_BORDER` in `shared/src/card-types.ts`; what the page paints is the CSS token,
+  because a color that must work on parchment *and* dark wood is a theme decision.
+- **Entry** is a **count row under each frame** — just `−` and `+`, capped 0–10 — kept in a local
+  draft so pressing sixty rows of buttons is one write, not sixty. There is no way to type a count
+  directly at any width: the cap is low enough that a run of taps is never more than ten presses,
+  which is what lets the steppers be the only control rather than a convenience beside a typed one.
+  The draft re-seeds when the base changes or when somebody else's save lands — but never while
+  there are unsaved edits, because silently replacing what someone is doing is worse than showing a
+  stale number they are about to overwrite. See [The count row](#the-count-row) for the three
+  things that row has to get right.
 - **The four deck plaques** sit in the base header's **upper right, directly beneath the
   `13/60 cards · 22 copies · 9 spares` line** they break down. See
   [Deck progress plaques](#deck-progress-plaques) — the same four are on every player page.
@@ -110,139 +118,142 @@ option are two people's names in one label, and the reader cannot tell which is 
 
 ### The count row
 
-Under each frame, never over the art:
+Under each frame, never over the art — except the badge, which straddles its lower edge:
 
 ```
 ┌─────────────────┐
 │   card artwork  │
+│       ×3        │
 └─────────────────┘
-  −     [ 3 ]    +
+       −     +
 ```
 
-**The box stays typeable, and that is the point of the layout.** Sixty cards is sixty numbers, and
-somebody entering them types `7` rather than pressing `+` seven times; the buttons are the
-adjustment afterwards, which is the thing a thumb is bad at doing through a keyboard. So they went
-*beside* the box and not instead of it. Overlaying them on the artwork was rejected for a separate
-reason: the art is the only thing on a tile that identifies the card, so a tap target on top of it
-would be covering the identity to reach the control.
+**There is no way to type a count, at any tile width — a number box and, later, a
+tap-to-edit badge were both tried and both dropped.** Sixty cards is sixty numbers, and
+that reasoning is real, but the cap is 10: a run of taps on `+` is never more than ten
+presses, which is the whole reason this grid can afford to make the steppers the *only*
+way to change a count. Nothing on the tile is a target for typing, so nothing has to
+reserve space, hide itself at a width, or manage a second focus state — the badge over
+the art is pure decoration, exactly as it is on the totals grid, and `−`/`+` are the
+whole of the cell.
 
-**Three controls, and what each is called.** Sixty tiles times three is 180 things a screen reader
-can land on, and the tiles print no names, so every word of "which card is this" is in an accessible
-name. Read back through the accessible-name computation in
+**Two controls, and what each is called.** Sixty tiles times two is 120 things a screen
+reader can land on, and the tiles print no names, so every word of "which card is this"
+is in an accessible name. Read back through the accessible-name computation in
 `web/src/components/BaseCardEditor.test.tsx`:
 
 ```
 button      One fewer Barbarian
-spinbutton  Barbarian, Elixir — copies held, 0 to 10
 button      One more Barbarian
 ```
 
-The card's name three times, because somebody landing on a `+` has to know which card it belongs to;
-the deck and the range **once**, on the control the cell is actually about. Naming all three in full
-was tried and is worse — one deck would read out `Elixir` nineteen times over and `0 to 10`
-fifty-seven times. So was wrapping the row in a `role="group"` named for the card and leaving the
-buttons as bare `One more`: a group is announced when focus *enters* it, and `+` is the third
-control in, so the one place the card most needs naming is exactly where the group has stopped
-saying it. The tile itself is still given **no** `label` — the controls inside it are the named
-things, and naming the container would be a fourth announcement per card.
+Naming carries less than the box-and-badge design once did, and that is recorded rather
+than smoothed over. There is no third control left to spell out the deck or the range in
+words — the badge that would have carried them is `aria-hidden`. A screen reader hears
+the card's name and nothing else about it: not the deck, not the range, not the current
+count. The deck still reaches a sighted reader through the frame's border color and the
+tile's `title` (a pointer tooltip assistive tech mostly ignores); the count still reaches
+a sighted reader through the badge past a spare and the grayscale below that. Naming all
+three in full was the alternative tried first, in an earlier design, and was worse for a
+different reason — one deck read out `Elixir` nineteen times over — but that tradeoff no
+longer applies now that there is no third control to name at all.
 
-**Leaving the *cell* is the save, not leaving the box.** A press on `+` moves focus off the number
-box, so a save-on-blur would turn five presses into five PUTs of the base's whole season, each
-moving the `updated_at` the attribution line reads out. The row is one element with one `onBlur`;
-`focusout` bubbles, and `relatedTarget` says whether focus went to another control in the same cell
-or out of it. The skip is a fourth reason in `blurDecision` — `sameCell`, ahead of `unchanged`,
-`notWritable` and `busy` — rather than a second, quieter rule inside the component, and a test
-presses `+` five times and asserts **one** write of `count: 5`.
+**Leaving the *cell* is the save.** A press on `+` moves focus onto `−`, so a save-on-blur
+would turn five presses into five PUTs of the base's whole season, each moving the
+`updated_at` the attribution line reads out. The row is one element with one `onBlur`;
+`focusout` bubbles, and `relatedTarget` says whether focus went to the other stepper in
+the same cell or out of it. The skip is the fourth reason in `blurDecision` — `sameCell`,
+ahead of `unchanged`, `notWritable` and `busy` — and a test presses `+` five times and
+asserts **one** write of `count: 5`.
 
-**Both ends are `disabled` at the bounds, not clamping.** `−` is unavailable at 0 and `+` at 10 —
-`cardCountStep()` in `card-entry.ts` returns `null`, which is both the disabled state and the
-press's destination, so the two cannot disagree. A `+` still offered at ten would be a control that
-answers a press by doing nothing, which is the dead end this page refuses to hand out sixty times;
-the bound is legible without it, since the number is right there and the box's name gives the range.
-The one cost is handled deliberately: a `disabled` element cannot hold focus, so the press that
-takes a button away hands focus to the box beside it rather than letting the browser drop it on
-`<body>` — which would lose the user's place *and* count as leaving the cell, firing a save
-mid-sequence.
+**Both ends are `disabled` at the bounds, not clamping.** `−` is unavailable at 0 and `+`
+at 10 — `cardCountStep()` in `card-entry.ts` returns `null`, which is both the disabled
+state and the press's destination, so the two cannot disagree. The bound is legible
+without it: the badge past a spare and the grayscale below that already say the number.
+The one cost is handled deliberately: a `disabled` element cannot hold focus, so the
+press that takes a button away hands focus to its **sibling stepper** — the only other
+control in the cell, and the one guaranteed not disabled by the same press — rather than
+letting the browser drop it on `<body>`, which would lose the user's place *and* count as
+leaving the cell, firing a save mid-sequence.
 
-**A read-only base disables all three**, and the reason still reaches the reader: in full in the
-notice above the grid, in full in the box's own accessible name and `title`, and as a plain
-`, read-only` suffix on each button's name. It is deliberately not repeated in full three times —
-the sentence is about the *base*, so it is the same sentence on all sixty tiles, and tripling it
-would cost far more than it tells anyone.
+**A read-only base disables both**, and the reason still reaches the reader: in full in
+the notice above the grid, and as a plain `, read-only` suffix on each button's name. It
+is said in full only once, in that notice — the sentence is about the *base*, so it is
+the same sentence on all sixty tiles, and there is no longer a third control at the tile
+to duplicate it on.
 
-**The buttons are drawn only where they fit, and the box is never the one that gives way.** The
-constraint is horizontal, and it is the tightest thing on the page. What has to fit is
-`24 + 2 + box + 2 + 24`: two 24px buttons (WCAG 2.5.8's floor, not a number with slack in it), two
-2px gaps, and the box's 1px borders — **54px of chrome, plus whatever `10` needs**. The grid is
-`minmax(0, 1fr)`, so it cannot widen to help.
+**The badge is decoration on both grids that draw it, drawn only past a spare.** `×1` on
+fifty tiles would be noise where a spare is the fact worth spotting, so `count > 1` is
+the whole condition — the same one the totals grid uses, and the one this grid's very
+first version used before a number box and later a tap-to-edit badge both tried, and
+both dropped, taking on the job of showing 0 and 1 as well. A card held once, or not at
+all, is grayscale-versus-not and nothing else — the same encoding the totals grid
+already carries for every card on it, not a new gap introduced here.
 
-That last term is not a constant, which is why the threshold is
-**`@container card-tile (min-width: calc(54px + 1.25em))`** — 72.8px at this app's 15px body type —
-rather than a round number:
+**Sized and positioned off the real game's own card-collection screen, not an
+app-invented corner-chip convention.** Measured from a reference screenshot — the "×2"
+badge on the game's own Furnace card, against the card's own art — the badge is a wide
+bar roughly **half the art's width and about a seventh of its height**, centered
+horizontally and straddling the art's *bottom edge* rather than tucked into a corner:
 
-- `10` is set in `tabular-nums`, so it is **wider than a proportional measurement of the same
-  string** (18.4px against 15.9px at 15px type). Measuring the text rather than the glyphs is what
-  two earlier guesses at this threshold, 78px and then 72px, both got wrong. Measured, the box needs
-  18px of usable width at 15px type, 20px at 16px and 24px at 20px: about 1.25em throughout.
-- writing it in `em` means the row responds to type size on its own. If the app's text ever grows,
-  the steppers **stop being drawn** rather than start clipping a count — a number cut in half is a
-  wrong number, whereas a button that is not offered is a convenience that is not offered, and the
-  box beside it still does the whole job.
+| | badge width | badge height |
+|---|---|---|
+| measured (reference) | ≈ 50.6% of art width | ≈ 14.0% of art height |
+| implemented | `width: 50%` | `height: 14%` |
 
-A *container* query and not a media query, because the tile's width is a product of the viewport, the
-gutters, the panel padding **and** the density control's 6/8/10/12, so a width breakpoint would be
-answering a different question. Below the threshold the steppers are `display: none`, which also
-keeps them out of the tab order and the accessibility tree, so a phone reads sixty controls and not
-a hundred and eighty. Where they are drawn, a touch-sized screen takes them to 24×44 — taller,
-because height is the axis that is free here.
+Both are percentages of `.card-tile__frame`'s own box, so the badge scales with the tile
+at every density and viewport the same way the art itself does — measured against the
+compiled stylesheet, the ratio holds exactly at every tile size from 79.7px of content
+up (`.card-tile__frame`'s `overflow: hidden` clips nothing at those sizes, since the
+badge never exceeds the frame). Below that, two floors take over: `min-width: 24px` and
+`min-height: 16px`, because a pill scaled to a literal 50%×14% of a 44.7px-wide phone
+tile's art would be a few pixels tall, too short to hold even the smallest legible type.
+`font-size` is `max(11px, 12cqi)` for the same reason on the text itself — `cqi` (the
+tile's own container-query inline size, the same unit family the stepper threshold below
+already uses) lets the digits grow with the tile, and the `11px` floor is this app's
+original fixed badge size, so the smallest tiles never render text smaller than the
+badge already shipped with.
 
-**One exception the `em` cannot see**, and it is written next to the rule it corrects: below 601px
-the responsive section forces 16px on `input` specifically — iOS zooms the page whenever a focused
-control is under 16px — and that rule names the input, not the tile the `em` resolves against. So a
-second, stricter `@container card-tile (width < 75px)` inside the same media query hides the row
-there. Measured: at 16px type a 19px box clips `10` and a 20px box does not. In practice it decides
-only a ~15px band of viewport width around 570px, because below 601px the density control offers
-nothing but six columns.
+**It stops at the frame's own bottom edge rather than spilling past it — the one place
+this adapts rather than copies the reference exactly.** The real game's card has nothing
+below its art to collide with; this app's tile has two always-visible stepper buttons
+directly under the frame, and a badge sized to hang past the art the way the reference's
+does would cover part of them. `.card-tile__frame`'s existing `overflow: hidden` is what
+enforces the stop — measured, at every tile size the badge's bottom edge sits flush with
+the frame's, never past it and never overlapping the stepper row.
 
-Measured in Chrome against the real stylesheet — 31 widths from 320 to 1280px at six columns, both
-themes, plus every width the density control offers 8, 10 and 12 at, plus a coarse pointer, 125%
-zoom, and three browser default font sizes. Clipping is read off the box's `scrollWidth` against its
-`clientWidth` on a tile holding `10`, the widest value, not off the arithmetic:
+**The shape is a subtle, `inverted` trapezoid, not a plain rounded rectangle** — read off
+the reference's own pixels rather than assumed from "game badges are pills". A horizontal
+scan of the badge's black outline at several heights measures the top edge (nearest the
+art) at ≈92px and the bottom edge at ≈88.5px across a ≈90px-wide badge: a real taper,
+wider at the top, but only about 2% inward per side from top to bottom — not the
+dramatic wedge "isosceles trapezoid" suggests taken on its own. `clip-path: polygon(...)`
+on `.card-tile__badge` reproduces that ratio, with each of the four corners chamfered
+rather than right-angled: a straight-edge polygon cannot round a corner the way
+`border-radius` does, and a chamfer reads closer to the reference's rounding at this size
+than a sharp corner would. (The totals grid's badge is unaffected — same class, same
+shape — since the reference's card is what both grids' badges are modeled on now, not
+only the entry grid's.)
 
-| | tile content | steppers | box |
-|---|---|---|---|
-| 320px, 6 cols | 33px | no | 33×44 |
-| **390px, 6 cols** | **44.7px** | **no** | 44.7×44 |
-| 570px, 6 cols | 74.7px | no (the 16px exception) | 56×44 |
-| **600px, 6 cols** | **79.7px** | **yes, 24×44** | 27.7×44 |
-| 844px, 6 cols (landscape) | 104px | yes, 24×44 | 52×44 |
-| **1280px, 6 cols** | **175.3px** | **yes, 24×24** | 56×30.5 |
-| 1280px, 8 cols | 125px | yes, 24×24 | 56×30.5 |
-| 1280px, 10 cols | 94.8px | yes, 24×24 | 42.8×30.5 |
-| **1280px, 12 cols** | **74.7px** | **yes, 24×24** | **22.7×30.5** |
+**The text is white with a black outline, not `--on-gold`, this app's usual accessible
+ink for the gold gradient.** A horizontal scan straight through the reference's "×2"
+glyphs reads, in order: gold badge fill, a near-black stroke, near-white glyph fill,
+near-black stroke again, gold fill in the gap between the two strokes of the "×", then
+the "2". `-webkit-text-stroke` draws that outline; `paint-order: stroke fill` keeps it
+from painting over the fill and thinning it. This is not a step away from the
+`--on-gold`-everywhere-else habit so much as a different route to the same goal: a thick
+dark outline around light text is the standard game-UI answer to needing text legible
+against a background that varies — the same problem `--on-gold`'s measured 4.5:1 solves
+for a single, known gold gradient. `aria-hidden` exempts the badge from needing an
+accessible *name* either way, not from needing to be readable by the sighted eye that
+lands on it. Font weight is 800, a step above this app's usual 700 for bold UI text —
+also read off the reference, where the digits sit visibly heavier than that.
 
-**No horizontal overflow at any width, in either theme; no row overflowing its tile; no clipped
-`10` anywhere the steppers are drawn**; the deck frame colors untouched.
-
-The **densest view is the tightest case in the app** and the reason the gaps are 2px and the box has
-no inline padding: twelve across at 1280px is 74.7px of tile against a 72.8px threshold, 1.9px of
-margin, and at the 3px gaps and 4px of box padding this started with it missed by 3.3px and lost its
-steppers. It follows that twelve-across needs a **CSS viewport of about 1250px** to keep them —
-below that the tile drops under the threshold and the row falls back to the box. At **125% zoom**
-that is 1250 × 1.25 ≈ 1560 physical pixels: verified, a 1600px window at 125% keeps the full row at
-twelve across with no clipping, and a 1280px window at 125% (1024 CSS px) drops the steppers
-cleanly rather than clipping. A larger **browser default font size** changes nothing at all, because
-`body` sets `font-size: 15px` in pixels — that is a pre-existing property of the whole app, not of
-this row. A forced **root** font size does reach it, and behaves as designed: at 20px the twelve-column
-view hides its steppers instead of clipping the count.
-
-The honest cost, recorded because it is the part somebody will want to argue with: **at the default
-six columns on a phone there are no stepper buttons at all.** 390px yields 44.7px of tile, three
-controls in which would be about 14px each — under every target-size floor this app applies and
-narrower than the digits inside them. Turning the phone sideways is enough (≈844px landscape gives
-104px of tile and the full row), as is a tablet. Fitting them at 390px needs a decision this change
-did not have: fewer columns on a phone, which would break the fixed six-across the grid is built
-around.
+Measured in Chrome against the real stylesheet, both themes, at the app's own reference
+tile sizes: **no clipping, no overflow, no overlap with the stepper row, at any of
+them** — 33px and 44.7px of content (the floors engage; badge reads legibly at a fixed
+24×16 and 11px type), 79.7px, 104px, 175.3px and 250px (the proportional 50%/14% values
+and the measured taper both apply cleanly, and the floors have no effect).
 
 ### Row counts on the trade suggestions
 
@@ -508,8 +519,8 @@ or nothing) and where the accessible name comes from.
 
 **`CardTile` itself is still not a control.** The press is a `<button class="card-total__pick">` that
 this panel wraps each tile in, not a click handler inside the tile — so the entry grid, whose tiles
-hold a number box people type into and a `−` and `+` of their own (a button inside a button is not
-markup a browser keeps), is untouched, and the pressable version gets keyboard
+hold their own `−` and `+` under the frame (a button inside a button is not markup a browser keeps),
+is untouched, and the pressable version gets keyboard
 activation, focus, the focus ring and a real pressed state from the element rather than from
 attributes. `.card-deck` is `display: contents`, so the button takes the tile's place as the grid
 item; it is `display: block; width: 100%` with the browser's button chrome removed, and the tile

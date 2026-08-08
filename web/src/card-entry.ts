@@ -141,13 +141,13 @@ export type BlurDecision = { save: true } | { save: false; reason: SkipReason }
  * What to do when focus leaves a count control.
  *
  * `sameCell` is the one the stepper buttons added, and it is first because it is not a
- * departure at all. A cell is three controls now — `−`, the box, `+` — and pressing a
- * button moves focus off the box, so a rule that saved on every blur would turn five
- * presses of `+` into five whole-base writes, each one moving `updated_at`. Focus
- * landing somewhere else *inside the same cell* is a user still working on one card;
- * the commit waits for them to leave it. Which is the same instinct as `unchanged`,
- * one level up: the question is never "did the box lose focus" but "is there now a
- * number the server has not been told about, and has the user finished saying it".
+ * departure at all. A cell is two controls — `−`, `+` — and pressing one moves focus
+ * off the other, so a rule that saved on every blur would turn five presses of `+`
+ * into five whole-base writes, each one moving `updated_at`. Focus landing on the
+ * *other* stepper in the same cell is a user still working on one card; the commit
+ * waits for them to leave it. Which is the same instinct as `unchanged`, one level
+ * up: the question is never "did a stepper lose focus" but "is there now a number the
+ * server has not been told about, and has the user finished saying it".
  *
  * `unchanged` is the case that matters most: it is compared against the **last value
  * the server accepted**, not against the value the field started the focus with,
@@ -163,8 +163,8 @@ export function blurDecision(input: {
   writable: boolean
   saving: boolean
   /**
-   * Whether focus went to another control in the same card's cell — its own `−`, `+`
-   * or count box — rather than out of it.
+   * Whether focus went to the same card's other stepper — its own `−` or `+` —
+   * rather than out of the cell entirely.
    */
   focusStaysInCell: boolean
 }): BlurDecision {

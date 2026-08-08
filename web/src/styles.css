@@ -180,8 +180,8 @@
    * came off, which is the narrowest this encoding has been: what keeps it from
    * being color-alone is that the tiles stay in deck order so each color is one
    * unbroken run, that each run is a `role="group"` named by a `.visually-hidden`
-   * heading, and that every tile's `title` and its number box's accessible name
-   * say the deck in words.
+   * heading, and that every tile's `title` and its badge's accessible name say the
+   * deck in words.
    *
    * Nominal values are the event's own frame colors, recorded in
    * `CARD_CATEGORY_BORDER` in shared/src/card-types.ts. Dark mode lightens them
@@ -1789,8 +1789,8 @@ details.group > .group__body {
  * are gone and the tiles carry no names, by request. That is a real narrowing of
  * this encoding, so the fallbacks matter: the cards are still laid out in deck
  * order, so each color arrives as one unbroken run, and every tile's `title` and
- * its number box's accessible name both spell the deck out in words. Deck is
- * grouping, not magnitude — it never stands in for a value.
+ * its badge's accessible name both spell the deck out in words. Deck is grouping,
+ * not magnitude — it never stands in for a value.
  *
  * It used to be doing a second job: under the old wiki art the home and Builder Base
  * Baby Dragons were one file, and with the tile names gone the deck color was the
@@ -1833,48 +1833,162 @@ details.group > .group__body {
  * Resolution: at ~107px of column the frame is ~107×134 and the file is 256×320, so
  * it downscales at 1x and is still a fraction over 1:1 at 2x — sharp either way,
  * which is the other thing the switchover bought.
+ *
+ * The frame itself does *not* clip: `.card-tile__art-clip` below does that, split out
+ * so the badge — a sibling of that wrapper, not a child — can straddle the frame's
+ * bottom edge instead of being cropped along with the art. See `.card-tile__badge`'s
+ * doc comment for why the overlap is the point, not an overflow bug.
  */
 .card-tile__frame {
   position: relative;
-  overflow: hidden;
   width: 100%;
   aspect-ratio: 4 / 5;
+}
+
+/* Just the rounded-corner clip for the art, isolated from `.card-tile__frame` so the
+   badge can overflow the frame's bottom edge without being clipped too. */
+.card-tile__art-clip {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   /* Inside the tile's own 12px radius and its 2px frame, so the cropped art does
      not square off the corners the deck border rounds. */
   border-radius: calc(var(--radius) - 6px);
 }
 
-/* Quantity, over the art, and only past one copy: "×1" on fifty tiles would be
-   noise, where a spare is the fact worth spotting. */
+/*
+ * Quantity, over the art, only past a copy — "×1" on fifty tiles would be noise,
+ * where a spare is the fact worth spotting. Always plain, `aria-hidden` text on both
+ * grids that draw it: the badge is decoration, never a control, on the entry grid the
+ * same as the totals grid. Max count is 10, so the steppers below the frame are the
+ * whole of how a count changes; the badge only ever needs to be read, never touched —
+ * see `CardTile`'s doc comment.
+ *
+ * Sized, shaped and placed off the real game's own card-collection screen rather than
+ * an app-invented corner-chip convention — measured from a reference screenshot, the
+ * "×2" badge on the game's own Furnace card, pixel by pixel rather than eyeballed, at
+ * every property that turned out to matter:
+ *
+ * - **position and size**: a wide bar roughly half the art's width and about a
+ *   seventh of its height, centered horizontally and straddling the art's *bottom
+ *   edge* rather than tucked into a corner. `width` and `height` are percentages of
+ *   `.card-tile__frame`'s own box, so the badge scales with the tile at every density
+ *   and viewport the same way the art itself does;
+ * - **shape**: not a plain rounded rectangle. A horizontal scan of the badge's own
+ *   black outline at several heights measures the top edge (nearest the art) at
+ *   ~92px and the bottom edge at ~88.5px across a ~90px-wide badge — a real, subtle,
+ *   `inverted` (wide-top) taper, about 2% inward per side from top to bottom, not the
+ *   dramatic wedge "isosceles trapezoid" suggests taken alone. `clip-path` below
+ *   reproduces that ratio with chamfered corners, which read closer to the
+ *   reference's rounding at this size than the sharp corners a pure trapezoid would
+ *   otherwise have;
+ * - **text**: white with a black outline, not this file's usual accessible
+ *   `--on-gold` ink — a horizontal scan straight through the "×2" glyphs reads gold
+ *   fill, near-black stroke, near-white glyph fill, near-black stroke, back to gold
+ *   in the gap between strokes. See the `color`/`-webkit-text-stroke` rules below for
+ *   why that is not a step away from this file's accessibility habits so much as a
+ *   different, equally deliberate route to the same one.
+ *
+ * `font-size` is in `cqi` (the tile's own container-query inline size, already
+ * established for the stepper threshold below) for the same reason `width`/`height`
+ * are percentages — a fixed px badge would look right at one tile size and wrong at
+ * every other.
+ *
+ * **It straddles the frame's bottom edge**, `translateY` pushing it about a third of
+ * its own height past the art — matching the reference, where the badge's lower
+ * portion sits on the tan background outside the card's own border rather than
+ * stopping flush inside it. `.card-tile__art-clip` (not this frame) is what clips the
+ * art, precisely so this can hang past that clip without being cut off too. The
+ * tradeoff this accepts, knowingly: the game's card has nothing below its art to
+ * collide with, and this one has two always-visible stepper buttons a lower-hanging
+ * badge sits closer to — `.card-tile__count`'s top margin below is sized to keep a
+ * clear gap under the overlap rather than let the two touch.
+ */
 .card-tile__badge {
   position: absolute;
-  right: 0;
+  left: 50%;
   bottom: 0;
-  min-width: 20px;
-  padding: 0 4px;
-  border: 1px solid var(--gold-edge);
-  border-radius: 9px;
+  transform: translate(-50%, 32%);
+  width: 50%;
+  min-width: 24px;
+  height: 14%;
+  /*
+   * A floor under the proportional height, for the same reason the font-size below
+   * has one: at the app's smallest realistic tile (44.7px of content, the six-column
+   * phone default) 14% of the frame's height is under 8px — too short to hold even
+   * an 11px line of text without the glyphs spilling past the pill. 16px is enough
+   * for that floor size with a little breathing room; above it the proportional
+   * value already clears 16px on its own (79.7px of content and up, measured), so
+   * the floor only ever engages at the two or three narrowest tiles in the app.
+   */
+  min-height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Black, not `--gold-edge` — the reference's badge outline reads as the same
+     near-black as the text stroke below, not a darker shade of the gold fill. */
+  border: 1px solid #1a1200;
+  /*
+   * Chamfered, not a plain rounded rectangle — measured off the reference at the
+   * pixel level rather than assumed from "game badges look like a pill". The top
+   * edge (where the badge meets the art) runs measurably wider than the bottom:
+   * 92px against 88.5px across a ~90px-wide badge, a 2%-per-side inward taper from
+   * top to bottom — a real, `inverted` (wide-top) trapezoid, but a subtle one, not
+   * the dramatic wedge "isosceles trapezoid" suggests on its own. `clip-path`
+   * chamfers all four corners rather than rounding them: this stylesheet's other
+   * badge use (the totals grid, a plain `border-radius` pill) stays a true rounded
+   * rectangle, but a `clip-path` polygon can only draw straight edges, and a small
+   * chamfer reads closer to the reference's rounding at this size than a hard right
+   * angle would.
+   */
+  clip-path: polygon(14% 0%, 86% 0%, 98% 12%, 96% 88%, 84% 100%, 16% 100%, 4% 88%, 2% 12%);
   background: linear-gradient(180deg, var(--gold) 0%, var(--gold-deep) 100%);
-  color: var(--on-gold);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 17px;
+  /*
+   * White with a black outline, not `--on-gold` — measured off the reference, where
+   * a horizontal scan straight through the "×2" glyphs reads gold badge fill, a
+   * near-black stroke, near-white glyph fill, near-black stroke again, back to gold
+   * in the gap between the strokes. `-webkit-text-stroke` is the outline; `paint-order`
+   * keeps it from painting over the fill and thinning it. This is the standard
+   * game-UI answer to the same contrast problem `--on-gold` solves elsewhere in this
+   * file with a flat accessible ink: a thick dark outline keeps light text legible
+   * against *any* background behind it, including the gold this pill actually sits
+   * on, which is a different but comparably robust route to the same "always
+   * legible" goal — `aria-hidden` still exempts it from needing an accessible name,
+   * not from needing to be readable by the sighted eye that lands on it.
+   */
+  color: #fff;
+  /* 0.09em, not 0.06em: a side-by-side comparison against the reference showed ours
+     running thinner than the game's own outline at the same size. */
+  -webkit-text-stroke: 0.09em #1a1200;
+  paint-order: stroke fill;
+  /*
+   * Proportional to the tile via `cqi`, the same container-query unit the stepper
+   * threshold below is measured in, floored at 11px — this app's original fixed
+   * badge size — so the digits stay legible on the narrowest tiles rather than
+   * shrinking toward unreadable the way a pure `cqi` value would. Measured: 12cqi
+   * alone renders at 5.4px on the 44.7px-content phone default, illegible; the
+   * floor keeps it at a readable 11px there and lets it grow past that from about
+   * 90px of tile content on.
+   */
+  font-size: max(11px, 12cqi);
+  /* Bolder than the rest of the app's UI text on purpose — measured against the
+     reference, the "×2" reads heavier than this stylesheet's usual 700. */
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
 
 /*
- * The `Have n` / `None` line that used to sit here has gone: the number box below
- * it showed the same figure, at every breakpoint, so it said everything twice.
- *
- * That box is now the whole non-color half of the held-vs-not encoding, which is
- * why it is never hidden and never replaced by the badge — the grayscale filter and
- * the ×n badge are both decoration over a number that is always readable, and the
- * input's accessible name spells out the card and the deck in words.
+ * The `Have n` / `None` line that used to sit here has gone: the badge above it
+ * (`.card-tile__badge`) shows the same figure past a spare, and the grayscale carries
+ * the rest, which is the same encoding the totals grid already uses for every card on
+ * it — not a new trade introduced here.
  *
  * The slot is reused for the one thing that genuinely needs saying at the tile: a
  * save that did not happen. Sixty fields that save themselves have no Save button
- * left to go quiet, so the failure has to be visible where it was typed.
+ * left to go quiet, so the failure has to be visible at the tile.
  */
 .card-tile__note {
   font-size: 11px;
@@ -1892,39 +2006,48 @@ details.group > .group__body {
 }
 
 /*
- * The count row under the frame: `−`, the box, `+`.
+ * The stepper row under the frame: `−`, `+` — and, since the number box between them
+ * went away, nothing else. Two 24px buttons and a gap is now the row's whole width
+ * budget; the badge that used to share this cell's meaning lives over the art instead
+ * (`.card-tile__badge`) and never competes with the row for horizontal space.
  *
  * **Under the frame and not over the art**, by request and for a reason: the art is the
  * only thing on a tile that identifies the card, and a tap target laid over it would be
- * covering the identity to reach the control.
+ * covering the identity to reach the control. The badge is the one thing that already
+ * sat over the art before it became interactive, which is why it stayed there rather
+ * than moving down to join this row.
  *
- * A flex row rather than a three-column grid, because the middle track is the only one
- * allowed to give: the buttons are a fixed target size or they are not drawn at all,
- * and the box takes whatever is left. Horizontal space is the whole problem here — see
- * the input below.
+ * **Stacked by default, side by side once the tile is wide enough** — see the container
+ * query below for the threshold and how it was measured. `column` is the default
+ * rather than something a media query has to opt into, because the buttons are always
+ * drawn now: there is no width below which this row disappears the way it used to.
+ *
+ * `margin-top` is 12px, not a token amount: the badge above now straddles the frame's
+ * bottom edge (`.card-tile__badge`'s `translateY`) rather than stopping flush inside
+ * it, so this row needs real clearance under that overlap rather than the 4px that was
+ * enough when the badge stayed inside the frame.
  */
 .card-tile__count {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
   width: 100%;
-  margin-top: 4px;
+  margin-top: 12px;
 }
 
 /*
- * One end of the row. **Not drawn at all until the tile can hold it** — see the
- * container query below, which is the load-bearing part of this rule.
- *
- * 24px square is the floor from WCAG 2.5.8, and it is a floor rather than a comfortable
- * size: at six columns the tile is 44.7px of content on a 390px phone and 79.7px on a
- * 600px one, so this is a control that fits in the second case and cannot fit in the
- * first. On a touch-sized screen the generic `button { min-height: 44px }` in the tap
- * targets block below takes it to 24×44 — taller, because height is the axis that is
- * free here and width is the one that is not.
+ * One end of the row, **always drawn** — unlike the box-and-steppers design this
+ * replaced, there is no width below which a stepper goes undrawn. 24px square is the
+ * floor from WCAG 2.5.8, not a comfortable size with slack in it: it is what both the
+ * stacked and the side-by-side arrangement are sized around, in `.card-tile__count`'s
+ * container query below. On a touch-sized screen the generic `button { min-height:
+ * 44px }` in the tap targets block below takes it to 24×44 in the side-by-side
+ * arrangement, and to a comfortable 24-wide-by-44-tall column when stacked too.
  */
 .card-tile__step {
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
@@ -1948,9 +2071,9 @@ details.group > .group__body {
 /*
  * A bound reached, or a base somebody else owns — the same treatment for both, because
  * both are "this press is not available" and the difference is said in words elsewhere:
- * a bound is visible as the number itself (0 or 10, in a box whose accessible name
- * gives the range), and a refusal is in the panel above the grid and in the box's own
- * accessible name.
+ * a bound is visible as the number itself, in the badge whose accessible name gives the
+ * range, and a refusal is in the panel above the grid and in the badge's own accessible
+ * name too.
  */
 .card-tile__step:disabled {
   color: var(--ink-muted);
@@ -1958,137 +2081,39 @@ details.group > .group__body {
   cursor: not-allowed;
 }
 
-.card-tile__input {
-  /*
-   * Was a fixed 56px, which is wider than a tile at six columns on a phone and would
-   * have pushed the grid into a horizontal scroll. 56px is now a flex *basis* with
-   * shrink left on, which is the same thing said in a way that also survives having
-   * two buttons beside it: 56px where there is room, and whatever is left over where
-   * there is not — measured, 27.7px at six columns on a 600px screen and 22.7px at
-   * twelve columns on a 1280px one, which is the narrowest it is ever drawn.
-   *
-   * `min-width: 0` because a flex item floors at its intrinsic content width
-   * otherwise, and an `input`'s intrinsic width is its `size` attribute's worth of
-   * characters — about 170px. That is the same floor `minmax(0, 1fr)` is guarding
-   * against on the grid itself, and the same horizontal scroll at the end of it.
-   *
-   * **No inline padding at all.** The number is centered, so inline padding is invisible
-   * at every width — and it is charged twice over in the one place there is nothing to
-   * spare. It was 4px, then 2px, and each step bought a case back: at 4px `10` clipped
-   * at six columns on a 600px screen, and at 2px the densest desktop view could not fit
-   * a stepper at all. What is left is the honest minimum, `10` plus its 1px borders,
-   * which is what the container query below is written in terms of.
-   */
-  flex: 0 1 56px;
-  min-width: 0;
-  padding: 3px 0;
-  text-align: center;
-  background: var(--plane);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-variant-numeric: tabular-nums;
-}
-
 /*
- * A base somebody else owns. The counts are still readable — they are shared, and
- * seeing them is the whole point of the page — so the box keeps its value and only
- * loses the ability to take a new one. `not-allowed` and the muted ink are the
- * visible half; the input carries the reason as its title and in its accessible
- * name, and the panel above names the owner in a sentence, so the tile is never
- * silently uneditable.
+ * Side by side once the tile can hold two 24px buttons and the gap between them —
+ * **stacked below the threshold, row above it** — and every number here was measured
+ * in a browser against the real stylesheet, the same way the box-and-steppers
+ * threshold this replaced was.
+ *
+ * What has to fit for the row is just `24 + 2 + 24` — **50px** — because the badge that
+ * used to share this budget with a number box now lives over the art and costs the row
+ * nothing. That is a materially smaller ask than the old design's `54px + 1.25em`
+ * (72.8px): removing the box did not just delete a control, it deleted the one thing
+ * that made the old threshold need a font-relative term at all — the buttons here are a
+ * fixed 24px regardless of type size, so a plain pixel value is the whole answer.
+ *
+ * Measured, six columns, both themes, against the compiled stylesheet: **44.7px of
+ * tile content at 390px** stacks — two buttons need 50px side by side and only have
+ * 44.7px, but a single 24px-wide column fits with room either side — and **79.7px at
+ * 600px** goes side by side, 29.7px clear of the 50px floor. Sweeping the threshold
+ * itself: at 50px exactly the two buttons and the 2px gap between them fit with zero
+ * pixels to spare and no overlap; at 49px they clip by a pixel. **52px** is the
+ * threshold below, two pixels of margin over the bare arithmetic — the same instinct as
+ * the old rule's 1.9px cushion at its tightest case, sized down because there is no
+ * font-relative term here that could still move after the measurement was taken.
+ *
+ * Across the density control at 1280px every column count clears this by a wide
+ * margin: 175.3px at six, 125px at eight, 94.8px at ten, 74.7px at twelve — all well
+ * past 52px, so the row goes side by side at every density on desktop. The tightest
+ * case that still stacks is the default six-column phone tile; turning the phone
+ * sideways (≈104px landscape) or moving to a tablet both clear the threshold and go
+ * side by side.
  */
-.card-tile__input:disabled {
-  color: var(--ink-muted);
-  background: var(--grid);
-  cursor: not-allowed;
-}
-
-/*
- * Where the steppers are drawn, and every number in it was measured in a browser
- * rather than reasoned about. The arithmetic here was wrong twice before it was right.
- *
- * What has to fit is `24 + 2 + box + 2 + 24`, so the threshold is **54px of chrome
- * plus whatever `10` needs**: two 24px buttons (WCAG 2.5.8's floor, not a number with
- * slack in it), the two 2px gaps, and the box's 1px borders. The digits are the rest,
- * and they are the part that is not a constant — which is why the threshold is written
- * as a `calc()` in `em` rather than as a round number:
- *
- *   `10` is set in `tabular-nums`, so it is **wider than the proportional figures a
- *   text measurement suggests** — 18.4px against 15.9px at 15px type. That gap is
- *   exactly what an earlier 78px-and-then-72px pair of guesses got wrong: measured, the
- *   box needs 18px of usable width at 15px type, 20px at 16px and 24px at 20px, which
- *   is ~1.25em across the range.
- *
- * So `calc(54px + 1.25em)` — 72.8px at this app's 15px body type. In `em` and not px
- * because the one thing that moves the requirement is the type size, and if that ever
- * changes globally the row should stop being drawn rather than start clipping a count.
- * A number cut in half is a wrong number; a button that is not offered is a
- * convenience that is not offered, and the box beside it still does the whole job.
- * (`em` resolves against `.card-tile`, the container — see the phone override below
- * for the one font size it therefore cannot see.)
- *
- * The tile's content box is **44.7px at six columns on a 390px phone**. Three controls
- * in 44.7px would be about 14px each: under every target-size floor this app applies,
- * narrower than the digits inside them, and — since the grid is `minmax(0, 1fr)` and
- * cannot widen — the horizontal scroll the input's own note above records having
- * already caused once.
- *
- * So below the threshold the tile keeps exactly what it has always had: the box, which
- * is the control that can do the whole job on its own. That is the decision the layout
- * is built around — the buttons are the convenience, the box is the feature — and it is
- * why they are hidden with `display: none` and not merely shrunk: a control nobody can
- * hit is worse than one that is not offered, and `display: none` also keeps them out of
- * the tab order and the accessibility tree, so a phone still reads sixty controls
- * rather than a hundred and eighty.
- *
- * Measured, six columns: 33px of tile content at 320px and 44.7px at 390px (box only),
- * 79.7px at 600px and 104px at 844px (steppers, 24×44), 175.3px at 1280px (24×24).
- * Across the density control at 1280px: 175.3px at six, 125px at eight, 94.8px at ten
- * and **74.7px at twelve — which now clears 72.8px and keeps its steppers**, by 1.9px.
- * That is the tightest case in the app and it is the reason the constant is 54 and the
- * gaps are 2px: at a 3px gap and 4px of box padding, twelve-across missed by 3.3px.
- */
-@container card-tile (min-width: calc(54px + 1.25em)) {
-  .card-tile__step {
-    display: flex;
-  }
-
-  /*
-   * The native spinners go, but only here. They do the same job as the buttons either
-   * side of them, and two steppers in a 21px box is one too many — but where the
-   * buttons are not drawn the native pair is the only one there is, so it stays.
-   */
-  .card-tile__input {
-    appearance: textfield;
-  }
-  .card-tile__input::-webkit-outer-spin-button,
-  .card-tile__input::-webkit-inner-spin-button {
-    appearance: none;
-    margin: 0;
-  }
-}
-
-/*
- * The one font size the `em` above cannot see, and it is here rather than down in the
- * phone block because it is unreadable away from the rule it corrects.
- *
- * Below 601px the responsive section forces **16px on inputs specifically** — iOS zooms
- * the page whenever a focused control is under 16px — and that rule names `input`, not
- * the tile. So the container's type is still 15px, `1.25em` still resolves to 18.8px,
- * and the threshold comes out 2px short of what a 16px `10` actually needs: measured, a
- * 19px box clips at 16px type and a 20px box does not, so the row needs 74px of tile
- * there rather than 72.8px. 75px, for a pixel of margin.
- *
- * In practice this only decides a ~15px band of viewport width around 570px, because
- * below 601px the density control offers nothing but six columns — see
- * `MIN_OPTIONAL_TILE` — so the tile is 44.7px at 390px and 79.7px at 600px, and only
- * the narrow strip between those two lands near the threshold at all.
- */
-@media (max-width: 600px) {
-  @container card-tile (width < 75px) {
-    .card-tile__step {
-      display: none;
-    }
+@container card-tile (min-width: 52px) {
+  .card-tile__count {
+    flex-direction: row;
   }
 }
 
@@ -3823,20 +3848,6 @@ table.roster--pairs td {
 
   .conflict-list li {
     padding: 12px 0;
-  }
-
-  /*
-   * The count box: the one control a phone user touches sixty times, and at six columns
-   * on a phone still the *only* one in the cell — the steppers need 76px of tile and a
-   * 390px screen gives 45px, so they are not drawn there at all. See
-   * `@container card-tile` above.
-   *
-   * The generic `button` rule at the top of this block already gives a stepper its 44px
-   * of height wherever it *is* drawn. Its width is deliberately left at 24px: there is
-   * no more width to give it, and 24×44 is a target that clears 2.5.8 in both axes.
-   */
-  .card-tile__input {
-    padding: 6px 0;
   }
 
   /*
