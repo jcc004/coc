@@ -89,6 +89,26 @@ has the ids and paths but none of the files. Both layers degrade rather than bre
 
 Never a broken image, never a reserved empty slot, never a reflowed table.
 
+## Re-vendoring art in place does not reach warm caches
+
+`deploy/nginx-coc.conf` caches `/coc/` for 24h client-side (`deploy/README.md`'s
+`nginx-test.sh` entry). The asset scripts overwrite files at the same paths, so
+re-running one after Supercell or the wiki changes an image — or after hand-correcting
+one, as in the card-art provenance pass — changes the bytes at a URL that never
+changes. A browser that already fetched the old bytes keeps serving them from its own
+disk cache for up to 24h from *its* fetch, regardless of anything the server sends on
+later requests: changing `Cache-Control` does not reach a client that already has a
+cached copy, because it will not ask again until its own copy expires.
+
+The only thing that reaches every client immediately is a new URL. `GameIcon`
+(`web/src/components/primitives.tsx`) appends `?v=<LOCAL_ART_VERSION>` to every
+same-origin `/coc/...` src it renders — cards, league badges, label icons, Town Hall
+art — and leaves remote CDN fallbacks alone. **Bump `LOCAL_ART_VERSION` whenever
+vendored art changes without its filenames changing**; that is the whole mechanism,
+and reverting it later (once every client's 24h window has naturally elapsed) is
+deleting the constant and the one line in `GameIcon` that reads it, not a server
+change.
+
 ## Licensing, and why it matters more now
 
 Supercell's [Fan Content Policy](https://supercell.com/en/fan-content-policy/) permits

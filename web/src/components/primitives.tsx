@@ -12,6 +12,31 @@ import {
 import { townHallArt } from '../wiki-art.ts'
 
 /**
+ * Bump this whenever the vendored art under `web/public/coc/` changes without its
+ * filenames changing — the normal case, since `cards:generate` and `assets:coc`
+ * overwrite files in place and the manifest paths stay the same. `deploy/nginx-coc.conf`
+ * caches `/coc/` for 24h client-side, and that cache is keyed on the exact URL: a
+ * browser that already fetched an image will not ask the server again until its own
+ * copy's max-age elapses, no matter what the server's Cache-Control header says on
+ * later requests. Changing the URL is the only thing that reaches an already-cached
+ * browser, so every same-origin `/coc/...` src gets `?v=` appended below, and bumping
+ * this number is what forces a fresh fetch everywhere.
+ *
+ * First bumped 2026-08-08, after the card art swapped in d63eb01 sat behind warm
+ * 24h caches on clients that had loaded the page before the swap.
+ */
+export const LOCAL_ART_VERSION = 1
+
+/** Vendored art lives under this path; CDN fallbacks (`https://...`) do not and must
+ * never get a cache-busting suffix appended — this app does not control that origin
+ * and should not force it to be refetched. */
+const LOCAL_ART_PREFIX = '/coc/'
+
+function cacheBusted(src: string): string {
+  return src.startsWith(LOCAL_ART_PREFIX) ? `${src}?v=${LOCAL_ART_VERSION}` : src
+}
+
+/**
  * Supercell icon, vendored copy first. The vendored art is gitignored, so a fresh
  * clone that has not run the asset scripts knows the paths but has no files.
  *
@@ -40,7 +65,7 @@ export function GameIcon({
   return (
     <img
       className={className}
-      src={src}
+      src={cacheBusted(src)}
       alt=""
       onError={(event) => {
         const img = event.currentTarget
