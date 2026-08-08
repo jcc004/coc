@@ -1,61 +1,61 @@
 id,category,name,color_source,size,file
-1,Elixir,Barbarian,"recreated (wiki art, face-zoom)",256x320,elixir_01_barbarian.png
-2,Elixir,Archer,extracted (event screenshot),256x320,elixir_02_archer.png
-3,Elixir,Giant,extracted (event screenshot),256x320,elixir_03_giant.png
-4,Elixir,Goblin,extracted (event screenshot),256x320,elixir_04_goblin.png
-5,Elixir,Wall Breaker,"recreated (wiki art, face-zoom)",256x320,elixir_05_wall_breaker.png
-6,Elixir,Balloon,"recreated (wiki art, face-zoom)",256x320,elixir_06_balloon.png
-7,Elixir,Wizard,"recreated (wiki art, face-zoom)",256x320,elixir_07_wizard.png
-8,Elixir,Healer,extracted (event screenshot),256x320,elixir_08_healer.png
-9,Elixir,Dragon,extracted (event screenshot),256x320,elixir_09_dragon.png
-10,Elixir,P.E.K.K.A,"recreated (wiki art, face-zoom)",256x320,elixir_10_pekka.png
-11,Elixir,Baby Dragon,extracted (event screenshot),256x320,elixir_11_baby_dragon.png
-12,Elixir,Miner,extracted (event screenshot),256x320,elixir_12_miner.png
-13,Elixir,Electro Dragon,extracted (event screenshot),256x320,elixir_13_electro_dragon.png
-14,Elixir,Yeti,extracted (event screenshot),256x320,elixir_14_yeti.png
-15,Elixir,Dragon Rider,extracted (event screenshot),256x320,elixir_15_dragon_rider.png
-16,Elixir,Electro Titan,extracted (event screenshot),256x320,elixir_16_electro_titan.png
-17,Elixir,Root Rider,extracted (event screenshot),256x320,elixir_17_root_rider.png
-18,Elixir,Thrower,extracted (event screenshot),256x320,elixir_18_thrower.png
-19,Elixir,Meteor Golem,"recreated (wiki art, face-zoom)",256x320,elixir_19_meteor_golem.png
-20,Dark Elixir,Minion,extracted (event screenshot),256x320,dark_elixir_20_minion.png
-21,Dark Elixir,Hog Rider,extracted (event screenshot),256x320,dark_elixir_21_hog_rider.png
-22,Dark Elixir,Valkyrie,"recreated (wiki art, face-zoom)",256x320,dark_elixir_22_valkyrie.png
-23,Dark Elixir,Golem,"recreated (wiki art, face-zoom)",256x320,dark_elixir_23_golem.png
-24,Dark Elixir,Witch,extracted (event screenshot),256x320,dark_elixir_24_witch.png
-25,Dark Elixir,Lava Hound,"recreated (wiki art, face-zoom)",256x320,dark_elixir_25_lava_hound.png
-26,Dark Elixir,Bowler,"recreated (wiki art, face-zoom)",256x320,dark_elixir_26_bowler.png
-27,Dark Elixir,Ice Golem,"recreated (wiki art, face-zoom)",256x320,dark_elixir_27_ice_golem.png
-28,Dark Elixir,Headhunter,"recreated (wiki art, face-zoom)",256x320,dark_elixir_28_headhunter.png
-29,Dark Elixir,Apprentice Warden,extracted (event screenshot),256x320,dark_elixir_29_apprentice_warden.png
-30,Dark Elixir,Druid,extracted (event screenshot),256x320,dark_elixir_30_druid.png
-31,Dark Elixir,Furnace,"recreated (wiki art, face-zoom)",256x320,dark_elixir_31_furnace.png
-32,Dark Elixir,Ruin Witch,"recreated (wiki art, face-zoom)",256x320,dark_elixir_32_ruin_witch.png
-33,Builder Base,Raged Barbarian,"recreated (wiki art, face-zoom)",256x320,builder_base_33_raged_barbarian.png
-34,Builder Base,Sneaky Archer,extracted (event screenshot),256x320,builder_base_34_sneaky_archer.png
-35,Builder Base,Boxer Giant,extracted (event screenshot),256x320,builder_base_35_boxer_giant.png
-36,Builder Base,Beta Minion,"recreated (wiki art, face-zoom)",256x320,builder_base_36_beta_minion.png
-37,Builder Base,Bomber,"recreated (wiki art, face-zoom)",256x320,builder_base_37_bomber.png
-38,Builder Base,Baby Dragon (Builder),"recreated (wiki art, face-zoom)",256x320,builder_base_38_baby_dragon_builder.png
-39,Builder Base,Cannon Cart,"recreated (wiki art, face-zoom)",256x320,builder_base_39_cannon_cart.png
-40,Builder Base,Night Witch,extracted (event screenshot),256x320,builder_base_40_night_witch.png
-41,Builder Base,Drop Ship,"recreated (wiki art, face-zoom)",256x320,builder_base_41_drop_ship.png
-42,Builder Base,Power P.E.K.K.A,extracted (event screenshot),256x320,builder_base_42_power_pekka.png
-43,Builder Base,Hog Glider,extracted (event screenshot),256x320,builder_base_43_hog_glider.png
-44,Super Troop,Super Barbarian,extracted (event screenshot),256x320,super_troop_44_super_barbarian.png
-45,Super Troop,Super Archer,"recreated (wiki art, face-zoom)",256x320,super_troop_45_super_archer.png
-46,Super Troop,Super Giant,"recreated (wiki art, face-zoom)",256x320,super_troop_46_super_giant.png
-47,Super Troop,Sneaky Goblin,extracted (event screenshot),256x320,super_troop_47_sneaky_goblin.png
-48,Super Troop,Super Wall Breaker,"recreated (wiki art, face-zoom)",256x320,super_troop_48_super_wall_breaker.png
-49,Super Troop,Rocket Balloon,"recreated (wiki art, face-zoom)",256x320,super_troop_49_rocket_balloon.png
-50,Super Troop,Super Wizard,extracted (event screenshot),256x320,super_troop_50_super_wizard.png
-51,Super Troop,Super Dragon,"recreated (wiki art, face-zoom)",256x320,super_troop_51_super_dragon.png
-52,Super Troop,Inferno Dragon,"recreated (wiki art, face-zoom)",256x320,super_troop_52_inferno_dragon.png
-53,Super Troop,Super Miner,extracted (event screenshot),256x320,super_troop_53_super_miner.png
-54,Super Troop,Super Yeti,"recreated (wiki art, face-zoom)",256x320,super_troop_54_super_yeti.png
-55,Super Troop,Super Minion,"recreated (wiki art, face-zoom)",256x320,super_troop_55_super_minion.png
-56,Super Troop,Super Hog Rider,"recreated (wiki art, face-zoom)",256x320,super_troop_56_super_hog_rider.png
-57,Super Troop,Super Valkyrie,"recreated (wiki art, face-zoom)",256x320,super_troop_57_super_valkyrie.png
-58,Super Troop,Super Witch,"recreated (wiki art, face-zoom)",256x320,super_troop_58_super_witch.png
-59,Super Troop,Ice Hound,extracted (event screenshot),256x320,super_troop_59_ice_hound.png
-60,Super Troop,Super Bowler,extracted (event screenshot),256x320,super_troop_60_super_bowler.png
+1,Elixir,Barbarian,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_01_barbarian.png
+2,Elixir,Archer,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_02_archer.png
+3,Elixir,Giant,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_03_giant.png
+4,Elixir,Goblin,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_04_goblin.png
+5,Elixir,Wall Breaker,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_05_wall_breaker.png
+6,Elixir,Balloon,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_06_balloon.png
+7,Elixir,Wizard,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_07_wizard.png
+8,Elixir,Healer,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_08_healer.png
+9,Elixir,Dragon,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_09_dragon.png
+10,Elixir,P.E.K.K.A,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_10_pekka.png
+11,Elixir,Baby Dragon,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_11_baby_dragon.png
+12,Elixir,Miner,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_12_miner.png
+13,Elixir,Electro Dragon,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_13_electro_dragon.png
+14,Elixir,Yeti,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_14_yeti.png
+15,Elixir,Dragon Rider,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_15_dragon_rider.png
+16,Elixir,Electro Titan,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_16_electro_titan.png
+17,Elixir,Root Rider,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_17_root_rider.png
+18,Elixir,Thrower,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_18_thrower.png
+19,Elixir,Meteor Golem,"extracted (personal screenshot, 2026-08-07)",256x320,elixir_19_meteor_golem.png
+20,Dark Elixir,Minion,"extracted (personal screenshot, 2026-08-07)",256x320,dark_elixir_20_minion.png
+21,Dark Elixir,Hog Rider,"extracted (personal screenshot, 2026-08-07)",256x320,dark_elixir_21_hog_rider.png
+22,Dark Elixir,Valkyrie,"extracted (personal screenshot, 2026-08-07)",256x320,dark_elixir_22_valkyrie.png
+23,Dark Elixir,Golem,"extracted (personal screenshot, 2026-08-07)",256x320,dark_elixir_23_golem.png
+24,Dark Elixir,Witch,"extracted (personal screenshot, 2026-08-07)",256x320,dark_elixir_24_witch.png
+25,Dark Elixir,Lava Hound,"extracted (personal screenshot, 2026-08-07)",256x320,dark_elixir_25_lava_hound.png
+26,Dark Elixir,Bowler,"extracted (personal screenshot, 2026-08-07)",256x320,dark_elixir_26_bowler.png
+27,Dark Elixir,Ice Golem,"extracted (personal screenshot, 2026-08-07)",256x320,dark_elixir_27_ice_golem.png
+28,Dark Elixir,Headhunter,"extracted (personal screenshot, 2026-08-07)",256x320,dark_elixir_28_headhunter.png
+29,Dark Elixir,Apprentice Warden,"extracted (personal screenshot, 2026-08-07)",256x320,dark_elixir_29_apprentice_warden.png
+30,Dark Elixir,Druid,"extracted (personal screenshot, 2026-08-07)",256x320,dark_elixir_30_druid.png
+31,Dark Elixir,Furnace,"extracted (personal screenshot, 2026-08-07)",256x320,dark_elixir_31_furnace.png
+32,Dark Elixir,Ruin Witch,"extracted (personal screenshot, 2026-08-07)",256x320,dark_elixir_32_ruin_witch.png
+33,Builder Base,Raged Barbarian,"extracted (personal screenshot, 2026-08-07)",256x320,builder_base_33_raged_barbarian.png
+34,Builder Base,Sneaky Archer,"extracted (personal screenshot, 2026-08-07)",256x320,builder_base_34_sneaky_archer.png
+35,Builder Base,Boxer Giant,"extracted (personal screenshot, 2026-08-07)",256x320,builder_base_35_boxer_giant.png
+36,Builder Base,Beta Minion,"extracted (personal screenshot, 2026-08-07)",256x320,builder_base_36_beta_minion.png
+37,Builder Base,Bomber,"extracted (personal screenshot, 2026-08-07)",256x320,builder_base_37_bomber.png
+38,Builder Base,Baby Dragon (Builder),"extracted (personal screenshot, 2026-08-07)",256x320,builder_base_38_baby_dragon_builder.png
+39,Builder Base,Cannon Cart,"extracted (personal screenshot, 2026-08-07)",256x320,builder_base_39_cannon_cart.png
+40,Builder Base,Night Witch,"extracted (personal screenshot, 2026-08-07)",256x320,builder_base_40_night_witch.png
+41,Builder Base,Drop Ship,"extracted (personal screenshot, 2026-08-07)",256x320,builder_base_41_drop_ship.png
+42,Builder Base,Power P.E.K.K.A,"extracted (personal screenshot, 2026-08-07)",256x320,builder_base_42_power_pekka.png
+43,Builder Base,Hog Glider,"extracted (personal screenshot, 2026-08-07)",256x320,builder_base_43_hog_glider.png
+44,Super Troop,Super Barbarian,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_44_super_barbarian.png
+45,Super Troop,Super Archer,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_45_super_archer.png
+46,Super Troop,Super Giant,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_46_super_giant.png
+47,Super Troop,Sneaky Goblin,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_47_sneaky_goblin.png
+48,Super Troop,Super Wall Breaker,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_48_super_wall_breaker.png
+49,Super Troop,Rocket Balloon,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_49_rocket_balloon.png
+50,Super Troop,Super Wizard,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_50_super_wizard.png
+51,Super Troop,Super Dragon,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_51_super_dragon.png
+52,Super Troop,Inferno Dragon,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_52_inferno_dragon.png
+53,Super Troop,Super Miner,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_53_super_miner.png
+54,Super Troop,Super Yeti,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_54_super_yeti.png
+55,Super Troop,Super Minion,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_55_super_minion.png
+56,Super Troop,Super Hog Rider,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_56_super_hog_rider.png
+57,Super Troop,Super Valkyrie,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_57_super_valkyrie.png
+58,Super Troop,Super Witch,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_58_super_witch.png
+59,Super Troop,Ice Hound,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_59_ice_hound.png
+60,Super Troop,Super Bowler,"extracted (personal screenshot, 2026-08-07)",256x320,super_troop_60_super_bowler.png
