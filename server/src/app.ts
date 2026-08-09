@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { InvalidTagError, normalizeTag } from '@coc/shared'
@@ -62,6 +63,15 @@ export interface AppDeps {
    * front of the app there is nobody doing that. See `clientIp`.
    */
   trustProxy?: boolean
+  /**
+   * The commit last confirmed live, per `readDeployedCommit`. Surfaced on
+   * `/api/health` so an external monitor can compare it against `main` and catch a
+   * stalled auto-deploy — exactly the shape of the incident this exists for: a
+   * `git filter-repo` rewrite left the droplet's clone unable to fast-forward, so
+   * every timer run since silently failed while the service stayed up serving
+   * stale code. `undefined` in local dev, where nothing writes the file.
+   */
+  deployedCommit?: string
 }
 
 /**
@@ -143,6 +153,28 @@ export function bindsEveryInterface(host: string): boolean {
 }
 
 /**
+ * The commit `deploy/update.sh` last confirmed actually live — it writes
+ * `.deploy-last-good-sha` only after a deploy's build and health check both pass
+ * (`deploy/update.sh`, `git rev-parse HEAD > "$LAST_GOOD"`). That makes it a better
+ * signal than raw git HEAD for "what is this server running": HEAD can advance
+ * while nothing new is actually running — `CLAUDE.md`'s Deploying section records
+ * the trap where the fast-forward happens *before* `npm ci`, so a failed install
+ * leaves the tree advanced and the service un-restarted.
+ *
+ * A missing file is not an error: local dev never writes one, so `undefined` is the
+ * expected, silent answer there. Any other read failure (permissions, a directory
+ * where the file should be) is treated the same way — this feeds an optional
+ * monitoring field, not a startup precondition, so it must never crash the server.
+ */
+export function readDeployedCommit(filePath: string): string | undefined {
+  try {
+    return readFileSync(filePath, 'utf8').trim() || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Routes that answer without a session. Everything else under `/api/` is denied
  * to anonymous callers by default — deny-by-default because the whole point of
  * this layer is that an unauthenticated `/api/*` is a free proxy onto a
@@ -191,6 +223,7 @@ export function createApp({
   loginLimiter,
   cookieSecure = false,
   trustProxy = false,
+  deployedCommit,
 }: AppDeps) {
   const app = new Hono<AuthEnv>()
 
@@ -274,10 +307,16 @@ export function createApp({
   mountChangeRequestRoutes(app, changeRequests)
 
   // Public so a host's liveness probe can reach it, but the cache size is an
-  // internal detail an anonymous caller has no business seeing.
+  // internal detail an anonymous caller has no business seeing. `commit` carries no
+  // equivalent risk — a bare commit hash reveals nothing an external monitor
+  // couldn't already see by reading `main` — so it is spread into both branches
+  // rather than gated on `user`.
+  const commitField = deployedCommit ? { commit: deployedCommit } : {}
   app.get('/api/health', (c) => {
     const user = c.get('user')
-    return c.json(user ? { ok: true, cachedEntries: cache.size } : { ok: true })
+    return c.json(
+      user ? { ok: true, cachedEntries: cache.size, ...commitField } : { ok: true, ...commitField },
+    )
   })
 
   app.get('/api/players/:tag', async (c) => {

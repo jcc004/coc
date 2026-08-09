@@ -7,11 +7,16 @@ without the leading `#` (URL-encode it as `%23` if you include it).
 
 **Every route below requires a session** — see [Authentication](authentication.md#authentication). The one
 exception is `/api/health`, which stays open for a host's liveness probe but answers a bare
-`{ ok: true }` to an anonymous caller and only adds `cachedEntries` for an authenticated one.
+`{ ok: true }` to an anonymous caller and only adds `cachedEntries` for an authenticated one. Both
+shapes also carry an optional `commit` field naming the commit `deploy/update.sh` last confirmed
+actually live (`.deploy-last-good-sha`, not raw git HEAD — see
+[deploy/README.md](../deploy/README.md#monitoring) for why the distinction matters), used by the
+freshness half of `.github/workflows/monitor.yml`. Not gated on authentication like `cachedEntries`
+is — a commit hash needs no protecting — and absent in local dev, where nothing writes the file.
 
 | Route | Returns |
 |---|---|
-| `GET /api/health` | `{ ok: true }`, plus cache size when authenticated |
+| `GET /api/health` | `{ ok: true }`, plus `cachedEntries` when authenticated and `commit` when known |
 | `GET /api/players/:tag` | full player profile |
 | `GET /api/clans/:tag` | clan detail including `memberList` |
 | `GET /api/clans/:tag/members` | clan roster only |

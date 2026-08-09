@@ -522,7 +522,7 @@ already has that is not the droplet.
 
 | | when | what it does |
 | --- | --- | --- |
-| `liveness` | every 30 min | `/api/health` must answer exactly `{"ok":true}`, the page must reference a built JS bundle, and every request is made without `-k` so an invalid certificate fails it. Three attempts 20s apart before it concludes anything. |
+| `liveness` | every 30 min | `/api/health` must answer valid JSON with `ok: true`, the deployed commit it reports (if any) must not be stuck behind `main`, the page must reference a built JS bundle, and every request is made without `-k` so an invalid certificate fails it. Three attempts 20s apart before the JSON check concludes anything. |
 | `certificate` | daily, 07:12 UTC | Fails at **under 21 days** remaining, and again more urgently under 7. |
 
 The certificate half is the reason this is worth having in the repo rather than only
@@ -531,6 +531,29 @@ HTTP-01 renewal needs port 80 reachable, so a blocked port 80 becomes an expired
 certificate about 60 days later — silently, because nothing is wrong today. certbot
 renews at 30 days remaining, so 21 means the renewal *did not run* and there are three
 weeks to find out why.
+
+**The deployed-commit half exists because liveness alone missed a real incident.**
+`coc-update.timer` fast-forwards to `origin/main` every five minutes, and a
+`git filter-repo` history rewrite once left the droplet's clone unable to do that —
+`git merge --ff-only` refused forever, silently, while `coc.service` stayed up the
+whole time serving 13-commits-stale code. Liveness can never catch that shape of
+failure, because the service was never down. The fix is to compare what is actually
+running against `main`: `/api/health`'s optional `commit` field
+([docs/api.md](../docs/api.md)) names the commit `.deploy-last-good-sha` last
+confirmed live — written only after a deploy's build and health check both pass, so
+unlike raw git HEAD it cannot lie about a deploy that advanced the tree but never
+restarted the service (the "fast-forward happens before `npm ci`" trap above). The
+workflow compares that commit against `main` via GitHub's compare API: `identical` is
+fine, `ahead` is fine for a while (the timer's own five minutes plus however long a
+build takes — the check only fails an `ahead` state once the oldest undeployed commit
+is over 20 minutes old), and `diverged`, `behind`, or a 404 (the deployed commit is
+unknown to GitHub — exactly what a rewritten history looks like) fail immediately,
+since none of those three recovers on its own. The failure message gives the fix
+directly:
+
+```bash
+ssh deploy@203.0.113.10 'cd /srv/coc && git fetch origin main && git reset --hard origin/main && ./deploy/update.sh --force'
+```
 
 Two constraints shaped it, and both are worth knowing before changing the cadence:
 

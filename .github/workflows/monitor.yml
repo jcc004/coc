@@ -59,20 +59,26 @@ jobs:
     # would only mean two emails for one outage.
     if: github.event.schedule != '12 7 * * *'
     runs-on: ubuntu-latest
+    # Read-only, and only needed by "Deployed commit is fresh" below, which calls
+    # GitHub's compare API with the workflow's own built-in token — no new secret.
+    permissions:
+      contents: read
     steps:
       - name: Health endpoint answers
         run: |
-          # /api/health is public precisely so a probe can reach it, and it answers
-          # {"ok":true} without a session — the cache size is only added for a
-          # signed-in caller. So the body is a fixed string and worth asserting: a 200
-          # from something that is not this app is not the app being up.
+          # /api/health is public precisely so a probe can reach it. It always answers
+          # {"ok":true} for an anonymous caller, plus two fields that vary and are
+          # checked separately rather than here: cachedEntries for a signed-in caller,
+          # and commit (server/src/app.ts) once the droplet has redeployed past the
+          # point that field was added — so the body is no longer a fixed string, and
+          # this only asserts the part every version of it has always had.
           #
           # Three attempts, 20s apart. One failed curl from a shared runner is not an
           # outage, and treating it as one is how this workflow would earn itself a
           # filter rule.
           for attempt in 1 2 3; do
             body="$(curl -fsS --max-time 15 "$SITE/api/health" 2>/dev/null || true)"
-            if [ "$body" = '{"ok":true}' ]; then
+            if printf '%s' "$body" | jq -e '.ok == true' >/dev/null 2>&1; then
               echo "attempt $attempt: ok"
               exit 0
             fi
@@ -80,7 +86,7 @@ jobs:
             [ "$attempt" -lt 3 ] && sleep 20
           done
 
-          echo "::error::$SITE/api/health did not answer {\"ok\":true} in three attempts over ~40s."
+          echo "::error::$SITE/api/health did not answer valid JSON with ok:true in three attempts over ~40s."
           cat <<'DIAG'
           On the droplet:
             systemctl status coc --no-pager -l
@@ -93,6 +99,75 @@ jobs:
           need: sudo systemctl reset-failed coc && sudo systemctl start coc
           DIAG
           exit 1
+
+      - name: Deployed commit is fresh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # /api/health's optional `commit` field names the commit
+          # `.deploy-last-good-sha` last confirmed *actually* live (written only after
+          # a deploy's build and health check both pass — see server/src/app.ts's
+          # `readDeployedCommit`), not raw git HEAD, which can advance on the droplet
+          # without the service ever restarting (CLAUDE.md's "fast-forward happens
+          # before npm ci" trap).
+          #
+          # This is the check the 2026-08 incident needed and did not have: a
+          # `git filter-repo` rewrite left the droplet's clone unable to fast-forward
+          # to origin/main, so `coc-update.timer` failed silently every five minutes
+          # for days while the service stayed up serving stale code — liveness alone
+          # can never catch that shape of failure, because the service was never down.
+          body="$(curl -fsS --max-time 15 "$SITE/api/health" 2>/dev/null || true)"
+          commit="$(printf '%s' "$body" | jq -r '.commit // empty' 2>/dev/null || true)"
+
+          if [ -z "$commit" ]; then
+            echo "::warning::$SITE/api/health reported no commit field — the running server predates this check. Nothing to compare yet; this resolves itself on the next successful deploy."
+            exit 0
+          fi
+
+          http_code="$(curl -sS --max-time 15 -o /tmp/compare.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/compare/${commit}...main")"
+
+          if [ "$http_code" != "200" ]; then
+            echo "::error::GitHub compare API returned HTTP $http_code for ${commit}...main — the deployed commit is unknown to GitHub. That is exactly what a rewritten history looks like: the droplet's local clone can never fast-forward past it on its own."
+            echo "Fix: ssh <droplet>@<droplet> 'cd /srv/coc && git fetch origin main && git reset --hard origin/main && ./deploy/update.sh --force'"
+            exit 1
+          fi
+
+          status="$(jq -r '.status' /tmp/compare.json)"
+          ahead_by="$(jq -r '.ahead_by' /tmp/compare.json)"
+
+          case "$status" in
+            identical)
+              echo "deployed commit $commit is current with main"
+              ;;
+            ahead)
+              # main has commits the droplet hasn't deployed yet — normal for up to
+              # about 5 minutes (the timer's own interval) plus however long a build
+              # takes. Only the *age* of the oldest missing commit says whether this
+              # is in-flight lag or a stuck cycle, so that is what gates pass/fail,
+              # not the count.
+              oldest_date="$(jq -r '.commits[0].commit.committer.date' /tmp/compare.json)"
+              oldest_epoch="$(date -u -d "$oldest_date" +%s)"
+              age_minutes=$(( ($(date -u +%s) - oldest_epoch) / 60 ))
+              echo "deployed commit $commit is $ahead_by commit(s) behind main; oldest undeployed commit is ${age_minutes}m old"
+              if [ "$age_minutes" -gt 20 ]; then
+                echo "::error::Oldest undeployed commit is ${age_minutes}m old — comfortably past the ~5min timer interval plus build time, so the auto-deploy cycle looks stuck rather than merely lagging."
+                echo "Fix: ssh <droplet>@<droplet> 'cd /srv/coc && git fetch origin main && git reset --hard origin/main && ./deploy/update.sh --force'"
+                exit 1
+              fi
+              ;;
+            diverged|behind)
+              echo "::error::Deployed commit $commit has $status from main — the auto-deploy cannot recover from this on its own. This is the rewritten-history shape: the deployed commit is no longer an ancestor of main, so the droplet's ff-only merge fails forever until fixed by hand."
+              echo "Fix: ssh <droplet>@<droplet> 'cd /srv/coc && git fetch origin main && git reset --hard origin/main && ./deploy/update.sh --force'"
+              exit 1
+              ;;
+            *)
+              echo "::error::Unexpected compare status \"$status\" for ${commit}...main."
+              exit 1
+              ;;
+          esac
 
       - name: The app itself is being served, not just the API
         run: |

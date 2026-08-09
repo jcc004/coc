@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
@@ -11,6 +11,7 @@ import {
   bindsEveryInterface,
   createApp,
   DEFAULT_BIND_HOST,
+  readDeployedCommit,
 } from './app.ts'
 import { bootstrapAdmin, type BootstrapResult } from './auth/bootstrap.ts'
 import { SESSION_COOKIE } from './auth/middleware.ts'
@@ -57,6 +58,8 @@ async function createHarness(
      * to count has to say so — which is the property, not a nuisance.
      */
     trustProxy?: boolean
+    /** Forwarded straight to `createApp` — see `AppDeps.deployedCommit`. */
+    deployedCommit?: string
   } = {},
 ): Promise<Harness> {
   const calls: string[] = []
@@ -106,6 +109,7 @@ async function createHarness(
     changeRequests: createChangeRequestStore(db),
     loginLimiter: createLoginLimiter(options.limiter),
     trustProxy: options.trustProxy ?? false,
+    deployedCommit: options.deployedCommit,
   })
 
   return { app, store, shared, db, calls, bootstrap }
@@ -612,6 +616,39 @@ describe('health', () => {
     const response = await harness.app.request('/api/health', { headers: { cookie } })
     assert.deepEqual(await response.json(), { ok: true, cachedEntries: 0 })
     harness.db.close()
+  })
+
+  it('includes the deployed commit for an anonymous caller when known', async () => {
+    const harness = await createHarness({ deployedCommit: 'deadbeef' })
+    const response = await harness.app.request('/api/health')
+
+    assert.deepEqual(await response.json(), { ok: true, commit: 'deadbeef' })
+    harness.db.close()
+  })
+
+  it('includes the deployed commit alongside the cache size when authenticated', async () => {
+    const harness = await createHarness({ deployedCommit: 'deadbeef' })
+    const cookie = await loggedIn(harness)
+
+    const response = await harness.app.request('/api/health', { headers: { cookie } })
+    assert.deepEqual(await response.json(), { ok: true, cachedEntries: 0, commit: 'deadbeef' })
+    harness.db.close()
+  })
+})
+
+describe('readDeployedCommit', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'coc-deployed-commit-'))
+  after(() => rmSync(dir, { recursive: true, force: true }))
+
+  it('trims the trailing newline `git rev-parse HEAD` writes', () => {
+    const path = join(dir, 'present-sha')
+    writeFileSync(path, 'abc123\n')
+
+    assert.equal(readDeployedCommit(path), 'abc123')
+  })
+
+  it('is undefined when the file does not exist, as in local dev', () => {
+    assert.equal(readDeployedCommit(join(dir, 'does-not-exist')), undefined)
   })
 })
 
