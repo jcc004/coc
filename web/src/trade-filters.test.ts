@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import type { TradePair } from './card-trades.ts'
+import type { TradePair, TradeRow, TradeSuggestion } from './card-trades.ts'
 import {
   UNOWNED,
   UNOWNED_LABEL,
   filterPairsByOwners,
+  orientRowForOwner,
   ownersInPairs,
   tradeFilterSummary,
 } from './trade-filters.ts'
@@ -155,6 +156,67 @@ describe('filterPairsByOwners', () => {
         shape(filterPairsByOwners([BOTH_UNOWNED], ownerOf, null, null, true)),
         shape([BOTH_UNOWNED]),
       )
+    })
+  })
+})
+
+/** A row whose two sides carry distinct card ids, so a swap is visible on both fields at once. */
+const row = (p: TradePair): TradeRow => {
+  const trade: TradeSuggestion = {
+    baseA: p.baseA,
+    baseB: p.baseB,
+    cardFromA: 1,
+    cardFromB: 2,
+    category: 'Elixir',
+  }
+  return { pair: p, trade, pairStart: true }
+}
+
+describe('orientRowForOwner', () => {
+  it('leaves canonical order alone when nobody is narrowed to', () => {
+    assert.deepEqual(orientRowForOwner(row(ANNA_RIGHT), ownerOf, null), {
+      left: { tag: '#BBB', cardId: 1 },
+      right: { tag: '#ZZZ', cardId: 2 },
+    })
+  })
+
+  it('keeps the narrowed owner on the left when they are already there', () => {
+    // Anna is baseA of ANNA_LEFT — nothing to swap.
+    assert.deepEqual(orientRowForOwner(row(ANNA_LEFT), ownerOf, 'Anna'), {
+      left: { tag: '#AAA', cardId: 1 },
+      right: { tag: '#BBB', cardId: 2 },
+    })
+  })
+
+  it('swaps both the tag and its card together when the owner is on the right', () => {
+    // Anna is baseB of ANNA_RIGHT (#BBB/#ZZZ) — the whole side moves, not just the tag.
+    assert.deepEqual(orientRowForOwner(row(ANNA_RIGHT), ownerOf, 'Anna'), {
+      left: { tag: '#ZZZ', cardId: 2 },
+      right: { tag: '#BBB', cardId: 1 },
+    })
+  })
+
+  it('keeps canonical order when both sides belong to the narrowed owner', () => {
+    // Anna's own two bases — no real left/right to prefer.
+    assert.deepEqual(orientRowForOwner(row(ANNAS_OWN), ownerOf, 'Anna'), {
+      left: { tag: '#AAA', cardId: 1 },
+      right: { tag: '#ZZZ', cardId: 2 },
+    })
+  })
+
+  it('keeps canonical order when the narrowed owner is on neither side', () => {
+    assert.deepEqual(orientRowForOwner(row(CARL_BERT), ownerOf, 'Anna'), {
+      left: { tag: '#BBB', cardId: 1 },
+      right: { tag: '#MMM', cardId: 2 },
+    })
+  })
+
+  it('matches an unowned base through the sentinel, same as filterPairsByOwners', () => {
+    // #AAA/#QQQ — #QQQ is unowned, #AAA is Anna's. Narrowing to UNOWNED should
+    // pull #QQQ to the left.
+    assert.deepEqual(orientRowForOwner(row(UNOWNED_SIDE), ownerOf, UNOWNED), {
+      left: { tag: '#QQQ', cardId: 2 },
+      right: { tag: '#AAA', cardId: 1 },
     })
   })
 })

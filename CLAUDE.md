@@ -121,7 +121,7 @@ cost anything. Add to this list when a file misleads you, and say what it did.
 
 ## Testing
 
-`npm test` runs all three workspaces — 1,855 tests (21 shared, 577 server, 1,257 web), `node:test`,
+`npm test` runs all three workspaces — 1,865 tests (21 shared, 577 server, 1,267 web), `node:test`,
 no framework. Tests sit adjacent
 to their module. Run the whole suite, not a workspace.
 

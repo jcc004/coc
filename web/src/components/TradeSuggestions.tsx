@@ -24,6 +24,7 @@ import {
   UNOWNED,
   UNOWNED_LABEL,
   filterPairsByOwners,
+  orientRowForOwner,
   ownersInPairs,
   tradeFilterSummary,
 } from '../trade-filters.ts'
@@ -619,6 +620,7 @@ export function TradeSuggestions({
           achievableCount={achievableCount}
           rowCount={rowCount}
           focusLabel={focus === null ? null : labelOf(focus)}
+          soleOwner={firstOwner}
         />
       )}
 
@@ -653,6 +655,7 @@ function SuggestionTable({
   achievableCount,
   rowCount,
   focusLabel,
+  soleOwner,
 }: {
   view: PagedRows<TradeRow>
   labelOf: (tag: string) => string
@@ -670,6 +673,10 @@ function SuggestionTable({
   rowCount: number
   /** The focused base's member name, or `null` when the table is clan-wide. */
   focusLabel: string | null
+  /** The "Involving" picker's own selection — `null` unless narrowed to one
+      owner. Passed straight to `orientRowForOwner` so that owner's base always
+      prints on the left, whichever side `suggestTrades`'s tag ordering put it on. */
+  soleOwner: string | null
 }) {
   return (
     <>
@@ -699,77 +706,79 @@ function SuggestionTable({
             </tr>
           </thead>
           <tbody role="rowgroup">
-            {view.rows.map(({ pair, trade, pairStart }) => (
-              <tr
-                key={`${trade.baseA}-${trade.baseB}-${trade.cardFromA}-${trade.cardFromB}`}
-                role="row"
-                /*
-                 * Marks where one pair's block of options begins, so the wide
-                 * table can rule a line above it. Without that, a continuation
-                 * row's empty Member cells read as missing data rather than as
-                 * "same two bases as above" — seen in a screenshot, where the
-                 * second option rendered as a bare "Minion / Hog Rider" row
-                 * with nobody's name on it. `flattenTradePairs` computes this the
-                 * same way regardless of which page a pair's options land on,
-                 * since the table now pages by row rather than by pair.
-                 */
-                data-pair-start={pairStart ? 'true' : undefined}
-              >
-                {/*
-                 * **Both members named on every row**, including the second and third
-                 * option for the same pair.
-                 *
-                 * They used to be named once per pair, with blank cells beneath and a
-                 * rule above each group to say "same two bases as above". That was
-                 * reported as missing data twice — once from a screenshot and again
-                 * from the live server, where the reporter noticed that pressing
-                 * Propose recorded a trade with names the row had not shown. The
-                 * button was always right: it holds the whole suggestion regardless of
-                 * what is drawn. It was the row that was lying by omission.
-                 *
-                 * The cost is repetition on a pair with several options. That is the
-                 * cheaper mistake: a repeated name is read once and ignored, an absent
-                 * one sends somebody looking for a bug. `data-pair-start` still rules a
-                 * line above each group, which is now grouping rather than the only
-                 * thing making the blanks legible — and it is also what makes it safe
-                 * for a pair's options to be split by a page boundary now: the row on
-                 * either side of the split still names both bases on its own.
-                 */}
-                <td className="stack-title" role="cell">
-                  <BaseLabel
-                    tag={pair.baseA}
-                    label={labelOf(pair.baseA)}
-                    owner={ownerOf(pair.baseA)}
-                  />
-                </td>
-                <td role="cell" data-label="Gives">
-                  <TradeCard cardId={trade.cardFromA} />
-                </td>
-                <td className="stack-title" role="cell">
-                  <BaseLabel
-                    tag={pair.baseB}
-                    label={labelOf(pair.baseB)}
-                    owner={ownerOf(pair.baseB)}
-                  />
-                </td>
-                <td role="cell" data-label="Gives">
-                  <TradeCard cardId={trade.cardFromB} />
-                </td>
-                <td className="card-meta" role="cell" data-label="Category">
-                  {trade.category}
-                </td>
-                <td className="row-actions" role="cell" data-label="Propose">
-                  <ProposeButton
-                    trade={trade}
-                    labelOf={labelOf}
-                    user={user}
-                    owners={owners}
-                    tracked={tracked}
-                  />{' '}
-                  <CompleteNowButton trade={trade} user={user} />
-                </td>
-              </tr>
-            ))}
+            {view.rows.map((row) => {
+              const { trade, pairStart } = row
+              /* Display orientation only — `pair`/`trade` keep the tag-based order
+                 `card-trades.ts` computed them in; everything below reads `left`/
+                 `right` rather than `baseA`/`baseB` directly, so the "Involving"
+                 picker's own owner always lands in the left column instead of
+                 wherever `suggestTrades`'s tag comparison happened to put it. See
+                 `orientRowForOwner` in `trade-filters.ts`. */
+              const { left, right } = orientRowForOwner(row, ownerOf, soleOwner)
+              return (
+                <tr
+                  key={`${trade.baseA}-${trade.baseB}-${trade.cardFromA}-${trade.cardFromB}`}
+                  role="row"
+                  /*
+                   * Marks where one pair's block of options begins, so the wide
+                   * table can rule a line above it. Without that, a continuation
+                   * row's empty Member cells read as missing data rather than as
+                   * "same two bases as above" — seen in a screenshot, where the
+                   * second option rendered as a bare "Minion / Hog Rider" row
+                   * with nobody's name on it. `flattenTradePairs` computes this the
+                   * same way regardless of which page a pair's options land on,
+                   * since the table now pages by row rather than by pair.
+                   */
+                  data-pair-start={pairStart ? 'true' : undefined}
+                >
+                  {/*
+                   * **Both members named on every row**, including the second and third
+                   * option for the same pair.
+                   *
+                   * They used to be named once per pair, with blank cells beneath and a
+                   * rule above each group to say "same two bases as above". That was
+                   * reported as missing data twice — once from a screenshot and again
+                   * from the live server, where the reporter noticed that pressing
+                   * Propose recorded a trade with names the row had not shown. The
+                   * button was always right: it holds the whole suggestion regardless of
+                   * what is drawn. It was the row that was lying by omission.
+                   *
+                   * The cost is repetition on a pair with several options. That is the
+                   * cheaper mistake: a repeated name is read once and ignored, an absent
+                   * one sends somebody looking for a bug. `data-pair-start` still rules a
+                   * line above each group, which is now grouping rather than the only
+                   * thing making the blanks legible — and it is also what makes it safe
+                   * for a pair's options to be split by a page boundary now: the row on
+                   * either side of the split still names both bases on its own.
+                   */}
+                  <td className="stack-title" role="cell">
+                    <BaseLabel tag={left.tag} label={labelOf(left.tag)} owner={ownerOf(left.tag)} />
+                  </td>
+                  <td role="cell" data-label="Gives">
+                    <TradeCard cardId={left.cardId} />
+                  </td>
+                  <td className="stack-title" role="cell">
+                    <BaseLabel tag={right.tag} label={labelOf(right.tag)} owner={ownerOf(right.tag)} />
+                  </td>
+                  <td role="cell" data-label="Gives">
+                    <TradeCard cardId={right.cardId} />
+                  </td>
+                  <td className="card-meta" role="cell" data-label="Category">
+                    {trade.category}
+                  </td>
+                  <td className="row-actions" role="cell" data-label="Propose">
+                    <ProposeButton
+                      trade={trade}
+                      labelOf={labelOf}
+                      user={user}
+                      owners={owners}
+                      tracked={tracked}
+                    />{' '}
+                    <CompleteNowButton trade={trade} user={user} />
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

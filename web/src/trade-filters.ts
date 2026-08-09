@@ -1,4 +1,4 @@
-import type { TradePair } from './card-trades.ts'
+import type { TradePair, TradeRow } from './card-trades.ts'
 
 /**
  * Narrowing the trade suggestions to the people involved.
@@ -90,6 +90,45 @@ export function filterPairsByOwners(
       return true
     })
   })
+}
+
+/** One side of a displayed row: which base, and which card it gives. */
+export interface TradeSide {
+  tag: string
+  cardId: number
+}
+
+/**
+ * Which side of one row to print on the left, once the "Involving" picker has
+ * narrowed the table to a single owner.
+ *
+ * `card-trades.ts` orients every pair by *tag*, not by who is looking at it — the
+ * lexicographically smaller tag is always `baseA` (`suggestTrades`'s own doc
+ * comment). Left alone, that means the very owner somebody filtered *for* prints
+ * on the left of one row and the right of the next, which defeats the point of
+ * narrowing to one person: there is no single column to read down. This
+ * reorients for **display only** — `row.pair` and `row.trade` themselves are
+ * untouched, so the pair-identity key, `tradeKey`, and `data-pair-start` all keep
+ * working from the unswapped originals.
+ *
+ * `soleOwner` is `null` whenever there is nothing to orient around — no
+ * "Involving" selection, same as {@link filterPairsByOwners}'s `first`. A row
+ * where *both* sides belong to `soleOwner` (their own two bases trading) has no
+ * real left/right to prefer; canonical order is kept rather than picked
+ * arbitrarily.
+ */
+export function orientRowForOwner(
+  row: TradeRow,
+  ownerOf: (tag: string) => string | undefined,
+  soleOwner: string | null,
+): { left: TradeSide; right: TradeSide } {
+  const a: TradeSide = { tag: row.pair.baseA, cardId: row.trade.cardFromA }
+  const b: TradeSide = { tag: row.pair.baseB, cardId: row.trade.cardFromB }
+  if (soleOwner === null) return { left: a, right: b }
+
+  const aMatches = ownerKey(a.tag, ownerOf) === soleOwner
+  const bMatches = ownerKey(b.tag, ownerOf) === soleOwner
+  return bMatches && !aMatches ? { left: b, right: a } : { left: a, right: b }
 }
 
 /**
