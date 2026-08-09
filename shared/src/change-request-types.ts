@@ -140,6 +140,18 @@ export interface ChangeRequestResponse {
   request: ChangeRequest
 }
 
+/**
+ * `GET /api/admin/change-requests/pending-count` — the account-menu badge's
+ * only read. "Pending" here is exactly `changeRequestStatus`'s `'open'` in
+ * `web/src/change-request-rules.ts`: neither canceled nor resolved. A
+ * dedicated endpoint rather than the client counting `allChangeRequests`
+ * itself, so an admin session pays for one integer to render a badge instead
+ * of fetching and holding every request just to learn how many are open.
+ */
+export interface ChangeRequestPendingCountResponse {
+  count: number
+}
+
 /** What `POST /api/change-requests` accepts. The requester and the time are the server's. */
 export interface SubmitChangeRequest {
   subject: string

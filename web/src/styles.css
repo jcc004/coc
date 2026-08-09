@@ -549,6 +549,7 @@ select {
  * hover. A control on the banner needs the banner's treatment.
  */
 .user-menu__button {
+  position: relative;
   display: grid;
   place-items: center;
   width: 40px;
@@ -560,6 +561,42 @@ select {
 
 .user-menu__glyph {
   display: block;
+}
+
+/*
+ * How many change requests are waiting on an admin's resolution
+ * (`docs/proposed-changes.md`) — rendered only for an admin, and only above
+ * zero; see `UserMenu.tsx`. `position: relative` moved onto `.user-menu__button`
+ * above for this alone, so the badge can anchor to the button rather than to
+ * `.user-menu`, which also positions the dropdown panel.
+ *
+ * `--accent` and white are not a color invented for this: it is the same
+ * "this wants your attention" pairing `.search button[type='submit']` and
+ * `.bulk-bar button` already use for their own primary actions, not a new
+ * role to keep in contrast sync with the rest of the palette. Deliberately
+ * not `--critical` — an open request is routine, not an error, and red would
+ * overstate it.
+ */
+.user-menu__badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  /* Decoration only — the button's own accessible name already carries the
+     count (`menuButtonLabel`), and the badge is `aria-hidden`. */
+  pointer-events: none;
 }
 
 .user-menu__panel {

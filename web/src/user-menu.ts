@@ -147,8 +147,36 @@ export function nextTheme(theme: Theme): Theme {
  * worth being able to check at a glance is *who you are signed in as*, and a
  * silhouette alone says nothing about that. It is the accessible name and the
  * tooltip; the glyph itself is `aria-hidden`.
+ *
+ * `pendingChangeRequests` appends the same fact the visual badge shows
+ * (`changeRequestBadgeText`, below) — an admin with unresolved requests
+ * waiting hears "3 pending change requests" as part of the button's own name,
+ * rather than needing sight to notice a dot in the corner of a silhouette.
+ * Omitted entirely at zero, so a member's label — and an admin's on a quiet
+ * day — reads exactly as it always has.
  */
-export function menuButtonLabel(user: Pick<SessionUser, 'displayName' | 'role'>): string {
+export function menuButtonLabel(
+  user: Pick<SessionUser, 'displayName' | 'role'>,
+  pendingChangeRequests = 0,
+): string {
   const role = user.role === 'admin' ? 'admin' : 'member'
-  return `${user.displayName} (${role}) — account menu`
+  const base = `${user.displayName} (${role}) — account menu`
+  if (pendingChangeRequests <= 0) return base
+  const noun = pendingChangeRequests === 1 ? 'change request' : 'change requests'
+  return `${base} — ${pendingChangeRequests} pending ${noun}`
+}
+
+/* ---------- the pending change-request badge ---------- */
+
+/**
+ * The digits drawn on the silhouette's badge. Capped at "9+" rather than
+ * showing the real number past that point — the badge is a 16px circle
+ * (`.user-menu__badge` in `styles.css`), and a count in the tens would either
+ * overflow it or force the circle to grow every time somebody lets the queue
+ * build up. The exact count is still in the accessible name
+ * (`menuButtonLabel`) and on `#/change-requests` itself; this is only the
+ * glyph.
+ */
+export function changeRequestBadgeText(count: number): string {
+  return count > 9 ? '9+' : String(count)
 }

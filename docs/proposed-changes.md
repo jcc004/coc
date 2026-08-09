@@ -73,6 +73,25 @@ resolution outright; there is no history of earlier resolutions kept.
 The admin table shows the requesting user, the date of the request, the subject, and — once there
 is one — the resolution's type, date and note. An unresolved row simply shows no resolution.
 
+## Letting an admin know something is waiting
+
+An admin used to find out about a new request only by opening the admin table on spec. A small
+badge on the account-menu silhouette (`UserMenu.tsx`; see "The account menu" in `docs/ui.md`) now
+carries the open count instead — admin only, and only once it is above zero — so a fresh
+submission does not depend on habit to be noticed.
+
+"Open" here is exactly `changeRequestStatus`'s `'open'` (`web/src/change-request-rules.ts`):
+neither canceled nor resolved — the same definition the admin table's own status pill uses. The
+server exposes it as a dedicated `GET /api/admin/change-requests/pending-count`
+(`server/src/change-requests/routes.ts`) rather than the client fetching and counting
+`allChangeRequests` itself: a badge polled every couple of minutes should not pull every open and
+closed request's subject, body and amendments across the wire to read one integer off it.
+`ChangeRequestStore.countOpen()` answers with a plain `COUNT(*)`, served by the
+`change_requests_open` index migration v15 already declares for exactly this shape of query.
+
+The badge's own design, polling cadence and accessibility are documented in `docs/ui.md`'s "The
+account menu", alongside the rest of that menu.
+
 ## Schema
 
 Migration v15 (`server/src/db.ts`), two tables:

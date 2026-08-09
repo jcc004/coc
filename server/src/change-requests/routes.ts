@@ -42,6 +42,7 @@ import type { ChangeRequestResolutionInput, ChangeRequestStore } from './store.t
  * | `POST /api/change-requests/:id/cancel` | the request's own author, any time |
  * | `POST /api/change-requests/:id/hide` | the request's own author, any time |
  * | `GET /api/admin/change-requests` | an admin — every request, every account |
+ * | `GET /api/admin/change-requests/pending-count` | an admin — one integer, for the account-menu badge |
  * | `POST /api/admin/change-requests/:id/resolve` | an admin |
  *
  * The five decisions are `may*ChangeRequest` in `access.ts` — pure functions
@@ -251,6 +252,12 @@ export function mountChangeRequestRoutes(app: Hono<AuthEnv>, store: ChangeReques
   // Admin-only via the `/api/admin/*` middleware installed in `createApp`.
   app.get('/api/admin/change-requests', (c) => {
     return c.json({ requests: store.listAll() })
+  })
+
+  // No `GET /api/admin/change-requests/:id` exists for this literal segment to
+  // be mistaken for, so its position among the other admin routes is free.
+  app.get('/api/admin/change-requests/pending-count', (c) => {
+    return c.json({ count: store.countOpen() })
   })
 
   app.post('/api/admin/change-requests/:id/resolve', async (c) => {

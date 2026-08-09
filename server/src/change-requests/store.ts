@@ -55,6 +55,14 @@ export interface ChangeRequestStore {
   listMine(userId: number): ChangeRequest[]
   /** Every request from every account. Admin-only at the route; this store trusts that. */
   listAll(): ChangeRequest[]
+  /**
+   * How many requests are neither canceled nor resolved — the account-menu
+   * badge's whole answer. A `COUNT(*)` rather than `listAll().length` filtered
+   * in the caller, so a badge that renders on every page load does not pull
+   * every request's subject, body and amendments across the wire to read one
+   * number off it.
+   */
+  countOpen(): number
   find(id: number): ChangeRequest | undefined
   submit(input: NewChangeRequest, userId: number): ChangeRequest
   /** Appends an amendment. Throws if `id` does not name a request — the route checks first. */
@@ -133,6 +141,11 @@ export function createChangeRequestStore(db: DatabaseSync): ChangeRequestStore {
   const statements = {
     listMine: db.prepare(`${REQUEST_SELECT} WHERE r.requested_by_user_id = ? ORDER BY r.id DESC`),
     listAll: db.prepare(`${REQUEST_SELECT} ORDER BY r.id DESC`),
+    // Served by `change_requests_open`, the index migration v15 declares for
+    // exactly this shape of query.
+    countOpen: db.prepare(
+      `SELECT COUNT(*) AS n FROM change_requests WHERE canceled_at IS NULL AND resolved_at IS NULL`,
+    ),
     find: db.prepare(`${REQUEST_SELECT} WHERE r.id = ?`),
     amendmentsFor: db.prepare(AMENDMENT_SELECT),
     insert: db.prepare(
@@ -185,6 +198,11 @@ export function createChangeRequestStore(db: DatabaseSync): ChangeRequestStore {
 
     listAll() {
       return list(statements.listAll.all())
+    },
+
+    countOpen() {
+      const row = statements.countOpen.get() as { n: number | bigint } | undefined
+      return asInt(row?.n)
     },
 
     find,

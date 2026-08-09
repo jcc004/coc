@@ -366,6 +366,54 @@ describe('GET /api/admin/change-requests', () => {
   })
 })
 
+describe('GET /api/admin/change-requests/pending-count', () => {
+  it('is admin-only', async () => {
+    const harness = await createHarness()
+    const cookieA = await signIn(harness, MEMBER_A)
+    const response = await harness.app.request('/api/admin/change-requests/pending-count', {
+      headers: { cookie: cookieA },
+    })
+    assert.equal(response.status, 403)
+  })
+
+  it('counts neither canceled nor resolved — the same "open" changeRequestStatus computes client-side', async () => {
+    const harness = await createHarness()
+    const cookieA = await signIn(harness, MEMBER_A)
+    const cookieAdmin = await signIn(harness, ADMIN)
+
+    await submit(harness, cookieA, 'Still open')
+    const willCancel = await submit(harness, cookieA, 'Will be canceled')
+    const willResolve = await submit(harness, cookieA, 'Will be resolved')
+    const willBoth = await submit(harness, cookieA, 'Canceled and resolved')
+
+    await harness.app.request(...post(`/api/change-requests/${willCancel.id}/cancel`, {}, cookieA))
+    await harness.app.request(
+      ...post(`/api/admin/change-requests/${willResolve.id}/resolve`, { type: 'asDesigned' }, cookieAdmin),
+    )
+    await harness.app.request(...post(`/api/change-requests/${willBoth.id}/cancel`, {}, cookieA))
+    await harness.app.request(
+      ...post(`/api/admin/change-requests/${willBoth.id}/resolve`, { type: 'outOfScope' }, cookieAdmin),
+    )
+
+    const response = await harness.app.request('/api/admin/change-requests/pending-count', {
+      headers: { cookie: cookieAdmin },
+    })
+    assert.equal(response.status, 200)
+    const body = (await response.json()) as { count: number }
+    assert.equal(body.count, 1)
+  })
+
+  it('is zero with nothing outstanding', async () => {
+    const harness = await createHarness()
+    const cookieAdmin = await signIn(harness, ADMIN)
+    const response = await harness.app.request('/api/admin/change-requests/pending-count', {
+      headers: { cookie: cookieAdmin },
+    })
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), { count: 0 })
+  })
+})
+
 describe('resolve', () => {
   it('is admin-only, the request’s own author included', async () => {
     const harness = await createHarness()

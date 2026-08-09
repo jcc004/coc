@@ -1,8 +1,15 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { SessionUser } from '@coc/shared'
+import { usePendingChangeRequestCount } from '../change-requests.ts'
 import { schemeSummary } from '../color-scheme.ts'
 import { hrefFor, navigate, useColorScheme, type Route, type Theme } from '../hooks.ts'
-import { menuButtonLabel, nextTheme, themeLabel, userMenuItems } from '../user-menu.ts'
+import {
+  changeRequestBadgeText,
+  menuButtonLabel,
+  nextTheme,
+  themeLabel,
+  userMenuItems,
+} from '../user-menu.ts'
 
 /** The picker lives on the account page; this is the entry point to it. */
 const COLORS_ROUTE: Route = { view: 'account' }
@@ -40,6 +47,18 @@ const BASE_ORDER_ROUTE: Route = { view: 'base-order' }
  *   focus leaves a keyboard user at a control that no longer exists;
  * - a pointer press outside closes it. The listener is on `pointerdown`, not
  *   `click`, so a press that starts outside cannot land on an item that has moved.
+ *
+ * **The badge**: an admin with an unresolved "propose a change" request waiting
+ * (`docs/proposed-changes.md`) sees a small count on the silhouette itself, so
+ * finding out no longer requires opening the admin change-requests page on
+ * spec. `usePendingChangeRequestCount` (`change-requests.ts`) polls
+ * `GET /api/admin/change-requests/pending-count` — a dedicated endpoint rather
+ * than the client counting `allChangeRequests` itself, so this always-mounted
+ * badge does not pull every request's subject and body across the wire for a
+ * member's session it will never render for. The digit is `aria-hidden`: the
+ * same count is already in the button's own accessible name
+ * (`menuButtonLabel`), so a screen reader is not asked to parse a decoration
+ * a sighted admin reads as a glance.
  */
 export function UserMenu({
   user,
@@ -56,6 +75,12 @@ export function UserMenu({
   const wrapRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuId = useId()
+
+  const isAdmin = user.role === 'admin'
+  /* `null` until the first answer lands, or permanently for a member — see the
+     hook's own doc comment for why it is safe to call unconditionally here. */
+  const pendingChangeRequests = usePendingChangeRequestCount(isAdmin, open)
+  const buttonLabel = menuButtonLabel(user, pendingChangeRequests ?? 0)
 
   /*
    * Read here for the menu's own "Default / Custom" line — and, because this is the
@@ -101,11 +126,16 @@ export function UserMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={menuButtonLabel(user)}
-        title={menuButtonLabel(user)}
+        aria-label={buttonLabel}
+        title={buttonLabel}
         onClick={() => setOpen((was) => !was)}
       >
         <Silhouette />
+        {isAdmin && pendingChangeRequests !== null && pendingChangeRequests > 0 ? (
+          <span className="user-menu__badge" aria-hidden="true">
+            {changeRequestBadgeText(pendingChangeRequests)}
+          </span>
+        ) : null}
       </button>
 
       {open ? (

@@ -8,6 +8,7 @@ import {
   type CapitalRaidSeasonsResponse,
   type CardCount,
   type CardInventoryResponse,
+  type ChangeRequestPendingCountResponse,
   type ChangeRequestResponse,
   type ChangeRequestsResponse,
   type Clan,
@@ -422,6 +423,16 @@ export const api = {
   /** Admin-only. Every request, every account — the resolution table. */
   allChangeRequests: (signal?: AbortSignal) =>
     get<ChangeRequestsResponse>('/api/admin/change-requests', signal),
+
+  /**
+   * Admin-only. One integer — how many requests are open — for the
+   * account-menu badge. Deliberately not `allChangeRequests().length` filtered
+   * client-side: a badge polled every couple of minutes should not pull every
+   * request's subject, body and amendments across the wire to read one number
+   * off it.
+   */
+  pendingChangeRequestCount: (signal?: AbortSignal) =>
+    get<ChangeRequestPendingCountResponse>('/api/admin/change-requests/pending-count', signal),
 
   /**
    * Admin-only. May be called more than once on the same request to correct or

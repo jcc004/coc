@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import type { SessionUser } from '@coc/shared'
 import type { Theme } from './hooks.ts'
 import {
+  changeRequestBadgeText,
   menuButtonLabel,
   nextTheme,
   THEME_CYCLE,
@@ -173,5 +174,40 @@ describe('menuButtonLabel', () => {
 
   it('says it is a menu, so the control is not mistaken for a link', () => {
     assert.match(menuButtonLabel({ displayName: 'Anna', role: 'user' }), /menu/i)
+  })
+
+  it('says nothing about pending change requests at zero, or when omitted', () => {
+    const omitted = menuButtonLabel({ displayName: 'Anna', role: 'admin' })
+    const zero = menuButtonLabel({ displayName: 'Anna', role: 'admin' }, 0)
+    assert.doesNotMatch(omitted, /pending/i)
+    assert.doesNotMatch(zero, /pending/i)
+  })
+
+  it('names the count and pluralizes "change request" above one', () => {
+    assert.ok(menuButtonLabel({ displayName: 'Anna', role: 'admin' }, 1).endsWith('1 pending change request'))
+    assert.ok(
+      menuButtonLabel({ displayName: 'Anna', role: 'admin' }, 3).endsWith('3 pending change requests'),
+    )
+  })
+
+  it('still names who is signed in ahead of the pending count', () => {
+    const label = menuButtonLabel({ displayName: 'Anna', role: 'admin' }, 2)
+    assert.ok(
+      label.indexOf('Anna') < label.indexOf('pending'),
+      'the account name should read before the pending count',
+    )
+  })
+})
+
+describe('changeRequestBadgeText', () => {
+  it('shows the exact count up to 9', () => {
+    assert.equal(changeRequestBadgeText(0), '0')
+    assert.equal(changeRequestBadgeText(1), '1')
+    assert.equal(changeRequestBadgeText(9), '9')
+  })
+
+  it('caps the drawn glyph at "9+" past nine, so a long queue cannot blow out the badge', () => {
+    assert.equal(changeRequestBadgeText(10), '9+')
+    assert.equal(changeRequestBadgeText(250), '9+')
   })
 })

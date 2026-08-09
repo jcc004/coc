@@ -211,6 +211,29 @@ that has moved. All four verified in a browser, including `aria-controls` matchi
 The silhouette itself is inline SVG in `web/src/components/UserMenu.tsx`, a circle and a clipped
 half-capsule in `currentColor`, for the same reason the rosette is.
 
+**The badge.** An admin with at least one open "propose a change" request
+(`docs/proposed-changes.md`) sees a small numeral on the silhouette itself — no need to open the
+admin panel on spec to find out something is waiting. `usePendingChangeRequestCount`
+(`web/src/change-requests.ts`) polls `GET /api/admin/change-requests/pending-count` every two
+minutes while the tab is open, refetches on window focus and tab-visibility change (the same two
+listeners `use-card-refresh.ts` polls the card and trade stores with, for the same reason: a
+laptop woken from sleep should not wait out the full interval), and once more whenever the menu
+opens, so resolving a request in one tab shows up in another without waiting on the timer. Two
+minutes rather than `use-card-refresh.ts`'s 30 seconds on purpose: an open request is not
+time-sensitive the way a card count mid-trade is, and a couple of minutes' staleness costs nothing
+a person would notice. A failed poll leaves the last known number on screen rather than blinking
+to nothing.
+
+The digit is capped at "9+" past nine (`changeRequestBadgeText`, `web/src/user-menu.ts`) — the
+badge is a 16px circle, and a long-neglected queue should not force it to grow. It fills
+`--accent` and white, the same "this wants attention" pairing `.search button[type='submit']` and
+`.bulk-bar button` already use for their own primary actions, not a color role invented for one
+badge — and deliberately not `--critical`: an open request is routine, not an error, and red would
+overstate it. The badge itself is `aria-hidden`; the same count is already folded into the
+button's own accessible name (`menuButtonLabel`), so a screen reader hears "Anna (admin) — account
+menu — 3 pending change requests" once, rather than the badge being announced a second time as a
+decoration a sighted admin reads at a glance.
+
 ## Choosing colors
 
 `ColorSchemeCard` on `#/account` hands the user **three** colors: the **accent** (links, focus
