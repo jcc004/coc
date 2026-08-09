@@ -3,18 +3,17 @@
 Config for hosting this app on a $6 DigitalOcean droplet, **HTTPS only** — port 80
 redirects and answers ACME challenges, and serves no application traffic.
 
-> This file's addresses and hostname (`203.0.113.10`, `198.51.100.10`, `coc.example.com`) are
-> placeholders — `203.0.113.0/24` and `198.51.100.0/24` are reserved by RFC 5737 for exactly this,
-> and `example.com` by RFC 2606, so none of the three is ever a real, reachable host. Substitute
-> your own droplet's addresses and domain throughout. `nginx-coc.conf` and the systemd unit files
+> This file's addresses, hostname and account name (`203.0.113.10`, `198.51.100.10`,
+> `coc.example.com`, `deploy`) are placeholders — `203.0.113.0/24` and `198.51.100.0/24` are
+> reserved by RFC 5737 for exactly this, and `example.com` by RFC 2606, so none of the three is
+> ever a real, reachable host, and `deploy` names no one in particular. Substitute your own
+> droplet's addresses, domain and account throughout. `nginx-coc.conf` and the systemd unit files
 > in this directory are the actual files copied onto a running host, not documentation, so they
-> still carry this deployment's real values — replace those too before reusing them for a
-> different host, but do not expect this prose to match them byte for byte.
-
-## The example account name
-
-Commands below run `sudo` as `crighjc` — the account that owns this deployment. Substitute
-whatever account will own yours; nothing about the setup requires that specific name.
+> still carry this deployment's real values, including the real account in each unit's `User=`
+> line — replace those too before reusing them for a different host, but do not expect this
+> prose to match them byte for byte. That includes the `sed` example below that edits
+> `coc.service`'s `User=` line: it shows `deploy` for readability, but the line it is actually
+> matching in the shipped unit file is the real account, not this placeholder.
 
 ## The droplet has two addresses, and they are not interchangeable
 
@@ -102,7 +101,7 @@ session cookies cross the network in clear text.
 
 - `.env.production.example` — template for `/srv/coc/.env` on the server.
 
-## Sequence (on the droplet, as `crighjc`)
+## Sequence (on the droplet, as `deploy`)
 
 ```bash
 # One-time prerequisites
@@ -115,7 +114,7 @@ sudo apt-get install -y nodejs git nginx certbot python3-certbot-nginx
 sudo ufw allow 80,443/tcp && sudo ufw allow OpenSSH && sudo ufw enable
 
 # Code — lives in /srv/coc (world-traversable, so no chmod on the app dir)
-sudo mkdir -p /srv/coc && sudo chown crighjc:crighjc /srv/coc
+sudo mkdir -p /srv/coc && sudo chown deploy:deploy /srv/coc
 git clone <your-repo-url> /srv/coc && cd /srv/coc
 npm install          # includes tsx (a runtime dep) — do NOT use --omit=dev
 
@@ -199,7 +198,7 @@ itself has to be closed:
 
 ```bash
 chmod 600 /srv/coc/.env
-ls -l /srv/coc/.env          # -rw------- 1 crighjc crighjc
+ls -l /srv/coc/.env          # -rw------- 1 deploy deploy
 ```
 
 The systemd unit also sets `UMask=0077`, so the SQLite database and its WAL are
@@ -382,7 +381,7 @@ knowing before you install it:
   wants a writable home directory for its cache and log files and `ProtectHome=true`
   denies that. It is the same command npm was running.
 - **`ProtectHome=true` is the point of the exercise.** The service runs as
-  `crighjc`, a human account with an `~/.ssh` in it. The app never needed a home
+  `deploy`, a human account with an `~/.ssh` in it. The app never needed a home
   directory, and now it cannot read one.
 
 `MemoryDenyWriteExecute` is deliberately absent, and the unit says so in place: V8
@@ -425,16 +424,16 @@ copy: run the app as an account that owns nothing but the app.
 sudo useradd --system --home-dir /srv/coc --shell /usr/sbin/nologin coc
 sudo chown -R coc:coc /srv/coc/server/data
 sudo chown coc:coc /srv/coc/.env          # it is read by the service, not by you
-sudo sed -i 's/^User=crighjc$/User=coc/' /etc/systemd/system/coc.service
+sudo sed -i 's/^User=deploy$/User=coc/' /etc/systemd/system/coc.service
 sudo systemctl daemon-reload && sudo systemctl restart coc
 curl -fsS http://127.0.0.1:8787/api/health && echo
 ```
 
-Two things this does **not** move, deliberately: the deploy still runs as `crighjc`
+Two things this does **not** move, deliberately: the deploy still runs as `deploy`
 (it needs to write the checkout and hold the git credentials), and `~/coc-backups`
 stays that user's. So `coc` gets the database and the token and nothing else.
 
-`User=` is left as `crighjc` in the committed unit rather than pre-switched, because
+`User=` is left as `deploy` in the committed unit rather than pre-switched, because
 copying a unit whose `User=` does not own the data directory starts a server that
 cannot write — a failure that looks like a code bug.
 
@@ -744,7 +743,7 @@ The script restarts a service, so it needs passwordless `sudo` for exactly that:
 
 ```bash
 sudo visudo -f /etc/sudoers.d/coc-deploy
-# crighjc ALL=(root) NOPASSWD: /usr/bin/systemctl restart coc, /usr/bin/systemctl reload nginx
+# deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart coc, /usr/bin/systemctl reload nginx
 sudo -n systemctl restart coc     # must not prompt
 ```
 
