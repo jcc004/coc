@@ -64,6 +64,10 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
   `<div className="roster-footer">` below the table — see `CardsView.tsx`'s leaderboard or
   `SavedClansView.tsx`. Never put the row-limit select in the card header while the pager stays at
   the bottom; `ProgressGridView.tsx` shipped that way once and had to be moved.
+- **Stay inside this repo.** Any agent working here — including one subagent spawning another —
+  operates only within `coc/`, or an isolated worktree of it. Touching another repository under
+  `~/repos-jcc/` (`claude-kit/` included) or anything outside this checkout needs explicit
+  direction first; do not infer it from context or convenience.
 
 ## Files that bite, and how
 
