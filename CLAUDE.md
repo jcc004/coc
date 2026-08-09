@@ -151,15 +151,20 @@ reports "Already up to date" forever. Recovery is `./deploy/update.sh --force`.
 
 `claude-kit/rules/working-style.md`'s standing rule is to hand over commands for the operator to
 run rather than SSH into a live system directly. **For this project only**, that default is
-lifted: [the specific droplet address, account name and sudo posture were removed from this historical revision on 2026-08-09 — see the current CLAUDE.md]
+lifted: Claude may run any command directly against the production droplet, using the account
+described in `.claude/droplet-access.local.md`.
 
+That file is gitignored — it holds the droplet's address, the account name, and its sudo posture,
+none of which belongs in a repo this project shares with people who should not receive a live
+server's access details. Read it before doing any operational work on the droplet. If it is
+missing from this checkout, this session is not running as the operator — ask before attempting
+anything against the droplet rather than assuming the exception still applies.
 
+@.claude/droplet-access.local.md
 
-This authorizes running commands against the droplet directly — installing systemd units,
-checking service status, reading logs, applying a scoped data merge — the things this file and
-`deploy/README.md` already describe. It does not relax anything else: still take a backup before a
-write that could lose data, still say plainly what a command will do before running something with
-real effect, and the general prohibitions (destructive actions without a clear, reversible path
-back) still hold. The point of this exception is removing the copy-paste round trip for routine
-operational work on a project with exactly one operator, not removing judgment about what a command
-actually does before it runs.
+This does not relax anything else: still take a backup before a write that could lose data, still
+say plainly what a command will do before running something with real effect, and the general
+prohibitions (destructive actions without a clear, reversible path back) still hold. The point of
+this exception is removing the copy-paste round trip for routine operational work on a project
+with exactly one operator, not removing judgment about what a command actually does before it
+runs.

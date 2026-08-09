@@ -36,3 +36,9 @@ web/dist.prev-*/
 # file, which holds whatever grants one machine has accumulated and is nobody
 # else's default.
 .claude/settings.local.json
+
+# The droplet's address, account name and sudo posture — CLAUDE.md's deploy
+# section imports this file rather than stating those specifics inline, because
+# this repo gets shared with people who should not receive a live server's
+# access details. Local-only; see the file itself for what it holds.
+.claude/droplet-access.local.md

@@ -1492,26 +1492,26 @@ describe('the ADMIN_EMAIL escape hatch', () => {
     // Before: a real account nobody can sign in to.
     assert.equal(store.countUsersWithEmail(), 0)
 
-    const first = await bootstrapAdmin(store, { ADMIN_EMAIL: '  John@Crighton.net  ' })
+    const first = await bootstrapAdmin(store, { ADMIN_EMAIL: '  Admin@Example.test  ' })
     assert.equal(first.status, 'emailBackfilled')
-    assert.match(first.message, /john@crighton\.net/)
+    assert.match(first.message, /admin@example\.test/)
 
     const [user] = store.listUsers()
-    assert.equal(user?.email, 'john@crighton.net')
+    assert.equal(user?.email, 'admin@example.test')
     assert.equal(user?.displayName, 'jcc', 'the display name is not overwritten')
 
     // The password is the one they already had — the whole point of this path.
-    assert.ok(await store.authenticate('john@crighton.net', LEGACY_PASSWORD))
-    assert.equal(await store.authenticate('john@crighton.net', 'some-other-password'), undefined)
+    assert.ok(await store.authenticate('admin@example.test', LEGACY_PASSWORD))
+    assert.equal(await store.authenticate('admin@example.test', 'some-other-password'), undefined)
 
     // Idempotent: a restart with the var still set finds nothing to do.
-    const second = await bootstrapAdmin(store, { ADMIN_EMAIL: 'john@crighton.net' })
+    const second = await bootstrapAdmin(store, { ADMIN_EMAIL: 'admin@example.test' })
     assert.equal(second.status, 'existing')
 
     // And it cannot be used to *move* an address that is already set.
     const third = await bootstrapAdmin(store, { ADMIN_EMAIL: 'someone-else@example.com' })
     assert.equal(third.status, 'existing')
-    assert.equal(store.listUsers()[0]?.email, 'john@crighton.net')
+    assert.equal(store.listUsers()[0]?.email, 'admin@example.test')
 
     db.close()
   })
@@ -1522,13 +1522,13 @@ describe('the ADMIN_EMAIL escape hatch', () => {
 
     const db = openDatabase(path)
     const store = createAuthStore(db)
-    await bootstrapAdmin(store, { ADMIN_EMAIL: 'john@crighton.net', ADMIN_PASSWORD: 'a-brand-new-one!!' })
+    await bootstrapAdmin(store, { ADMIN_EMAIL: 'admin@example.test', ADMIN_PASSWORD: 'a-brand-new-one!!' })
 
     assert.equal(store.countUsers(), 1, 'the existing account is adopted, not duplicated')
     // ADMIN_PASSWORD is ignored on this path: it must not be able to reset a
     // password that has since been changed.
-    assert.equal(await store.authenticate('john@crighton.net', 'a-brand-new-one!!'), undefined)
-    assert.ok(await store.authenticate('john@crighton.net', LEGACY_PASSWORD))
+    assert.equal(await store.authenticate('admin@example.test', 'a-brand-new-one!!'), undefined)
+    assert.ok(await store.authenticate('admin@example.test', LEGACY_PASSWORD))
     db.close()
   })
 
@@ -1605,7 +1605,7 @@ describe('the ADMIN_EMAIL escape hatch', () => {
 
     // Handing an admin's configured address to a plain user would be a quiet
     // privilege muddle, so it stays a loud message instead.
-    const result = await bootstrapAdmin(store, { ADMIN_EMAIL: 'john@crighton.net' })
+    const result = await bootstrapAdmin(store, { ADMIN_EMAIL: 'admin@example.test' })
     assert.equal(result.status, 'noUsableEmail')
     assert.equal(store.listUsers()[0]?.email, null)
     db.close()
