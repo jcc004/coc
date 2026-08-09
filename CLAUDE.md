@@ -121,7 +121,7 @@ cost anything. Add to this list when a file misleads you, and say what it did.
 
 ## Testing
 
-`npm test` runs all three workspaces — 1,865 tests (21 shared, 577 server, 1,267 web), `node:test`,
+`npm test` runs all three workspaces — 1,879 tests (21 shared, 586 server, 1,272 web), `node:test`,
 no framework. Tests sit adjacent
 to their module. Run the whole suite, not a workspace.
 
@@ -129,7 +129,7 @@ Run it on the pinned Node. A non-interactive shell does not fire the `fnm --use-
 silently gets whatever Node is on `PATH`, so a green suite there says nothing about the runtime
 production uses. `zsh -i -c 'cd <repo> && npm test'` is the form that pins it.
 
-Known gap, so it is not rediscovered as a surprise: **8 of 32 components have tests**. The pure
+Known gap, so it is not rediscovered as a surprise: **9 of 33 components have tests**. The pure
 modules are well covered, and `hooks.ts` and `api.ts` now are too. What remains untested is not
 uniformly presentational, though — `Login.tsx`, `TradeTracker.tsx`, `TradeSuggestions.tsx`,
 `ProgressGridView.tsx` and `ForcedPasswordChange.tsx` each wire up real interaction or business
