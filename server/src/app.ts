@@ -64,14 +64,25 @@ export interface AppDeps {
    */
   trustProxy?: boolean
   /**
-   * The commit last confirmed live, per `readDeployedCommit`. Surfaced on
-   * `/api/health` so an external monitor can compare it against `main` and catch a
-   * stalled auto-deploy — exactly the shape of the incident this exists for: a
-   * `git filter-repo` rewrite left the droplet's clone unable to fast-forward, so
-   * every timer run since silently failed while the service stayed up serving
-   * stale code. `undefined` in local dev, where nothing writes the file.
+   * Path to `.deploy-last-good-sha`, read fresh on every `/api/health` call rather
+   * than once at startup. `deploy/update.sh` writes that file *after* it restarts
+   * the service (`git rev-parse HEAD > "$LAST_GOOD"` only once the build and
+   * post-restart health check both pass), so a process that read it once at boot
+   * and cached the result would report the *previous* deploy's commit for its
+   * entire lifetime — the freshly-restarted process starts and reads the file
+   * before that deploy's own write reaches it. That is not hypothetical: it is
+   * what happened on 2026-08-09, where the monitor's freshness check (added for a
+   * different incident, see below) then spent the next several hours reporting a
+   * healthy, current deploy as stuck.
+   *
+   * Surfaced on `/api/health` so an external monitor can compare it against `main`
+   * and catch a stalled auto-deploy — the shape of incident this field originally
+   * existed for: a `git filter-repo` rewrite left the droplet's clone unable to
+   * fast-forward, so every timer run since silently failed while the service
+   * stayed up serving stale code. `undefined` in local dev, where nothing writes
+   * the file.
    */
-  deployedCommit?: string
+  deployedCommitPath?: string
 }
 
 /**
@@ -223,7 +234,7 @@ export function createApp({
   loginLimiter,
   cookieSecure = false,
   trustProxy = false,
-  deployedCommit,
+  deployedCommitPath,
 }: AppDeps) {
   const app = new Hono<AuthEnv>()
 
@@ -311,9 +322,13 @@ export function createApp({
   // equivalent risk — a bare commit hash reveals nothing an external monitor
   // couldn't already see by reading `main` — so it is spread into both branches
   // rather than gated on `user`.
-  const commitField = deployedCommit ? { commit: deployedCommit } : {}
+  //
+  // Read on every call, not once at startup: see `AppDeps.deployedCommitPath` for
+  // why a cached read is stale by exactly one deploy.
   app.get('/api/health', (c) => {
     const user = c.get('user')
+    const deployedCommit = deployedCommitPath ? readDeployedCommit(deployedCommitPath) : undefined
+    const commitField = deployedCommit ? { commit: deployedCommit } : {}
     return c.json(
       user ? { ok: true, cachedEntries: cache.size, ...commitField } : { ok: true, ...commitField },
     )

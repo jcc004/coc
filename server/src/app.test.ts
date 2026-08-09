@@ -58,8 +58,8 @@ async function createHarness(
      * to count has to say so — which is the property, not a nuisance.
      */
     trustProxy?: boolean
-    /** Forwarded straight to `createApp` — see `AppDeps.deployedCommit`. */
-    deployedCommit?: string
+    /** Forwarded straight to `createApp` — see `AppDeps.deployedCommitPath`. */
+    deployedCommitPath?: string
   } = {},
 ): Promise<Harness> {
   const calls: string[] = []
@@ -109,7 +109,7 @@ async function createHarness(
     changeRequests: createChangeRequestStore(db),
     loginLimiter: createLoginLimiter(options.limiter),
     trustProxy: options.trustProxy ?? false,
-    deployedCommit: options.deployedCommit,
+    deployedCommitPath: options.deployedCommitPath,
   })
 
   return { app, store, shared, db, calls, bootstrap }
@@ -600,6 +600,9 @@ describe('the CoC routes are the thing being protected', () => {
 })
 
 describe('health', () => {
+  const commitDir = mkdtempSync(join(tmpdir(), 'coc-health-commit-'))
+  after(() => rmSync(commitDir, { recursive: true, force: true }))
+
   it('omits internals for an anonymous caller', async () => {
     const harness = await createHarness()
     const response = await harness.app.request('/api/health')
@@ -619,7 +622,9 @@ describe('health', () => {
   })
 
   it('includes the deployed commit for an anonymous caller when known', async () => {
-    const harness = await createHarness({ deployedCommit: 'deadbeef' })
+    const path = join(commitDir, 'anonymous')
+    writeFileSync(path, 'deadbeef\n')
+    const harness = await createHarness({ deployedCommitPath: path })
     const response = await harness.app.request('/api/health')
 
     assert.deepEqual(await response.json(), { ok: true, commit: 'deadbeef' })
@@ -627,11 +632,30 @@ describe('health', () => {
   })
 
   it('includes the deployed commit alongside the cache size when authenticated', async () => {
-    const harness = await createHarness({ deployedCommit: 'deadbeef' })
+    const path = join(commitDir, 'authenticated')
+    writeFileSync(path, 'deadbeef\n')
+    const harness = await createHarness({ deployedCommitPath: path })
     const cookie = await loggedIn(harness)
 
     const response = await harness.app.request('/api/health', { headers: { cookie } })
     assert.deepEqual(await response.json(), { ok: true, cachedEntries: 0, commit: 'deadbeef' })
+    harness.db.close()
+  })
+
+  it('reflects a file written after the app started, not a value cached at startup', async () => {
+    // The regression this guards: `deploy/update.sh` writes `.deploy-last-good-sha`
+    // *after* it restarts the service, so a process that snapshotted the file once
+    // at boot would report the previous deploy's commit for its entire lifetime.
+    const path = join(commitDir, 'written-late')
+    const harness = await createHarness({ deployedCommitPath: path })
+
+    const before = await harness.app.request('/api/health')
+    assert.deepEqual(await before.json(), { ok: true })
+
+    writeFileSync(path, 'cafef00d\n')
+
+    const after = await harness.app.request('/api/health')
+    assert.deepEqual(await after.json(), { ok: true, commit: 'cafef00d' })
     harness.db.close()
   })
 })

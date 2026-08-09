@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { serve } from '@hono/node-server'
-import { bindHostFromEnv, bindsEveryInterface, createApp, readDeployedCommit } from './app.ts'
+import { bindHostFromEnv, bindsEveryInterface, createApp } from './app.ts'
 import { bootstrapAdmin } from './auth/bootstrap.ts'
 import { cookieSecureFromEnv, trustProxyFromEnv } from './auth/middleware.ts'
 import { createAuthStore } from './auth/store.ts'
@@ -77,7 +77,9 @@ console.log(
 // `.deploy-last-good-sha` lives one directory above this workspace — `coc.service`
 // sets `WorkingDirectory=/srv/coc/server` (see that file's own comment on why), and
 // `deploy/update.sh` writes the marker at the repo root, `/srv/coc`, one level up.
-const deployedCommit = readDeployedCommit(join(process.cwd(), '..', '.deploy-last-good-sha'))
+// Passed as a path, not read here: see `AppDeps.deployedCommitPath` for why this
+// process must not cache the value at startup.
+const deployedCommitPath = join(process.cwd(), '..', '.deploy-last-good-sha')
 
 const cache = new TtlCache(ttlSeconds * 1000)
 setInterval(() => cache.prune(), 60_000).unref()
@@ -96,7 +98,7 @@ const app = createApp({
   changeRequests,
   cookieSecure: cookieSecureFromEnv(process.env),
   trustProxy,
-  deployedCommit,
+  deployedCommitPath,
 })
 
 serve({ fetch: app.fetch, port, hostname: host }, ({ address, port: bound }) => {
