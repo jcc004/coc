@@ -55,6 +55,9 @@ TLS, the systemd units — is [`deploy/README.md`](deploy/README.md).
 - **[The Trade Tracker](docs/trade-tracker.md)** — proposing a swap, who may resolve one and why
   that rule differs from card entry, the audit record, the ordering, and what completing does to
   both bases' counts.
+- **[Propose a change](docs/proposed-changes.md)** — any signed-in user's own submit form and "My
+  requests" list, the independent amend/cancel/hide rules, and how an admin resolves a request —
+  as designed, out of scope, or tied to a commit picked off the What's New list.
 - **[Weekly progress tracking and base order](docs/progress-tracking.md)** — the spreadsheet this
   feature replaces, the two writers merged into one row per base per week, the two scheduled wiki
   and auto-capture jobs and why their order matters, the routes, and the per-account base-order

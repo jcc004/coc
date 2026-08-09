@@ -485,6 +485,8 @@ CREATE TABLE chat_messages (
   body       TEXT NOT NULL,
   created_at TEXT NOT NULL
 );`)
+    staged.exec('DROP TABLE change_request_amendments')
+    staged.exec('DROP TABLE change_requests')
     staged.exec('PRAGMA user_version = 4')
 
     const userId = Number(staged.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
@@ -616,6 +618,8 @@ CREATE TABLE chat_messages (
   body       TEXT NOT NULL,
   created_at TEXT NOT NULL
 );`)
+    db.exec('DROP TABLE change_request_amendments')
+    db.exec('DROP TABLE change_requests')
     db.exec('PRAGMA user_version = 5')
 
     const insert = db.prepare(
@@ -810,6 +814,8 @@ CREATE TABLE chat_messages (
 );
 CREATE INDEX chat_messages_user_id ON chat_messages (user_id);
 `)
+    db.exec('DROP TABLE change_request_amendments')
+    db.exec('DROP TABLE change_requests')
     db.exec('PRAGMA user_version = 6')
 
     const userId = Number(db.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
@@ -1061,6 +1067,8 @@ CREATE TABLE chat_messages (
   body       TEXT NOT NULL,
   created_at TEXT NOT NULL
 );`)
+    db.exec('DROP TABLE change_request_amendments')
+    db.exec('DROP TABLE change_requests')
     db.exec('PRAGMA user_version = 7')
 
     const userId = Number(db.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
@@ -1247,6 +1255,8 @@ describe('migration v13 — base_progress.captured_by_user_id', () => {
     const db = new DatabaseSync(path)
     migrate(db)
     db.exec('ALTER TABLE base_progress DROP COLUMN captured_by_user_id')
+    db.exec('DROP TABLE change_request_amendments')
+    db.exec('DROP TABLE change_requests')
     db.exec('PRAGMA user_version = 12')
     db.close()
   }
@@ -1370,6 +1380,8 @@ CREATE UNIQUE INDEX trades_one_pending_per_swap
   WHERE status = 'pending';
 `)
     db.exec('PRAGMA foreign_keys = ON')
+    db.exec('DROP TABLE change_request_amendments')
+    db.exec('DROP TABLE change_requests')
     db.exec('PRAGMA user_version = 13')
 
     db.prepare(

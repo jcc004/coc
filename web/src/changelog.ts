@@ -266,3 +266,50 @@ export function loadChanges(): Promise<Change[]> {
     })
   return loaded
 }
+
+/* ---------- routing ---------- */
+
+/**
+ * The element id one entry of the list renders as, keyed on its commit — the same
+ * identity `key={change.commit}` already uses one level up in `WhatsNewView`. A
+ * link built from {@link whatsNewHref} points at a route carrying this same
+ * commit; `WhatsNewView` turns the route back into this id to find the element to
+ * scroll to. Exported so the two ends — the id an entry renders and the id a
+ * scroll goes looking for — cannot drift apart into two different naming schemes.
+ */
+export function changeEntryId(commit: string): string {
+  return `change-${commit}`
+}
+
+/**
+ * The commit a `#/whats-new/<param>` link is asking for, or `null` for the whole
+ * page.
+ *
+ * The shape mirrors `helpSection` in `help.ts` — a route carrying an optional
+ * path segment, `null` meaning "the whole page" — but not the method. A help
+ * section is a closed enum this module can validate on the spot; a commit is
+ * whichever ones happen to be in the build's own baked-in list, which is data
+ * `loadChanges` has not necessarily fetched yet when `parseHash` runs. So this
+ * does the only thing it safely can: hands back a trimmed, non-empty segment as
+ * the commit. Whether that commit is actually one of the loaded entries is
+ * `WhatsNewView`'s question to ask once the list has arrived — a commit that
+ * turns out not to be there is a no-op scroll, not a route that refuses to open,
+ * the same "missing is a no-op" rule `scrollAndFocus` (`card-sections.ts`)
+ * already follows for exactly this reason.
+ */
+export function whatsNewCommit(param: string | null | undefined): string | null {
+  if (!param) return null
+  const trimmed = param.trim()
+  return trimmed === '' ? null : trimmed
+}
+
+/**
+ * The href for the What's New page, or for one entry of it.
+ *
+ * `hrefFor` in `hooks.ts` delegates to this exactly as it does to `helpHref`, so
+ * the whole scheme — including the `null` case that must not leave a trailing
+ * slash — is testable without pulling React in.
+ */
+export function whatsNewHref(commit: string | null): string {
+  return commit === null ? '#/whats-new' : `#/whats-new/${encodeURIComponent(commit)}`
+}

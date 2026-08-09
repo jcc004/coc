@@ -6,6 +6,7 @@ import { SESSION_COOKIE } from '../auth/middleware.ts'
 import { createLoginLimiter } from '../auth/rate-limit.ts'
 import { createAuthStore } from '../auth/store.ts'
 import { createBaseOrderStore } from '../base-order/store.ts'
+import { createChangeRequestStore } from '../change-requests/store.ts'
 import { TtlCache } from '../cache.ts'
 import { createCardInventoryStore, type CardInventoryStore } from '../cards/store.ts'
 import { createTradeStore } from '../cards/trades-store.ts'
@@ -66,6 +67,7 @@ async function createHarness(): Promise<Harness> {
     trades: createTradeStore(db, cards),
     progress,
     baseOrder: createBaseOrderStore(db),
+    changeRequests: createChangeRequestStore(db),
     loginLimiter: createLoginLimiter(),
   })
 

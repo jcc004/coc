@@ -41,6 +41,7 @@ export type HelpSectionId =
   | 'progress'
   | 'base-order'
   | 'shared'
+  | 'change-requests'
 
 export interface HelpSection {
   id: HelpSectionId
@@ -56,9 +57,9 @@ export interface HelpSection {
  * Ordered as a narrative rather than by importance: what the event is, then who
  * owns a base (which decides what anybody may do), then the two halves of trading,
  * then how the board scores, then the app's other tracked feature — weekly progress,
- * and the base order that quietly feeds three other pages — and last the thing that
+ * and the base order that quietly feeds three other pages — then the thing that
  * surprises people about all of it: that there is one copy of the data and it is
- * everybody's.
+ * everybody's — and last, how to ask for the app itself to change.
  */
 export const HELP_SECTIONS: readonly HelpSection[] = [
   {
@@ -100,6 +101,11 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     id: 'shared',
     title: 'The data is shared',
     summary: 'One dataset for every account, and who last changed each row',
+  },
+  {
+    id: 'change-requests',
+    title: 'Propose a change',
+    summary: 'Anyone can ask for something to be different; an admin resolves it over time',
   },
 ]
 

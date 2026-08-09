@@ -435,3 +435,50 @@ export function SharedDataRules() {
     </>
   )
 }
+
+/* ---------- propose a change ---------- */
+
+/**
+ * Shared between the "Propose a change" page's own disclosure
+ * (`ChangeRequestsView.tsx`) and the help page's `change-requests` section — one
+ * copy, so the rules cannot state themselves two different ways.
+ */
+export function ChangeRequestRules() {
+  return (
+    <>
+      <p className="empty-hint">
+        Anyone signed in can submit a subject and a description. Nothing changes by itself — an
+        admin resolves the request later, over time.
+      </p>
+      <p className="empty-hint">
+        Three things you can do to your own request afterwards, <strong>independent of each other</strong>:
+      </p>
+      <ul className="rule-list">
+        <li>
+          <strong>Amend</strong> — add more text, dated, below the original. The original subject
+          and description are never edited in place. Locked once the request is closed (canceled or
+          resolved), the same way a resolved trade's original proposal never changes.
+        </li>
+        <li>
+          <strong>Cancel</strong> — withdraw it, at any time. <strong>One-way</strong>: there is no
+          route to un-cancel. The row stays, marked canceled, in your own list and in the admin
+          table — nothing is deleted.
+        </li>
+        <li>
+          <strong>Hide</strong> — remove it from your own "My requests" list. <strong>Reversible</strong>,
+          unlike Cancel: there is a Show/Hide toggle rather than a one-way door. It never affects
+          what an admin sees; the admin table always shows every request.
+        </li>
+      </ul>
+      <p className="empty-hint">
+        <strong>An admin can resolve any request at any time</strong>, whatever its cancel state —
+        resolving an already-canceled request is harmless bookkeeping, not a special case. Exactly
+        one of <strong>as designed</strong>, <strong>outside of project scope</strong>, or{' '}
+        <strong>tied to a commit</strong> picked off the What's New list, each with an optional note.
+        Unlike completing a trade, resolving here has no effect beyond recording an answer, so an
+        admin may resolve the same request again later to correct or update it — each call replaces
+        the prior resolution rather than being refused a second time.
+      </p>
+    </>
+  )
+}

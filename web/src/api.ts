@@ -1,18 +1,22 @@
 import {
   normalizeTag,
   type AdminUser,
+  type AmendChangeRequest,
   type ApiErrorResponse,
   type BaseInventoryResponse,
   type BaseOrderResponse,
   type CapitalRaidSeasonsResponse,
   type CardCount,
   type CardInventoryResponse,
+  type ChangeRequestResponse,
+  type ChangeRequestsResponse,
   type Clan,
   type ClanMembersResponse,
   type ClanSearchResponse,
   type CurrentWar,
   type EmailChangeResponse,
   type HandEnteredReferenceCategory,
+  type HideChangeRequest,
   type ImportRequest,
   type ImportResponse,
   type ManualCaptureRequest,
@@ -24,9 +28,11 @@ import {
   type OwnersResponse,
   type Player,
   type ProgressSnapshot,
+  type ResolveChangeRequest,
   type SavedClanInput,
   type SavedClanRecord,
   type SavedClansResponse,
+  type SubmitChangeRequest,
   type ProposeTradeRequest,
   type ResolveTradeResponse,
   type SessionUser,
@@ -392,4 +398,38 @@ export const api = {
    */
   saveBaseOrder: (tags: string[]) =>
     request<BaseOrderResponse>('PUT', '/api/base-order', { body: tags }),
+
+  /* ---------- "Propose a change" ---------- */
+
+  /** This account's own requests — never anyone else's; use `allChangeRequests` for that. */
+  myChangeRequests: (signal?: AbortSignal) =>
+    get<ChangeRequestsResponse>('/api/change-requests', signal),
+
+  submitChangeRequest: (input: SubmitChangeRequest) =>
+    request<ChangeRequestResponse>('POST', '/api/change-requests', { body: input }),
+
+  amendChangeRequest: (id: number, input: AmendChangeRequest) =>
+    request<ChangeRequestResponse>('POST', `/api/change-requests/${id}/amend`, { body: input }),
+
+  /** One-way — see `ChangeRequest.canceledAt`. There is no route to undo it. */
+  cancelChangeRequest: (id: number) =>
+    request<ChangeRequestResponse>('POST', `/api/change-requests/${id}/cancel`, { body: {} }),
+
+  /** Reversible: call again with the other value to unhide. */
+  setChangeRequestHidden: (id: number, input: HideChangeRequest) =>
+    request<ChangeRequestResponse>('POST', `/api/change-requests/${id}/hide`, { body: input }),
+
+  /** Admin-only. Every request, every account — the resolution table. */
+  allChangeRequests: (signal?: AbortSignal) =>
+    get<ChangeRequestsResponse>('/api/admin/change-requests', signal),
+
+  /**
+   * Admin-only. May be called more than once on the same request to correct or
+   * update a prior resolution — see `mayResolveChangeRequest` on the server for
+   * why that is allowed here and not on a trade.
+   */
+  resolveChangeRequest: (id: number, input: ResolveChangeRequest) =>
+    request<ChangeRequestResponse>('POST', `/api/admin/change-requests/${id}/resolve`, {
+      body: input,
+    }),
 }

@@ -17,6 +17,7 @@ import { SESSION_COOKIE } from './auth/middleware.ts'
 import { createLoginLimiter, type LimiterOptions } from './auth/rate-limit.ts'
 import { createAuthStore, SESSION_TTL_MS, type AuthStore } from './auth/store.ts'
 import { createBaseOrderStore } from './base-order/store.ts'
+import { createChangeRequestStore } from './change-requests/store.ts'
 import { TtlCache } from './cache.ts'
 import { createCardInventoryStore } from './cards/store.ts'
 import { createTradeStore } from './cards/trades-store.ts'
@@ -102,6 +103,7 @@ async function createHarness(
     trades: createTradeStore(db, cards),
     progress: createProgressStore(db),
     baseOrder: createBaseOrderStore(db),
+    changeRequests: createChangeRequestStore(db),
     loginLimiter: createLoginLimiter(options.limiter),
     trustProxy: options.trustProxy ?? false,
   })
@@ -263,6 +265,7 @@ describe('login and session', () => {
       trades: createTradeStore(harness.db, secureCards),
       progress: createProgressStore(harness.db),
       baseOrder: createBaseOrderStore(harness.db),
+      changeRequests: createChangeRequestStore(harness.db),
       cookieSecure: true,
     })
     const response = await secureApp.request(...postJson('/api/auth/login', ADMIN))

@@ -741,7 +741,119 @@ CREATE UNIQUE INDEX trades_one_pending_per_swap
 `)
 }
 
-const MIGRATIONS: Migration[] = [v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14]
+/**
+ * v15 — `change_requests` and `change_request_amendments`: "Propose a change",
+ * a member-initiated request that an admin resolves later.
+ *
+ * Modeled directly on `trades` (v7/v14): a status-bearing row a member starts,
+ * an audit trail of who/when, and resolution as a separate later event rather
+ * than an edit of the original. Two differences from that shape, both
+ * deliberate:
+ *
+ * - **Cancel and resolve are independent columns, not one `status` enum.** A
+ *   trade only ever has one of four mutually exclusive states; a change request
+ *   can be canceled *and* resolved, in either order (an admin resolving an
+ *   already-canceled request as harmless bookkeeping is the explicit design —
+ *   see `server/src/change-requests/access.ts`). Folding that into a single
+ *   enum would need a fifth value for "resolved and canceled" and a route that
+ *   remembers to check two things whenever it means to check one; two nullable
+ *   timestamps say the same thing without the cross-product.
+ * - **Amendments are a child table**, not a column on the row. An amendment is a
+ *   variable-length, append-only log — more of them can arrive at any time — so
+ *   normalizing it the way `card_inventory` and `base_progress` normalize their
+ *   own per-row facts is what lets it be queried and tested on its own, the same
+ *   reasoning that keeps `auth_events` a table rather than a JSON blob on `users`.
+ *
+ * Column notes:
+ *
+ * - `subject` / `body` repeat `CHANGE_REQUEST_SUBJECT_MAX` / `_BODY_MAX`
+ *   (`shared/src/change-request-types.ts`) as `CHECK`s, for the reason v4's
+ *   card `CHECK`s do: the database is the last line and the only one a future
+ *   caller cannot forget. Both also require at least one character — a blank
+ *   request is not a request.
+ * - `requested_by_user_id` is `ON DELETE SET NULL`, like every user reference in
+ *   this schema: the request is the record of something somebody asked for, and
+ *   deleting the account must cost the attribution, not the row.
+ * - `canceled_at` has no companion "canceled by" column. Only the request's own
+ *   author may ever cancel it (`mayCancelChangeRequest`), so the requester
+ *   column already says who; a second column would only ever hold the same id.
+ * - `hidden_at` is a personal display preference on the requester's own list —
+ *   never read by the admin table — and is reversible, unlike `canceled_at`.
+ * - The five `resolution_*` columns are all-or-nothing per the two `CHECK`s
+ *   below: `resolution_type`/`resolved_at` rise and fall together (mirroring
+ *   v7's `(status = 'pending') = (resolved_at IS NULL)`), and the two commit
+ *   fields may only be set when `resolution_type = 'commit'`. Nothing enforces
+ *   that they *are* set for a commit resolution — that is `resolveRequest`'s job
+ *   in `server/src/change-requests/routes.ts`, the same division `trades`
+ *   draws between what a `CHECK` guards and what the route validates.
+ * - `resolution_commit_hash` / `_commit_subject` are recorded, **not verified**:
+ *   the server has no git history at runtime to check a hash against (see
+ *   `web/src/changelog.ts`'s own doc comment), so these are exactly as
+ *   "recorded for display, not enforced" as `trades.category` is, for the same
+ *   reason.
+ *
+ * `change_request_amendments.request_id` is `ON DELETE CASCADE`: an amendment
+ * has no meaning once its request is gone, unlike every `ON DELETE SET NULL`
+ * user reference above — the two describe different relationships, a child row
+ * to its parent versus an edit to the account that made it. Requests themselves
+ * are never deleted by any code path, so this is a guarantee about a case that
+ * cannot currently arise rather than a lever anything pulls today.
+ */
+const v15: Migration = (db) => {
+  db.exec(`
+CREATE TABLE change_requests (
+  id                        INTEGER PRIMARY KEY,
+  subject                   TEXT NOT NULL CHECK (length(subject) BETWEEN 1 AND 255),
+  body                      TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 4000),
+  requested_by_user_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  requested_at              TEXT NOT NULL,
+  canceled_at               TEXT,
+  hidden_at                 TEXT,
+  resolution_type           TEXT CHECK (resolution_type IN ('asDesigned', 'outOfScope', 'commit')),
+  resolution_note           TEXT,
+  resolution_commit_hash    TEXT,
+  resolution_commit_subject TEXT,
+  resolved_by_user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  resolved_at               TEXT,
+  CHECK ((resolution_type IS NULL) = (resolved_at IS NULL)),
+  CHECK (resolution_commit_hash IS NULL OR resolution_type = 'commit'),
+  CHECK (resolution_commit_subject IS NULL OR resolution_type = 'commit')
+);
+
+-- Serves both "my requests" (author, newest first) and the admin table's need
+-- to tell open rows from closed ones without a full scan.
+CREATE INDEX change_requests_requester ON change_requests (requested_by_user_id, id);
+CREATE INDEX change_requests_open ON change_requests (canceled_at, resolved_at, id);
+
+CREATE TABLE change_request_amendments (
+  id                 INTEGER PRIMARY KEY,
+  request_id         INTEGER NOT NULL REFERENCES change_requests(id) ON DELETE CASCADE,
+  body               TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 4000),
+  created_at         TEXT NOT NULL,
+  created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX change_request_amendments_request ON change_request_amendments (request_id, id);
+`)
+}
+
+const MIGRATIONS: Migration[] = [
+  v1,
+  v2,
+  v3,
+  v4,
+  v5,
+  v6,
+  v7,
+  v8,
+  v9,
+  v10,
+  v11,
+  v12,
+  v13,
+  v14,
+  v15,
+]
 
 /** The version a fully migrated database reports. */
 export const SCHEMA_VERSION = MIGRATIONS.length

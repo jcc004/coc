@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   APP_WORKSPACES,
+  changeEntryId,
   FIELD_SEPARATOR,
   GIT_LOG_ARGS,
   GIT_LOG_FORMAT,
@@ -10,6 +11,8 @@ import {
   RECORD_SEPARATOR,
   skipsChangelog,
   touchesTheApp,
+  whatsNewCommit,
+  whatsNewHref,
   type Change,
 } from './changelog.ts'
 
@@ -286,5 +289,38 @@ describe('readChanges', () => {
       readChanges(raw).map((change) => change.subject),
       ['Newer', 'Older'],
     )
+  })
+})
+
+describe('changeEntryId', () => {
+  it('keys the id on the commit, the same identity the React list key uses', () => {
+    assert.equal(changeEntryId('de7dd8d'), 'change-de7dd8d')
+  })
+})
+
+describe('whatsNewHref', () => {
+  it('is the bare page for no commit, with no trailing slash', () => {
+    assert.equal(whatsNewHref(null), '#/whats-new')
+  })
+
+  it('puts the commit in a path segment, like every other route here', () => {
+    assert.equal(whatsNewHref('de7dd8d'), '#/whats-new/de7dd8d')
+  })
+})
+
+describe('whatsNewCommit', () => {
+  it('answers null for no commit, which is the whole page', () => {
+    for (const param of [null, undefined, '', '   ']) {
+      assert.equal(whatsNewCommit(param), null, `for ${JSON.stringify(param)}`)
+    }
+  })
+
+  it('trims surrounding space, because this is a pasted URL', () => {
+    assert.equal(whatsNewCommit(' de7dd8d '), 'de7dd8d')
+  })
+
+  it('round-trips a commit through the href', () => {
+    const param = whatsNewHref('de7dd8d').slice('#/whats-new/'.length)
+    assert.equal(whatsNewCommit(param), 'de7dd8d')
   })
 })

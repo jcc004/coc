@@ -10,6 +10,7 @@ import { SESSION_COOKIE } from '../auth/middleware.ts'
 import { createLoginLimiter } from '../auth/rate-limit.ts'
 import { createAuthStore } from '../auth/store.ts'
 import { createBaseOrderStore } from '../base-order/store.ts'
+import { createChangeRequestStore } from '../change-requests/store.ts'
 import { TtlCache } from '../cache.ts'
 import type { CocClient } from '../coc-client.ts'
 import { openDatabase } from '../db.ts'
@@ -81,6 +82,7 @@ async function createHarness(databasePath = ':memory:'): Promise<Harness> {
     trades: createTradeStore(db, cards),
     progress: createProgressStore(db),
     baseOrder: createBaseOrderStore(db),
+    changeRequests: createChangeRequestStore(db),
     loginLimiter: createLoginLimiter(),
   })
 

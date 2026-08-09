@@ -31,7 +31,8 @@ const ROUTES: readonly Route[] = [
   { view: 'admin' },
   { view: 'cards' },
   { view: 'progress' },
-  { view: 'whats-new' },
+  { view: 'whats-new', commit: null },
+  { view: 'whats-new', commit: 'de7dd8d' },
   { view: 'help', section: null },
   { view: 'help', section: 'trades' },
 ]
@@ -42,13 +43,13 @@ describe('parseHash — the views that take no parameter', () => {
     assert.deepEqual(parseHash('#/admin'), { view: 'admin' })
     assert.deepEqual(parseHash('#/cards'), { view: 'cards' })
     assert.deepEqual(parseHash('#/progress'), { view: 'progress' })
-    assert.deepEqual(parseHash('#/whats-new'), { view: 'whats-new' })
   })
 
-  it('reads the hyphenated one as a single segment, not as two', () => {
+  it('reads the hyphenated view name as a single segment, not as two', () => {
     // `parseHash` splits on `/`, so the hyphen is ordinary text in the view name —
     // which is what lets the view name and the hash segment stay the same string.
-    assert.deepEqual(parseHash('#/whats-new/anything'), { view: 'whats-new' })
+    // (`whats-new` itself takes a parameter now — see its own describe block below
+    // — so this only has to show the hyphen is not itself a separator.)
     assert.deepEqual(parseHash('#/whats'), { view: 'home' })
     assert.deepEqual(parseHash('#/whats/new'), { view: 'home' })
   })
@@ -115,6 +116,26 @@ describe('parseHash — the help page', () => {
   })
 })
 
+describe("parseHash — the what's-new page", () => {
+  it('opens the whole page when no commit is named', () => {
+    assert.deepEqual(parseHash('#/whats-new'), { view: 'whats-new', commit: null })
+    assert.deepEqual(parseHash('#/whats-new/'), { view: 'whats-new', commit: null })
+  })
+
+  it('captures the commit segment, unlike a view with no parameter at all', () => {
+    // Unlike `helpSection`, there is no closed set to validate a commit against here
+    // — `parseHash` runs before the change list has necessarily loaded — so any
+    // non-blank segment is taken at face value. See `whatsNewCommit`'s own doc
+    // comment in `changelog.ts` for why that is the right answer at this layer.
+    assert.deepEqual(parseHash('#/whats-new/anything'), { view: 'whats-new', commit: 'anything' })
+    assert.deepEqual(parseHash('#/whats-new/de7dd8d'), { view: 'whats-new', commit: 'de7dd8d' })
+  })
+
+  it('tolerates the mangling a link picks up in transit', () => {
+    assert.deepEqual(parseHash('#/whats-new/%20de7dd8d%20'), { view: 'whats-new', commit: 'de7dd8d' })
+  })
+})
+
 describe('parseHash — a percent-escape that arrived truncated', () => {
   /*
    * The crash this closes: `decodeURIComponent` throws `URIError` on an escape it
@@ -177,6 +198,11 @@ describe('hrefFor', () => {
   it('writes the help page without a trailing slash when no section is named', () => {
     assert.equal(hrefFor({ view: 'help', section: null }), '#/help')
     assert.equal(hrefFor({ view: 'help', section: 'tracker' }), '#/help/tracker')
+  })
+
+  it("writes the what's-new page without a trailing slash when no commit is named", () => {
+    assert.equal(hrefFor({ view: 'whats-new', commit: null }), '#/whats-new')
+    assert.equal(hrefFor({ view: 'whats-new', commit: 'de7dd8d' }), '#/whats-new/de7dd8d')
   })
 
   /* The pair has to be an exact inverse: every link in the app is written by one and

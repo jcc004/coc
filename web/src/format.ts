@@ -36,6 +36,13 @@ export function formatDateTime(date: Date): string {
   return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+/** `8/8/26` — a numeric column value where the day is the whole answer and a
+ *  full timestamp (or even `formatDate`'s `Aug 8, 2026`) is more than the
+ *  column has room to spend on it. */
+export function formatShortDate(date: Date): string {
+  return date.toLocaleDateString(undefined, { dateStyle: 'short' })
+}
+
 /**
  * A bare `YYYY-MM-DD` (a progress snapshot's `weekStart`, which carries no time of
  * day) as a reader would want it. Parsed with an explicit UTC midnight rather than
@@ -45,6 +52,20 @@ export function formatDateTime(date: Date): string {
  */
 export function formatDate(isoDate: string): string {
   return new Date(`${isoDate}T00:00:00Z`).toLocaleDateString(undefined, { dateStyle: 'medium' })
+}
+
+/**
+ * `text`, cut to roughly `maxLength` characters at the nearest word boundary
+ * rather than mid-word, with a trailing `…` — unchanged, `…` included, if
+ * `text` already fits. Word-boundary rather than a flat character slice so a
+ * long word never gets an ellipsis glued straight onto its middle, which
+ * reads as a typo more than a truncation.
+ */
+export function summarize(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text
+  const cut = text.slice(0, maxLength)
+  const lastSpace = cut.lastIndexOf(' ')
+  return `${lastSpace > 0 ? cut.slice(0, lastSpace) : cut}…`
 }
 
 export function ratio(numerator: number, denominator: number): string {

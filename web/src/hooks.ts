@@ -9,6 +9,7 @@ import {
 import { ApiError } from './api.ts'
 import { baseScopeFor, baseScopeKey, type BaseScope } from './base-scope.ts'
 import { DEFAULT_CARD_COLUMNS, resolveCardColumns } from './card-scale.ts'
+import { whatsNewCommit, whatsNewHref } from './changelog.ts'
 import {
   colorSchemeKey,
   DEFAULT_SCHEME,
@@ -122,6 +123,13 @@ export type Route =
    */
   | { view: 'base-order' }
   /**
+   * "Propose a change" — `#/change-requests`. One page for everyone, not
+   * role-gated the way `admin` is: every signed-in user sees a submit form and
+   * their own requests here, and an admin additionally sees the resolution
+   * table for every account's, on the same page — see `ChangeRequestsView.tsx`.
+   */
+  | { view: 'change-requests' }
+  /**
    * The help page, optionally scrolled to one section.
    *
    * A route of its own for the same reason `admin` is: it has to be linkable. The
@@ -132,13 +140,15 @@ export type Route =
   | { view: 'help'; section: HelpSectionId | null }
   /**
    * What changed and when, newest first — the page the footer's "Updated …" stamp
-   * links to.
+   * links to. `commit` is `null` for the whole page, or one entry's commit to
+   * scroll to and focus, for the same reason `help`'s `section` is: a request
+   * resolution can point at the exact entry it was tied to, not just the page.
    *
    * A route rather than an expander in the footer, for the reason `admin` and `help`
    * are routes: it has to be linkable, and it is on the account menu as well as under
    * the stamp. The view name is the hash segment, as every other route here spells it.
    */
-  | { view: 'whats-new' }
+  | { view: 'whats-new'; commit: string | null }
 
 /**
  * Percent-decodes the segment when it can and hands the raw one back when it cannot.
@@ -174,7 +184,10 @@ export function parseHash(hash: string): Route {
 
   if (view === 'account') return { view: 'account' }
   if (view === 'admin') return { view: 'admin' }
-  if (view === 'whats-new') return { view: 'whats-new' }
+  // An unrecognized or missing commit is `null`, the whole page — the same
+  // "still opens the page" answer `help` gives an unknown section, for the same
+  // reason: a resolution's commit can age out of the log or be squashed away.
+  if (view === 'whats-new') return { view: 'whats-new', commit: whatsNewCommit(decoded) }
   // An unknown section is `null` rather than a miss, so an old link still opens
   // the page. The whole scheme is in `help.ts`, tested there.
   if (view === 'help') return { view: 'help', section: helpSection(decoded) }
@@ -183,6 +196,7 @@ export function parseHash(hash: string): Route {
   if (view === 'cards') return { view: 'cards' }
   if (view === 'progress') return { view: 'progress' }
   if (view === 'base-order') return { view: 'base-order' }
+  if (view === 'change-requests') return { view: 'change-requests' }
   if (view === 'player' && decoded) return { view: 'player', tag: decoded }
   if (view === 'clan' && decoded) return { view: 'clan', tag: decoded }
   if (view === 'war' && decoded) return { view: 'war', tag: decoded }
@@ -210,8 +224,10 @@ export function hrefFor(route: Route): string {
       return '#/progress'
     case 'base-order':
       return '#/base-order'
+    case 'change-requests':
+      return '#/change-requests'
     case 'whats-new':
-      return '#/whats-new'
+      return whatsNewHref(route.commit)
     case 'help':
       return helpHref(route.section)
     case 'home':

@@ -7,6 +7,7 @@ import { createBaseOrderStore } from './base-order/store.ts'
 import { TtlCache } from './cache.ts'
 import { createCardInventoryStore } from './cards/store.ts'
 import { createTradeStore } from './cards/trades-store.ts'
+import { createChangeRequestStore } from './change-requests/store.ts'
 import { createCocClient } from './coc-client.ts'
 import {
   databasePathFromEnv,
@@ -42,6 +43,7 @@ const cards = createCardInventoryStore(db)
 const trades = createTradeStore(db, cards)
 const progress = createProgressStore(db)
 const baseOrder = createBaseOrderStore(db)
+const changeRequests = createChangeRequestStore(db)
 
 // Awaited: `bootstrapAdmin` hashes a password and scrypt is async now, and the
 // first admin has to exist before the first request. This file is an ES module, so
@@ -85,6 +87,7 @@ const app = createApp({
   trades,
   progress,
   baseOrder,
+  changeRequests,
   cookieSecure: cookieSecureFromEnv(process.env),
   trustProxy,
 })

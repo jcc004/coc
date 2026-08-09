@@ -1,6 +1,7 @@
 export * from './auth-types.ts'
 export * from './base-order-types.ts'
 export * from './card-types.ts'
+export * from './change-request-types.ts'
 export * from './coc-types.ts'
 export * from './email.ts'
 export * from './progress-types.ts'

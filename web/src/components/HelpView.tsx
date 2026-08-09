@@ -6,6 +6,7 @@ import {
   BaseOrderReachRules,
   CardEntryRules,
   CategoryScoringRules,
+  ChangeRequestRules,
   DeckCompletionScoringRules,
   OwnershipRules,
   ProgressCapRules,
@@ -28,8 +29,8 @@ import { MAX_TREND_BASES } from './ProgressTrendsSection.tsx'
  * why that decides anything; the difference between a suggested swap and an agreed
  * trade; what the leaderboard is measuring; why a level's percent on the progress
  * page doesn't match some other tool's number; why reordering your bases on one
- * page moves things on three others; and that there is one copy of the data and it
- * is everybody's.
+ * page moves things on three others; that there is one copy of the data and it
+ * is everybody's; and how to ask for the app itself to be different.
  *
  * **Nothing is written twice.** Every rule block is a component in `help-copy.tsx`,
  * rendered here *and* in a collapsed disclosure under the panel it governs, so the
@@ -74,7 +75,7 @@ export function HelpView({ section }: { section: HelpSectionId | null }) {
           never keeps — plus wall levels, which it doesn't report at all. Everything below is about
           the parts people ask about twice.
         </p>
-        {/* An in-page list rather than a sidebar: eight items is still a paragraph's
+        {/* An in-page list rather than a sidebar: nine items is still a paragraph's
             worth, and a second column would be chrome on a page that is already prose.
             Each entry is the same link the `?` beside the panel is, so the two cannot
             point at different places. */}
@@ -202,6 +203,14 @@ export function HelpView({ section }: { section: HelpSectionId | null }) {
           admin, who can issue you a one-time password from the{' '}
           <a href={hrefFor({ view: 'admin' })}>accounts page</a>.
         </p>
+      </HelpSection>
+
+      <HelpSection id="change-requests">
+        <p className="empty-hint">
+          <strong>Propose a change</strong>, on the account menu, is how to ask for something about
+          this app to be different — a bug, a missing feature, anything.
+        </p>
+        <ChangeRequestRules />
       </HelpSection>
     </>
   )

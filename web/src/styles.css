@@ -3400,8 +3400,73 @@ table.roster th button:hover {
   border-top: 1px dashed var(--grid);
 }
 
+/*
+ * `table.roster td` sets `white-space: nowrap` as its base rule, and this cell
+ * can hold a full commit subject plus an admin's own note — real prose, not a
+ * short label like every other column here. Below the `roster--stack` phone
+ * breakpoint that base rule is already overridden (`styles.css`'s own
+ * `table.roster--stack td` block), which is why this only ever showed up at
+ * desktop width: a long, unbroken resolution pushed the row wide enough that
+ * `.table-wrap`'s `overflow-x: auto` quietly took over rather than wrapping,
+ * scrolling the row's own Resolve button out of view instead of showing it.
+ * Same `white-space: normal; overflow-wrap: anywhere;` pair `.roster--pairs`
+ * already uses for its own long, unbreakable content (an account guid).
+ */
 .request-resolution {
   margin-top: 8px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The subject column, on the same table and hitting the same base
+ * `white-space: nowrap` this file already explains above — but a long
+ * subject needs more than *permission* to wrap, since nothing stops the
+ * column growing to fit it on one line anyway when the table has room to
+ * spare. `max-width` in `ch` (a CSS unit sized to the font's own character
+ * width) forces the wrap at roughly the requested ~20 characters regardless
+ * of how wide the table could otherwise stretch — reported and fixed
+ * alongside the resolution column, same underlying cause, same day.
+ */
+.request-subject {
+  display: inline-block;
+  max-width: 20ch;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+/* The "Show more"/"Show less" toggle on a summarized request body — same
+   reset-to-plain-text recipe `.trade-tracker-link` uses for the same reason:
+   a button that reads as a link to more text, not a second action to take. */
+.request-body-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.request-body-toggle:hover {
+  text-decoration: underline;
+}
+
+/*
+ * "My requests"' description, clamped to `--clamp-lines` (set inline by
+ * `ClampedBody`, same `--card-columns`-style custom-property handoff the
+ * card grid already uses) rather than a character count — see that
+ * component's own doc comment for why a line count is the right measure
+ * here specifically, where `pre-wrap` keeps every line break the requester
+ * typed. `line-clamp` is still written with only its `-webkit-` prefix:
+ * every browser this app is used in supports the prefixed form, and it is
+ * still the form with the widest practical support today.
+ */
+.request-body--clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--clamp-lines, 4);
+  overflow: hidden;
 }
 
 /* ==========================================================================

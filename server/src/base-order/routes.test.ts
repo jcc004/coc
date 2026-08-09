@@ -8,6 +8,7 @@ import { createAuthStore } from '../auth/store.ts'
 import { TtlCache } from '../cache.ts'
 import { createCardInventoryStore } from '../cards/store.ts'
 import { createTradeStore } from '../cards/trades-store.ts'
+import { createChangeRequestStore } from '../change-requests/store.ts'
 import type { CocClient } from '../coc-client.ts'
 import { openDatabase } from '../db.ts'
 import { createProgressStore } from '../progress/store.ts'
@@ -64,6 +65,7 @@ async function createHarness(): Promise<Harness> {
     trades: createTradeStore(db, cards),
     progress: createProgressStore(db),
     baseOrder,
+    changeRequests: createChangeRequestStore(db),
     loginLimiter: createLoginLimiter(),
   })
 

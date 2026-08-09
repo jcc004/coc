@@ -1,5 +1,7 @@
+import { useEffect, useRef } from 'react'
 import { parseStamp } from '../build-info.ts'
-import { loadChanges, type Change } from '../changelog.ts'
+import { scrollAndFocus, scrollBehaviorFor } from '../card-sections.ts'
+import { changeEntryId, loadChanges, type Change } from '../changelog.ts'
 import { useAsync } from '../hooks.ts'
 import { ErrorPanel, Loading } from './primitives.tsx'
 
@@ -43,6 +45,17 @@ import { ErrorPanel, Loading } from './primitives.tsx'
  * commit messages is fetched when this page is opened and not by every session that
  * never opens it. `changelog-data.ts` says why that was worth doing. It is the
  * app's ordinary async shape from there: `useAsync`, `Loading`, `ErrorPanel`.
+ *
+ * **Scrolling to one entry is ours to do**, the same reason and the same shape as
+ * `HelpView`'s own section scroll: the route carries the commit as a path segment
+ * (`#/whats-new/<commit>`, `whatsNewCommit`/`whatsNewHref` in `changelog.ts`), the
+ * hash is already the router, and a second `#` in it would not be a fragment the
+ * browser acts on. The wrinkle `HelpView` does not have is that the target does
+ * not exist until the list has actually loaded — `changeEntryId` names an id that
+ * is only in the DOM once `state.status === 'ready'` — so the effect below waits
+ * for that before it goes looking. A commit that is not in the loaded list at all
+ * (aged out of the log, squashed away, or `No-Changelog`) is a no-op, not a throw:
+ * `scrollAndFocus` (`card-sections.ts`) already answers that question.
  */
 
 /*
@@ -58,8 +71,22 @@ const STAMP_FORMAT: Intl.DateTimeFormatOptions = {
   minute: '2-digit',
 }
 
-export function WhatsNewView() {
+export function WhatsNewView({ commit }: { commit: string | null }) {
   const state = useAsync(() => loadChanges(), [])
+
+  /* Keyed by the commit, not by a boolean "have we scrolled yet", so the effect can
+     tell "arrived at this entry" from an unrelated re-render — the same shape
+     `HelpView`'s own `scrolled` ref uses for its section — without re-scrolling the
+     page out from under somebody already reading it. */
+  const scrolledTo = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (commit === null || state.status !== 'ready' || scrolledTo.current === commit) return
+    scrolledTo.current = commit
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    scrollAndFocus(changeEntryId(commit), scrollBehaviorFor(reducedMotion))
+  }, [commit, state.status])
 
   return (
     <>
@@ -124,7 +151,10 @@ function ChangeEntry({ change }: { change: Change }) {
   const when = parseStamp(change.date)
 
   return (
-    <li className="changelog__entry">
+    // `id` is what a resolution's link (`whatsNewHref`/`changeEntryId`) scrolls to;
+    // `tabIndex={-1}` is what lets `scrollAndFocus` also move the caret here, the
+    // same pairing `HelpView`'s section headings and `CardsView`'s jump targets use.
+    <li className="changelog__entry" id={changeEntryId(change.commit)} tabIndex={-1}>
       <p className="changelog__when">
         <time dateTime={change.date} title={when?.toString()}>
           {when === null ? change.date : when.toLocaleString(undefined, STAMP_FORMAT)}

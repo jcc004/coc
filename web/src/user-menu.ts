@@ -26,7 +26,7 @@ import type { Route, Theme } from './hooks.ts'
 
 export interface MenuItem {
   /** Stable id, for keys and for tests to assert on without matching prose. */
-  id: 'help' | 'whatsNew' | 'account' | 'admin' | 'signOut'
+  id: 'help' | 'whatsNew' | 'account' | 'changeRequests' | 'admin' | 'signOut'
   label: string
   /** Where it goes, or `null` for the action item (Sign out). */
   route: Route | null
@@ -35,8 +35,8 @@ export interface MenuItem {
 }
 
 /**
- * The menu, in order: help, what's new, your own password, then the admin panel if
- * it is yours, then Sign out.
+ * The menu, in order: help, what's new, your own password, propose a change,
+ * then the admin panel if it is yours, then Sign out.
  *
  * Sign out is **last and on its own**, because it is the one item that discards
  * state — putting it between two navigation items is how it gets pressed by
@@ -57,6 +57,14 @@ export interface MenuItem {
  * page without knowing the stamp is a link. It is not first, because help answers
  * "how does this work" and that is the question people arrive with; a changelog
  * answers a question they only have once they already know.
+ *
+ * **Propose a change sits directly under Change password**, unconditional like
+ * every item above it — every signed-in user gets a submit form and their own
+ * "My requests" list there, an admin additionally sees the resolution table on
+ * the same page (`ChangeRequestsView.tsx`), so unlike Admin panel below it there
+ * is no role to check. It is grouped with Change password rather than with Help
+ * and What's new because both are places somebody goes to *do* something about
+ * their own account, not to read about the app.
  */
 export function userMenuItems(user: Pick<SessionUser, 'role'>): MenuItem[] {
   const items: MenuItem[] = [
@@ -71,7 +79,7 @@ export function userMenuItems(user: Pick<SessionUser, 'role'>): MenuItem[] {
     {
       id: 'whatsNew',
       label: "What's new",
-      route: { view: 'whats-new' },
+      route: { view: 'whats-new', commit: null },
       hint: 'Every change to the app, newest first',
     },
     {
@@ -79,6 +87,12 @@ export function userMenuItems(user: Pick<SessionUser, 'role'>): MenuItem[] {
       label: 'Change password',
       route: { view: 'account' },
       hint: 'And the account details the server holds',
+    },
+    {
+      id: 'changeRequests',
+      label: 'Propose a change',
+      route: { view: 'change-requests' },
+      hint: 'Ask for something to change, and see how a past request was resolved',
     },
   ]
 

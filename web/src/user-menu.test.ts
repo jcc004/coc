@@ -16,12 +16,19 @@ const admin: Pick<SessionUser, 'role'> = { role: 'admin' }
 const ids = (user: Pick<SessionUser, 'role'>) => userMenuItems(user).map((item) => item.id)
 
 describe('userMenuItems', () => {
-  it('gives a member help, what is new, their own password and Sign out, and nothing else', () => {
-    assert.deepEqual(ids(member), ['help', 'whatsNew', 'account', 'signOut'])
+  it('gives a member help, what is new, their own password, propose a change and Sign out, and nothing else', () => {
+    assert.deepEqual(ids(member), ['help', 'whatsNew', 'account', 'changeRequests', 'signOut'])
   })
 
   it('adds the admin panel for an admin', () => {
-    assert.deepEqual(ids(admin), ['help', 'whatsNew', 'account', 'admin', 'signOut'])
+    assert.deepEqual(ids(admin), [
+      'help',
+      'whatsNew',
+      'account',
+      'changeRequests',
+      'admin',
+      'signOut',
+    ])
   })
 
   it('offers help to a member as well as an admin, unlike the admin panel', () => {
@@ -62,7 +69,7 @@ describe('userMenuItems', () => {
   it('points what is new at its own page', () => {
     assert.deepEqual(
       userMenuItems(member).find((item) => item.id === 'whatsNew')?.route,
-      { view: 'whats-new' },
+      { view: 'whats-new', commit: null },
     )
   })
 
@@ -90,11 +97,15 @@ describe('userMenuItems', () => {
     }
   })
 
-  it('points its two links at the two separate pages', () => {
+  it('points its links at their own separate pages', () => {
     const items = userMenuItems(admin)
     assert.deepEqual(
       items.find((i) => i.id === 'account')?.route,
       { view: 'account' },
+    )
+    assert.deepEqual(
+      items.find((i) => i.id === 'changeRequests')?.route,
+      { view: 'change-requests' },
     )
     assert.deepEqual(items.find((i) => i.id === 'admin')?.route, { view: 'admin' })
   })
@@ -109,7 +120,7 @@ describe('userMenuItems', () => {
   it('does not mutate a shared array between calls', () => {
     const first = userMenuItems(admin)
     first.length = 0
-    assert.equal(userMenuItems(admin).length, 5)
+    assert.equal(userMenuItems(admin).length, 6)
   })
 })
 

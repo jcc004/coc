@@ -28,7 +28,7 @@ installTestCleanup()
  */
 async function renderPage(): Promise<void> {
   await act(async () => {
-    render(<WhatsNewView />)
+    render(<WhatsNewView commit={null} />)
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 }

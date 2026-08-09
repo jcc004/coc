@@ -4,6 +4,7 @@ import { AccountView } from './components/AccountView.tsx'
 import { AdminView } from './components/AdminView.tsx'
 import { BaseOrderView } from './components/BaseOrderView.tsx'
 import { CardsView } from './components/CardsView.tsx'
+import { ChangeRequestsView } from './components/ChangeRequestsView.tsx'
 import { ClanSearchView } from './components/ClanSearchView.tsx'
 import { ClanView } from './components/ClanView.tsx'
 import { ForcedPasswordChange } from './components/ForcedPasswordChange.tsx'
@@ -111,7 +112,7 @@ function CompassRosette() {
  * the page cannot be usefully filled — a build with no history renders a list that
  * explains itself rather than a dead link.
  */
-const WHATS_NEW_HREF = hrefFor({ view: 'whats-new' })
+const WHATS_NEW_HREF = hrefFor({ view: 'whats-new', commit: null })
 
 function BuildStamp({ isAdmin }: { isAdmin: boolean }) {
   const line = buildLine(
@@ -340,6 +341,11 @@ export function App() {
             setting rather than a section of the app everybody navigates into. */}
         {route.view === 'base-order' ? <BaseOrderView user={user} /> : null}
 
+        {/* Everyone's, unlike the admin panel below — every signed-in user gets a
+            submit form and their own list; an admin additionally sees every
+            account's requests, on the same page. See `ChangeRequestsView.tsx`. */}
+        {route.view === 'change-requests' ? <ChangeRequestsView user={user} /> : null}
+
         {/* Guarded inside the view, not here: a member who types the URL is told the
             page is admins-only rather than silently sent home, which would read as a
             broken link. Every `/api/admin/*` route is gated on the server anyway. */}
@@ -351,8 +357,10 @@ export function App() {
         {route.view === 'help' ? <HelpView section={route.section} /> : null}
 
         {/* Also everybody's, and also takes no user: the list is baked into the
-            bundle, so it is the same page whoever opens it. */}
-        {route.view === 'whats-new' ? <WhatsNewView /> : null}
+            bundle, so it is the same page whoever opens it. `commit` comes off
+            the route rather than out of a fragment, for the reason in `help.ts`
+            and mirrored in `changelog.ts`'s own `whatsNewCommit`. */}
+        {route.view === 'whats-new' ? <WhatsNewView commit={route.commit} /> : null}
 
         {/* Both carry a card grid, and only a base's owner may type into it, so
             each needs to know who is signed in. Passed down rather than read from

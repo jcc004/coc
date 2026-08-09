@@ -19,6 +19,7 @@ const LINKED_FROM: Record<HelpSectionId, string> = {
   progress: 'the progress board and the weekly progress panel',
   'base-order': 'the base order page',
   shared: 'the help page contents only',
+  'change-requests': 'the propose-a-change page',
 }
 
 describe('HELP_SECTIONS', () => {

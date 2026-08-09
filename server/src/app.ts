@@ -19,6 +19,8 @@ import { mountCardRoutes } from './cards/routes.ts'
 import type { CardInventoryStore } from './cards/store.ts'
 import { mountTradeRoutes } from './cards/trade-routes.ts'
 import type { TradeStore } from './cards/trades-store.ts'
+import { mountChangeRequestRoutes } from './change-requests/routes.ts'
+import type { ChangeRequestStore } from './change-requests/store.ts'
 import { CocApiError, type CocClient } from './coc-client.ts'
 import { errorBody } from './http.ts'
 import { mountProgressRoutes } from './progress/routes.ts'
@@ -47,6 +49,8 @@ export interface AppDeps {
    * in this app (everything else is `localStorage`-only). One row per user.
    */
   baseOrder: BaseOrderStore
+  /** "Propose a change" — member-submitted requests, and their admin resolutions. */
+  changeRequests: ChangeRequestStore
   /** Injectable so tests can trip the lockout in a few requests. */
   loginLimiter?: LoginLimiter
   /** `Secure` on the session cookie. Derive it with `cookieSecureFromEnv`. */
@@ -183,6 +187,7 @@ export function createApp({
   trades,
   progress,
   baseOrder,
+  changeRequests,
   loginLimiter,
   cookieSecure = false,
   trustProxy = false,
@@ -263,6 +268,10 @@ export function createApp({
   // Same owner column a third time, this time for "which of these tags may the
   // caller reorder" — always their own session, never another user's.
   mountBaseOrderRoutes(app, baseOrder, sharedData)
+
+  // "Propose a change" — the one feature here with no owner column at all: it
+  // is not about any base, so it needs nothing from `sharedData`.
+  mountChangeRequestRoutes(app, changeRequests)
 
   // Public so a host's liveness probe can reach it, but the cache size is an
   // internal detail an anonymous caller has no business seeing.
