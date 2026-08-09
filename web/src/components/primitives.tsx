@@ -245,10 +245,9 @@ export function RowLimitSelect({
   onChange: (next: RowLimit) => void
   /**
    * What the control says it counts. `Rows` for a table where a row is a record;
-   * overridden by the trade suggestions, which page by **pair** because a pair's
-   * options are one block that must not be split across a page boundary — and a
-   * control labeled `Rows` beside a pager counting pairs would be a lie about
-   * which of the two numbers the limit applies to.
+   * overridden where a table's own vocabulary differs — the trade suggestions
+   * table calls a single swap an "option" throughout (the count line below it
+   * says so too), so its select says `Options` instead of the generic `Rows`.
    */
   label?: string
 }) {

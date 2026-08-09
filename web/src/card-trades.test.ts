@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { BaseInventory, CardCategory } from '@coc/shared'
 import {
+  flattenTradePairs,
   groupTradesByPair,
   resourceKey,
   spareCapacity,
@@ -481,5 +482,64 @@ describe('groupTradesByPair', () => {
 
   it('returns nothing for nothing', () => {
     assert.deepEqual(groupTradesByPair([]), [])
+  })
+})
+
+describe('flattenTradePairs', () => {
+  it('emits one row per option, marking only the first of each pair as pairStart', () => {
+    const trades = suggestTrades(
+      [base('#AAA', { 1: 2, 3: 2 }), base('#BBB', { 2: 2, 4: 2 }), base('#CCC', { 2: 2 })],
+      categoryOf,
+    )
+    const pairs = groupTradesByPair(trades)
+    const rows = flattenTradePairs(pairs)
+
+    assert.deepEqual(
+      rows.map((row) => [row.pair.baseA, row.pair.baseB, row.trade.cardFromA, row.pairStart]),
+      [
+        ['#AAA', '#BBB', 1, true],
+        ['#AAA', '#BBB', 3, false],
+        ['#AAA', '#CCC', 1, true],
+      ],
+    )
+  })
+
+  it('preserves pair order and each pair’s own trade order', () => {
+    const trades = suggestTrades(
+      [
+        paddingBase([1, 2]),
+        base('#AAA', { 58: 2 }),
+        base('#BBB', { 59: 2 }),
+        base('#YYY', { 1: 2 }),
+        base('#ZZZ', { 2: 2 }),
+      ],
+      categoryOfCard,
+    )
+    const pairs = groupTradesByPair(trades)
+    const rows = flattenTradePairs(pairs)
+
+    assert.deepEqual(
+      rows.map((row) => [row.pair.baseA, row.pair.baseB]),
+      [
+        ['#YYY', '#ZZZ'],
+        ['#AAA', '#BBB'],
+      ],
+    )
+  })
+
+  it('counts one row total per option across every pair, not one per pair', () => {
+    const trades = suggestTrades(
+      [base('#AAA', { 1: 2, 3: 2 }), base('#BBB', { 2: 2, 4: 2 }), base('#CCC', { 2: 2 })],
+      categoryOf,
+    )
+    const pairs = groupTradesByPair(trades)
+    // Two pairs, but the first has two options — three rows in total, the fact
+    // this whole change exists to make the row-limit selector honor.
+    assert.equal(pairs.length, 2)
+    assert.equal(flattenTradePairs(pairs).length, 3)
+  })
+
+  it('returns nothing for nothing', () => {
+    assert.deepEqual(flattenTradePairs([]), [])
   })
 })

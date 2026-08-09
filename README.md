@@ -50,7 +50,7 @@ TLS, the systemd units — is [`deploy/README.md`](deploy/README.md).
   framed, the inventory tables and why the counts are shared, the season constant, the routes,
   and the four rules that make a swap legal.
 - **[The card event's screens](docs/cards-ui.md)** — the card page top to bottom: base picker and
-  grid, trade suggestions and why they page by pair, the collection leaderboard and its points
+  grid, trade suggestions and why they page by row, the collection leaderboard and its points
   curve, clan-wide totals, the Mine/All filter, the deck plaques, and the same grid on a player
   page.
 - **[The Trade Tracker](docs/trade-tracker.md)** — proposing a swap, who may resolve one and why

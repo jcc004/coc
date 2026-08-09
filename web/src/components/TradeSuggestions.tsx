@@ -9,9 +9,11 @@ import {
 import { ApiError } from '../api.ts'
 import { scrollAndFocusFirst, scrollBehaviorFor } from '../card-sections.ts'
 import {
+  flattenTradePairs,
   groupTradesByPair,
   suggestTrades,
   type TradePair,
+  type TradeRow,
   type TradeSuggestion,
 } from '../card-trades.ts'
 import { cardById, categoryOfCard } from '../cards.ts'
@@ -313,7 +315,7 @@ function BaseLabel({
 }
 
 /** Rows-per-page options for the suggestions. See {@link TradeSuggestions}. */
-const TRADE_PAIR_LIMITS: RowLimit[] = [5, 10, 20, 'all']
+const TRADE_ROW_LIMITS: RowLimit[] = [5, 10, 20, 'all']
 
 /** `null` for input that cannot be a tag, and so can never name a stored base. */
 function canonicalOrNull(tag: string): string | null {
@@ -336,16 +338,19 @@ function pairsInvolving(pairs: TradePair[], tag: string): TradePair[] {
  * the **member** and the **owner**, because "#2GCJ2QPU should talk to #AAABBB" is
  * not actionable until you know that means Jared should talk to Sam.
  *
- * **The page counts pairs, not rows.** The two readings are genuinely different
- * here — twelve pairs can be thirty rows — and this is the one that keeps the
- * presentation honest: a pair is named once with its options listed beneath it, so
- * splitting a pair across a page boundary would put a row with two empty Member
- * cells at the top of page 2, which reads as missing data rather than as "same two
- * bases as above" (the failure the `data-pair-start` note below is about). Paging
- * by pair also makes "5" mean five *decisions to make*, which is what somebody
- * working down this list is actually counting. Both controls therefore say pairs —
- * the limit is labeled `Pairs` and the pager counts pairs — so the numbers on
- * screen can never disagree with the rows under them. The limit is remembered under
+ * **The page counts rows (individual options), not pairs.** This used to page by
+ * pair — a limit of 5 meant 5 *pairs*, however many options each one carried —
+ * on the reasoning that splitting a pair across a page boundary would leave a
+ * continuation row with two empty Member cells at the top of page 2, reading as
+ * missing data. That reasoning stopped being true once every row started naming
+ * both bases on its own (see "Both members named on every row" below): nothing
+ * renders ambiguously wherever a page boundary lands, so there is no reason left
+ * to let one pair with several legal options push the row count on screen past
+ * the number somebody actually picked. Reported live on prod: a limit of 5 showed
+ * well more than 5 rows, because several options belonging to one pair each only
+ * counted as that pair's "1". `flattenTradePairs` (`card-trades.ts`) is what turns
+ * `pairs` into the flat, one-row-per-option list this pages over, so "5" means 5
+ * `<tr>`s, not 5 decisions that could each expand. The limit is remembered under
  * one key for both pages, on purpose: it is a reading preference about this table,
  * not about a route.
  *
@@ -470,9 +475,13 @@ export function TradeSuggestions({
     otherOnly,
   )
 
+  /* One row per option, not one per pair — see the `TradeSuggestions` doc comment
+     above for why the limit has to page over this instead of over `shown` itself. */
+  const rows = useMemo(() => flattenTradePairs(shown), [shown])
+
   const [limit, setLimit] = useRowLimit('coc:tradePairLimit', 5)
   const [page, setPage] = useState(1)
-  const view = useMemo(() => paginate(shown, limit, page), [shown, limit, page])
+  const view = useMemo(() => paginate(rows, limit, page), [rows, limit, page])
 
   /* Re-entered counts — or a filter — can shrink the list under a page number that is
      now past the end; `paginate` clamps, and this puts the control back in step. */
@@ -480,7 +489,7 @@ export function TradeSuggestions({
     if (view.page !== page) setPage(view.page)
   }, [view.page, page])
 
-  const rowCount = view.rows.reduce((sum, pair) => sum + pair.trades.length, 0)
+  const rowCount = view.rows.length
 
   /*
    * The rules used to be the *empty* message: "no trades available yet — a swap
@@ -645,7 +654,7 @@ function SuggestionTable({
   rowCount,
   focusLabel,
 }: {
-  view: PagedRows<TradePair>
+  view: PagedRows<TradeRow>
   labelOf: (tag: string) => string
   ownerOf: (tag: string) => string | undefined
   user: Pick<SessionUser, 'id' | 'role'>
@@ -690,78 +699,77 @@ function SuggestionTable({
             </tr>
           </thead>
           <tbody role="rowgroup">
-            {view.rows.flatMap((pair) =>
-              pair.trades.map((trade, index) => (
-                <tr
-                  key={`${trade.baseA}-${trade.baseB}-${trade.cardFromA}-${trade.cardFromB}`}
-                  role="row"
-                  /*
-                   * Marks where one pair's block of options begins, so the wide
-                   * table can rule a line above it. Without that, a continuation
-                   * row's empty Member cells read as missing data rather than as
-                   * "same two bases as above" — seen in a screenshot, where the
-                   * second option rendered as a bare "Minion / Hog Rider" row
-                   * with nobody's name on it.
-                   */
-                  data-pair-start={index === 0 ? 'true' : undefined}
-                >
-                  {/*
-                   * **Both members named on every row**, including the second and third
-                   * option for the same pair.
-                   *
-                   * They used to be named once per pair, with blank cells beneath and a
-                   * rule above each group to say "same two bases as above". That was
-                   * reported as missing data twice — once from a screenshot and again
-                   * from the live server, where the reporter noticed that pressing
-                   * Propose recorded a trade with names the row had not shown. The
-                   * button was always right: it holds the whole suggestion regardless of
-                   * what is drawn. It was the row that was lying by omission.
-                   *
-                   * The cost is repetition on a pair with several options. That is the
-                   * cheaper mistake: a repeated name is read once and ignored, an absent
-                   * one sends somebody looking for a bug. `data-pair-start` still rules a
-                   * line above each group, which is now grouping rather than the only
-                   * thing making the blanks legible.
-                   */}
-                  <td className="stack-title" role="cell">
-                    <BaseLabel
-                      tag={pair.baseA}
-                      label={labelOf(pair.baseA)}
-                      owner={ownerOf(pair.baseA)}
-                    />
-                  </td>
-                  <td role="cell" data-label="Gives">
-                    <TradeCard cardId={trade.cardFromA} />
-                  </td>
-                  <td className="stack-title" role="cell">
-                    <BaseLabel
-                      tag={pair.baseB}
-                      label={labelOf(pair.baseB)}
-                      owner={ownerOf(pair.baseB)}
-                    />
-                  </td>
-                  <td
-                    role="cell"
-                    data-label="Gives"
-                  >
-                    <TradeCard cardId={trade.cardFromB} />
-                  </td>
-                  <td className="card-meta" role="cell" data-label="Category">
-                    {trade.category}
-                  </td>
-                  <td className="row-actions" role="cell" data-label="Propose">
-                    <ProposeButton
-                      trade={trade}
-                      labelOf={labelOf}
-                      user={user}
-                      owners={owners}
-                      tracked={tracked}
-                    />{' '}
-                    <CompleteNowButton trade={trade} user={user} />
-                  </td>
-                </tr>
-              )),
-            )}
+            {view.rows.map(({ pair, trade, pairStart }) => (
+              <tr
+                key={`${trade.baseA}-${trade.baseB}-${trade.cardFromA}-${trade.cardFromB}`}
+                role="row"
+                /*
+                 * Marks where one pair's block of options begins, so the wide
+                 * table can rule a line above it. Without that, a continuation
+                 * row's empty Member cells read as missing data rather than as
+                 * "same two bases as above" — seen in a screenshot, where the
+                 * second option rendered as a bare "Minion / Hog Rider" row
+                 * with nobody's name on it. `flattenTradePairs` computes this the
+                 * same way regardless of which page a pair's options land on,
+                 * since the table now pages by row rather than by pair.
+                 */
+                data-pair-start={pairStart ? 'true' : undefined}
+              >
+                {/*
+                 * **Both members named on every row**, including the second and third
+                 * option for the same pair.
+                 *
+                 * They used to be named once per pair, with blank cells beneath and a
+                 * rule above each group to say "same two bases as above". That was
+                 * reported as missing data twice — once from a screenshot and again
+                 * from the live server, where the reporter noticed that pressing
+                 * Propose recorded a trade with names the row had not shown. The
+                 * button was always right: it holds the whole suggestion regardless of
+                 * what is drawn. It was the row that was lying by omission.
+                 *
+                 * The cost is repetition on a pair with several options. That is the
+                 * cheaper mistake: a repeated name is read once and ignored, an absent
+                 * one sends somebody looking for a bug. `data-pair-start` still rules a
+                 * line above each group, which is now grouping rather than the only
+                 * thing making the blanks legible — and it is also what makes it safe
+                 * for a pair's options to be split by a page boundary now: the row on
+                 * either side of the split still names both bases on its own.
+                 */}
+                <td className="stack-title" role="cell">
+                  <BaseLabel
+                    tag={pair.baseA}
+                    label={labelOf(pair.baseA)}
+                    owner={ownerOf(pair.baseA)}
+                  />
+                </td>
+                <td role="cell" data-label="Gives">
+                  <TradeCard cardId={trade.cardFromA} />
+                </td>
+                <td className="stack-title" role="cell">
+                  <BaseLabel
+                    tag={pair.baseB}
+                    label={labelOf(pair.baseB)}
+                    owner={ownerOf(pair.baseB)}
+                  />
+                </td>
+                <td role="cell" data-label="Gives">
+                  <TradeCard cardId={trade.cardFromB} />
+                </td>
+                <td className="card-meta" role="cell" data-label="Category">
+                  {trade.category}
+                </td>
+                <td className="row-actions" role="cell" data-label="Propose">
+                  <ProposeButton
+                    trade={trade}
+                    labelOf={labelOf}
+                    user={user}
+                    owners={owners}
+                    tracked={tracked}
+                  />{' '}
+                  <CompleteNowButton trade={trade} user={user} />
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -773,13 +781,13 @@ function SuggestionTable({
           control at all. */}
       <div className="roster-footer">
         <RowLimitSelect
-          id="trade-pairs"
-          label="Pairs"
-          options={TRADE_PAIR_LIMITS}
+          id="trade-options"
+          label="Options"
+          options={TRADE_ROW_LIMITS}
           value={limit}
           onChange={onLimit}
         />
-        <Pager view={view} noun="pairs" onPage={onPage} />
+        <Pager view={view} noun="options" onPage={onPage} />
       </div>
 
       {/*

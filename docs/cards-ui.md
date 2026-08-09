@@ -12,7 +12,7 @@ the three panels under them are the whole clan and are deliberately *not* filter
 
 1. the base picker, with the **Mine / All** filter to its left, and the 60-tile grid for the base
    it chooses;
-2. **Trade suggestions** — who should swap what with whom, 5 pairs at a time;
+2. **Trade suggestions** — who should swap what with whom, 5 options (rows) at a time;
 3. **Collection leaderboard** — a **View** picker over seven boards (Overall, Rarity, By category,
    Full rows, Full decks, Spares on hand, Most active trader), each ranking every tracked base by
    its own measure, 5 rows at a time, sharing one Owner filter and pager that never renumber — see
@@ -261,21 +261,36 @@ and the measured taper both apply cleanly, and the floors have no effect).
 
 ### Row counts on the trade suggestions
 
-A **Pairs** select at the **bottom** of the section, defaulting to **5** (5 / 10 / 20 / All), with
-the pager beside it. The choice persists at `coc:tradePairLimit`, the same way every other row
-limit in the app does, and the same `paginate()` / `parseRowLimit()` / `RowLimitSelect` / `Pager`
-machinery does the work — see [Row counts and paging](shared-data.md#row-counts-and-paging).
+An **Options** select at the **bottom** of the section, defaulting to **5** (5 / 10 / 20 / All),
+with the pager beside it. The choice persists at `coc:tradePairLimit` (the key kept its old name;
+see the note below), the same way every other row limit in the app does, and the same `paginate()`
+/ `parseRowLimit()` / `RowLimitSelect` / `Pager` machinery does the work — see [Row counts and
+paging](shared-data.md#row-counts-and-paging).
 
-**The limit counts pairs, not rows, and both controls say so.** The two readings genuinely differ
-here: fifteen pairs can be nineteen rows, because a pair with several options is one block with the
-member named once and its options listed beneath. Paging by row would put a row with two empty
-Member cells at the top of page 2 — which reads as missing data rather than as "the same two bases
-as above", the exact failure the wide table's `data-pair-start` rule exists to prevent — and would
-also make "5" mean something other than five decisions to make. So the control is labeled `Pairs`,
-the pager reads `Showing 1–5 of 15 pairs`, and the note underneath adds `7 options on this page`
-whenever there is more than one page. Verified in a browser: at the default, `Showing 1–5 of 15
-pairs` over 5 pair-blocks and 7 rows; `Next` gives `Showing 6–10 of 15 pairs` over 5 and 5; `All`
-gives 15 blocks and 19 rows with no pager at all.
+**The limit counts rows (individual swap options), not pairs.** It used to count pairs instead — a
+limit of 5 meant 5 *pairs*, however many options each one carried — on the reasoning that splitting
+a pair across a page boundary would leave a continuation row with two empty Member cells at the top
+of page 2, reading as missing data. That reasoning stopped holding once every row started naming
+both bases on its own regardless of position (see "Both members named on every row" above), and the
+gap between the two readings turned out to matter in practice: **reported live, a limit of 5 showed
+well more than 5 rows**, because a clan's suggestion list is grouped by pair (`groupTradesByPair`)
+and a pair with several legal options — two bases that can each legally swap more than one card —
+contributes every one of those options to whichever page its pair lands on. One real example from
+that report: the clan's first pair alone (two bases that could swap either of two card pairs) had 2
+options, so "5 pairs" on the first page actually rendered 6 `<tr>`s — the pager said `5` and the
+count line under it said `6 options on this page`, which is exactly the discrepancy that was
+reported. `flattenTradePairs` (`web/src/card-trades.ts`) now turns the grouped pairs into a flat,
+one-row-per-option list before paging, so the limit and the pager both operate on that flat list —
+"5" now means at most 5 `<tr>`s, full stop, and a pair's options can land on either side of a page
+boundary without anything reading as missing.
+
+The `Options` label and the pager's `options` noun match the word the count line beneath the table
+already used for a single row (`N options on this page`) before this change, so nothing new was
+introduced — the control and the pager now agree with wording that was already there. The
+`localStorage` key is unchanged (`coc:tradePairLimit`): a stored `5` was already accurate under the
+old pairs-based reading in the common case where every pair on a page had exactly one option, and
+staying on the same key means nobody's saved preference silently reset to the default the next time
+they opened the page.
 
 ### How many trades could really happen
 
@@ -987,12 +1002,20 @@ to find.
 
 **Filtered to this base.** The table takes an optional `focusTag` and keeps only the pairs that base
 is a side of. A clan-wide list under a heading counting *this* base's partners would contradict its
-own summary line; filtered, the two are the same number. Read back off the DOM on a seeded base
-with two partners: summary `Trades available with 2 bases`, table `2` pair blocks over `10` option
-rows, one `Propose` per row. Seeded up to six partners: summary `Trades available with
-6 bases`, `6` pairs, and the pager appears — `Showing 1–5 of 6 pairs`, `Page 1 of 2`, 19 options on
-page 1 and 3 on page 2. Below five it hides itself, so a base with a couple of partners shows no
-control at all.
+own summary line; filtered, the two are the same number. On a base with two partners and one option
+each, the summary reads `Trades available with 2 bases` over a table of 2 pair blocks and 2 option
+rows, one `Propose` per row, and the pager stays hidden below five rows.
+
+Seeded with six partners, three of whom can each make two separate swaps rather than one — run
+directly through `suggestTrades` / `groupTradesByPair` / `flattenTradePairs` / `paginate`, the same
+functions the component calls: 6 pairs, 9 options in total, and the row-based limit of 5 (see [Row
+counts on the trade suggestions](#row-counts-on-the-trade-suggestions)) puts the boundary **inside**
+the third pair's block — its first option is the fifth row on page 1, its second is the first row on
+page 2. The pager reads `Showing 1–5 of 9 options` on page 1 and `Showing 6–9 of 9 options` on page
+2, and the page-2 continuation row still names both bases on its own (see "Both members named on
+every row" in `TradeSuggestions.tsx`), which is exactly what makes splitting a pair across a page
+boundary safe. Below five options in total, the pager hides itself, so a base with a couple of
+partners shows no control at all.
 
 **It is the card page's table, extracted — not a copy.** `TradeSuggestions` in
 `web/src/components/TradeSuggestions.tsx` is now the third thing the two pages share, after
@@ -1002,9 +1025,9 @@ same text for the same tag right down to the `(#TAG)` suffix a shared name gets.
 **every** base and the narrowing happens afterwards — one call, in one order, so the two pages
 cannot drift into disagreeing about what a trade is or which one comes first.
 
-Paging is the card page's, unchanged: **pairs, not rows**, five by default, remembered under one
-`coc:tradePairLimit` for both pages, because it is a reading preference about this table and not
-about a route. **Propose** works here for the same reason — it posts to
+Paging is the card page's, unchanged: **rows (individual options), not pairs**, five by default,
+remembered under one `coc:tradePairLimit` for both pages, because it is a reading preference about
+this table and not about a route. **Propose** works here for the same reason — it posts to
 `/api/cards/trades` and the tracker directly below reads the same module-level store — so a swap
 proposed from a player page appears on the card page's tracker and the other way round. See
 [The Trade Tracker](trade-tracker.md#the-trade-tracker).

@@ -244,3 +244,34 @@ export function groupTradesByPair(suggestions: TradeSuggestion[]): TradePair[] {
 
   return [...pairs.values()]
 }
+
+/** One line of the suggestions table: a single option, and which pair it belongs to. */
+export interface TradeRow {
+  pair: TradePair
+  trade: TradeSuggestion
+  /** True for the first option of a pair's block, so the table can rule a line above it. */
+  pairStart: boolean
+}
+
+/**
+ * `pairs`, un-grouped back into one row per option, in the same order — first by
+ * pair, then by that pair's own trade order.
+ *
+ * `groupTradesByPair` exists so a pair's options are named once and read as one
+ * decision; this undoes exactly that grouping, for the one place that needs to
+ * page by *row* rather than by pair — a limit of 5 has to mean 5 `<tr>`s on
+ * screen, not 5 pairs that could quietly expand to far more rows once a pair
+ * with several legal options lands on the page. Splitting a pair's options
+ * across a page boundary is safe here: every row already names both bases
+ * (`pairStart` is presentation only — which row gets the rule line above it —
+ * not a signal a reader depends on to know whose row they are looking at).
+ */
+export function flattenTradePairs(pairs: readonly TradePair[]): TradeRow[] {
+  const rows: TradeRow[] = []
+  for (const pair of pairs) {
+    pair.trades.forEach((trade, index) => {
+      rows.push({ pair, trade, pairStart: index === 0 })
+    })
+  }
+  return rows
+}
