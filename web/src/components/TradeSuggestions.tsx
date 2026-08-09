@@ -131,6 +131,28 @@ function ProposeButton({
   const access = tradeProposeAccess(user, sidesOfTrade(trade, owners))
   const pending = findPendingSwap(tracked, trade)
 
+  /*
+   * `state` is a one-render bridge to cover the gap before `tracked` catches up
+   * with a proposal this exact click just made — see the comment below. Nothing
+   * ever moved it back once that gap closed, so once a trade left `pending` for
+   * any other reason afterwards (declined, completed, undone), `pending` went
+   * back to `undefined` the way `findPendingSwap` intends, but `state` stayed
+   * stuck at `'sent'` from the original proposal, and the `||` below kept
+   * reading it as still on the tracker forever. Reported and reproduced
+   * 2026-08-08: propose, decline on the tracker, the suggestion still read "On
+   * the tracker ↓". Resetting here, once `tracked` confirms this exact swap is
+   * genuinely not pending, is what lets the button honestly go back to
+   * `Propose` — restated by the same store data this component already trusts,
+   * not a timer or a guess at how long the bridge should last.
+   */
+  useEffect(() => {
+    if (pending === undefined && state === 'sent') {
+      setState('idle')
+      setSentId(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending])
+
   if (!access.allowed) {
     return (
       <span className="card-meta" title={access.message}>
