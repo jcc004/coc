@@ -57,9 +57,11 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
 - **Prettier is deliberately not in CI.** `verify.yml` argues the case at length: the code was
   laid out by hand within the same 100 columns Prettier targets, and running it would rewrite
   ~1,100 lines and bury every real change. Do not run `npm run format` as a drive-by.
-- **There are no CSS modules here.** Styling is `styles.css` plus 34 inline `style={{}}`
-  occurrences across 17 components, which is why the CSP carries `'unsafe-inline'`
-  (`deploy/nginx-coc.conf`). Do not introduce a third styling mechanism.
+- **There are no CSS modules here.** Styling is `styles.css` plus inline `style={{}}` on a couple
+  dozen elements across roughly half the components (`grep -rc 'style={{' web/src --include='*.tsx'`
+  for the current count — deliberately not written here, see `claude-kit/rules/improving-the-kit.md`
+  on churning counts), which is why the CSP carries `'unsafe-inline'` (`deploy/nginx-coc.conf`). Do
+  not introduce a third styling mechanism.
 - **A table's row-limit select and its pager are one control, not two.** They sit together in a
   `<div className="roster-footer">` below the table — see `CardsView.tsx`'s leaderboard or
   `SavedClansView.tsx`. Never put the row-limit select in the card header while the pager stays at
@@ -109,29 +111,35 @@ can.
   and a loader that threw before returning a promise.
 - **`server/src/db.ts`** — migrations are append-only and an applied one can never be edited. The
   reasoning is in the file header; read it before adding a step, and never renumber.
-- **`web/src/components/CardsView.tsx`** (1,303 lines and growing — it was 990 when first added to
-  this list) — the card page's controller, sharing three components with the player page
-  (`BaseCardEditor`, `CardTile`, `TradeSuggestions`). A change here frequently lands there too, and
-  two people editing it at once do not compose. It is now the largest component in the app by a
-  wide margin and past the line count (`RosterTable.tsx`'s own doc comment cites 660) that file was
-  split out from `ClanView.tsx` at — a plausible next split, not yet done.
+- **`web/src/components/CardsView.tsx`** (990 lines when first added to this list, still growing —
+  `wc -l` it for where it stands now rather than trusting a number here, per
+  `claude-kit/rules/improving-the-kit.md` on churning counts) — the card page's controller, sharing
+  three components with the player page (`BaseCardEditor`, `CardTile`, `TradeSuggestions`). A change
+  here frequently lands there too, and two people editing it at once do not compose. It is the
+  largest component in the app by a wide margin and past the line count (`RosterTable.tsx`'s own doc
+  comment cites 660) that file was split out from `ClanView.tsx` at — a plausible next split, not yet
+  done.
 
 The first two are recorded from incidents; the last two are reasoned from the code and have not yet
 cost anything. Add to this list when a file misleads you, and say what it did.
 
 ## Testing
 
-`npm test` runs all three workspaces — 1,879 tests (21 shared, 586 server, 1,272 web), `node:test`,
-no framework. Tests sit adjacent
-to their module. Run the whole suite, not a workspace.
+`npm test` runs all three workspaces (`node:test`, no framework). Tests sit adjacent to their
+module. Run the whole suite, not a workspace. For the current count, run it — each workspace's own
+tail reports its total — rather than trusting a number here: exact test counts and coverage ratios
+are deliberately not written into this file, because they drift on every commit that adds a test
+and were wrong, in this exact file, more than once in a single afternoon.
+See `claude-kit/rules/improving-the-kit.md` on why a churning count does not belong in prose at all.
 
 Run it on the pinned Node. A non-interactive shell does not fire the `fnm --use-on-cd` hook and
 silently gets whatever Node is on `PATH`, so a green suite there says nothing about the runtime
 production uses. `zsh -i -c 'cd <repo> && npm test'` is the form that pins it.
 
-Known gap, so it is not rediscovered as a surprise: **9 of 33 components have tests**. The pure
-modules are well covered, and `hooks.ts` and `api.ts` now are too. What remains untested is not
-uniformly presentational, though — `Login.tsx`, `TradeTracker.tsx`, `TradeSuggestions.tsx`,
+Known gap, so it is not rediscovered as a surprise: **component test coverage is partial.** For the
+current ratio, `ls web/src/components/*.tsx web/src/components/*.test.tsx` and compare — but the
+ratio was never the useful fact anyway. What matters, and does not drift the way a count does: the
+gap is not uniformly presentational. `Login.tsx`, `TradeTracker.tsx`, `TradeSuggestions.tsx`,
 `ProgressGridView.tsx` and `ForcedPasswordChange.tsx` each wire up real interaction or business
 logic (their *underlying* pure logic is tested elsewhere; the component wiring itself is not). A
 full-repo review found this framing overstating the gap's safety; treat "untested" as "the wiring

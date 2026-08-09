@@ -272,8 +272,9 @@ on the root element and clears them from a fixed list, keyed `coc:colors:<id>` l
 separately against the ground it will sit on, which is why the picker almost never has to refuse
 anything: the blue that reads at 4.5:1 on parchment is invisible on dark wood, and no single value
 could have satisfied both. The rules, and the ratios, are `web/src/color-scheme.ts` and
-`web/src/color-contrast.ts` — pure, with 125 tests, because a guard that decides whether the site
-is readable is not a `useMemo`.
+`web/src/color-contrast.ts` — pure and heavily tested (their own `.test.ts` files, not a count
+here — see `claude-kit/rules/improving-the-kit.md` on churning counts), because a guard that
+decides whether the site is readable is not a `useMemo`.
 
 | Relationship | Floor |
 | --- | --- |
