@@ -151,6 +151,33 @@ One trap worth knowing: the fast-forward happens *before* `npm ci`, so a failed 
 tree advanced and the service un-restarted. The next timer run then sees local equal to remote and
 reports "Already up to date" forever. Recovery is `./deploy/update.sh --force`.
 
+Two more traps, both from 2026-08-09, about seven hours apart:
+
+**A rewritten `origin/main` history stops the timer cold.** A `git filter-repo` rewrite (scrubbing
+the droplet's own real IP and account name out of history — `git.md`'s provenance note) meant the
+droplet's already-checked-out commit was no longer an ancestor of the new `origin/main`.
+`git merge --ff-only` then failed with "Not possible to fast-forward" on every five-minute tick from
+13:00 to 14:47 UTC — 22 consecutive failures — while the service itself never crashed and kept
+serving the last good build the whole time (nginx's access log shows zero 5xx responses across the
+window: this is a stalled *deploy*, not an outage). It self-resolved only because the droplet's
+local branch was reset to match origin by hand; there is no automatic recovery from this shape of
+failure, and `deploy/update.sh` deliberately dies rather than force-resetting on divergence. Manual
+fix: `ssh <droplet> 'cd /srv/coc && git fetch origin main && git reset --hard origin/main &&
+./deploy/update.sh --force'`. `.github/workflows/monitor.yml`'s "Deployed commit is fresh" job now
+catches this shape within about 30 minutes by comparing `/api/health`'s `commit` field against
+GitHub's compare API — it did not exist before this incident; it shipped as part of the incident's
+own recovery (`d743f5b`).
+
+**That same freshness check then produced a false positive for 7 hours from a second, unrelated
+bug.** `/api/health`'s `commit` field was read once at process startup from
+`.deploy-last-good-sha` and cached for the process's lifetime — but `deploy/update.sh` writes that
+file only *after* restarting the service, so a freshly-restarted process always read and cached the
+*previous* deploy's commit, reporting it until its own next restart. The 15:48 deploy of `7ec731c`
+hit exactly this: `/api/health` kept reporting the prior commit for 7+ hours straight, and the
+monitor paged every run in that window, each time reporting a healthy, current deploy as stuck.
+Fixed in `cc8ea51`: the handler now reads the file fresh on every request instead of caching it at
+startup, so the field self-corrects within the same deploy cycle that changed it.
+
 ### This project overrides "production is hands-off by default"
 
 `claude-kit/rules/working-style.md`'s standing rule is to hand over commands for the operator to
