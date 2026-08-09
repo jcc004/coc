@@ -164,6 +164,27 @@ an aggregated percent. A predecessor view showed "Heroes 82%, Walls 61%," which 
 overview but not what someone scanning "who still needs Grand Warden level 90" can read a
 percent for. At twenty-odd columns the table is wider than most screens; `.table-wrap` scrolls it
 horizontally, the same control the trade table already uses, rather than trying to compress it.
+
+**The six hero columns are ordered the way a player actually earns them in-game** — by Town Hall
+/ Hero Hall unlock requirement — not release order and not alphabetical. `PROGRESS_GRID_HEROES`
+(`web/src/progress-grid.ts`) is the source of truth; `HERO_ABBREVIATIONS` in the same file keys
+the same six by name, in the same order, for the BK/AQ/MP/GW/RC/DD shorthand the columns render.
+
+| Hero | Unlocks at |
+| --- | --- |
+| Barbarian King | TH7 |
+| Archer Queen | TH8 |
+| Minion Prince | TH9 |
+| Grand Warden | TH11 |
+| Royal Champion | TH13 |
+| Dragon Duke | TH15 |
+
+Sourced from the Clash of Clans wiki (`https://clashofclans.fandom.com/wiki/Hero_Hall`), the same
+site `refresh-reference.ts` scrapes for TH-relative level caps. Minion Prince unlocks earlier
+in-game than Grand Warden and Royal Champion even though it was added to the game after them, and
+Dragon Duke — added to the live game in March 2026 — unlocks last of all six; the column order
+follows the unlock level, not the app's or the game's own release history.
+
 Below the stacking breakpoint each row becomes a card, and a hero or pet a base hasn't unlocked
 yet renders as an empty cell that collapses out of the stacked layout entirely, so an early-TH
 base's card is short rather than a wall of dashes. Like the board it replaced, it is **not**

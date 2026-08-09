@@ -26,6 +26,13 @@ import { numberCompare, textCompare, type TableColumn } from './saved-table.ts'
  * has actually unlocked, so there is no single snapshot to read the full roster
  * off, and a roster this short is cheaper to state once than to infer.
  *
+ * The order is the order a player actually earns these in-game — by Town
+ * Hall / Hero Hall unlock requirement — not release order and not
+ * alphabetical, which is why Minion Prince sits before Grand Warden and
+ * Royal Champion despite being added to the game after them. The sourced
+ * per-hero unlock table lives in one place, `docs/progress-tracking.md`,
+ * rather than repeated here — read it before reordering this array.
+ *
  * Spelled exactly as the API and `wiki-art.generated.ts` spell them (`apiName`),
  * since a name here is also the lookup key into a snapshot's `heroes` array and
  * into `artFor('hero', name)`.
@@ -33,9 +40,9 @@ import { numberCompare, textCompare, type TableColumn } from './saved-table.ts'
 export const PROGRESS_GRID_HEROES = [
   'Barbarian King',
   'Archer Queen',
+  'Minion Prince',
   'Grand Warden',
   'Royal Champion',
-  'Minion Prince',
   'Dragon Duke',
 ] as const
 
@@ -258,15 +265,19 @@ function petColumn(name: string, label: string): TableColumn<ProgressGridSortKey
 }
 
 /**
- * Community shorthand, not an invention here — these four letters are how the
- * game's own players refer to their heroes everywhere but this app.
+ * Community shorthand, not an invention here — these two-letter codes are how
+ * the game's own players refer to their heroes everywhere but this app. Keyed
+ * by name rather than array position, so this can list in whatever order is
+ * convenient without disturbing {@link PROGRESS_GRID_HEROES}'s unlock-order
+ * meaning; kept in the same order as that array anyway, for a reader scanning
+ * both side by side.
  */
 export const HERO_ABBREVIATIONS: Record<string, string> = {
   'Barbarian King': 'BK',
   'Archer Queen': 'AQ',
+  'Minion Prince': 'MP',
   'Grand Warden': 'GW',
   'Royal Champion': 'RC',
-  'Minion Prince': 'MP',
   'Dragon Duke': 'DD',
 }
 
