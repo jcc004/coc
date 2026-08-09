@@ -25,7 +25,8 @@ TLS, the systemd units — is [`deploy/README.md`](deploy/README.md).
 
 ## The docs
 
-- **[Setup, deployment and scripts](docs/setup.md)** — running it locally, the Node pin and why
+- **[Setup, deployment and scripts](docs/setup.md)** — getting a Supercell developer account and
+  an API token, which nothing here works without, then running it locally, the Node pin and why
   local dev and production currently disagree, the API key's IP binding, what a host must
   provide, fetching the game art before a build, and every `npm` script.
 - **[Authentication](docs/authentication.md)** — why there is a login at all, server-side

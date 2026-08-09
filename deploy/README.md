@@ -3,6 +3,19 @@
 Config for hosting this app on a $6 DigitalOcean droplet, **HTTPS only** — port 80
 redirects and answers ACME challenges, and serves no application traffic.
 
+> This file's addresses and hostname (`203.0.113.10`, `198.51.100.10`, `coc.example.com`) are
+> placeholders — `203.0.113.0/24` and `198.51.100.0/24` are reserved by RFC 5737 for exactly this,
+> and `example.com` by RFC 2606, so none of the three is ever a real, reachable host. Substitute
+> your own droplet's addresses and domain throughout. `nginx-coc.conf` and the systemd unit files
+> in this directory are the actual files copied onto a running host, not documentation, so they
+> still carry this deployment's real values — replace those too before reusing them for a
+> different host, but do not expect this prose to match them byte for byte.
+
+## The example account name
+
+Commands below run `sudo` as `crighjc` — the account that owns this deployment. Substitute
+whatever account will own yours; nothing about the setup requires that specific name.
+
 ## The droplet has two addresses, and they are not interchangeable
 
 This is the one thing to get right, because getting it wrong breaks every game
@@ -10,8 +23,8 @@ lookup in production with a 403 and nothing else.
 
 | Address | Which | Used for |
 | --- | --- | --- |
-| `146.190.196.236` | Reserved IP | **Inbound.** The `A` record for `coc.jcciv.com`, and the address the certificate is issued against. |
-| `192.81.212.182` | The droplet's own public IP | **Outbound.** What every request *leaving* the droplet appears to come from — including calls to the Clash of Clans API. |
+| `203.0.113.10` | Reserved IP | **Inbound.** The `A` record for `coc.example.com`, and the address the certificate is issued against. |
+| `198.51.100.10` | The droplet's own public IP | **Outbound.** What every request *leaving* the droplet appears to come from — including calls to the Clash of Clans API. |
 
 A DigitalOcean reserved IP is an inbound mapping. Attaching one does not change
 where the droplet's own traffic egresses from: that still leaves via its public
@@ -35,8 +48,8 @@ costs a minute and carries no such risk.
 
 ## Hostname
 
-The app is served at **`coc.jcciv.com`**, whose `A` record already points at
-`146.190.196.236`. That name is baked into `nginx-coc.conf` in four places —
+The app is served at **`coc.example.com`**, whose `A` record already points at
+`203.0.113.10`. That name is baked into `nginx-coc.conf` in four places —
 `server_name` in both blocks and the two certificate paths — so changing it
 means changing all of them.
 
@@ -139,7 +152,7 @@ sudo mkdir -p /var/www/certbot
 sudo cp deploy/nginx-coc.conf /etc/nginx/sites-available/coc
 sudo ln -sf /etc/nginx/sites-available/coc /etc/nginx/sites-enabled/coc
 sudo rm -f /etc/nginx/sites-enabled/default
-sudo certbot certonly --webroot -w /var/www/certbot -d coc.jcciv.com
+sudo certbot certonly --webroot -w /var/www/certbot -d coc.example.com
 sudo nginx -t && sudo systemctl reload nginx
 
 # NOW turn on the Secure cookie, once TLS actually works
@@ -147,7 +160,7 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo systemctl restart coc
 ```
 
-Then open `https://coc.jcciv.com` and log in.
+Then open `https://coc.example.com` and log in.
 
 ### Why `NODE_ENV=production` comes last
 
@@ -223,7 +236,7 @@ Then **verify you are serving what you just built**, because three things can le
 site on an older version even when every command above succeeds:
 
 ```bash
-curl -s https://coc.jcciv.com/ | grep -oE 'assets/index-[^"]+'   # what the browser gets
+curl -s https://coc.example.com/ | grep -oE 'assets/index-[^"]+'   # what the browser gets
 ls web/dist/assets/                                              # what you just built
 git log --oneline -1                                             # what you built it from
 ```
@@ -238,11 +251,11 @@ proves nothing about the images:
 
 ```bash
 # useless — 200 whether the file exists or not
-curl -s -o /dev/null -w '%{http_code}\n' https://coc.jcciv.com/coc/cards/anything.png
+curl -s -o /dev/null -w '%{http_code}\n' https://coc.example.com/coc/cards/anything.png
 
 # what actually distinguishes them
 curl -s -o /dev/null -w '%{content_type}  %{size_download}\n' \
-  https://coc.jcciv.com/coc/cards/elixir_01_barbarian.png
+  https://coc.example.com/coc/cards/elixir_01_barbarian.png
 #   image/png  85694   -> present
 #   text/html  1150    -> missing; that is index.html, and 1150 bytes is its size
 ```
@@ -454,11 +467,11 @@ certificate paths are the two things a container cannot stand in for.
 Then confirm the headers are actually being sent, and that a real login still works:
 
 ```bash
-curl -sI https://coc.jcciv.com/ | grep -iE 'content-security-policy|strict-transport|x-frame|x-content|referrer'
+curl -sI https://coc.example.com/ | grep -iE 'content-security-policy|strict-transport|x-frame|x-content|referrer'
 
 # The login throttle: the 6th request inside a minute should be 429, not 401
 for i in $(seq 1 7); do
-  curl -s -o /dev/null -w "$i:%{http_code} " -X POST https://coc.jcciv.com/api/auth/login \
+  curl -s -o /dev/null -w "$i:%{http_code} " -X POST https://coc.example.com/api/auth/login \
     -H 'Content-Type: application/json' -d '{"email":"nobody@example.com","password":"wrong-on-purpose"}'
 done; echo
 ```
@@ -539,7 +552,7 @@ is busy. Fine for "tell me before the users do"; not a pager.
 **The second half is a free uptime service, and it is the one to add if you only do
 one thing.** A minute-by-minute check that pages a phone is what Actions cannot be at
 this budget, and it takes about two minutes to set up: point any of the free tiers at
-`https://coc.jcciv.com/api/health`, expect HTTP 200 containing `ok`, and send alerts
+`https://coc.example.com/api/health`, expect HTTP 200 containing `ok`, and send alerts
 wherever you actually look. Nothing needs to change on the droplet — `/api/health` is
 public precisely so a probe can reach it, and it answers without a session (the cache
 size is only added for a signed-in caller).

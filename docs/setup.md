@@ -1,5 +1,31 @@
 # Setup, deployment and scripts
 
+## Getting a Supercell developer account and an API token
+
+Nothing below works without this. Every player, clan, war and capital-raid lookup goes through
+Supercell's own Clash of Clans API, which is closed behind a personal developer account and a
+token you mint yourself — there is no working `.env` without one, so this is the step before
+[Setup](#setup), not part of it.
+
+1. **Create a Supercell ID.** Go to <https://developer.clashofclans.com> and sign up, or log in if
+   you already have a Supercell ID from another Supercell developer portal. It's a Supercell
+   account — separate from, though it can be linked to, an in-game Clash of Clans account.
+2. **Open "My Account"** once you're signed in. Every key you create lives there.
+3. **Create a key.** The name and description are just for you — Supercell doesn't use them — but
+   you'll be asked for at least one **IP address**, and that field is the one that matters.
+   Supercell binds a key to exactly the address(es) you list and rejects every request from
+   anywhere else with `403 accessDenied.invalidIp`. Enter the public IP the app will actually call
+   out from:
+   - **Local development:** your own machine's current public IP — `curl -s https://api.ipify.org`
+     prints it. A dynamic ISP address will drift over time; when lookups start failing with
+     `accessDenied.invalidIp`, that's the first thing to check, and an existing key's IP list can
+     be edited without generating a new token.
+   - **A deployed host:** see [The IP binding](#the-ip-binding) below — it is almost never the
+     address in the host's own DNS record.
+4. **Save the key and copy the token.** It's a long string; paste it into `COC_API_TOKEN` in
+   `.env`, below. There's no separate activation step — a key works the moment its IP list
+   includes the caller's address.
+
 ## Setup
 
 Needs **Node ≥ 22.5** — that is where `node:sqlite` arrives, which is what stores the accounts.
@@ -18,7 +44,7 @@ After that first start, drop `ADMIN_PASSWORD` again and just `npm run dev`. The 
 <http://localhost:8787> and the UI on <http://localhost:5173>; Vite proxies `/api` to the
 server, so open the Vite URL and sign in.
 
-Get a token from <https://developer.clashofclans.com/#/account>.
+No token yet? See [Getting a Supercell developer account and an API token](#getting-a-supercell-developer-account-and-an-api-token) above.
 
 ### The Node version, and the divergence to fix
 
