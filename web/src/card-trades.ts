@@ -1,4 +1,4 @@
-import type { BaseInventory, CardCategory } from '@coc/shared'
+import { MIN_TRADEABLE_COUNT, type BaseInventory, type CardCategory } from '@coc/shared'
 import { cardRarity, rarityPoints } from './card-rarity.ts'
 import { cardTotals } from './card-standings.ts'
 
@@ -80,9 +80,42 @@ function toHoldings(base: BaseInventory): Holdings {
 /** The cards a base can give away: everything it holds two or more of. */
 function spares(holdings: Holdings): number[] {
   return [...holdings.counts.entries()]
-    .filter(([, count]) => count >= 2)
+    .filter(([, count]) => count >= MIN_TRADEABLE_COUNT)
     .map(([cardId]) => cardId)
     .sort((a, b) => a - b)
+}
+
+/**
+ * Identifies one base's stock of one card, as the unit `trade-matching.ts`
+ * spends capacity against — `${tag}:${cardId}`, colon rather than the space
+ * `groupTradesByPair`'s pair key uses, since a tag can itself contain neither.
+ */
+export function resourceKey(tag: string, cardId: number): string {
+  return `${tag}:${cardId}`
+}
+
+/**
+ * How many **more** times each base could give away each card it holds spare
+ * of, right now — `count - 1`, keeping the last copy exactly as rule 1 above
+ * requires. Exported for `trade-matching.ts`, which needs the real spare
+ * counts behind a suggestion (a base holding five of a card can give it away
+ * up to four times, to four different partners, not just once) rather than
+ * only *whether* one exists, which is all `spares()` above answers.
+ *
+ * Reuses `toHoldings` so a malformed row (non-integer id, non-positive or
+ * duplicated count) is read exactly the same way `suggestTrades` already
+ * reads it — two readings of the same wire data must never disagree about
+ * what a base holds.
+ */
+export function spareCapacity(bases: readonly BaseInventory[]): Map<string, number> {
+  const capacity = new Map<string, number>()
+  for (const base of bases) {
+    const holdings = toHoldings(base)
+    for (const cardId of spares(holdings)) {
+      capacity.set(resourceKey(base.tag, cardId), (holdings.counts.get(cardId) ?? 0) - 1)
+    }
+  }
+  return capacity
 }
 
 /**
@@ -172,17 +205,23 @@ export function suggestTrades(
  * should talk, and here are the four ways" is what someone actually acts on,
  * rather than four rows repeating the same two tags.
  *
- * **Pairs come out ordered by their best trade's value too, with no sort of
- * its own.** This falls out of `suggestTrades` sorting the flat list by value
- * descending first: a `Map`'s insertion order is first-occurrence order, and
- * in a list already sorted descending by value, the first entry seen for any
- * given pair can only be that pair's highest-value entry — a lower-value
- * entry for the same pair sorts strictly after every higher-value entry
- * anywhere in the list, including its own pair's max, so it can never be seen
- * first. That makes first-occurrence order for pairs and best-value order for
- * pairs the same order, which is what the pairing loop below already
- * produces. A second `.sort()` here would be sorting output that is already
- * sorted, just to re-derive a property it already has.
+ * **This function has no sort of its own — pairs and each pair's own trades
+ * come out in first-occurrence order of whatever list they were handed.** A
+ * `Map`'s insertion order is first-occurrence order, so grouping never
+ * reorders anything; it only decides how to bucket what is already ordered.
+ *
+ * Fed `suggestTrades`'s own output directly, that makes pairs come out
+ * ordered by their best trade's *value*: in a list already sorted descending
+ * by value, the first entry seen for any given pair can only be that pair's
+ * highest-value entry, so first-occurrence order and best-value order agree.
+ * `TradeSuggestions.tsx` instead feeds this a list `sortTradesByAchievability`
+ * (`trade-matching.ts`) has already re-ordered — achievable trades first,
+ * value second — so there a pair's position instead reflects whether *any* of
+ * its options survived the matching, not the raw rarity of its best card. Both
+ * callers get a real, total order out of this function; which one they get
+ * depends entirely on what they pass in, which is deliberate: this function
+ * stays a plain grouping, not a second place a sort could drift from the
+ * first.
  */
 export interface TradePair {
   baseA: string

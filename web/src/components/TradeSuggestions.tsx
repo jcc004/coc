@@ -25,6 +25,7 @@ import {
   ownersInPairs,
   tradeFilterSummary,
 } from '../trade-filters.ts'
+import { maxAchievableTrades, sortTradesByAchievability, tradeKey } from '../trade-matching.ts'
 import {
   findPendingSwap,
   sidesOfTrade,
@@ -397,11 +398,37 @@ export function TradeSuggestions({
    * that the card page makes, so the two pages cannot drift into disagreeing about
    * what a trade is or which one comes first. The counts are per-clan and the work
    * is a memo over sixty ids; the card page has always done exactly this.
+   *
+   * **The matching runs over the whole clan, before any narrowing.** A base's
+   * spare is just as contested by a trade a player page never shows as by one it
+   * does, so computing `maxAchievableTrades` only over `focus`'s own pairs would
+   * answer a different, too-generous question — "how many could this base do if
+   * nobody else on the list wanted the same spares" — instead of the real one.
+   * `achievableCount` below then narrows the *result* of that clan-wide matching
+   * to `focus`, which is the same "run wide, narrow after" shape `pairs` itself
+   * already uses.
    */
+  const flatTrades = useMemo(() => suggestTrades(bases, categoryOfCard), [bases])
+  const achievable = useMemo(() => maxAchievableTrades(flatTrades, bases), [flatTrades, bases])
   const pairs = useMemo(() => {
-    const all = groupTradesByPair(suggestTrades(bases, categoryOfCard))
+    const all = groupTradesByPair(sortTradesByAchievability(flatTrades, achievable))
     return focus === null ? all : pairsInvolving(all, focus)
-  }, [bases, focus])
+  }, [flatTrades, achievable, focus])
+
+  /* The headline number: how many of `pairs`'s own candidates could really all
+     complete together, not merely how many pairs have *an* option — see
+     `trade-matching.ts` for why those two counts differ. Scoped to `pairs`
+     (focus-narrowed, not owner-filtered) for the same reason the old raw pair
+     count always was: the owner pickers narrow what is *displayed*, not what
+     the summary line is answering. */
+  const achievableCount = useMemo(
+    () =>
+      pairs.reduce(
+        (sum, pair) => sum + pair.trades.filter((trade) => achievable.has(tradeKey(trade))).length,
+        0,
+      ),
+    [pairs, achievable],
+  )
 
   /* Both feed the Propose button in each row: who owns the two bases decides whether
      it is offered, and what is already on the tracker decides whether it says so
@@ -580,7 +607,7 @@ export function TradeSuggestions({
             setPage(1)
           }}
           onPage={setPage}
-          pairCount={pairs.length}
+          achievableCount={achievableCount}
           rowCount={rowCount}
           focusLabel={focus === null ? null : labelOf(focus)}
         />
@@ -614,7 +641,7 @@ function SuggestionTable({
   limit,
   onLimit,
   onPage,
-  pairCount,
+  achievableCount,
   rowCount,
   focusLabel,
 }: {
@@ -627,7 +654,10 @@ function SuggestionTable({
   limit: RowLimit
   onLimit: (next: RowLimit) => void
   onPage: (next: number) => void
-  pairCount: number
+  /** The size of the maximum achievable set — see `trade-matching.ts` — among
+      the candidates in scope for this table (focus-narrowed, not
+      owner-filtered, the same scope `filterNote` already leaves untouched). */
+  achievableCount: number
   rowCount: number
   /** The focused base's member name, or `null` when the table is clan-wide. */
   focusLabel: string | null
@@ -756,9 +786,18 @@ function SuggestionTable({
        * Counts only. The two rules this line used to carry — that a row is an option
        * rather than a commitment, and what Propose does — are in the disclosure
        * below, which is present whether or not there are rows to count.
+       *
+       * **"Trades" here, not "pairs".** This used to count pairs that have *any*
+       * legal option, which overstated what the clan could actually get done:
+       * completing one trade spends a spare, and two pairs reaching for the same
+       * spare cannot both go through. `achievableCount` is the size of the
+       * largest set of trades that really could all complete together — see
+       * `trade-matching.ts` — so it is never larger than the number of options on
+       * the table, and can be smaller than the number of pairs with an option
+       * even though every one of those pairs is individually real.
        */}
       <p className="empty-hint" style={{ marginTop: 12, fontSize: 13 }}>
-        {pairCount} pair{pairCount === 1 ? '' : 's'} could trade
+        Up to {achievableCount} trade{achievableCount === 1 ? '' : 's'} could happen at once
         {focusLabel === null ? null : <> with {focusLabel}</>}
         {view.pageCount > 1 ? (
           <>

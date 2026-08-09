@@ -277,6 +277,35 @@ whenever there is more than one page. Verified in a browser: at the default, `Sh
 pairs` over 5 pair-blocks and 7 rows; `Next` gives `Showing 6–10 of 15 pairs` over 5 and 5; `All`
 gives 15 blocks and 19 rows with no pager at all.
 
+### How many trades could really happen
+
+The panel used to say `N pairs could trade`, counting every base-pair with *at least one* legal
+option. That overstated things: completing a trade spends a spare, and two pairs reaching for the
+same spare cannot both go through — a base offering its one extra Barbarian to three different
+partners is one trade, not three, however many rows list it as an option.
+
+The line now reads `Up to N trades could happen at once`, where `N` is the size of the largest set
+of candidate trades that could all complete together without any base running out of a card it
+promised twice. That is a resource-constrained matching problem — `maxAchievableTrades` in
+`web/src/trade-matching.ts` — solved by a **greedy approximation, not an exact solver**: the exact
+algorithm for this shape of problem is a blossom-style search, the general-graph relative of
+ordinary matching, because a base's spare of one card can be contested by trades with several
+different partners rather than being confined to two sides of one relationship the way a bipartite
+problem would be. Implementing and proving a blossom solver correct is disproportionate machinery
+for a hint line here, so the module runs a dynamic most-constrained-first greedy instead, and its
+own tests check that greedy against brute force on small cases — including one built specifically
+to demonstrate the known worst case (half of the true maximum) — so the gap is measured, not
+assumed away.
+
+**Pairs and options are ordered by achievability first, rarity second.** A pair with an option that
+is part of the achievable set sorts ahead of one whose every option would cost a conflicting trade
+elsewhere, and within one pair's own block of options, the achievable ones come before the ones
+that are not — `sortTradesByAchievability`, layered over `suggestTrades`'s own order the same way
+`sortCardTotalsForDisplay` layers over `cardTotals()` (see [A sort control,
+opt-in](#a-sort-control-opt-in)). The previous ordering was rarity alone — the single rarest card
+either side would give away, descending — and that is still the tiebreak within each group, so a
+scarce, time-sensitive trade still surfaces near the top of whichever group it lands in.
+
 ## The collection leaderboard
 
 Every tracked base, ranked by how far it has got, directly under the trade suggestions — because

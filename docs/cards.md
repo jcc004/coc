@@ -182,3 +182,9 @@ is asserted directly. Output is sorted by base then card, so it never shuffles b
 
 One pair can yield several suggestions and one spare can appear against several partners. That
 is intended: these are options to choose between, not a plan.
+
+**A menu is not a plan, and the UI says how much of it is executable.** Because one spare can
+carry several options, the raw count of pairs or suggestions overstates what the clan could
+actually get done — two options reaching for the same spare cannot both complete. The trade
+suggestions panel resolves this with a real matching computation rather than a raw count; see
+[How many trades could really happen](cards-ui.md#how-many-trades-could-really-happen).

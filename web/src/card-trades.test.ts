@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { BaseInventory, CardCategory } from '@coc/shared'
-import { groupTradesByPair, suggestTrades, type TradeSuggestion } from './card-trades.ts'
+import {
+  groupTradesByPair,
+  resourceKey,
+  spareCapacity,
+  suggestTrades,
+  type TradeSuggestion,
+} from './card-trades.ts'
 import { ALL_CARDS, categoryOfCard } from './cards.ts'
 
 /*
@@ -385,6 +391,49 @@ describe('suggestTrades — ordered by rarity value', () => {
       '#GGG:1 <-> #HHH:2 (Elixir)',
       '#GGG:20 <-> #HHH:21 (Dark Elixir)',
     ])
+  })
+})
+
+describe('spareCapacity', () => {
+  it('is count - 1, keeping the last copy, for every card held two or more of', () => {
+    const capacity = spareCapacity([base('#AAA', { 1: 2, 2: 5 })])
+    assert.equal(capacity.get(resourceKey('#AAA', 1)), 1)
+    assert.equal(capacity.get(resourceKey('#AAA', 2)), 4)
+  })
+
+  it('omits a card held once, or not at all — never a capacity of zero', () => {
+    // A capacity of 0 would be indistinguishable from "never held this card" to a
+    // caller reading the map with `?? 0`; leaving it absent for both is one
+    // representation for "cannot give this away", not two.
+    const capacity = spareCapacity([base('#AAA', { 1: 1, 2: 0 })])
+    assert.equal(capacity.size, 0)
+  })
+
+  it('reads a malformed row the same way suggestTrades does', () => {
+    // Duplicated id keeps the larger count; negative and non-integer entries drop.
+    const malformed: BaseInventory = {
+      tag: '#AAA',
+      counts: [
+        { cardId: 1, count: 1 },
+        { cardId: 1, count: 3 },
+        { cardId: 2, count: -5 },
+        { cardId: 1.5, count: 9 },
+      ],
+    }
+    const capacity = spareCapacity([malformed])
+    assert.equal(capacity.get(resourceKey('#AAA', 1)), 2)
+    assert.equal(capacity.size, 1)
+  })
+
+  it('keys by base and card, so two bases sharing a card id get separate entries', () => {
+    const capacity = spareCapacity([base('#AAA', { 1: 3 }), base('#BBB', { 1: 2 })])
+    assert.equal(capacity.get(resourceKey('#AAA', 1)), 2)
+    assert.equal(capacity.get(resourceKey('#BBB', 1)), 1)
+  })
+
+  it('is empty for no bases, or bases with nothing spare', () => {
+    assert.equal(spareCapacity([]).size, 0)
+    assert.equal(spareCapacity([base('#AAA', {})]).size, 0)
   })
 })
 
