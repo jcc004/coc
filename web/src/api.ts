@@ -11,6 +11,7 @@ import {
   type ChangeRequestPendingCountResponse,
   type ChangeRequestResponse,
   type ChangeRequestsResponse,
+  type ChangeRequestUnseenResolvedCountResponse,
   type Clan,
   type ClanMembersResponse,
   type ClanSearchResponse,
@@ -21,6 +22,7 @@ import {
   type ImportRequest,
   type ImportResponse,
   type ManualCaptureRequest,
+  type MarkChangeRequestsViewedResponse,
   type MaxLevelReferenceRow,
   type MeResponse,
   type OwnerAssignResponse,
@@ -419,6 +421,23 @@ export const api = {
   /** Reversible: call again with the other value to unhide. */
   setChangeRequestHidden: (id: number, input: HideChangeRequest) =>
     request<ChangeRequestResponse>('POST', `/api/change-requests/${id}/hide`, { body: input }),
+
+  /**
+   * How many of the caller's own requests were resolved since they last
+   * visited `#/change-requests` — the member's half of the account-menu
+   * badge, the mirror of `pendingChangeRequestCount`'s admin half.
+   */
+  unseenResolvedChangeRequestCount: (signal?: AbortSignal) =>
+    get<ChangeRequestUnseenResolvedCountResponse>(
+      '/api/change-requests/unseen-resolved-count',
+      signal,
+    ),
+
+  /** Called once on landing on `#/change-requests` — clears the badge above. */
+  markChangeRequestsViewed: () =>
+    request<MarkChangeRequestsViewedResponse>('POST', '/api/change-requests/mark-viewed', {
+      body: {},
+    }),
 
   /** Admin-only. Every request, every account — the resolution table. */
   allChangeRequests: (signal?: AbortSignal) =>

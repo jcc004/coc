@@ -176,25 +176,25 @@ describe('menuButtonLabel', () => {
     assert.match(menuButtonLabel({ displayName: 'Anna', role: 'user' }), /menu/i)
   })
 
-  it('says nothing about pending change requests at zero, or when omitted', () => {
+  it('says nothing about change request updates at zero, or when omitted', () => {
     const omitted = menuButtonLabel({ displayName: 'Anna', role: 'admin' })
     const zero = menuButtonLabel({ displayName: 'Anna', role: 'admin' }, 0)
-    assert.doesNotMatch(omitted, /pending/i)
-    assert.doesNotMatch(zero, /pending/i)
+    assert.doesNotMatch(omitted, /change request/i)
+    assert.doesNotMatch(zero, /change request/i)
   })
 
-  it('names the count and pluralizes "change request" above one', () => {
-    assert.ok(menuButtonLabel({ displayName: 'Anna', role: 'admin' }, 1).endsWith('1 pending change request'))
+  it('names the count and pluralizes "change request update" above one', () => {
+    assert.ok(menuButtonLabel({ displayName: 'Anna', role: 'admin' }, 1).endsWith('1 change request update'))
     assert.ok(
-      menuButtonLabel({ displayName: 'Anna', role: 'admin' }, 3).endsWith('3 pending change requests'),
+      menuButtonLabel({ displayName: 'Anna', role: 'admin' }, 3).endsWith('3 change request updates'),
     )
   })
 
-  it('still names who is signed in ahead of the pending count', () => {
+  it('still names who is signed in ahead of the change request count', () => {
     const label = menuButtonLabel({ displayName: 'Anna', role: 'admin' }, 2)
     assert.ok(
-      label.indexOf('Anna') < label.indexOf('pending'),
-      'the account name should read before the pending count',
+      label.indexOf('Anna') < label.indexOf('change request'),
+      'the account name should read before the change request count',
     )
   })
 })

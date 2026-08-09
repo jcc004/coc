@@ -7,7 +7,7 @@ import {
   type ChangeRequestResolutionType,
   type SessionUser,
 } from '@coc/shared'
-import { describe } from '../api.ts'
+import { api, describe } from '../api.ts'
 import {
   useAllChangeRequests,
   useMyChangeRequests,
@@ -47,6 +47,13 @@ import { ErrorPanel, HelpLink, Loading } from './primitives.tsx'
  * the pure "who may act" and "what order" logic (mirroring the server's
  * `access.ts`, tested on both sides), and this file only draws what it is
  * given.
+ *
+ * **Landing here clears the account-menu badge.** Any signed-in caller with a
+ * request resolved since their last visit sees a count on the silhouette in
+ * the topbar (`UserMenu.tsx`); mounting this view marks that moment "now" via
+ * `api.markChangeRequestsViewed()`, which is the whole of what "cleared by
+ * going to the change request page" means server-side — see
+ * `useUnseenResolvedChangeRequestCount` in `change-requests.ts`.
  */
 
 const RESOLUTION_LABEL: Record<ChangeRequestResolutionType, string> = {
@@ -731,6 +738,18 @@ export function ChangeRequestsView({ user }: { user: SessionUser }) {
   const mine = useMyChangeRequests()
   // Only fetched at all while an admin has this page open — see `useAllChangeRequests`.
   const isAdmin = user.role === 'admin'
+
+  /*
+   * "Cleared by them going to the change request page" — a one-shot,
+   * best-effort call the moment this component mounts, not tied to whether
+   * `mine` has actually loaded yet. A failure here just leaves the badge
+   * showing a stale count until the next successful visit; it must never
+   * block or degrade the page itself, the same reasoning the polling hooks in
+   * `change-requests.ts` give for swallowing a failed poll.
+   */
+  useEffect(() => {
+    api.markChangeRequestsViewed().catch(() => {})
+  }, [])
 
   /*
    * Bumped after every successful submission and handed down to `AdminSection`

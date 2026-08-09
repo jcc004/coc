@@ -152,6 +152,24 @@ export interface ChangeRequestPendingCountResponse {
   count: number
 }
 
+/**
+ * `GET /api/change-requests/unseen-resolved-count` — the other half of the
+ * account-menu badge: how many of *this* caller's own requests were resolved
+ * since they last visited `#/change-requests`. Unlike
+ * {@link ChangeRequestPendingCountResponse}, this one has a way to clear it —
+ * {@link MarkChangeRequestsViewedResponse} — because "resolved since I looked"
+ * needs a "when did I look" to compare against, where "open" needs nothing but
+ * the rows themselves.
+ */
+export interface ChangeRequestUnseenResolvedCountResponse {
+  count: number
+}
+
+/** `POST /api/change-requests/mark-viewed` — records "now" as the caller's last visit. */
+export interface MarkChangeRequestsViewedResponse {
+  ok: true
+}
+
 /** What `POST /api/change-requests` accepts. The requester and the time are the server's. */
 export interface SubmitChangeRequest {
   subject: string

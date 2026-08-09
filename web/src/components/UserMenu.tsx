@@ -1,6 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { SessionUser } from '@coc/shared'
-import { usePendingChangeRequestCount } from '../change-requests.ts'
+import {
+  usePendingChangeRequestCount,
+  useUnseenResolvedChangeRequestCount,
+} from '../change-requests.ts'
 import { schemeSummary } from '../color-scheme.ts'
 import { hrefFor, navigate, useColorScheme, type Route, type Theme } from '../hooks.ts'
 import {
@@ -48,17 +51,24 @@ const BASE_ORDER_ROUTE: Route = { view: 'base-order' }
  * - a pointer press outside closes it. The listener is on `pointerdown`, not
  *   `click`, so a press that starts outside cannot land on an item that has moved.
  *
- * **The badge**: an admin with an unresolved "propose a change" request waiting
- * (`docs/proposed-changes.md`) sees a small count on the silhouette itself, so
- * finding out no longer requires opening the admin change-requests page on
- * spec. `usePendingChangeRequestCount` (`change-requests.ts`) polls
- * `GET /api/admin/change-requests/pending-count` — a dedicated endpoint rather
- * than the client counting `allChangeRequests` itself, so this always-mounted
- * badge does not pull every request's subject and body across the wire for a
- * member's session it will never render for. The digit is `aria-hidden`: the
- * same count is already in the button's own accessible name
+ * **The badge**: one merged count, added from two independent sources
+ * (`docs/proposed-changes.md`). An admin with an unresolved "propose a
+ * change" request waiting sees it, the same way they always have
+ * (`usePendingChangeRequestCount`); *any* signed-in account, admin or not,
+ * also sees it the moment one of their own submitted requests gets resolved
+ * (`useUnseenResolvedChangeRequestCount`) — cleared the moment they visit
+ * `#/change-requests`, which is what `ChangeRequestsView.tsx` marking itself
+ * viewed on mount is for. The two are summed rather than shown separately: an
+ * admin who also submits requests is expected to be rare, so one number is
+ * simpler than two clauses for a case that barely happens (see
+ * `menuButtonLabel`'s doc comment for the same call on the accessible name).
+ * Both hooks poll `GET .../pending-count` and `GET .../unseen-resolved-count`
+ * — dedicated endpoints rather than the client counting a full list itself,
+ * so this always-mounted badge does not pull every request's subject and body
+ * across the wire just to read one number off it. The digit is `aria-hidden`:
+ * the same total is already in the button's own accessible name
  * (`menuButtonLabel`), so a screen reader is not asked to parse a decoration
- * a sighted admin reads as a glance.
+ * a sighted user reads at a glance.
  */
 export function UserMenu({
   user,
@@ -80,7 +90,9 @@ export function UserMenu({
   /* `null` until the first answer lands, or permanently for a member — see the
      hook's own doc comment for why it is safe to call unconditionally here. */
   const pendingChangeRequests = usePendingChangeRequestCount(isAdmin, open)
-  const buttonLabel = menuButtonLabel(user, pendingChangeRequests ?? 0)
+  const unseenResolvedChangeRequests = useUnseenResolvedChangeRequestCount(open)
+  const changeRequestNotifications = (pendingChangeRequests ?? 0) + (unseenResolvedChangeRequests ?? 0)
+  const buttonLabel = menuButtonLabel(user, changeRequestNotifications)
 
   /*
    * Read here for the menu's own "Default / Custom" line — and, because this is the
@@ -131,9 +143,9 @@ export function UserMenu({
         onClick={() => setOpen((was) => !was)}
       >
         <Silhouette />
-        {isAdmin && pendingChangeRequests !== null && pendingChangeRequests > 0 ? (
+        {changeRequestNotifications > 0 ? (
           <span className="user-menu__badge" aria-hidden="true">
-            {changeRequestBadgeText(pendingChangeRequests)}
+            {changeRequestBadgeText(changeRequestNotifications)}
           </span>
         ) : null}
       </button>

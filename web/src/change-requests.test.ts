@@ -2,7 +2,11 @@ import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
 import { act, renderHook } from '@testing-library/react'
 import { api } from './api.ts'
-import { PENDING_CHANGE_REQUEST_POLL_MS, usePendingChangeRequestCount } from './change-requests.ts'
+import {
+  PENDING_CHANGE_REQUEST_POLL_MS,
+  usePendingChangeRequestCount,
+  useUnseenResolvedChangeRequestCount,
+} from './change-requests.ts'
 import { installTestCleanup, stubApi } from './test-support.ts'
 
 /**
@@ -158,5 +162,60 @@ describe('usePendingChangeRequestCount', () => {
     probe.tick()
     await settle()
     assert.equal(probe.view.result.current, 2, 'a failed poll should not clear the badge')
+  })
+})
+
+/**
+ * `useUnseenResolvedChangeRequestCount` — the member's half of the same
+ * badge, sharing `usePendingChangeRequestCount`'s `usePolledCount` internals.
+ * The generic polling mechanics (the interval constant, refetch-on-focus,
+ * refetch-on-visibilitychange, unmount cleanup) are already pinned by the
+ * suite above against the same shared code path, so this only checks what is
+ * actually different here: no admin gate, the other endpoint, and that
+ * `menuOpen` still triggers a refetch through the shared hook.
+ */
+function mountUnseenProbe(
+  respond: () => ReturnType<typeof api.unseenResolvedChangeRequestCount> = () =>
+    Promise.resolve({ count: 1 }),
+) {
+  const count = mock.method(api, 'unseenResolvedChangeRequestCount', respond)
+  stubApi({})
+
+  const view = renderHook(({ open }: { open: boolean }) => useUnseenResolvedChangeRequestCount(open), {
+    initialProps: { open: false },
+  })
+
+  return { view, reads: () => count.mock.callCount() }
+}
+
+describe('useUnseenResolvedChangeRequestCount', () => {
+  it('fetches on mount with no admin gate, and returns the count', async () => {
+    const probe = mountUnseenProbe()
+    await settle()
+    assert.equal(probe.reads(), 1)
+    assert.equal(probe.view.result.current, 1)
+  })
+
+  it('refetches when the menu opens', async () => {
+    const probe = mountUnseenProbe()
+    await settle()
+
+    probe.view.rerender({ open: true })
+    await settle()
+    assert.equal(probe.reads(), 2)
+  })
+
+  it('keeps the last known count when a poll fails', async () => {
+    let calls = 0
+    const probe = mountUnseenProbe(() => {
+      calls += 1
+      return calls === 1 ? Promise.resolve({ count: 4 }) : Promise.reject(new Error('offline'))
+    })
+    await settle()
+    assert.equal(probe.view.result.current, 4)
+
+    probe.view.rerender({ open: true })
+    await settle()
+    assert.equal(probe.view.result.current, 4, 'a failed poll should not clear the badge')
   })
 })

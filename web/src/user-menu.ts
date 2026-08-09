@@ -148,29 +148,33 @@ export function nextTheme(theme: Theme): Theme {
  * silhouette alone says nothing about that. It is the accessible name and the
  * tooltip; the glyph itself is `aria-hidden`.
  *
- * `pendingChangeRequests` appends the same fact the visual badge shows
- * (`changeRequestBadgeText`, below) — an admin with unresolved requests
- * waiting hears "3 pending change requests" as part of the button's own name,
- * rather than needing sight to notice a dot in the corner of a silhouette.
- * Omitted entirely at zero, so a member's label — and an admin's on a quiet
- * day — reads exactly as it always has.
+ * `changeRequestNotifications` appends the same fact the visual badge shows
+ * (`changeRequestBadgeText`, below) — one merged count of two different things
+ * (an admin's requests waiting to be reviewed, and the caller's own requests
+ * resolved since they last looked at `#/change-requests`), added together
+ * rather than announced separately: an admin who also submits requests is
+ * expected to be rare enough that a combined "3 change request updates" is
+ * not worth two clauses to say. Omitted entirely at zero, so a member's
+ * label — and an admin's on a quiet day — reads exactly as it always has.
  */
 export function menuButtonLabel(
   user: Pick<SessionUser, 'displayName' | 'role'>,
-  pendingChangeRequests = 0,
+  changeRequestNotifications = 0,
 ): string {
   const role = user.role === 'admin' ? 'admin' : 'member'
   const base = `${user.displayName} (${role}) — account menu`
-  if (pendingChangeRequests <= 0) return base
-  const noun = pendingChangeRequests === 1 ? 'change request' : 'change requests'
-  return `${base} — ${pendingChangeRequests} pending ${noun}`
+  if (changeRequestNotifications <= 0) return base
+  const noun = changeRequestNotifications === 1 ? 'change request update' : 'change request updates'
+  return `${base} — ${changeRequestNotifications} ${noun}`
 }
 
-/* ---------- the pending change-request badge ---------- */
+/* ---------- the change-request badge ---------- */
 
 /**
- * The digits drawn on the silhouette's badge. Capped at "9+" rather than
- * showing the real number past that point — the badge is a 16px circle
+ * The digits drawn on the silhouette's badge — `count` is the merged total
+ * `UserMenu.tsx` computes (an admin's pending-review count plus the caller's
+ * own unseen-resolved count), not either half alone. Capped at "9+" rather
+ * than showing the real number past that point — the badge is a 16px circle
  * (`.user-menu__badge` in `styles.css`), and a count in the tens would either
  * overflow it or force the circle to grow every time somebody lets the queue
  * build up. The exact count is still in the accessible name

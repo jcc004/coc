@@ -41,8 +41,10 @@ import type { ChangeRequestResolutionInput, ChangeRequestStore } from './store.t
  * | `POST /api/change-requests/:id/amend` | the request's own author, while open |
  * | `POST /api/change-requests/:id/cancel` | the request's own author, any time |
  * | `POST /api/change-requests/:id/hide` | the request's own author, any time |
+ * | `GET /api/change-requests/unseen-resolved-count` | every signed-in user — one integer, their own half of the account-menu badge |
+ * | `POST /api/change-requests/mark-viewed` | every signed-in user — clears that half |
  * | `GET /api/admin/change-requests` | an admin — every request, every account |
- * | `GET /api/admin/change-requests/pending-count` | an admin — one integer, for the account-menu badge |
+ * | `GET /api/admin/change-requests/pending-count` | an admin — one integer, the other half of the badge |
  * | `POST /api/admin/change-requests/:id/resolve` | an admin |
  *
  * The five decisions are `may*ChangeRequest` in `access.ts` — pure functions
@@ -247,6 +249,17 @@ export function mountChangeRequestRoutes(app: Hono<AuthEnv>, store: ChangeReques
 
     const request = store.setHidden(id, raw['hidden'])
     return c.json({ request })
+  })
+
+  // Literal segments, ahead of nothing that could mistake them for an `:id` —
+  // both are `GET`/`POST` on paths no other route in this file uses.
+  app.get('/api/change-requests/unseen-resolved-count', (c) => {
+    return c.json({ count: store.countUnseenResolved(currentUser(c).id) })
+  })
+
+  app.post('/api/change-requests/mark-viewed', (c) => {
+    store.markViewed(currentUser(c).id)
+    return c.json({ ok: true })
   })
 
   // Admin-only via the `/api/admin/*` middleware installed in `createApp`.

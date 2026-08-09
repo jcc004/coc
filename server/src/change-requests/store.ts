@@ -72,6 +72,16 @@ export interface ChangeRequestStore {
   setHidden(id: number, hidden: boolean): ChangeRequest
   /** Overwrites any prior resolution — see `mayResolveChangeRequest` for why that is allowed. */
   resolve(id: number, resolution: ChangeRequestResolutionInput, adminId: number): ChangeRequest
+  /**
+   * How many of `userId`'s own requests were resolved after their last visit
+   * to `#/change-requests` — the account-menu badge's answer for a regular
+   * user, the mirror image of `countOpen` for an admin. An account that has
+   * never visited counts every one of its resolved requests, per migration
+   * v16's doc comment on why that is not backfilled away.
+   */
+  countUnseenResolved(userId: number): number
+  /** Records `userId` as having just seen `#/change-requests` — clears their badge. */
+  markViewed(userId: number): void
 }
 
 /* Display names are joined at read time, not copied onto the row, so a rename
@@ -169,6 +179,24 @@ export function createChangeRequestStore(db: DatabaseSync): ChangeRequestStore {
               resolved_by_user_id = ?, resolved_at = ?
         WHERE id = ?`,
     ),
+    // `COALESCE(..., '')` is what makes "never visited" read as "the beginning
+    // of time" rather than "just now": every `resolved_at` is a non-empty ISO
+    // timestamp, and SQLite's default text collation orders any non-empty
+    // string after `''`, so the comparison counts everything for an account
+    // with no row in `change_request_views` at all. See migration v16.
+    countUnseenResolved: db.prepare(
+      `SELECT COUNT(*) AS n FROM change_requests
+        WHERE requested_by_user_id = ?
+          AND resolved_at IS NOT NULL
+          AND resolved_at > COALESCE(
+                (SELECT last_viewed_at FROM change_request_views WHERE user_id = ?), ''
+              )`,
+    ),
+    markViewed: db.prepare(
+      `INSERT INTO change_request_views (user_id, last_viewed_at)
+       VALUES (?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET last_viewed_at = excluded.last_viewed_at`,
+    ),
   }
 
   function find(id: number): ChangeRequest | undefined {
@@ -247,6 +275,17 @@ export function createChangeRequestStore(db: DatabaseSync): ChangeRequestStore {
         id,
       )
       return mustFind(id, 'resolving')
+    },
+
+    countUnseenResolved(userId) {
+      const row = statements.countUnseenResolved.get(userId, userId) as
+        | { n: number | bigint }
+        | undefined
+      return asInt(row?.n)
+    },
+
+    markViewed(userId) {
+      statements.markViewed.run(userId, new Date().toISOString())
     },
   }
 }

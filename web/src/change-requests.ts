@@ -10,11 +10,11 @@ import { ApiError, api } from './api.ts'
 /**
  * "Propose a change" — `#/change-requests`. Two lists, each fetched by one
  * hook: the caller's own requests (`useMyChangeRequests`, everyone) and, for
- * an admin, every account's (`useAllChangeRequests`). A third hook,
- * `usePendingChangeRequestCount`, answers a narrower question for a different
- * screen entirely — the account-menu badge in `UserMenu.tsx` — and is the one
- * export here that polls rather than fetching once per mount; see its own doc
- * comment.
+ * an admin, every account's (`useAllChangeRequests`). Two more hooks,
+ * `usePendingChangeRequestCount` and `useUnseenResolvedChangeRequestCount`,
+ * answer narrower questions for a different screen entirely — the two halves
+ * of the account-menu badge in `UserMenu.tsx` — and are the exports here that
+ * poll rather than fetching once per mount; see `usePolledCount`'s doc comment.
  *
  * **Plain component state, not the `createServerStore` shape** `trades.ts` and
  * `owners.ts` use — the same call `base-order.ts` makes and for the same
@@ -207,51 +207,53 @@ export function useAllChangeRequests(refreshKey?: unknown): AllChangeRequests {
 /* ---------- the account-menu badge ---------- */
 
 /**
- * How often the badge polls while an admin's session is open and the tab is
- * visible. Far coarser than `CARD_POLL_INTERVAL_MS` (30s, `card-refresh.ts`):
- * a card count or an incoming trade is time-sensitive to a person mid-trade,
- * a stray change request waiting on a resolution is not — noticing within a
- * couple of minutes of it landing is the whole point of a badge, not the
- * second it was submitted.
+ * How often the badge polls while a session is open and the tab is visible.
+ * Far coarser than `CARD_POLL_INTERVAL_MS` (30s, `card-refresh.ts`): a card
+ * count or an incoming trade is time-sensitive to a person mid-trade, a stray
+ * change request waiting on attention is not — noticing within a couple of
+ * minutes of it landing is the whole point of a badge, not the second it
+ * happened.
  */
 export const PENDING_CHANGE_REQUEST_POLL_MS = 120_000
 
 /**
- * The open (unresolved, uncanceled) change-request count behind the account
- * menu's badge — `null` until the first answer lands, and `null` for anyone
- * who is not an admin without this hook ever asking (the endpoint would 403
- * anyway, the same restraint `useAllChangeRequests` already applies by only
- * being called from a component that itself only mounts for an admin — this
- * hook applies the same restraint internally instead, since it is mounted
- * unconditionally from `UserMenu`, which renders for every signed-in account).
- *
- * Refreshes on mount, every `PENDING_CHANGE_REQUEST_POLL_MS`, on window focus
- * and tab visibility (the same two listeners `use-card-refresh.ts` polls with,
- * for the same reason: a laptop woken from sleep or a tab switched back to
+ * The polling shape both halves of the account-menu badge share: fetch on
+ * mount, every `PENDING_CHANGE_REQUEST_POLL_MS`, on window focus and tab
+ * visibility (the same two listeners `use-card-refresh.ts` polls with, for
+ * the same reason — a laptop woken from sleep or a tab switched back to
  * should not wait out the full interval), and once more whenever `menuOpen`
- * flips — so resolving a request in one tab and then opening the menu in
- * another shows the new count without waiting on the timer. There is no
- * `useCardRefresh`-style in-flight guard: nothing here can be clobbered by an
- * overlapping request the way an unsaved edit can, so the extra complexity
- * would buy nothing.
+ * flips, so acting on one tab and opening the menu in another shows the new
+ * count without waiting on the timer.
  *
- * A failed poll is silently ignored, leaving the last known count on screen —
- * a stale number is a better badge than one that blinks to nothing because a
- * single request dropped.
+ * `enabled` gates the whole thing off (returning `null` and asking nothing)
+ * for a caller that already knows the answer is not for them —
+ * `usePendingChangeRequestCount` uses it for a non-admin, the same restraint
+ * `useAllChangeRequests` applies by only being called from a component that
+ * itself only mounts for an admin; `useUnseenResolvedChangeRequestCount` has
+ * no such gate, since every signed-in account can have a request resolved.
+ *
+ * There is no `useCardRefresh`-style in-flight guard: nothing here can be
+ * clobbered by an overlapping request the way an unsaved edit can, so the
+ * extra complexity would buy nothing. A failed poll is silently ignored,
+ * leaving the last known count on screen — a stale number is a better badge
+ * than one that blinks to nothing because a single request dropped.
  */
-export function usePendingChangeRequestCount(isAdmin: boolean, menuOpen: boolean): number | null {
+function usePolledCount(
+  enabled: boolean,
+  menuOpen: boolean,
+  fetchCount: () => Promise<{ count: number }>,
+): number | null {
   const [count, setCount] = useState<number | null>(null)
 
   useEffect(() => {
-    if (!isAdmin) {
+    if (!enabled) {
       setCount(null)
       return
     }
 
     let cancelled = false
     const refresh = () => {
-      api
-        .pendingChangeRequestCount()
+      fetchCount()
         .then((response) => {
           if (!cancelled) setCount(response.count)
         })
@@ -271,7 +273,35 @@ export function usePendingChangeRequestCount(isAdmin: boolean, menuOpen: boolean
       window.removeEventListener('focus', refresh)
       document.removeEventListener('visibilitychange', refresh)
     }
-  }, [isAdmin, menuOpen])
+    // `fetchCount` is always a stable `api.*` reference; adding it here would
+    // only churn the effect on every render of a caller that inlines the
+    // argument.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, menuOpen])
 
   return count
+}
+
+/**
+ * The open (unresolved, uncanceled) change-request count — an admin's half of
+ * the account-menu badge. `null` until the first answer lands, and `null` for
+ * anyone who is not an admin without this hook ever asking (the endpoint
+ * would 403 anyway). Mounted unconditionally from `UserMenu`, which renders
+ * for every signed-in account, so the `isAdmin` gate lives in here rather
+ * than in the caller.
+ */
+export function usePendingChangeRequestCount(isAdmin: boolean, menuOpen: boolean): number | null {
+  return usePolledCount(isAdmin, menuOpen, api.pendingChangeRequestCount)
+}
+
+/**
+ * How many of the caller's own requests were resolved since they last visited
+ * `#/change-requests` — the other half of the account-menu badge, and the one
+ * every signed-in account gets, admin or not (`ChangeRequestsView.tsx` calls
+ * `api.markChangeRequestsViewed()` on mount, which is what brings this back to
+ * zero). No `enabled` gate: unlike the admin count above, there is no account
+ * this could 403 for.
+ */
+export function useUnseenResolvedChangeRequestCount(menuOpen: boolean): number | null {
+  return usePolledCount(true, menuOpen, api.unseenResolvedChangeRequestCount)
 }

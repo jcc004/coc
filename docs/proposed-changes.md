@@ -92,6 +92,31 @@ closed request's subject, body and amendments across the wire to read one intege
 The badge's own design, polling cadence and accessibility are documented in `docs/ui.md`'s "The
 account menu", alongside the rest of that menu.
 
+## Letting a requester know their own request was resolved
+
+The badge above only ever told an admin something was *waiting*; it said nothing to a member whose
+own request just got an answer, who otherwise finds out only by remembering to check "My requests"
+again. The same silhouette badge now carries that too, as one merged number
+(`docs/ui.md`'s "The account menu" explains why it is merged rather than shown separately) — any
+signed-in account, admin or not, sees a count the moment one of their own submitted requests is
+resolved.
+
+Unlike the admin half, this one needs a notion of "seen": an open count can just be recomputed live
+and drop to zero once every request really is closed, but "resolved since I last looked" needs a
+"when did I look" to compare against. That is `change_request_views` (migration v16, below) — one
+row per account, holding the last time they visited `#/change-requests`. Landing on that page
+records "now" there (`POST /api/change-requests/mark-viewed`, fired once on mount by
+`ChangeRequestsView.tsx`), which is the entire mechanism behind "cleared by going to the change
+request page": there is no separate per-request "read" flag, just one timestamp compared against
+`resolved_at` on every one of the account's own requests
+(`GET /api/change-requests/unseen-resolved-count`, `ChangeRequestStore.countUnseenResolved`).
+
+An account that has never visited the page has no row yet, and that is read as "the beginning of
+time" rather than "just now" — every one of their already-resolved requests counts as unseen until
+their first visit clears it, rather than the feature silently pretending nothing happened before it
+shipped. Nothing is lost either way: every resolution is, and always was, visible on "My requests"
+regardless of this badge.
+
 ## Schema
 
 Migration v15 (`server/src/db.ts`), two tables:
@@ -110,6 +135,12 @@ Migration v15 (`server/src/db.ts`), two tables:
 Full reasoning, including why `hidden_at` has no companion "hidden by" column and why the two
 commit fields are gated by a `CHECK` rather than the app alone, is in the migration's own doc
 comment.
+
+Migration v16 adds one more, for the badge's other half: **`change_request_views`** — one row per
+account, `user_id` primary key, holding only `last_viewed_at`. Modeled directly on `base_order`
+(v12): one row per user, upserted whole, `ON DELETE CASCADE`. No backfill for existing accounts at
+migration time — see the migration's own doc comment for why "no row" deliberately means "never
+viewed" rather than "just viewed."
 
 ## Access rules
 

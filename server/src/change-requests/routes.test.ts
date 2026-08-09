@@ -414,6 +414,114 @@ describe('GET /api/admin/change-requests/pending-count', () => {
   })
 })
 
+async function unseenResolvedCount(harness: Harness, cookie: string): Promise<number> {
+  const response = await harness.app.request('/api/change-requests/unseen-resolved-count', {
+    headers: { cookie },
+  })
+  assert.equal(response.status, 200)
+  const body = (await response.json()) as { count: number }
+  return body.count
+}
+
+describe('GET /api/change-requests/unseen-resolved-count', () => {
+  it('refuses an anonymous caller — deny-by-default', async () => {
+    const harness = await createHarness()
+    const response = await harness.app.request('/api/change-requests/unseen-resolved-count')
+    assert.equal(response.status, 401)
+  })
+
+  it('is zero with nothing resolved', async () => {
+    const harness = await createHarness()
+    const cookieA = await signIn(harness, MEMBER_A)
+    await submit(harness, cookieA, 'Still open')
+    assert.equal(await unseenResolvedCount(harness, cookieA), 0)
+  })
+
+  it('counts a resolved request for an account that has never visited the page', async () => {
+    const harness = await createHarness()
+    const cookieA = await signIn(harness, MEMBER_A)
+    const cookieAdmin = await signIn(harness, ADMIN)
+    const request = await submit(harness, cookieA)
+
+    await harness.app.request(
+      ...post(`/api/admin/change-requests/${request.id}/resolve`, { type: 'asDesigned' }, cookieAdmin),
+    )
+
+    // No row in `change_request_views` yet — migration v16's "beginning of
+    // time" default, not "just now".
+    assert.equal(await unseenResolvedCount(harness, cookieA), 1)
+  })
+
+  it('drops to zero once the author marks the page viewed, and rises again for a later resolution', async () => {
+    const harness = await createHarness()
+    const cookieA = await signIn(harness, MEMBER_A)
+    const cookieAdmin = await signIn(harness, ADMIN)
+    const first = await submit(harness, cookieA, 'First')
+
+    await harness.app.request(
+      ...post(`/api/admin/change-requests/${first.id}/resolve`, { type: 'asDesigned' }, cookieAdmin),
+    )
+    assert.equal(await unseenResolvedCount(harness, cookieA), 1)
+
+    await harness.app.request(...post('/api/change-requests/mark-viewed', {}, cookieA))
+    assert.equal(await unseenResolvedCount(harness, cookieA), 0)
+
+    // A real gap, not just a later await: `last_viewed_at` and `resolved_at`
+    // are both millisecond ISO timestamps, and the comparison is a strict
+    // `>`, so two writes close enough to land in the same millisecond would
+    // make this assertion flaky without it.
+    await new Promise((r) => setTimeout(r, 5))
+
+    const second = await submit(harness, cookieA, 'Second')
+    await harness.app.request(
+      ...post(`/api/admin/change-requests/${second.id}/resolve`, { type: 'outOfScope' }, cookieAdmin),
+    )
+    assert.equal(await unseenResolvedCount(harness, cookieA), 1)
+  })
+
+  it('never counts another account’s resolved requests, and marking viewed never affects another account', async () => {
+    const harness = await createHarness()
+    const cookieA = await signIn(harness, MEMBER_A)
+    const cookieB = await signIn(harness, MEMBER_B)
+    const cookieAdmin = await signIn(harness, ADMIN)
+
+    const fromA = await submit(harness, cookieA, 'From A')
+    await harness.app.request(
+      ...post(`/api/admin/change-requests/${fromA.id}/resolve`, { type: 'asDesigned' }, cookieAdmin),
+    )
+
+    assert.equal(await unseenResolvedCount(harness, cookieB), 0)
+
+    await harness.app.request(...post('/api/change-requests/mark-viewed', {}, cookieB))
+    assert.equal(await unseenResolvedCount(harness, cookieA), 1, "B viewing their own page must not clear A's badge")
+  })
+
+  it('does not count a canceled-only request as resolved', async () => {
+    const harness = await createHarness()
+    const cookieA = await signIn(harness, MEMBER_A)
+    const request = await submit(harness, cookieA)
+    await harness.app.request(...post(`/api/change-requests/${request.id}/cancel`, {}, cookieA))
+    assert.equal(await unseenResolvedCount(harness, cookieA), 0)
+  })
+})
+
+describe('POST /api/change-requests/mark-viewed', () => {
+  it('refuses an anonymous caller — deny-by-default', async () => {
+    const harness = await createHarness()
+    const response = await harness.app.request(...post('/api/change-requests/mark-viewed', {}))
+    assert.equal(response.status, 401)
+  })
+
+  it('is idempotent — calling it again with nothing new resolved changes nothing', async () => {
+    const harness = await createHarness()
+    const cookieA = await signIn(harness, MEMBER_A)
+    await harness.app.request(...post('/api/change-requests/mark-viewed', {}, cookieA))
+    const response = await harness.app.request(...post('/api/change-requests/mark-viewed', {}, cookieA))
+    assert.equal(response.status, 200)
+    assert.equal(await unseenResolvedCount(harness, cookieA), 0)
+  })
+})
+
 describe('resolve', () => {
   it('is admin-only, the request’s own author included', async () => {
     const harness = await createHarness()

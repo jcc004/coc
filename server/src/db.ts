@@ -837,6 +837,38 @@ CREATE INDEX change_request_amendments_request ON change_request_amendments (req
 `)
 }
 
+/**
+ * v16 — `change_request_views`, one row per user: the last time they visited
+ * `#/change-requests`.
+ *
+ * Modeled on `base_order` (v12): one row per account, `ON DELETE CASCADE`,
+ * upserted whole rather than updated per-field, because there is exactly one
+ * fact here and nothing to merge against. This is what lets
+ * `countUnseenResolved` (`server/src/change-requests/store.ts`) answer "how
+ * many of my requests were resolved since I last looked" for the account-menu
+ * badge — the mirror image of `countOpen`'s admin badge, which needs no such
+ * table because it has no notion of "seen" at all: it is just "still open,"
+ * recomputed fresh every poll.
+ *
+ * No row for an account that has never visited the page. That is read as "the
+ * beginning of time," not as "just now" — deliberately not backfilled at
+ * migration time the way a table with an existing user base to protect might
+ * need to be. `change_requests` is itself only one migration old, so the
+ * population of already-resolved requests this could surface as newly
+ * "unseen" on the day this ships is small, and every one of them is already
+ * visible today in "My requests" (`ChangeRequestsView.tsx`'s `MyRequestsCard`)
+ * regardless of this table — the badge is a prompt to look, not the only way
+ * to find out.
+ */
+const v16: Migration = (db) => {
+  db.exec(`
+CREATE TABLE change_request_views (
+  user_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  last_viewed_at TEXT NOT NULL
+);
+`)
+}
+
 const MIGRATIONS: Migration[] = [
   v1,
   v2,
@@ -853,6 +885,7 @@ const MIGRATIONS: Migration[] = [
   v13,
   v14,
   v15,
+  v16,
 ]
 
 /** The version a fully migrated database reports. */

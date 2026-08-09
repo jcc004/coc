@@ -479,6 +479,12 @@ export function ChangeRequestRules() {
         admin may resolve the same request again later to correct or update it — each call replaces
         the prior resolution rather than being refused a second time.
       </p>
+      <p className="empty-hint">
+        <strong>You'll see a number on your account icon</strong> once one of your own requests is
+        resolved — you don't have to remember to come back and check. It clears the moment you
+        land on this page, whether or not you read the resolution, so if you're just glancing at
+        "My requests" for something else, that clears it too.
+      </p>
     </>
   )
 }
