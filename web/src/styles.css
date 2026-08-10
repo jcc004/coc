@@ -37,6 +37,11 @@
   --ink-2: #6b5433;
   --ink-muted: #8d7a56;
   --grid: #ded0ae;
+  /* A neutral gray, deliberately off this file's warm palette — see
+     `.card-tile--locked` in the card grid section for why a not-held tile
+     needs a stronger, more visibly "off" background than a warmer step off
+     --surface gives it. */
+  --card-locked-bg: #bababa;
   --baseline: #c3ae7f;
   --border: rgba(51, 36, 15, 0.18);
   --hover: rgba(51, 36, 15, 0.06);
@@ -212,6 +217,9 @@
     --ink-2: #c9b795;
     --ink-muted: #9b8965;
     --grid: #352b1d;
+    /* Same neutral-gray reasoning as the light block's --card-locked-bg,
+       stepped up from near-black rather than down from cream. */
+    --card-locked-bg: #4a4a4a;
     --baseline: #4a3c28;
     --border: rgba(244, 233, 208, 0.14);
     --hover: rgba(244, 233, 208, 0.07);
@@ -278,6 +286,9 @@
   --ink-2: #c9b795;
   --ink-muted: #9b8965;
   --grid: #352b1d;
+  /* Same neutral-gray reasoning as the light block's --card-locked-bg,
+     stepped up from near-black rather than down from cream. */
+  --card-locked-bg: #4a4a4a;
   --baseline: #4a3c28;
   --border: rgba(244, 233, 208, 0.14);
   --hover: rgba(244, 233, 208, 0.07);
@@ -1846,11 +1857,32 @@ details.group > .group__body {
   container: card-tile / inline-size;
   /* Tighter than it was: the name line it used to sit under has gone. */
   padding: 6px;
-  /* 2px so the deck frame below is actually legible as a frame. */
-  border: 2px solid var(--border);
+  /* 4px to read as thick as the game's own card border — 2px measured too thin
+     against it. See the phone override further down: it scales this down to 2px
+     rather than dropping it back to the old desktop width. */
+  border: 4px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: inset 0 1px 0 var(--bevel-light);
+}
+
+/*
+ * A card the base lacks gets its own background, not just the desaturated art
+ * below — the two used to read too close together to tell apart at a glance.
+ *
+ * `--card-locked-bg`, not `--grid`: `--grid` was the first attempt, reused
+ * because it is already this app's "muted/inactive" tone (the disabled step
+ * button's own background, a few rules down) — but reported back as still
+ * too subtle a step off `--surface` to solve the actual complaint. A neutral
+ * gray, deliberately off this file's warm palette rather than another step
+ * within it, is what makes the difference unambiguous — measured: 1.69:1
+ * against `--surface` versus `--grid`'s 1.33:1, light mode; 1.88:1 versus
+ * `--grid`'s 1.20:1, dark. Sits on `.card-tile` itself, not
+ * `.card-tile__frame`, so it fills the padding around the art and the row
+ * the +/- buttons sit in too, right up to the border.
+ */
+.card-tile--locked {
+  background: var(--card-locked-bg);
 }
 
 /*
@@ -4440,7 +4472,10 @@ table.roster--pairs td {
   .card-tile {
     padding: 3px;
     gap: 1px;
-    border-width: 1px;
+    /* Scaled down from the 4px desktop border, not dropped back to 1px: still
+       thicker than the old desktop width, while still handing width back to
+       the art at 390px the way the comment above explains. */
+    border-width: 2px;
   }
 }
 
