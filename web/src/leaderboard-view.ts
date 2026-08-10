@@ -1,5 +1,6 @@
 import type { CardCategory } from '@coc/shared'
 import { cardCategoriesInOrder } from './cards.ts'
+import { parseAllowlisted } from './persisted-choice.ts'
 
 /**
  * Which of the seven collection-leaderboard rankings the picker is showing.
@@ -47,16 +48,21 @@ export const LEADERBOARD_VIEWS: readonly LeaderboardViewOption[] = [
 
 const DEFAULT_VIEW: LeaderboardView = 'overall'
 
+/** `LEADERBOARD_VIEWS`' own values, for `parseAllowlisted` below — that option
+    list is `{value, label}` pairs, not a plain array of the values themselves. */
+const LEADERBOARD_VIEW_VALUES: readonly LeaderboardView[] = LEADERBOARD_VIEWS.map(
+  (option) => option.value,
+)
+
 /**
  * Reads a stored view choice back. Anything that is not one of the seven known
  * values — absent, hand-edited, or a value an older/newer build no longer
- * offers — falls back to `'overall'`, the same "unrecognized is the safe
- * default" shape `parseCardTotalSort` and `parseRowLimit` already use.
+ * offers — falls back to `'overall'`. See `parseAllowlisted`
+ * (`persisted-choice.ts`) for the shared shape this and every other picker's
+ * own parse function use.
  */
 export function parseLeaderboardView(stored: string | null): LeaderboardView {
-  return LEADERBOARD_VIEWS.some((option) => option.value === stored)
-    ? (stored as LeaderboardView)
-    : DEFAULT_VIEW
+  return parseAllowlisted(stored, LEADERBOARD_VIEW_VALUES, DEFAULT_VIEW)
 }
 
 /**

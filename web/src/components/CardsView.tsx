@@ -45,6 +45,7 @@ import {
   useBaseScope,
   useCardColumns,
   useMeasuredWidth,
+  usePersistedChoice,
   useRowLimit,
 } from '../hooks.ts'
 import { lastBaseKey, rememberedBaseTag } from '../last-base.ts'
@@ -431,31 +432,6 @@ const TRADERS_COLUMNS: LeaderboardColumn<TraderStanding>[] = [
     cell: (row) => formatFull(row.distinctPartners),
   },
 ]
-
-/**
- * A single choice persisted per browser, read once on mount and written on change —
- * the shape `useCardTotalSort` (below, unrelated to this section) already uses for
- * the totals panel's own sort control. Lifted to a small generic here because the
- * leaderboard's View and Deck pickers are a second and third instance of exactly the
- * same shape, and a third hand-copied body is the point this app's own conventions
- * say to stop and share one instead.
- */
-function usePersistedChoice<T extends string>(
-  key: string,
-  parse: (stored: string | null) => T,
-): [T, (next: T) => void] {
-  const [value, setValue] = useState<T>(() => parse(localStorage.getItem(key)))
-
-  const choose = useCallback(
-    (next: T) => {
-      setValue(next)
-      localStorage.setItem(key, next)
-    },
-    [key],
-  )
-
-  return [value, choose]
-}
 
 /** Where the chosen leaderboard ranking is remembered — `coc:`-prefixed, the same
  *  convention `coc:cardTotalSort` and `coc:cardStandingLimit` already use. */

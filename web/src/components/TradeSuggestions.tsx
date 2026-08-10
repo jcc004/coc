@@ -17,7 +17,7 @@ import {
   type TradeSuggestion,
 } from '../card-trades.ts'
 import { cardById, categoryOfCard } from '../cards.ts'
-import { hrefFor, useRowLimit } from '../hooks.ts'
+import { hrefFor, usePersistedChoice, useRowLimit } from '../hooks.ts'
 import { useOwners } from '../owners.ts'
 import { paginate, type PagedRows, type RowLimit } from '../saved-table.ts'
 import {
@@ -29,6 +29,13 @@ import {
   tradeFilterSummary,
 } from '../trade-filters.ts'
 import { maxAchievableTrades, sortTradesByAchievability, tradeKey } from '../trade-matching.ts'
+import {
+  parseTradePriority,
+  sortTradePairsForPriority,
+  tradePriorityLabel,
+  TRADE_PRIORITIES,
+  type TradePriority,
+} from '../trade-priority.ts'
 import {
   findPendingSwap,
   sidesOfTrade,
@@ -315,8 +322,103 @@ function BaseLabel({
   )
 }
 
+/**
+ * The "Involving" / "and" owner pickers, the "Other only" checkbox, and Clear —
+ * pulled out of {@link TradeSuggestions} so its own `ownerChoices.length > 1 ? ... :
+ * null` guard is one conditional rather than one nested inside `pairs.length > 0`'s.
+ *
+ * Labeled "Involving" and "and" rather than by column, because that is what they
+ * do: the pair of selections is matched as a set against the pair of owners, in
+ * either order. Naming them for the columns would promise something the table
+ * cannot deliver, since which side an owner lands on is decided by their base's tag.
+ */
+function OwnerFilterControls({
+  ownerChoices,
+  firstOwner,
+  secondOwner,
+  otherOnly,
+  onFirstOwner,
+  onSecondOwner,
+  onOtherOnly,
+  onClear,
+}: {
+  ownerChoices: string[]
+  firstOwner: string | null
+  secondOwner: string | null
+  otherOnly: boolean
+  onFirstOwner: (owner: string | null) => void
+  onSecondOwner: (owner: string | null) => void
+  onOtherOnly: (checked: boolean) => void
+  onClear: () => void
+}) {
+  return (
+    <>
+      <label htmlFor="trade-owner-a">
+        Involving
+        <select
+          id="trade-owner-a"
+          value={firstOwner ?? ''}
+          onChange={(event) => onFirstOwner(event.target.value === '' ? null : event.target.value)}
+        >
+          <option value="">Anyone</option>
+          {ownerChoices.map((owner) => (
+            <option key={owner} value={owner}>
+              {owner === UNOWNED ? UNOWNED_LABEL : owner}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label htmlFor="trade-owner-b">
+        and
+        <select
+          id="trade-owner-b"
+          value={secondOwner ?? ''}
+          onChange={(event) => onSecondOwner(event.target.value === '' ? null : event.target.value)}
+        >
+          <option value="">Anyone</option>
+          {ownerChoices.map((owner) => (
+            <option key={owner} value={owner}>
+              {owner === UNOWNED ? UNOWNED_LABEL : owner}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {/* Excludes an owner's own bases trading with each other — a real result
+          `suggestTrades` allows, since it only rules out a base trading with
+          itself, not an owner's second base. Standalone rather than a value on
+          the second select, so it also narrows the plain unfiltered list. */}
+      <label
+        htmlFor="trade-other-only"
+        className="roster-filters__check"
+        title="Hides pairs where one member's own two bases would trade with each other"
+      >
+        <input
+          id="trade-other-only"
+          type="checkbox"
+          checked={otherOnly}
+          onChange={(event) => onOtherOnly(event.target.checked)}
+        />
+        Other only
+      </label>
+
+      {firstOwner !== null || secondOwner !== null ? (
+        <button type="button" className="icon-button" onClick={onClear}>
+          Clear
+        </button>
+      ) : null}
+    </>
+  )
+}
+
 /** Rows-per-page options for the suggestions. See {@link TradeSuggestions}. */
 const TRADE_ROW_LIMITS: RowLimit[] = [5, 10, 20, 'all']
+
+/** Where the chosen trade priority is remembered — one key shared by both pages this
+    component renders on, since it is a preference about how the member likes to
+    trade, not about which page they are on. */
+const TRADE_PRIORITY_KEY = 'coc:tradePriority'
 
 /** `null` for input that cannot be a tag, and so can never name a stored base. */
 function canonicalOrNull(tag: string): string | null {
@@ -421,6 +523,20 @@ export function TradeSuggestions({
     return focus === null ? all : pairsInvolving(all, focus)
   }, [flatTrades, achievable, focus])
 
+  /*
+   * The priority selector only changes which order `pairs` displays in — the
+   * matching above, and what counts as "achievable", are unaffected. `optimal`
+   * is `pairs` unchanged; every other mode still falls back to `pairs`' own
+   * order (achievable first, rarest value second) wherever its own key ties,
+   * which is what keeps optimal trading the invisible second ordering
+   * mechanism regardless of which priority is picked — see `trade-priority.ts`.
+   */
+  const [priority, setPriority] = usePersistedChoice(TRADE_PRIORITY_KEY, parseTradePriority)
+  const prioritizedPairs = useMemo(
+    () => sortTradePairsForPriority(pairs, priority, flatTrades, achievable),
+    [pairs, priority, flatTrades, achievable],
+  )
+
   /* The headline number: how many of `pairs`'s own candidates could really all
      complete together, not merely how many pairs have *an* option — see
      `trade-matching.ts` for why those two counts differ. Scoped to `pairs`
@@ -465,8 +581,8 @@ export function TradeSuggestions({
      picker of the very options you would want next. */
   const ownerChoices = useMemo(() => ownersInPairs(pairs, ownerOf), [pairs, ownerOf])
   const shown = useMemo(
-    () => filterPairsByOwners(pairs, ownerOf, firstOwner, secondOwner, otherOnly),
-    [pairs, ownerOf, firstOwner, secondOwner, otherOnly],
+    () => filterPairsByOwners(prioritizedPairs, ownerOf, firstOwner, secondOwner, otherOnly),
+    [prioritizedPairs, ownerOf, firstOwner, secondOwner, otherOnly],
   )
   const filterNote = tradeFilterSummary(
     shown.length,
@@ -503,90 +619,63 @@ export function TradeSuggestions({
   return (
     <>
       {/*
-       * Two owner pickers, offered only when there is more than one owner to choose
-       * between — with a single owner in the whole list they could only ever narrow it to
-       * everything or nothing.
-       *
-       * Labeled "Involving" and "and" rather than by column, because that is what they
-       * do: the pair of selections is matched as a set against the pair of owners, in
-       * either order. Naming them for the columns would promise something the table
-       * cannot deliver, since which side an owner lands on is decided by their base's tag.
+       * The owner pickers render only when there is more than one owner to choose
+       * between — with a single owner in the whole list they could only ever narrow it
+       * to everything or nothing (see `OwnerFilterControls`, called below). The
+       * priority select beside them is not gated the same way: it is useful even to a
+       * single-owner account, so it renders whenever there is a table at all, not only
+       * alongside the owner pickers it happens to sit next to.
        */}
-      {pairs.length > 0 && ownerChoices.length > 1 ? (
+      {pairs.length > 0 ? (
         <div className="roster-filters">
-          <label htmlFor="trade-owner-a">
-            Involving
-            <select
-              id="trade-owner-a"
-              value={firstOwner ?? ''}
-              onChange={(event) => {
-                setFirstOwner(event.target.value === '' ? null : event.target.value)
+          {ownerChoices.length > 1 ? (
+            <OwnerFilterControls
+              ownerChoices={ownerChoices}
+              firstOwner={firstOwner}
+              secondOwner={secondOwner}
+              otherOnly={otherOnly}
+              onFirstOwner={(owner) => {
+                setFirstOwner(owner)
                 setPage(1)
               }}
-            >
-              <option value="">Anyone</option>
-              {ownerChoices.map((owner) => (
-                <option key={owner} value={owner}>
-                  {owner === UNOWNED ? UNOWNED_LABEL : owner}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label htmlFor="trade-owner-b">
-            and
-            <select
-              id="trade-owner-b"
-              value={secondOwner ?? ''}
-              onChange={(event) => {
-                setSecondOwner(event.target.value === '' ? null : event.target.value)
+              onSecondOwner={(owner) => {
+                setSecondOwner(owner)
                 setPage(1)
               }}
-            >
-              <option value="">Anyone</option>
-              {ownerChoices.map((owner) => (
-                <option key={owner} value={owner}>
-                  {owner === UNOWNED ? UNOWNED_LABEL : owner}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {/* Excludes an owner's own bases trading with each other — a real result
-              `suggestTrades` allows, since it only rules out a base trading with
-              itself, not an owner's second base. Standalone rather than a value on
-              the second select, so it also narrows the plain unfiltered list. */}
-          <label
-            htmlFor="trade-other-only"
-            className="roster-filters__check"
-            title="Hides pairs where one member's own two bases would trade with each other"
-          >
-            <input
-              id="trade-other-only"
-              type="checkbox"
-              checked={otherOnly}
-              onChange={(event) => {
-                setOtherOnly(event.target.checked)
+              onOtherOnly={(checked) => {
+                setOtherOnly(checked)
                 setPage(1)
               }}
-            />
-            Other only
-          </label>
-
-          {firstOwner !== null || secondOwner !== null ? (
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => {
+              onClear={() => {
                 setFirstOwner(null)
                 setSecondOwner(null)
                 setOtherOnly(false)
                 setPage(1)
               }}
-            >
-              Clear
-            </button>
+            />
           ) : null}
+
+          {/* Reorders `pairs` for display — never which trades are achievable, only
+              which of them show up first. See `trade-priority.ts`: every mode still
+              falls back to the achievable-then-rarity order underneath, so this is a
+              reading preference layered on top of "optimal", not a replacement for it. */}
+          <label htmlFor="trade-priority">
+            Priority
+            <select
+              id="trade-priority"
+              value={priority}
+              onChange={(event) => {
+                setPriority(event.target.value as TradePriority)
+                setPage(1)
+              }}
+            >
+              {TRADE_PRIORITIES.map((option) => (
+                <option key={option} value={option}>
+                  {tradePriorityLabel(option)}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       ) : null}
 

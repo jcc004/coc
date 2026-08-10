@@ -1,4 +1,5 @@
 import type { CardTotal } from './card-standings.ts'
+import { parseAllowlisted } from './persisted-choice.ts'
 
 /**
  * Display order for the "Cards across the clan" panel. `default` is
@@ -53,11 +54,9 @@ export function sortCardTotalsForDisplay(
 /**
  * Reads a stored sort choice back. Anything that is not one of the three known
  * states — absent, hand-edited, or a state an older/newer build no longer offers
- * — falls back to `default`, the same "unrecognized is the safe default" shape
- * `parseRowLimit` uses in `saved-table.ts`.
+ * — falls back to `default`. See `parseAllowlisted` (`persisted-choice.ts`) for
+ * the shared shape this and every other picker's own parse function use.
  */
 export function parseCardTotalSort(stored: string | null): CardTotalSort {
-  return CARD_TOTAL_SORTS.includes(stored as CardTotalSort)
-    ? (stored as CardTotalSort)
-    : DEFAULT_SORT
+  return parseAllowlisted(stored, CARD_TOTAL_SORTS, DEFAULT_SORT)
 }

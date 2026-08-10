@@ -321,6 +321,41 @@ opt-in](#a-sort-control-opt-in)). The previous ordering was rarity alone — the
 either side would give away, descending — and that is still the tiebreak within each group, so a
 scarce, time-sensitive trade still surfaces near the top of whichever group it lands in.
 
+### The site is always optimizing for achievable trades — a priority mode only changes the order
+
+A `Priority` select sits in the filter row above the table, beside the owner pickers and Clear (or
+alone, on a single-owner account, where the owner pickers never render at all). It offers three
+states, `web/src/trade-priority.ts`:
+
+- **Optimal** — the default, and exactly the achievable-then-rarity order described above,
+  unchanged.
+- **Fewest partners** — ranks a pair by how many of its own options are currently achievable,
+  descending. A partner who can complete several trades at once outranks one who can only complete
+  one, so working down the table in this order opens the fewest distinct trade windows for the same
+  amount of value moved — the problem this mode exists for: a member with several achievable trades
+  scattered across many different partners otherwise has to jump back and forth between the same few
+  bases as the table's default order interleaves them by rarity.
+- **Highest value** — ranks a pair by the rarest card either of its own trades would give up,
+  *regardless of whether that trade is achievable right now*. For someone who would rather go after
+  a specific rare card even if it cannot complete this instant.
+
+**No mode ever stops the table from being about achievable trades.** This is worth stating
+explicitly, because it is easy to misread "Fewest partners" or "Highest value" as opting out of the
+achievability matching described above — they do not. `sortTradePairsForPriority` only reorders the
+pairs `sortTradesByAchievability` already produced; it never changes which trades are in the
+achievable set, never changes the `Up to N trades could happen at once` count, and — because
+`Array.prototype.sort` is stable — every mode falls back to that same achievable-then-rarity order
+wherever its own key ties. **Optimal, achievable trading is the invisible second ordering mechanism
+under every priority mode, not a fourth option you can turn off.** The same layering discipline
+`sortTradesByAchievability` itself uses over `suggestTrades`, and `sortCardTotalsForDisplay` uses
+over `cardTotals()` (see [A sort control, opt-in](#a-sort-control-opt-in)) — a reordering step that
+sits *after* an already-correct order and never weakens what that order guarantees.
+
+The choice is remembered per browser at `coc:tradePriority`, the same `localStorage` mechanism as
+every other display preference on this page, and shared by both places `TradeSuggestions` renders
+(the card page and a player page) — one preference about how a member likes to trade, not a
+per-page setting.
+
 ## The collection leaderboard
 
 Every tracked base, ranked by how far it has got, directly under the trade suggestions — because

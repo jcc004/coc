@@ -119,6 +119,17 @@ export function HelpView({ section }: { section: HelpSectionId | null }) {
           suggestions — is a calculation.
         </p>
         <SwapRules />
+        <p className="empty-hint">
+          A <strong>Priority</strong> select above the table changes which order the achievable
+          trades show in — it never changes which trades count as achievable. <strong>Fewest
+          partners</strong> is the one to reach for if you keep bouncing between the same few
+          bases: it groups a partner's several trades together, so clearing everything with one
+          partner happens before moving to the next, instead of the default order interleaving
+          partners by rarity. <strong>Highest value</strong> chases the rarest card either side
+          would give up even when it cannot complete this instant. Whichever one is picked, the
+          table is still ranking by what can actually complete underneath — Priority only decides
+          what you see first.
+        </p>
       </HelpSection>
 
       <HelpSection id="tracker">

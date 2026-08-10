@@ -643,3 +643,37 @@ export function useRowLimit(key: string, fallback: RowLimit): [RowLimit, (next: 
 
   return [limit, choose]
 }
+
+/**
+ * A single choice persisted per browser, read once on mount and written on
+ * change — one small `<select>`'s worth of preference, so `localStorage`
+ * rather than the server: nobody else's view of the shared data should change
+ * because one reader wanted their own panel ordered differently. Originally
+ * written inline for the card totals' Sort control, then lifted to a small
+ * generic here once the leaderboard's View and Deck pickers became a second
+ * and third hand-copy of the same shape — the point this app's own
+ * conventions say to stop and share one instead of letting a fourth land in
+ * the trade suggestions' own Priority select.
+ *
+ * `parse` is a caller-supplied `T`-typed reader, usually built on
+ * `parseAllowlisted` (`persisted-choice.ts`) — kept a separate, plain module
+ * rather than folded in here, since that side has to stay importable from a
+ * pure module (`card-total-sort.ts`, `leaderboard-view.ts`,
+ * `trade-priority.ts`) with no reason to depend on React.
+ */
+export function usePersistedChoice<T extends string>(
+  key: string,
+  parse: (stored: string | null) => T,
+): [T, (next: T) => void] {
+  const [value, setValue] = useState<T>(() => parse(localStorage.getItem(key)))
+
+  const choose = useCallback(
+    (next: T) => {
+      setValue(next)
+      localStorage.setItem(key, next)
+    },
+    [key],
+  )
+
+  return [value, choose]
+}
