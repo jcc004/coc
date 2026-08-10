@@ -239,9 +239,8 @@ function ProposeButton({
  * needed here because an admin already clears `tradeProposeAccess` and
  * `tradeResolveAccess` unconditionally.
  *
- * Renders nothing for anybody else: this is a shortcut past the tracker's own
- * confirmation and audit trail, not a second way for a member to act on somebody
- * else's swap.
+ * Renders nothing for anybody else: this is a shortcut past a trip to the
+ * tracker below, not a second way for a member to act on somebody else's swap.
  */
 function CompleteNowButton({
   trade,
@@ -262,11 +261,6 @@ function CompleteNowButton({
         className="chip"
         disabled={state === 'sending'}
         onClick={() => {
-          const question =
-            'Complete this trade now? It records the swap and moves the cards on both ' +
-            'bases immediately — nothing to approve afterwards.'
-          if (!window.confirm(question)) return
-
           setState('sending')
           setProblem(null)
           proposeTrade({

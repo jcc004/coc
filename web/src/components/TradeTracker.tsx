@@ -134,12 +134,11 @@ function StatusBadge({ status }: { status: TradeRecord['status'] }) {
 /**
  * The two buttons, or the reason there are none.
  *
- * **Completing asks first**, and the question says what it does to whom: it is the
- * only control in this component that changes *somebody else's* card counts, and a
- * trade resolves once, so there is no "actually, no" button afterwards *for the
- * party who clicked it* — reversing it at all is `UndoAction`, an admin's alone,
- * below. Declining does not ask, because nothing moves; it is a state change either
- * party can make and the audit line records who made it.
+ * Completing changes *somebody else's* card counts immediately, and a trade
+ * resolves once, so there is no "actually, no" button afterwards *for the party
+ * who clicked it* — reversing it at all is `UndoAction`, an admin's alone, below.
+ * Declining is the same shape: nothing moves, but it is likewise final; either
+ * party can make it and the audit line records who did.
  *
  * A refusal is shown rather than hidden. Somebody looking at a pending swap between
  * two other people should be told it is theirs to resolve, not left wondering why
@@ -170,13 +169,6 @@ function ResolveActions({
   }
 
   async function act(action: 'complete' | 'decline') {
-    if (action === 'complete') {
-      const question =
-        `Mark this trade complete? It adds and removes a card on both bases straight away, ` +
-        `for everyone, and a trade cannot be resolved twice.`
-      if (!window.confirm(question)) return
-    }
-
     setBusy(action)
     setProblem(null)
     try {
@@ -230,10 +222,9 @@ function ResolveActions({
  * permission they might reasonably expect, so the button is simply absent rather
  * than explained away.
  *
- * **Asks first**, like Complete, and the question says the same two things: what
- * moves, and that it happens immediately for everyone — plus the one thing
- * Complete's question does not need to say, that undoing itself has no further
- * undo.
+ * **Asks first**, unlike Complete: reopening a trade is rarer, admin-only, and
+ * reverses something that already happened, so the question says what moves, that
+ * it happens immediately for everyone, and that undoing itself has no further undo.
  */
 function UndoAction({
   trade,
