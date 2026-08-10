@@ -4,7 +4,7 @@ import { defineConfig, type Plugin } from 'vite'
 import { GIT_LOG_ARGS, parseGitLog } from './src/changelog.ts'
 import { rosetteFaviconSvg } from './src/rosette.ts'
 
-const API_PORT = process.env.PORT ?? '8787'
+const API_PORT = process.env.PORT ?? '5311'
 
 const FAVICON_URL = '/favicon.svg'
 
@@ -139,7 +139,7 @@ export default defineConfig({
     __BUILD_CHANGES__: JSON.stringify(JSON.stringify(BUILD_CHANGES)),
   },
   server: {
-    port: 5173,
+    port: 5310,
     // Keeps the API token server-side: the browser only ever talks to /api.
     proxy: {
       '/api': {

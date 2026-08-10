@@ -41,7 +41,7 @@ ADMIN_EMAIL=you@example.com ADMIN_PASSWORD='a long throwaway you will change' np
 ```
 
 After that first start, drop `ADMIN_PASSWORD` again and just `npm run dev`. The API is on
-<http://localhost:8787> and the UI on <http://localhost:5173>; Vite proxies `/api` to the
+<http://localhost:5311> and the UI on <http://localhost:5310>; Vite proxies `/api` to the
 server, so open the Vite URL and sign in.
 
 No token yet? See [Getting a Supercell developer account and an API token](#getting-a-supercell-developer-account-and-an-api-token) above.

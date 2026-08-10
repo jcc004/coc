@@ -19,7 +19,7 @@ import {
 import { createProgressStore } from './progress/store.ts'
 import { createSharedDataStore } from './shared-data/store.ts'
 
-const port = Number(process.env.PORT ?? 8787)
+const port = Number(process.env.PORT ?? 5311)
 const ttlSeconds = Number(process.env.CACHE_TTL_SECONDS ?? 60)
 
 /** Loopback unless `HOST` says otherwise — see `bindHostFromEnv` for why. */
