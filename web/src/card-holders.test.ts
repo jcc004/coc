@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { MIN_TRADEABLE_COUNT, type BaseInventory } from '@coc/shared'
-import { cardDemand, cardHolders } from './card-holders.ts'
+import { basesNeeding, cardDemand, cardHolders } from './card-holders.ts'
 import { cardTotals } from './card-standings.ts'
 import { cardById } from './cards.ts'
 
@@ -203,5 +203,97 @@ describe('cardDemand', () => {
   it('counts an empty inventory as nobody reporting, not as everybody needing it', () => {
     // What the panel is handed on the render before the store has loaded.
     assert.deepEqual(cardDemand([], BARBARIAN), { reporting: 0, needing: 0 })
+  })
+})
+
+describe('basesNeeding', () => {
+  it('excludes a base holding a copy', () => {
+    const rows = basesNeeding([base('#AAA', [[BARBARIAN, 1]])], BARBARIAN, labelOf)
+
+    assert.deepEqual(rows, [])
+  })
+
+  it('includes a base with no row for the card at all — the sparse-storage case', () => {
+    /* The whole point, and the case most worth its own test: a base that reported and
+       holds none of this card has no row for it anywhere, because a count of 0 deletes
+       the row rather than being stored as one. A check for `count === 0` would find
+       nothing here and answer "nobody needs it", which is both wrong and the reading a
+       screenshot of the stored data would agree with. */
+    const rows = basesNeeding(
+      [base('#AAA', [[BARBARIAN, 2]]), base('#BBB', [[ARCHER, 1]])],
+      BARBARIAN,
+      labelOf,
+    )
+
+    assert.deepEqual(
+      rows.map((row) => row.tag),
+      ['#BBB'],
+    )
+  })
+
+  it('excludes a base that has not reported this season at all', () => {
+    /* Mirrors `cardDemand`'s own `reporting` rule: a base nobody has entered has not
+       told us it lacks the card, so it must never show up as "needing" one. Passing
+       only the bases that *did* report — the same `bases` prop `CardHolders` is handed
+       — is what keeps an unreported base out; there is no separate flag to check. */
+    const reportingOnly = [base('#AAA', [[ARCHER, 1]])]
+
+    const rows = basesNeeding(reportingOnly, BARBARIAN, labelOf)
+
+    assert.deepEqual(
+      rows.map((row) => row.tag),
+      ['#AAA'],
+    )
+    assert.ok(!rows.some((row) => row.tag === '#ZZZ'))
+  })
+
+  it('orders by label then tag, the same total order cardHolders uses', () => {
+    const rows = basesNeeding(
+      [base('#ZZZ', []), base('#BBB', []), base('#AAA', [])],
+      BARBARIAN,
+      labelOf,
+    )
+
+    // `#ZZZ` first: no roster names it, so its label is its tag and `#` sorts ahead of
+    // a letter, exactly as `cardHolders`' own ordering test explains.
+    assert.deepEqual(
+      rows.map((row) => row.label),
+      ['#ZZZ', 'Alda', 'Brix'],
+    )
+  })
+
+  it('comes back empty when every base holds it', () => {
+    const rows = basesNeeding(
+      [base('#AAA', [[BARBARIAN, 1]]), base('#BBB', [[BARBARIAN, 3]])],
+      BARBARIAN,
+      labelOf,
+    )
+
+    assert.deepEqual(rows, [])
+  })
+
+  it('comes back empty, not a throw, for an empty inventory', () => {
+    assert.deepEqual(basesNeeding([], BARBARIAN, labelOf), [])
+  })
+
+  it('names the bases it counts the same way cardHolders and cardDemand do', () => {
+    // The three functions read one truth off `countMap`: a holder, a needer or neither,
+    // never both — asserted directly rather than trusted by inspection.
+    const inventory = [
+      base('#AAA', [[BARBARIAN, 3]]),
+      base('#BBB', [[ARCHER, 2]]),
+      base('#CCC', [[BARBARIAN, 0]]),
+    ]
+
+    const holders = cardHolders(inventory, BARBARIAN, labelOf)
+    const needers = basesNeeding(inventory, BARBARIAN, labelOf)
+    const { reporting, needing } = cardDemand(inventory, BARBARIAN)
+
+    assert.equal(needers.length, needing)
+    assert.equal(holders.length + needers.length, reporting)
+    assert.deepEqual(
+      needers.map((row) => row.tag).sort(),
+      ['#BBB', '#CCC'],
+    )
   })
 })

@@ -89,6 +89,53 @@ export function cardHolders(
   return rows
 }
 
+/** One base that does not hold `cardId` — no `count`, no `canSpare`: there is nothing to report. */
+export interface CardNeeder {
+  /** Canonical `#TAG` — the identity, as everywhere else. */
+  tag: string
+  /** What to print for the base, from the caller's labeler. */
+  label: string
+}
+
+/**
+ * The reporting bases that do **not** hold `cardId` — the names behind `cardDemand()`'s
+ * `needing` count.
+ *
+ * `cardDemand` answers "how many"; this answers "which ones", and is the piece the
+ * summary line has never been able to show, because the bases it is counting are
+ * precisely the ones with no row in `cardHolders()`'s table. Sibling to that function
+ * rather than a filter over its output for the same reason: there is no "holder with a
+ * zero count" row to filter out of, since a count of 0 deletes the row entirely (see
+ * `cardDemand`'s own `needing` doc comment) — the only way to find these bases is the
+ * same negative scan `cardDemand` already does, `!countMap(base).has(cardId)`, not
+ * `count === 0`, which would find nothing.
+ *
+ * Takes the whole inventory rather than a pre-joined subset, matching `cardHolders`:
+ * "everybody needs it" comes back as every entry, not a special case. `labelOf` is
+ * required for the same reason it is on `cardHolders` — naming a base is
+ * `useBaseLabels`' job, and a default here would be a second, quieter way to name one.
+ *
+ * Sorted by label then tag, the same total order `cardHolders` uses for its own tie
+ * break — but with nothing to break the tie *on*: every row here is "zero copies" by
+ * construction, so there is no count to sort by first.
+ */
+export function basesNeeding(
+  inventory: readonly BaseInventory[],
+  cardId: number,
+  labelOf: (tag: string) => string,
+): CardNeeder[] {
+  const rows: CardNeeder[] = []
+
+  for (const base of inventory) {
+    if (countMap(base).has(cardId)) continue
+    rows.push({ tag: base.tag, label: labelOf(base.tag) })
+  }
+
+  rows.sort((a, b) => a.label.localeCompare(b.label) || a.tag.localeCompare(b.tag))
+
+  return rows
+}
+
 /** How many bases have an answer for this card, and how many of those answers is "none". */
 export interface CardDemand {
   /**

@@ -864,6 +864,69 @@ pager**, unlike the two tables above it: those are unbounded in pairs and bases,
 row per tracked base and in practice a handful, and truncating "who holds this" to five rows would
 hide the base somebody opened it to find.
 
+### Who still needs a card
+
+Under the holders table (or under the "nobody holds it" sentence when there is no holders table to
+be under), a second list: the reporting bases that do **not** hold the pressed card, by name —
+requested directly, on the app's own [Propose a change](#/change-requests) page, by a clan member who
+wanted to see which bases still needed a card rather than only how many. `cardDemand()`'s `needing`
+count has been on the page since the panel shipped, in the third clause of the summary line above the
+holders table; this is the names behind that number, which nothing on the page could previously show —
+the bases it counts are precisely the ones with no row in the holders table, so no amount of scanning
+that table finds them.
+
+```
+1 base still needs it:
+
+Member
+Cyd  #CCC
+```
+
+**Its own function, `basesNeeding()` in `web/src/card-holders.ts`, sibling to `cardHolders()` and
+`cardDemand()` in the same module.** It is not a filter over `cardHolders()`'s output, because there
+is nothing to filter *out of*: counts are sparse, a count of 0 deletes the row, so a base holding
+none of a card has no row anywhere to begin with. It scans the same way `cardDemand()` does —
+`!countMap(base).has(cardId)`, never `count === 0`, which would find nothing and report that nobody
+needs anything.
+
+**Sourced from `bases`, the same reporting-only array `cardHolders()` and `cardDemand()` read, not
+the full tracked roster.** `useBaseLabels()` unions the owner assignments in elsewhere on this page,
+and a base nobody has ever entered has not told us it lacks the card — listing it as needing one
+would invent a demand out of missing data, the same reasoning `cardDemand()`'s own `reporting` clause
+already documents above. The list is guarded on `bases.length > 0` for the same reason: with no
+reporting bases at all there is nothing to claim either way, so neither the list nor its empty-state
+sentence renders.
+
+**Independent of whether anyone holds the card at all.** A card 38 of the sixty are in — nobody holds
+it — is exactly the case where "which bases still need one" is every reporting base, and arguably the
+most useful reading on the panel; the list does not nest inside the holders table's branch and
+renders the same way whether that table or the "nobody holds it" sentence is showing above it. That
+revisits the "known gap" the previous section named — the holders-empty state showing none of the
+demand line's numbers — without changing that sentence itself: the fraction still is not folded into
+its prose, but the actual list now sits right below it either way.
+
+**One column, not three.** `CardHolder` carries `count` and `canSpare`; a base that holds none of the
+card has neither, so `CardNeeder` carries only `tag` and `label`, and the table this list renders as
+has a single `Member` header rather than `Copies` and `Spare` columns that would always read blank.
+Same row markup as the holders table otherwise — `roster roster--stack`, `stack-title`, the name
+linked to the player's page with the tag underneath — so a base reads identically in both tables.
+
+**Ordered by label then tag**, the same total order `cardHolders()` uses for its own tie break, but
+with nothing to sort by first: every row here is "zero copies" by construction, so there is no count
+to lead with the way the holders table's "most copies first" does.
+
+**Everybody already holding it gets a sentence, not an empty table** — `Every reporting base already
+holds it.` — the same empty-table-looks-broken reasoning the holders table's own "nobody holds it"
+state uses, mirrored rather than reused verbatim: unlike that sentence, this one needs no second
+clause explaining *why*, since "everybody already has it" needs no justification the way "trading
+cannot conjure a copy" does.
+
+**The summary line above keeps its wording unchanged.** `holdersLine()`'s "N of M reporting bases
+need it" clause was deliberately left as a pure summary rather than rewritten to point at the list
+("… — see below"): the list sits immediately underneath in both DOM and reading order, a screen
+reader reaching this panel's heading finds the new section on the way through regardless, and the
+count-with-denominator framing the line's own doc comment protects is left exactly as it was.
+
 ## Mine / All on the base picker
 
 A `Show` select to the **left** of the `Base` picker, filtering what the picker offers. A select

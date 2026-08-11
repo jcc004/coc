@@ -3,7 +3,14 @@ import { MAX_CARD_COUNT, type BaseInventory, type CardCategory, type SessionUser
 import { useBaseLabels } from '../base-labels.ts'
 import { applyBaseOrder, useBaseOrder } from '../base-order.ts'
 import { activeTag, ownsAnyBase, tagsInScope, type BaseScope } from '../base-scope.ts'
-import { cardDemand, cardHolders, type CardDemand, type CardHolder } from '../card-holders.ts'
+import {
+  basesNeeding,
+  cardDemand,
+  cardHolders,
+  type CardDemand,
+  type CardHolder,
+  type CardNeeder,
+} from '../card-holders.ts'
 import { baseOwnerOf } from '../card-entry.ts'
 import { cardColumnOptions } from '../card-scale.ts'
 import { searchCards } from '../card-search.ts'
@@ -918,6 +925,22 @@ function holdersLine(holders: readonly CardHolder[], demand: CardDemand): string
 }
 
 /**
+ * The lead sentence over the "still need it" list — `holdersLine`'s third clause,
+ * named rather than just counted.
+ *
+ * Its own sentence rather than a rewrite of `holdersLine`'s: that line's `N of M
+ * reporting bases need it` keeps its count-with-denominator framing exactly as
+ * documented above regardless of whether this list is showing, and this is purely
+ * additive underneath it — new information (*which* bases), not a second phrasing of
+ * a number already on the page. No denominator here for the same reason `cardHolders`'
+ * own summary needs none: the list beneath the sentence is the whole answer, so a
+ * reader is never left wanting the total it came out of.
+ */
+function needingLine(needing: readonly CardNeeder[]): string {
+  return needing.length === 1 ? '1 base still needs it' : `${needing.length} bases still need it`
+}
+
+/**
  * Who holds the card whose tile was just pressed — the other half of the badge's
  * sentence. `×4` says a trade is arithmetically possible and nothing whatever about
  * whom to message, which is the only reason to be reading this panel.
@@ -942,6 +965,18 @@ function holdersLine(holders: readonly CardHolder[], demand: CardDemand): string
  * hide the base somebody opened it to find. The row limit those tables carry exists
  * because their length is unbounded in the count of *pairs* and *bases*; this one is
  * at most one row per base and in practice a handful.
+ *
+ * **The "still need it" list underneath is its own block, not nested inside "who
+ * holds it".** `cardDemand`'s `needing` count has always been on this page, in
+ * `holdersLine`'s third clause — this is the names behind it, from `basesNeeding()`,
+ * sibling to `cardHolders()` in the same module and answering the same question this
+ * panel exists for: not "how many" but "whom to ask", except this time it is "whom to
+ * tell". It is deliberately independent of whether anyone holds the card at all: a
+ * card 38 of 60 are in — nobody holds it — is exactly the case where "which bases
+ * still need one" is every reporting base, and the most useful reading on the panel,
+ * not a state that suppresses the list. Rows carry only `tag` and `label`: a base
+ * holding zero copies has no `count` and no `canSpare` to print, so the table this
+ * list renders as has one column, not three with two always blank.
  */
 function CardHolders({
   entry,
@@ -960,6 +995,10 @@ function CardHolders({
   const { card } = entry
   const holders = useMemo(() => cardHolders(bases, card.id, labelOf), [bases, card.id, labelOf])
   const demand = useMemo(() => cardDemand(bases, card.id), [bases, card.id])
+  const needing = useMemo(
+    () => basesNeeding(bases, card.id, labelOf),
+    [bases, card.id, labelOf],
+  )
 
   return (
     <div className="card-holders" id={HOLDERS_ID}>
@@ -1044,6 +1083,64 @@ function CardHolders({
             </table>
           </div>
         </>
+      )}
+
+      {/*
+       * Guarded on `bases.length`, not on `holders.length` or `needing.length`: with no
+       * reporting bases at all there is nothing to claim either way, and rendering
+       * "every reporting base already holds it" over zero reporting bases would invent
+       * an answer from an absence of data — the same trap `cardDemand`'s own `reporting`
+       * rule exists to avoid.
+       */}
+      {bases.length > 0 && (
+        <div className="card-holders__needing">
+          {needing.length === 0 ? (
+            <p className="empty-hint" style={{ margin: 0 }}>
+              <strong>Every reporting base already holds it.</strong>
+            </p>
+          ) : (
+            <>
+              <p className="card-holders__note">
+                <strong>{needingLine(needing)}:</strong>
+              </p>
+              <div className="table-wrap">
+                {/* Same one-column table shape as the roster elsewhere on this page:
+                    `roster--stack` for the phone layout, `stack-title` and `card-meta`
+                    for the name-then-tag cell — the identical treatment `CardHolders`'
+                    own Member column uses above, just without the two columns a base
+                    with zero copies has nothing to fill. */}
+                <table
+                  className="roster roster--stack"
+                  role="table"
+                  aria-label={`Bases that still need ${card.name}`}
+                >
+                  <thead role="rowgroup">
+                    <tr role="row">
+                      <th role="columnheader">Member</th>
+                    </tr>
+                  </thead>
+                  <tbody role="rowgroup">
+                    {needing.map((needer) => (
+                      <tr key={needer.tag} role="row">
+                        <td className="stack-title" role="cell">
+                          <a href={hrefFor({ view: 'player', tag: needer.tag })}>
+                            {needer.label}
+                          </a>
+                          {needer.label === needer.tag ? null : (
+                            <>
+                              <br />
+                              <span className="card-meta">{needer.tag}</span>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   )
