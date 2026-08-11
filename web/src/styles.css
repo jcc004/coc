@@ -2681,9 +2681,12 @@ details.group > .group__body {
 /* The positioning context for the fill, which is absolute so the fraction stays
    centered on the whole bar rather than on the filled part of it. */
 .deck-plaque__bar {
+  /* Read by the complete-fill's own `border-radius` below, so the two can't drift
+     apart the way they did once already — see that rule's own comment. */
+  --plaque-radius: 8px;
   position: relative;
   height: 16px;
-  border-radius: 8px;
+  border-radius: var(--plaque-radius);
   background: var(--track);
   overflow: hidden;
   box-shadow: inset 0 1px 2px var(--bevel-dark);
@@ -2709,9 +2712,25 @@ details.group > .group__body {
  * rules up, an ordinary ancestor custom property, not a new one declared here.
  * At this point `width` is always `100%` (that is what `deck.complete` means), so
  * this never paints a *partial* bar in the deck color — only ever the whole track.
+ *
+ * `border-radius: var(--plaque-radius)` too, not inherited from
+ * `.deck-plaque__fill`'s own asymmetric `8px 2px 2px 8px` — found live, not in a
+ * fixture: at `width: 100%` the fill's own tighter 2px corners sit *inside* the
+ * track's rounder 8px corners, so the track's `overflow: hidden` clip (governed
+ * by the track's own radius) has nothing to clip there, and a small triangular
+ * sliver of the track's dark, unfilled `--track` color shows through at both
+ * right corners — small enough that a screenshot at normal zoom doesn't show
+ * it, but visible at full resolution on a real screen, which is how this was
+ * actually caught. Matching the track's own radius exactly, on a fill that
+ * already covers the track's box exactly (`width: 100%`, `top`/`bottom`/
+ * `left: 0`), leaves no gap for any track color to show through at any corner —
+ * reading `--plaque-radius` off `.deck-plaque__bar` itself, rather than
+ * repeating `8px` as a second literal, so a future change to the track's own
+ * radius can't silently reopen this same gap.
  */
 .deck-plaque__bar[data-complete='true'] .deck-plaque__fill {
   background: var(--deck);
+  border-radius: var(--plaque-radius);
 }
 
 .deck-plaque__fraction {

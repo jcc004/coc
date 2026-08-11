@@ -1177,6 +1177,20 @@ deck's own size still clamps the bar to full without every card actually being h
 not read as complete. The fraction still prints on top, unchanged, either way — the one rule this
 component does not bend, complete or not.
 
+**Shipped once with a real corner defect, caught live rather than in a fixture.** The fill's own
+CSS (`.deck-plaque__fill`) carries an asymmetric `border-radius: 8px 2px 2px 8px`, built for the
+partial-progress case — rounded where the bar starts, near-square at the leading edge, with the
+track's own `overflow: hidden` doing the rounding at the *track's* right edge, past wherever the
+fill happens to end. That reasoning has a gap at exactly `width: 100%`: the fill's own corners are
+tighter (2px) than the track's (8px), so at the two right corners a small triangular sliver of the
+track's dark, unfilled `--track` color shows through, between the fill's tighter corner and the
+track's rounder one — small enough that neither a fixture screenshot nor a live screenshot at
+normal chat-image resolution showed it, only a real screen at full resolution did. The fix
+overrides `border-radius` to `8px` specifically under `[data-complete='true']`, matching the
+track's own radius on a fill that already covers the track's box exactly — verified by comparing
+both elements' `getBoundingClientRect()` and computed `border-radius` directly, not by screenshot
+alone this time.
+
 The plaque's own background is a *tint* of the deck color rather than a solid fill like the game's
 tab, unaffected by any of this — the four tokens run from bright magenta to deep purple and no
 single text color clears 4.5:1 on all four; tinting keeps the name and the fraction in `--ink`.
