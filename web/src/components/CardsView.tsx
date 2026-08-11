@@ -971,17 +971,21 @@ function needingLine(needing: readonly CardNeeder[]): string {
  * because their length is unbounded in the count of *pairs* and *bases*; this one is
  * at most one row per base and in practice a handful.
  *
- * **The "still need it" list underneath is its own block, not nested inside "who
- * holds it".** `cardDemand`'s `needing` count has always been on this page, in
- * `holdersLine`'s third clause — this is the names behind it, from `basesNeeding()`,
- * sibling to `cardHolders()` in the same module and answering the same question this
- * panel exists for: not "how many" but "whom to ask", except this time it is "whom to
- * tell". It is deliberately independent of whether anyone holds the card at all: a
- * card 38 of 60 are in — nobody holds it — is exactly the case where "which bases
- * still need one" is every reporting base, and the most useful reading on the panel,
- * not a state that suppresses the list. Rows carry only `tag` and `label`: a base
- * holding zero copies has no `count` and no `canSpare` to print, so the table this
- * list renders as has one column, not three with two always blank.
+ * **The "still need it" list comes first, above "who holds it", and is its own
+ * block, not nested inside it.** `cardDemand`'s `needing` count has always been on
+ * this page, in `holdersLine`'s third clause — this is the names behind it, from
+ * `basesNeeding()`, sibling to `cardHolders()` in the same module and answering the
+ * same question this panel exists for: not "how many" but "whom to ask", except this
+ * time it is "whom to tell". It leads because pressing a tile is usually about
+ * finding somebody to trade *toward* — who still needs this — before it's about
+ * finding somebody to trade *from*; reported directly after shipping it below the
+ * holders table, where it read as missing rather than merely second. It is
+ * deliberately independent of whether anyone holds the card at all: a card 38 of 60
+ * are in — nobody holds it — is exactly the case where "which bases still need one"
+ * is every reporting base, and the most useful reading on the panel, not a state
+ * that suppresses the list. Rows carry only `tag` and `label`: a base holding zero
+ * copies has no `count` and no `canSpare` to print, so the table this list renders
+ * as has one column, not three with two always blank.
  */
 function CardHolders({
   entry,
@@ -1018,6 +1022,64 @@ function CardHolders({
           {card.category} · {heldAcrossTheClan(entry.total)}
         </span>
       </h3>
+
+      {/*
+       * Guarded on `bases.length`, not on `holders.length` or `needing.length`: with no
+       * reporting bases at all there is nothing to claim either way, and rendering
+       * "every reporting base already holds it" over zero reporting bases would invent
+       * an answer from an absence of data — the same trap `cardDemand`'s own `reporting`
+       * rule exists to avoid.
+       */}
+      {bases.length > 0 && (
+        <div className="card-holders__needing">
+          {needing.length === 0 ? (
+            <p className="empty-hint" style={{ margin: 0 }}>
+              <strong>Every reporting base already holds it.</strong>
+            </p>
+          ) : (
+            <>
+              <p className="card-holders__note">
+                <strong>{needingLine(needing)}:</strong>
+              </p>
+              <div className="table-wrap">
+                {/* Same one-column table shape as the roster elsewhere on this page:
+                    `roster--stack` for the phone layout, `stack-title` and `card-meta`
+                    for the name-then-tag cell — the identical treatment `CardHolders`'
+                    own Member column uses below, just without the two columns a base
+                    with zero copies has nothing to fill. */}
+                <table
+                  className="roster roster--stack"
+                  role="table"
+                  aria-label={`Bases that still need ${card.name}`}
+                >
+                  <thead role="rowgroup">
+                    <tr role="row">
+                      <th role="columnheader">Member</th>
+                    </tr>
+                  </thead>
+                  <tbody role="rowgroup">
+                    {needing.map((needer) => (
+                      <tr key={needer.tag} role="row">
+                        <td className="stack-title" role="cell">
+                          <a href={hrefFor({ view: 'player', tag: needer.tag })}>
+                            {needer.label}
+                          </a>
+                          {needer.label === needer.tag ? null : (
+                            <>
+                              <br />
+                              <span className="card-meta">{needer.tag}</span>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {holders.length === 0 ? (
         <p className="empty-hint" style={{ margin: 0 }}>
@@ -1088,64 +1150,6 @@ function CardHolders({
             </table>
           </div>
         </>
-      )}
-
-      {/*
-       * Guarded on `bases.length`, not on `holders.length` or `needing.length`: with no
-       * reporting bases at all there is nothing to claim either way, and rendering
-       * "every reporting base already holds it" over zero reporting bases would invent
-       * an answer from an absence of data — the same trap `cardDemand`'s own `reporting`
-       * rule exists to avoid.
-       */}
-      {bases.length > 0 && (
-        <div className="card-holders__needing">
-          {needing.length === 0 ? (
-            <p className="empty-hint" style={{ margin: 0 }}>
-              <strong>Every reporting base already holds it.</strong>
-            </p>
-          ) : (
-            <>
-              <p className="card-holders__note">
-                <strong>{needingLine(needing)}:</strong>
-              </p>
-              <div className="table-wrap">
-                {/* Same one-column table shape as the roster elsewhere on this page:
-                    `roster--stack` for the phone layout, `stack-title` and `card-meta`
-                    for the name-then-tag cell — the identical treatment `CardHolders`'
-                    own Member column uses above, just without the two columns a base
-                    with zero copies has nothing to fill. */}
-                <table
-                  className="roster roster--stack"
-                  role="table"
-                  aria-label={`Bases that still need ${card.name}`}
-                >
-                  <thead role="rowgroup">
-                    <tr role="row">
-                      <th role="columnheader">Member</th>
-                    </tr>
-                  </thead>
-                  <tbody role="rowgroup">
-                    {needing.map((needer) => (
-                      <tr key={needer.tag} role="row">
-                        <td className="stack-title" role="cell">
-                          <a href={hrefFor({ view: 'player', tag: needer.tag })}>
-                            {needer.label}
-                          </a>
-                          {needer.label === needer.tag ? null : (
-                            <>
-                              <br />
-                              <span className="card-meta">{needer.tag}</span>
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </div>
       )}
     </div>
   )

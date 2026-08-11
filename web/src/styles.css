@@ -2363,13 +2363,16 @@ details.group > .group__body {
   font-variant-numeric: tabular-nums;
 }
 
-/* The "still need it" list's own divider from "who holds it" above it — same
-   border-top-plus-spacing language `.card-holders` itself uses to separate the whole
-   panel from the grid above, reused here one level down for the sub-section. */
+/* The "still need it" list's own divider from "who holds it" below it — same
+   border-plus-spacing language `.card-holders` itself uses to separate the whole
+   panel from the grid above, reused here one level down for the sub-section. A
+   bottom border, not top: this list renders first, ahead of "who holds it", so the
+   line belongs at its own trailing edge rather than its leading one — there is
+   nothing above it but the `h3` title, which already carries its own spacing. */
 .card-holders__needing {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--grid);
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--grid);
 }
 
 /* ---------- deck progress plaques ---------- */

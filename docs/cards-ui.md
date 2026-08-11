@@ -759,12 +759,84 @@ It stays **collapsed** because sixty more tiles left open would push everything 
 phone. It costs no extra art either way: measured, its sixty image URLs are byte-for-byte the entry
 grid's, so opening it adds no requests, only the drawing.
 
-### Who holds a card
+### Who still needs a card
 
-Pressing a tile opens a table **under the grid**, headed by the card's name and its art:
+Pressing a tile opens a section **under the grid**, headed by the card's name and its art. The
+first thing in it, before "who holds it", is a list: the reporting bases that do **not** hold the
+pressed card, by name.
 
 ```
 [art] Barbarian   Elixir · 6 held across the clan
+3 bases still need it:
+
+Member
+Cyd   #CCC
+Dana  #DDD
+Evan  #EEE
+```
+
+**Leads, rather than following "who holds it" — moved here directly, after shipping it the other
+way round.** It rendered *under* the holders table at first, and was reported back within the day
+as reading like it was missing rather than merely second: pressing a tile is usually about finding
+somebody to trade *toward* — who still needs this — before it's about finding somebody to trade
+*from*, so the list answering the more common question now comes first. Requested in the first
+place, directly, on the app's own [Propose a change](#/change-requests) page, by a clan member who
+wanted to see which bases still needed a card rather than only how many. `cardDemand()`'s `needing`
+count has been on the page since the panel shipped, in the third clause of the summary line the
+holders table below carries; this is the names behind that number, which nothing on the page could
+previously show — the bases it counts are precisely the ones with no row in the holders table, so
+no amount of scanning that table finds them.
+
+**Its own function, `basesNeeding()` in `web/src/card-holders.ts`, sibling to `cardHolders()` and
+`cardDemand()` in the same module.** It is not a filter over `cardHolders()`'s output, because there
+is nothing to filter *out of*: counts are sparse, a count of 0 deletes the row, so a base holding
+none of a card has no row anywhere to begin with. It scans the same way `cardDemand()` does —
+`!countMap(base).has(cardId)`, never `count === 0`, which would find nothing and report that nobody
+needs anything.
+
+**Sourced from `bases`, the same reporting-only array `cardHolders()` and `cardDemand()` read, not
+the full tracked roster.** `useBaseLabels()` unions the owner assignments in elsewhere on this page,
+and a base nobody has ever entered has not told us it lacks the card — listing it as needing one
+would invent a demand out of missing data, the same reasoning `cardDemand()`'s own `reporting` clause
+documents below. The list is guarded on `bases.length > 0` for the same reason: with no reporting
+bases at all there is nothing to claim either way, so neither the list nor its empty-state sentence
+renders.
+
+**Independent of whether anyone holds the card at all.** A card 38 of the sixty are in — nobody holds
+it — is exactly the case where "which bases still need one" is every reporting base, and arguably the
+most useful reading on the panel; the list does not nest inside the holders table's branch below and
+renders the same way whether that table or its own "nobody holds it" sentence is showing underneath.
+That is also why it leads: the holders-table section can be entirely a "nobody holds it" sentence
+with no table at all, while this list still has real rows to show in exactly that case.
+
+**One column, not three.** `CardHolder` carries `count` and `canSpare`; a base that holds none of the
+card has neither, so `CardNeeder` carries only `tag` and `label`, and the table this list renders as
+has a single `Member` header rather than `Copies` and `Spare` columns that would always read blank.
+Same row markup as the holders table below otherwise — `roster roster--stack`, `stack-title`, the
+name linked to the player's page with the tag underneath — so a base reads identically in both
+tables.
+
+**Ordered by label then tag**, the same total order `cardHolders()` uses for its own tie break, but
+with nothing to sort by first: every row here is "zero copies" by construction, so there is no count
+to lead with the way the holders table's "most copies first" does.
+
+**Everybody already holding it gets a sentence, not an empty table** — `Every reporting base already
+holds it.` — the same empty-table-looks-broken reasoning the holders table's own "nobody holds it"
+state uses, mirrored rather than reused verbatim: unlike that sentence, this one needs no second
+clause explaining *why*, since "everybody already has it" needs no justification the way "trading
+cannot conjure a copy" does.
+
+**The holders table's summary line keeps its wording unchanged.** `holdersLine()`'s "N of M
+reporting bases need it" clause was deliberately left as a pure summary rather than rewritten to
+point at this list ("… — see above"): a screen reader reaching this panel's heading meets the list
+on the way through regardless of which way the pointer would read, and the count-with-denominator
+framing the line's own doc comment protects is left exactly as it was.
+
+### Who holds a card
+
+Under the "still needs it" list above, a second section, headed by the same card name and art:
+
+```
 2 bases hold it · 1 with a spare to trade · 3 of 5 reporting bases need it
 
 Member          Copies   Spare
@@ -772,9 +844,10 @@ Brix  #BBB           5   Can spare one
 Alda  #AAA           1   Its only copy
 ```
 
-**Under the grid, not above it.** The tiles are what the panel *is*, and a table inserted above them
-would push sixty tiles down the page on every press — moving the tile you had just pressed out from
-under the pointer.
+**Under the grid, not above it — and under the "still needs it" list, not above that either.** The
+tiles are what the panel *is*, and a table inserted above them would push sixty tiles down the page
+on every press, moving the tile you had just pressed out from under the pointer; see the previous
+section for why "still needs it" gets the position closer to the tiles.
 
 **No new endpoint, and no request.** `GET /api/cards/inventory` already returns every tracked base
 with its per-card counts, and the page already holds it as `state.entries`, so this is a projection
@@ -801,10 +874,10 @@ both: `2 bases hold it · 1 with a spare to trade · 3 of 5 reporting bases need
 hold it and none of them can help you" does not need a scan of the column to notice.
 
 **The third statistic is the one the table cannot be scanned for**, because the bases it counts are
-precisely the ones with no row in it. The first two answer "can I get one"; this is "who am I
-competing with", and on a card three of five bases still want it means something different from
-three of thirty. It is `cardDemand()` in `web/src/card-holders.ts`, beside `cardHolders()` and
-tested in the same file.
+precisely the ones with no row in it — they are the rows in the "still needs it" list above instead.
+The first two answer "can I get one"; this is "who am I competing with", and on a card three of five
+bases still want it means something different from three of thirty. It is `cardDemand()` in
+`web/src/card-holders.ts`, beside `cardHolders()` and tested in the same file.
 
 Two definitions are doing work in that clause, and both have a wrong answer that looks right:
 
@@ -834,9 +907,10 @@ spares clause has no denominator to lose.
 
 **A card nobody holds shows none of this line.** The whole line is replaced by the sentence below,
 so the statistic is absent for the 38 of sixty in that state — the cards it would arguably say the
-most about. That is a known gap and a deliberate one for now: the empty-state paragraph is its own
-decision, made below, and folding a fraction into it is a change to that sentence rather than to
-this one.
+most about. That is a known gap and a deliberate one for now: the "still needs it" list's own
+empty-state paragraph, above this section, is its own separate decision, and folding a fraction into
+this line is a change to that sentence rather than to this one. That list above is unaffected either
+way — it has real rows to show regardless of whether the holders table below has any of its own.
 
 **The member is a link to that player's page**, with the tag as secondary text under the name, and
 the name is `labelOf` from `useBaseLabels()` — the same resolver the picker, the leaderboard and the
@@ -852,15 +926,16 @@ inert with nothing to explain a press that did nothing, and hands a keyboard use
 that changes with the counts. There is no empty table either — headers over no rows read as broken,
 so the sentence replaces it and the card's heading stays.
 
-**Pressing the selected tile again closes the table**, and `aria-pressed` goes back to `false`. It is
-the control that opened it, so it is the one somebody reaches for to put it away; without that the
-table could only ever be swapped for another card's. `aria-pressed` rather than `aria-expanded`
-because there is *one* table and the sixty tiles take turns owning it — sixty independent
-disclosures is not what this is — and only the pressed tile carries `aria-controls`, since on the
-other fifty-nine there is no `#card-holders` to point at. The selection is **never color alone**:
-the ring on the tile is `--accent` as a `box-shadow` *outside* the tile (recoloring the border
-would cost the deck color, which is the only visible cue to which deck a card is in), the state is
-on `aria-pressed`, and the card is named in words with its art directly below.
+**Pressing the selected tile again closes the whole section**, "still needs it" list included, and
+`aria-pressed` goes back to `false`. It is the control that opened it, so it is the one somebody
+reaches for to put it away; without that the table could only ever be swapped for another card's.
+`aria-pressed` rather than `aria-expanded` because there is *one* section and the sixty tiles take
+turns owning it — sixty independent disclosures is not what this is — and only the pressed tile
+carries `aria-controls`, since on the other fifty-nine there is no `#card-holders` to point at. The
+selection is **never color alone**: the ring on the tile is `--accent` as a `box-shadow` *outside*
+the tile (recoloring the border would cost the deck color, which is the only visible cue to which
+deck a card is in), the state is on `aria-pressed`, and the card is named in words with its art
+directly below.
 
 The selection **survives the panel being collapsed and reopened**, deliberately: coming back to
 find your card still chosen costs nobody anything, and clearing it would be a second way to close
@@ -869,72 +944,10 @@ a table the tile's own toggle already closes.
 It **stacks like every other table** — `roster--stack`, `data-label` on each cell, `stack-title` on
 the member, and the explicit `role="table"` / `rowgroup` / `row` / `columnheader` / `cell` that
 survive `display` changing. Nothing in it sorts, so it needs no `SortControl`. It carries **no
-pager**, unlike the two tables above it: those are unbounded in pairs and bases, this is at most one
-row per tracked base and in practice a handful, and truncating "who holds this" to five rows would
-hide the base somebody opened it to find.
-
-### Who still needs a card
-
-Under the holders table (or under the "nobody holds it" sentence when there is no holders table to
-be under), a second list: the reporting bases that do **not** hold the pressed card, by name —
-requested directly, on the app's own [Propose a change](#/change-requests) page, by a clan member who
-wanted to see which bases still needed a card rather than only how many. `cardDemand()`'s `needing`
-count has been on the page since the panel shipped, in the third clause of the summary line above the
-holders table; this is the names behind that number, which nothing on the page could previously show —
-the bases it counts are precisely the ones with no row in the holders table, so no amount of scanning
-that table finds them.
-
-```
-1 base still needs it:
-
-Member
-Cyd  #CCC
-```
-
-**Its own function, `basesNeeding()` in `web/src/card-holders.ts`, sibling to `cardHolders()` and
-`cardDemand()` in the same module.** It is not a filter over `cardHolders()`'s output, because there
-is nothing to filter *out of*: counts are sparse, a count of 0 deletes the row, so a base holding
-none of a card has no row anywhere to begin with. It scans the same way `cardDemand()` does —
-`!countMap(base).has(cardId)`, never `count === 0`, which would find nothing and report that nobody
-needs anything.
-
-**Sourced from `bases`, the same reporting-only array `cardHolders()` and `cardDemand()` read, not
-the full tracked roster.** `useBaseLabels()` unions the owner assignments in elsewhere on this page,
-and a base nobody has ever entered has not told us it lacks the card — listing it as needing one
-would invent a demand out of missing data, the same reasoning `cardDemand()`'s own `reporting` clause
-already documents above. The list is guarded on `bases.length > 0` for the same reason: with no
-reporting bases at all there is nothing to claim either way, so neither the list nor its empty-state
-sentence renders.
-
-**Independent of whether anyone holds the card at all.** A card 38 of the sixty are in — nobody holds
-it — is exactly the case where "which bases still need one" is every reporting base, and arguably the
-most useful reading on the panel; the list does not nest inside the holders table's branch and
-renders the same way whether that table or the "nobody holds it" sentence is showing above it. That
-revisits the "known gap" the previous section named — the holders-empty state showing none of the
-demand line's numbers — without changing that sentence itself: the fraction still is not folded into
-its prose, but the actual list now sits right below it either way.
-
-**One column, not three.** `CardHolder` carries `count` and `canSpare`; a base that holds none of the
-card has neither, so `CardNeeder` carries only `tag` and `label`, and the table this list renders as
-has a single `Member` header rather than `Copies` and `Spare` columns that would always read blank.
-Same row markup as the holders table otherwise — `roster roster--stack`, `stack-title`, the name
-linked to the player's page with the tag underneath — so a base reads identically in both tables.
-
-**Ordered by label then tag**, the same total order `cardHolders()` uses for its own tie break, but
-with nothing to sort by first: every row here is "zero copies" by construction, so there is no count
-to lead with the way the holders table's "most copies first" does.
-
-**Everybody already holding it gets a sentence, not an empty table** — `Every reporting base already
-holds it.` — the same empty-table-looks-broken reasoning the holders table's own "nobody holds it"
-state uses, mirrored rather than reused verbatim: unlike that sentence, this one needs no second
-clause explaining *why*, since "everybody already has it" needs no justification the way "trading
-cannot conjure a copy" does.
-
-**The summary line above keeps its wording unchanged.** `holdersLine()`'s "N of M reporting bases
-need it" clause was deliberately left as a pure summary rather than rewritten to point at the list
-("… — see below"): the list sits immediately underneath in both DOM and reading order, a screen
-reader reaching this panel's heading finds the new section on the way through regardless, and the
-count-with-denominator framing the line's own doc comment protects is left exactly as it was.
+pager**, unlike the two tables above the whole section: those are unbounded in pairs and bases, this
+is at most one row per tracked base and in practice a handful, and truncating "who holds this" to
+five rows would hide the base somebody opened it to find. Same for the "still needs it" list above
+it.
 
 ## Mine / All on the base picker
 
