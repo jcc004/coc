@@ -35,7 +35,7 @@ import type { TradeProposal, TradeStore } from './trades-store.ts'
  * | `POST /api/cards/trades` | an admin, or the owner of **either** base |
  * | `POST /api/cards/trades/:id/complete` | an admin, or the owner of either base |
  * | `POST /api/cards/trades/:id/decline` | an admin, or the owner of either base |
- * | `POST /api/cards/trades/:id/undo` | **an admin only** — no party exception |
+ * | `POST /api/cards/trades/:id/undo` | an admin, or the owner of either base |
  *
  * The three decisions are `mayProposeTrade` / `mayResolveTrade` / `mayUndoTrade` in
  * `trade-access.ts` — pure functions with their own tests — so these handlers
@@ -292,12 +292,18 @@ export function mountTradeRoutes(
   )
 
   /**
-   * Undo a completed trade. **Admin only, no party exception** — `mayUndoTrade`
-   * says why: this reopens a record that already closed rather than making the
-   * first decision about an open one, so it does not get `resolveRoute`'s
-   * party-or-admin shape. The refusal reasons differ too (`notAdmin`/`notComplete`
-   * rather than `forbidden`/`alreadyResolved`), which is the other reason this is
-   * its own route rather than a third call to `resolveRoute`.
+   * Undo a completed trade. **An admin, or the owner of either base** — the same
+   * party-or-admin shape `mayResolveTrade` already has, now that `mayUndoTrade`
+   * checks party membership too. That change removes the one reason this used to
+   * be admin-only, but not the reason it stays its **own** route rather than a
+   * third call to `resolveRoute`: the refusal reasons are still shaped
+   * differently (`notComplete` here — covering pending, declined *and*
+   * already-undone — where `resolveRoute` has a single `alreadyResolved`), the
+   * decision function is a different one (`mayUndoTrade`, not `mayResolveTrade`),
+   * and the trade fields it reasons about are a different pair (`undoneBy` /
+   * `undoneAt`, not `resolvedBy` / `resolvedAt`). `resolveRoute`'s `act`
+   * abstraction assumes its two callers share one result shape; undo's does not,
+   * so folding it in would cost more than the line or two it would save.
    *
    * Same 409-for-state-conflict / 403-for-not-permitted split as `resolveRoute`:
    * `notComplete` means somebody else already changed what this trade is, which a
@@ -314,8 +320,11 @@ export function mountTradeRoutes(
       return c.json(errorBody(404, 'notFound', `No trade ${id} in season ${CARD_SEASON}.`), 404)
     }
 
-    const decision = mayUndoTrade(currentUser(c), trade)
+    const decision = mayUndoTrade(currentUser(c), trade, sidesOf(owners, trade.baseA, trade.baseB))
     if (!decision.allowed) {
+      // accountDisabled and notAParty (renamed from notAdmin, now that party
+      // membership is checked) both still map to 403 forbidden; only
+      // notComplete — a state conflict, not a permission problem — is 409.
       const status = decision.refusal === 'notComplete' ? 409 : 403
       return c.json(
         {

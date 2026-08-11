@@ -53,9 +53,10 @@ A base carrying only a legacy text label grants nobody anything, exactly as for 
 label is a note about a person, not a permission held by a session, so such a trade is an admin's
 to resolve until an admin links the base to an account.
 
-**Completing asks first**, and the question says what it does to whom: it is the only control in the
-app that changes somebody else's card counts, and it cannot be undone from here. **Declining does
-not ask**, because nothing moves. Both are recorded.
+**Neither asks for confirmation.** Completing moves one card each way on both bases immediately —
+it changes somebody else's card counts, and it cannot be undone from here. Completing used to ask
+first; the confirmation was removed (commit `2fa0062`) so that resolving a trade, either way, is one
+click. **Declining** closes the trade and moves nothing. Both are recorded.
 
 A trade is resolved **once**. Re-completing would move the same two cards a second time — silent,
 wrong, and exactly the accident the refusal exists to prevent — and re-declining would rewrite the
@@ -74,15 +75,21 @@ conversation nobody can see. If the spare has gone by the time it is completed, 
 
 ## Undoing a completed trade
 
-**An admin, and only an admin — no party exception.** Every other action on a trade follows
-"either party, or an admin," because a mutual agreement belongs to both bases equally and either
-side is entitled to record it or close it. Undo breaks that pattern on purpose: it does not make
-a new decision about an open trade, it reopens one that already closed. Granting that to either
-party would let one side quietly reverse something both agreed to, without the other's knowledge
-at the moment it happens — so it is reserved for the same account that can already reassign a
-base's ownership or overwrite its counts outright, the way `write-access.ts` reasons about every
-other admin override in this app. A party who believes a completed trade needs reversing asks an
-admin, the same as for any other correction to the shared data.
+**Either party, or an admin — the same rule as resolving.** This used to be admin-only, with no
+party exception at all: undo was reasoned as not making a new decision about an open trade but
+reopening one that already closed, so it was withheld from both parties and reserved for the same
+account that can already reassign a base's ownership or overwrite its counts outright. That
+restriction is lifted now, on purpose — undo is no longer a special case. An owner of either base
+may undo a trade they are a party to, exactly as they may complete or decline it; an admin may
+still undo any trade regardless of ownership.
+
+What stayed exactly the same, because neither follows from *who* is asking: undo is still checked
+against the trade's state before it runs (`complete` only), it is still allowed once, and — the one
+asymmetry now worth naming, since before this change the asymmetry was about *who* could act and
+now it is about *whether the action asks first* — **undo is the only one of the three trade actions
+that still confirms.** Completing and declining are both one click (see "Resolving, and who may"
+above); undo alone still asks, because "reopening a trade is rarer, and reverses something that
+already happened" (commit `2fa0062`'s own reasoning for keeping it).
 
 Undoing moves the two cards **back**: whatever base A received travels back to B, and whatever B
 received travels back to A — the mirror image of what completing did. It is checked again, the

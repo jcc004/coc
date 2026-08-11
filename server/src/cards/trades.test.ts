@@ -798,7 +798,7 @@ describe('declining a trade', () => {
 })
 
 describe('undoing a completed trade', () => {
-  it('moves the cards back to exactly where they started, admin only', async () => {
+  it('moves the cards back to exactly where they started, when an admin undoes it', async () => {
     const harness = await createHarness()
     const { admin, a, b } = await seeded(harness)
     const id = await proposed(harness, a)
@@ -856,23 +856,26 @@ describe('undoing a completed trade', () => {
     harness.db.close()
   })
 
-  it('refuses either party — undo has no party exception', async () => {
+  it('lets either party undo a complete trade, not just an admin', async () => {
+    // The rule this used to refuse on purpose: an owner of either base may now
+    // undo a trade they are a party to, the same as completing or declining it.
+    // Two separate trade cycles, one per undoer, since a trade already undone
+    // cannot be undone again — undoing restores the original counts each time,
+    // so the same swap is legal to propose again immediately after.
     const harness = await createHarness()
     const { a, b } = await seeded(harness)
-    const id = await proposed(harness, a)
-    assert.equal((await resolve(harness, b, id, 'complete')).status, 200)
-    const beforeA = [...countsOf(harness, BASE_A)]
 
-    for (const cookie of [a, b]) {
-      const response = await undo(harness, cookie, id)
-      assert.equal(response.status, 403, 'a party is not an admin and must be refused')
-      const body = (await response.json()) as { error: { reason: string; message: string } }
-      assert.equal(body.error.reason, 'forbidden')
-      assert.match(body.error.message, /admin-only/)
+    for (const undoer of [a, b]) {
+      const id = await proposed(harness, a)
+      assert.equal((await resolve(harness, b, id, 'complete')).status, 200)
+
+      const response = await undo(harness, undoer, id)
+      assert.equal(response.status, 200, `${undoer === a ? 'the base A owner' : 'the base B owner'} should be allowed`)
+      const body = (await response.json()) as { trade: TradeRecord }
+      assert.equal(body.trade.status, 'undone')
     }
 
-    assert.deepEqual([...countsOf(harness, BASE_A)], beforeA, 'nothing moved')
-    assert.equal((await listTrades(harness, a)).find((t) => t.id === id)?.status, 'complete')
+    assert.deepEqual([...countsOf(harness, BASE_A)], [[CARD_A, 2]], 'both cycles unwound cleanly')
     harness.db.close()
   })
 

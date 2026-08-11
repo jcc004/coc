@@ -186,31 +186,43 @@ describe('tradeResolveAccess', () => {
 /* ---------- who may undo ---------- */
 
 describe('tradeUndoAccess', () => {
-  it('refuses either party — no party exception, unlike resolving', () => {
-    // Anna and Bert are ANNA_AND_BERT's owners and would both be allowed to
-    // resolve this trade; neither may undo it.
+  it('lets either party undo a complete trade, not just an admin', () => {
+    // The rule this used to refuse on purpose: an owner of either base may now
+    // undo a trade they are a party to, the same as completing or declining it.
     for (const id of [ANNA, BERT]) {
-      const decision = tradeUndoAccess(member(id), trade({ status: 'complete' }))
-      assert.equal(decision.allowed, false)
-      assert.equal(decision.allowed === false && decision.refusal, 'notAdmin')
+      const decision = tradeUndoAccess(member(id), trade({ status: 'complete' }), ANNA_AND_BERT)
+      assert.equal(decision.allowed, true, `${id} should be allowed to undo`)
     }
   })
 
-  it('lets an admin undo a complete trade', () => {
-    assert.equal(tradeUndoAccess(admin(CARL), trade({ status: 'complete' })).allowed, true)
+  it('lets an admin undo a complete trade between two other people', () => {
+    assert.equal(
+      tradeUndoAccess(admin(CARL), trade({ status: 'complete' }), ANNA_AND_BERT).allowed,
+      true,
+    )
+  })
+
+  it('refuses a member who owns neither side, and names who can', () => {
+    const decision = tradeUndoAccess(member(CARL), trade({ status: 'complete' }), ANNA_AND_BERT)
+    assert.ok(decision.allowed === false)
+    assert.equal(decision.refusal, 'notAParty')
+    assert.match(decision.message, /Anna/)
+    assert.match(decision.message, /Bert/)
+    assert.match(decision.message, /undo it/)
   })
 
   it('refuses an admin while the trade is still pending', () => {
-    const decision = tradeUndoAccess(admin(CARL), trade({ status: 'pending' }))
+    const decision = tradeUndoAccess(admin(CARL), trade({ status: 'pending' }), ANNA_AND_BERT)
     assert.ok(decision.allowed === false)
     assert.equal(decision.refusal, 'notComplete')
     assert.match(decision.message, /still pending/)
   })
 
-  it('refuses an admin on a declined trade', () => {
+  it('refuses a party on a declined trade', () => {
     const decision = tradeUndoAccess(
-      admin(CARL),
+      member(ANNA),
       trade({ status: 'declined', resolvedBy: 'Anna', resolvedAt: '2026-08-02T11:00:00.000Z' }),
+      ANNA_AND_BERT,
     )
     assert.ok(decision.allowed === false)
     assert.equal(decision.refusal, 'notComplete')
@@ -219,7 +231,7 @@ describe('tradeUndoAccess', () => {
 
   it('refuses a second undo, naming who undid it', () => {
     const decision = tradeUndoAccess(
-      admin(CARL),
+      member(ANNA),
       trade({
         status: 'undone',
         resolvedBy: 'Anna',
@@ -227,6 +239,7 @@ describe('tradeUndoAccess', () => {
         undoneBy: 'Bert',
         undoneAt: '2026-08-03T09:00:00.000Z',
       }),
+      ANNA_AND_BERT,
     )
     assert.ok(decision.allowed === false)
     assert.equal(decision.refusal, 'notComplete')
@@ -235,11 +248,18 @@ describe('tradeUndoAccess', () => {
 
   it('says so plainly when the undoer’s account has since been deleted', () => {
     const decision = tradeUndoAccess(
-      admin(CARL),
+      member(ANNA),
       trade({ status: 'undone', undoneBy: null, undoneAt: '2026-08-03T09:00:00.000Z' }),
+      ANNA_AND_BERT,
     )
     assert.ok(decision.allowed === false)
     assert.match(decision.message, /account has since been deleted/)
+  })
+
+  it('checks who before what state, matching the server', () => {
+    // A stranger gets the same refusal whatever state the trade is in.
+    const decision = tradeUndoAccess(member(CARL), trade({ status: 'undone' }), ANNA_AND_BERT)
+    assert.equal(decision.allowed === false && decision.refusal, 'notAParty')
   })
 })
 

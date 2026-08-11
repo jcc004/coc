@@ -88,13 +88,24 @@ function isParty(user: Pick<SessionUser, 'id'>, sides: TradeSides): boolean {
  * A base carrying only a **legacy text label** grants nobody anything, exactly as
  * in `cardEntryAccess`. The label is a note about a person, not a permission held
  * by a session.
+ *
+ * `verb` is the phrase for the refusal ("propose this trade" / "complete or
+ * decline it" / "undo it"), so `tradeResolveAccess` and `tradeUndoAccess` below
+ * can both reuse this same party check instead of re-deriving it. Its declared
+ * return type is deliberately narrower than the exported `TradeAccess` — just
+ * `'notAParty'`, with no `'alreadyResolved'` — because that refusal depends on the
+ * trade's *status*, which this function never looks at; each caller adds its own
+ * status check afterward. The narrower type is what lets `tradeUndoAccess` return
+ * this result directly even though its own refusal type has no `'alreadyResolved'`
+ * member at all: a narrower literal union is structurally assignable to any wider
+ * one that is a superset of it, so both callers compile with no cast.
  */
 export function tradeProposeAccess(
   user: Pick<SessionUser, 'id' | 'role'>,
   sides: TradeSides,
   verb = 'propose this trade',
-): TradeAccess {
-  if (isParty(user, sides) || user.role === 'admin') return ALLOWED
+): { allowed: true } | { allowed: false; refusal: 'notAParty'; message: string } {
+  if (isParty(user, sides) || user.role === 'admin') return { allowed: true }
 
   return {
     allowed: false,
@@ -134,7 +145,7 @@ export function tradeResolveAccess(
   return ALLOWED
 }
 
-export type TradeUndoRefusal = 'notAdmin' | 'notComplete'
+export type TradeUndoRefusal = 'notAParty' | 'notComplete'
 
 export type TradeUndoAccess =
   | { allowed: true }
@@ -145,24 +156,32 @@ const UNDO_ALLOWED: TradeUndoAccess = { allowed: true }
 /**
  * May this session undo this trade?
  *
- * **Admin only — no party exception**, unlike `tradeResolveAccess`. Undo reopens a
- * trade that already closed rather than making the first decision about an open
- * one, so it is not one more thing either party gets to do; it is granted only to
- * the account that can already reassign a base's ownership or overwrite its counts
- * outright. Mirrors the server's `mayUndoTrade`; this only stops the UI offering a
- * button the server would refuse.
+ * **Party-or-admin, the same shape as `tradeResolveAccess`** — this used to be
+ * admin-only with no party exception at all, on the reasoning that undo reopens a
+ * record that already closed rather than making the first decision about an open
+ * one, so it was not one more thing either party got to do unilaterally. That
+ * restriction is lifted here, on purpose: an owner of either base may now undo a
+ * trade they are a party to, exactly as they may complete or decline it. An admin
+ * keeps the ability to undo *any* trade regardless of ownership, the same reason
+ * they may do everything else here.
+ *
+ * What did **not** change, because neither follows from *who* is asking: undo is
+ * still allowed only while the trade is `complete`, and still once-only — a trade
+ * already `undone` cannot be undone again. `UndoAction` (`TradeTracker.tsx`) also
+ * still asks for confirmation before calling this at all, independent of this
+ * function, and that did not change either — it is now the one action left on a
+ * trade that still asks, now that completing no longer does.
+ *
+ * Mirrors the server's `mayUndoTrade`; this only stops the UI offering a button
+ * the server would refuse.
  */
 export function tradeUndoAccess(
-  user: Pick<SessionUser, 'role'>,
+  user: Pick<SessionUser, 'id' | 'role'>,
   trade: Pick<TradeRecord, 'status' | 'undoneBy' | 'undoneAt'>,
+  sides: TradeSides,
 ): TradeUndoAccess {
-  if (user.role !== 'admin') {
-    return {
-      allowed: false,
-      refusal: 'notAdmin',
-      message: 'Undoing a trade is admin-only. Ask an admin if this one needs to be reversed.',
-    }
-  }
+  const party = tradeProposeAccess(user, sides, 'undo it')
+  if (!party.allowed) return party
 
   if (trade.status === 'undone') {
     const who = trade.undoneBy ?? 'someone whose account has since been deleted'

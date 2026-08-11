@@ -136,9 +136,10 @@ function StatusBadge({ status }: { status: TradeRecord['status'] }) {
  *
  * Completing changes *somebody else's* card counts immediately, and a trade
  * resolves once, so there is no "actually, no" button afterwards *for the party
- * who clicked it* — reversing it at all is `UndoAction`, an admin's alone, below.
- * Declining is the same shape: nothing moves, but it is likewise final; either
- * party can make it and the audit line records who did.
+ * who clicked it* — reversing it at all is `UndoAction` below, which any party (or
+ * an admin) may reach for, the same as this. Declining is the same shape: nothing
+ * moves, but it is likewise final; either party can make it and the audit line
+ * records who did.
  *
  * A refusal is shown rather than hidden. Somebody looking at a pending swap between
  * two other people should be told it is theirs to resolve, not left wondering why
@@ -209,22 +210,37 @@ function ResolveActions({
 }
 
 /**
- * The Undo button — an admin's alone, and only on a `complete` trade. It sits
- * beside `ResolveActions` rather than inside it because the two answer different
- * questions with different actors: `ResolveActions` is "may either party close
- * this", `UndoAction` is "may an admin reopen it", and `tradeUndoAccess` (mirroring
- * the server's `mayUndoTrade`) has no party exception at all.
+ * The Undo button, on a `complete` trade only.
  *
- * Nothing is shown for any other status, `undone` included — an admin cannot start
- * a second undo from here, the same reasoning that hides `ResolveActions` once a
- * trade is resolved. There is no "here's who can" refusal note the way
- * `ResolveActions` shows one for `notAParty`: an ordinary member is not missing a
- * permission they might reasonably expect, so the button is simply absent rather
- * than explained away.
+ * **Party-or-admin — the same rule `ResolveActions` uses.** This used to be an
+ * admin's alone, with no party exception at all, on the reasoning that undo
+ * reopens a record that already closed rather than making the first decision
+ * about an open one. That restriction is gone now, on purpose: an owner of either
+ * base may undo a trade they are a party to, exactly as they may complete or
+ * decline it. An admin still may undo any trade regardless of ownership.
  *
- * **Asks first**, unlike Complete: reopening a trade is rarer, admin-only, and
- * reverses something that already happened, so the question says what moves, that
- * it happens immediately for everyone, and that undoing itself has no further undo.
+ * It stays a separate component beside `ResolveActions` rather than folding into
+ * it, because the two still answer different questions even though *who* may ask
+ * them is now identical: "may this session close a *pending* trade" versus "may
+ * this session reopen a *complete* one" — different refusal shapes
+ * (`alreadyResolved` there, `notComplete` here) and a different action.
+ *
+ * A refusal is **shown**, not hidden, for `notAParty` — the same reasoning
+ * `ResolveActions` already uses for its own `notAParty` case, and the reasoning
+ * that did not apply here before this change: now that a party can genuinely act,
+ * somebody looking at a completed swap between two other people should be told it
+ * is theirs to undo, not left wondering why the button is missing. `notComplete`
+ * still hides with nothing shown — the status badge and the audit line beside it
+ * already say the trade is not in an undoable state, and repeating that here would
+ * be a third copy of the same sentence, the same reasoning `ResolveActions` uses
+ * for its own `alreadyResolved` case.
+ *
+ * **Still asks first**, unlike Complete: undo is the one action left on a trade
+ * that confirms before it runs, because reopening a trade is rarer than resolving
+ * one and reverses something that already happened. The question says what moves,
+ * that it happens immediately for everyone, and that undoing itself has no further
+ * undo. That is independent of *who* is asking, so it did not change when the
+ * party restriction was lifted.
  */
 function UndoAction({
   trade,
@@ -233,10 +249,21 @@ function UndoAction({
   trade: TradeRecord
   user: Pick<SessionUser, 'id' | 'role'>
 }) {
+  const owners = useOwners()
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
-  if (!tradeUndoAccess(user, trade).allowed) return null
+  const access = useMemo(
+    () => tradeUndoAccess(user, trade, sidesOfTrade(trade, owners)),
+    [user, trade, owners],
+  )
+
+  if (!access.allowed) {
+    // notComplete needs no note: the status badge and the audit line beside it
+    // have just said so. notAParty does need one — see the doc comment above.
+    if (access.refusal === 'notComplete') return null
+    return <span className="card-meta">{access.message}</span>
+  }
 
   async function act() {
     const question =

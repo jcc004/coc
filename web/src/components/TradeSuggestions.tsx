@@ -229,30 +229,44 @@ function ProposeButton({
 }
 
 /**
- * The admin fast path: propose and complete a suggestion in one click, instead of a
- * trip to the tracker below to approve what was just proposed.
+ * The one-click Complete — propose and complete a suggestion in one step, instead
+ * of a trip to the tracker below to approve what was just proposed.
+ *
+ * **Party-or-admin, the same rule `ProposeButton` beside it already uses.** This
+ * used to be an admin's fast path alone, reasoned as needing no separate check
+ * because an admin already clears both `tradeProposeAccess` and
+ * `tradeResolveAccess` unconditionally. That reasoning still holds for an admin,
+ * but the button is no longer admin-only: an owner of either base may use it too,
+ * because a party who can propose a swap between their own base and another can
+ * also resolve it once it is pending — the server already permits exactly that
+ * sequence (`mayProposeTrade` then `mayResolveTrade`, both party-or-admin), so
+ * this only exposes in the UI what was already allowed.
  *
  * Reuses `proposeTrade` as-is, including its already-proposed handling — a duplicate
  * 409 comes back as the existing pending row rather than an error — so the same click
  * handler works whether or not this exact swap is already on the tracker: propose (or
- * recover the existing one), then complete it. No separate authorization check is
- * needed here because an admin already clears `tradeProposeAccess` and
- * `tradeResolveAccess` unconditionally.
+ * recover the existing one), then complete it.
  *
- * Renders nothing for anybody else: this is a shortcut past a trip to the
- * tracker below, not a second way for a member to act on somebody else's swap.
+ * **Renders nothing, with no message, when refused** — not the "X or Y can propose
+ * this" text `ProposeButton` shows for the identical refusal, because that message
+ * is already sitting right beside this button in the same row (see
+ * `SuggestionTable` below): repeating it here would put the same sentence in front
+ * of the same reader twice in one glance.
  */
 function CompleteNowButton({
   trade,
   user,
+  owners,
 }: {
   trade: TradeSuggestion
   user: Pick<SessionUser, 'id' | 'role'>
+  owners: OwnerRecord[]
 }) {
   const [state, setState] = useState<'idle' | 'sending'>('idle')
   const [problem, setProblem] = useState<string | null>(null)
 
-  if (user.role !== 'admin') return null
+  const access = tradeProposeAccess(user, sidesOfTrade(trade, owners))
+  if (!access.allowed) return null
 
   return (
     <>
@@ -857,7 +871,7 @@ function SuggestionTable({
                       owners={owners}
                       tracked={tracked}
                     />{' '}
-                    <CompleteNowButton trade={trade} user={user} />
+                    <CompleteNowButton trade={trade} user={user} owners={owners} />
                   </td>
                 </tr>
               )

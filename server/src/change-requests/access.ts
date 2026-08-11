@@ -19,10 +19,12 @@ import type { UserRole } from '@coc/shared'
  * for a request they disagree with is `mayResolveChangeRequest`, not a stand-in
  * for the author.
  *
- * Resolving is the mirror image: **admin only, no author exception at all**,
- * the same shape as `mayUndoTrade` rather than `mayResolveTrade` — a request's
- * author never resolves their own request, because "resolved" is an answer
- * from the app's side, not a state either party to a trade may declare.
+ * Resolving is the mirror image: **admin only, no author exception at all** — a
+ * request's author never resolves their own request, because "resolved" is an
+ * answer from the app's side, not a state either party to a request may declare.
+ * Trade actions are not the useful comparison here that they once were: propose,
+ * resolve *and* undo are all party-or-admin in `trade-access.ts` now, so nothing
+ * left there is admin-only-with-no-exception the way this is.
  */
 
 /** Just enough of the caller's session to decide. Same shape as `BaseWriter`. */
