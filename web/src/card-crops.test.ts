@@ -97,10 +97,20 @@ describe('cardFraming', () => {
    * The test above only checks the *post-clamp* value stays in range — it would
    * pass silently even if `clampCenter` had actually substituted a different
    * number than the one written in `FACE_CROPS`. Every entry here keeps a real
-   * margin from its own clamp floor (`50 / zoom`) on purpose — Cannon Cart, the
-   * tightest of the five at `zoom: 1.5`, still has a floor of `33.3`, comfortably
-   * clear of both its `x: 44` and `y: 54` — so nothing here relies on the clamp to
-   * do anything today. Pinning the table's exact values here, unclamped, is what
+   * margin from its own clamp floor (`50 / zoom`) on purpose, checked on *both*
+   * axes — an earlier version of this comment checked only `x` for whichever
+   * entry looked tightest and asserted that as "the narrowest margin in the
+   * table," which missed that the same entry's `y` was tighter still on the
+   * other side of its own clamp band; a review caught the gap before it shipped.
+   * The narrowest today, checked both ways, is Cannon Cart: `zoom: 1.45`'s floor
+   * is `34.48` and ceiling `65.52`, `x: 38` sits `3.52` above the floor (the
+   * table's tightest single margin), `y: 50` sits `15.52` from either bound —
+   * genuinely uneven between its own two axes, unlike the rest of the table, but
+   * that asymmetry is now stated rather than assumed away, which is the exact gap
+   * that let an earlier, wrong version of this same comment ship. Still real
+   * margin on both axes, not the clamp doing the work — so nothing here relies on
+   * the clamp to do anything today. Pinning the table's exact values here,
+   * unclamped, is what
    * would fail loudly if a future edit ever pushed one of them past its floor,
    * instead of the chosen crop point quietly drifting from what someone actually
    * reviewed.
@@ -109,7 +119,7 @@ describe('cardFraming', () => {
     assert.deepEqual(cardFraming(23), { kind: 'face', x: 50, y: 50, zoom: 1.15 })
     assert.deepEqual(cardFraming(25), { kind: 'face', x: 50, y: 48, zoom: 1.2 })
     assert.deepEqual(cardFraming(27), { kind: 'face', x: 50, y: 54, zoom: 1.28 })
-    assert.deepEqual(cardFraming(39), { kind: 'face', x: 44, y: 54, zoom: 1.5 })
+    assert.deepEqual(cardFraming(39), { kind: 'face', x: 38, y: 50, zoom: 1.45 })
     assert.deepEqual(cardFraming(59), { kind: 'face', x: 46, y: 50, zoom: 1.2 })
   })
 

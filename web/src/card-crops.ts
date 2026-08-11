@@ -116,9 +116,13 @@ export const WHOLE_FRAMING: CardWholeFraming = { kind: 'whole' }
  *   A centered zoom shifted a little below the vertical middle clears both top
  *   corners without pushing the mouth or teeth out of frame.
  * - **Cannon Cart (39)** — the barrel is shot on a diagonal with a bright sky
- *   gradient filling whatever the barrel doesn't cover, worst at the top-left
- *   corner. This one needs the most zoom of the five to clear every corner, though
- *   still well short of losing the barrel's own recognizable shape.
+ *   gradient in two opposite corners: a band across the whole top of the canvas,
+ *   and a second wedge creeping in from the bottom-right as the top one recedes.
+ *   No single centered window clears both without either cropping tight enough to
+ *   lose the barrel's own shape or leaving a sliver of one or the other — the fix
+ *   is shifting the window left (`x` well under center) and down (`y` well past
+ *   center) at a comparatively gentle zoom, so its right edge stays clear of the
+ *   bottom-right wedge without needing the height alone to outrun the top band.
  * - **Ice Hound (59)** — a solid orange-gold background band in the top-right
  *   corner. The dark navy area beside the head is *not* this — it is the
  *   creature's own shadowed body, confirmed by sampling its color against the
@@ -139,23 +143,74 @@ export const WHOLE_FRAMING: CardWholeFraming = { kind: 'whole' }
  * **Ice Golem (27) added in a later pass**, against a fresh batch of 28 real-game
  * reference screenshots. That batch covered cards 1–48 (elixir, dark elixir and
  * builder base in full, i.e. every card up to but not including this table's own
- * two super-troop entries) at their actual in-game framing; Golem, Lava Hound and
- * Cannon Cart were re-checked directly against it and left unchanged — still
- * correct, tight edge-to-edge with no visible background at real tile size. **Ice
- * Hound (49–60) was not covered by that batch** — the screenshots never scrolled
- * that far — so it was re-checked only by rendering every one of the sixty tiles at
- * real size and confirming they all fill their frame with the same tight, consistent
- * scale the reference batch showed for 1–48, not against a fresh in-game screenshot
- * of Ice Hound itself. Its existing crop was already validated against a real-game
- * reference in the pass that first added it (see "Revisited once" above), so this is
- * a secondary check, not a first one. Ice Golem's zoom was chosen the same way as
- * the rest of the table: candidates at `zoom` 1.2, 1.25, 1.27, 1.28 and 1.3 (same
- * `x`/`y`) were rendered at real tile size and inspected corner by corner. 1.2 and
- * 1.25 both still showed a sliver of purple in the top-right corner; 1.27 was the
- * first to fully clear every corner, and 1.28 was kept instead of 1.27 only for a
- * small margin of safety against the same corner re-appearing at a tile width this
- * table wasn't checked against — still well short of 1.3, which cleared it with
- * room to spare but cropped tighter than needed.
+ * two super-troop entries) at their actual in-game framing; Golem and Lava Hound
+ * were re-checked directly against it and left unchanged — still correct, tight
+ * edge-to-edge with no visible background at real tile size. Cannon Cart was
+ * *reported* re-checked and left unchanged in that same pass, and that report was
+ * wrong on both counts the very next round found: its `zoom: 1.5` still leaked a
+ * sliver of sky at the bottom-right corner even at that aggressive a crop, and it
+ * was cropped far tighter than the real game's own card actually needs — a direct
+ * side-by-side against the reference showed the real card framing the barrel much
+ * more loosely. Caught only by actually rendering the reference and the site's own
+ * output next to each other at matching scale, not by re-deriving either from the
+ * CSS or the source art. **Ice Hound (49–60) was not covered by that batch** — the
+ * screenshots never scrolled that far — so it was re-checked only by rendering
+ * every one of the sixty tiles at real size and confirming they all fill their
+ * frame with the same tight, consistent scale the reference batch showed for
+ * 1–48, not against a fresh in-game screenshot of Ice Hound itself. Given Cannon
+ * Cart's own "left unchanged" claim from that identical check turned out to be
+ * wrong, this internal-consistency check is worth treating as unverified for Ice
+ * Hound too until a screenshot actually covering it turns up. Ice Golem's zoom was
+ * chosen the same way as the rest of the table: candidates at `zoom` 1.2, 1.25,
+ * 1.27, 1.28 and 1.3 (same `x`/`y`) were rendered at real tile size and inspected
+ * corner by corner. 1.2 and 1.25 both still showed a sliver of purple in the
+ * top-right corner; 1.27 was the first to fully clear every corner, and 1.28 was
+ * kept instead of 1.27 only for a small margin of safety against the same corner
+ * re-appearing at a tile width this table wasn't checked against — still well
+ * short of 1.3, which cleared it with room to spare but cropped tighter than
+ * needed.
+ *
+ * **Cannon Cart took four attempts, not one, and the middle two are worth keeping
+ * on the record because each looked verified and wasn't.** Once the "left
+ * unchanged" claim above was checked directly against the reference rather than
+ * taken on its own report, `zoom: 1.5` turned out neither the tightest crop that
+ * clears the sky nor one that clears it at all — the window needed to shift well
+ * left and down, not zoom in further.
+ *
+ * The second attempt, `x: 42, y: 59, zoom: 1.24`, was found by sampling an 8-pixel
+ * block at each of the four corners and choosing the smallest zoom that passed —
+ * and it did clear the background. What it got wrong was a different axis
+ * entirely: `card-crops.test.ts`'s own margin comment checked only `x`'s distance
+ * from `clampCenter`'s floor (a comfortable 1.68) and called that the table's
+ * narrowest margin, without checking `y` the same way — `y: 59` was actually only
+ * 0.68 from its own clamp ceiling, under half of it, caught by review before this
+ * ever shipped.
+ *
+ * The third attempt, `x: 41, y: 59, zoom: 1.28`, fixed that specific problem —
+ * chosen for a matched ~1.94 margin on *both* axes instead of a lopsided one — and
+ * was re-checked the same way the second attempt had been, an 8-pixel block at
+ * each corner, which again passed. That check was the real problem, not either
+ * value: an independent review, then a direct re-render, found the background
+ * wasn't confined to the corner pixels at all. It was a wedge starting a little
+ * way in from the bottom-right and widening toward the edge — exactly the shape
+ * an 8px corner block sits entirely inside of without ever touching. This crop
+ * leaked more visibly than the original `1.5`, not less.
+ *
+ * A pixel-map of the *whole* source image (every few pixels, not just near the
+ * corners) made the actual shape visible: a clean band across the full width from
+ * roughly 15% to 70% of the image's height, with the wedge growing in from the
+ * bottom-right below that, and the top few percent solid sky throughout. Only a
+ * crop whose entire perimeter — not just its corners — stays inside the clean
+ * band is actually safe, so that became the check for the fourth attempt: every
+ * pixel in a several-pixel-deep band around all four edges, not a block at each
+ * corner. `zoom: 1.45` at `x: 38, y: 50` is the smallest zoom that passes that
+ * fuller check, confirmed by rendering each of its four corners individually at
+ * 6× magnification and reading them by eye rather than trusting a classifier a
+ * third time. It crops tighter than the reference's own looser framing of the
+ * barrel — the source art genuinely does not have enough clean margin to match
+ * that framing without reopening the leak, a real constraint of this file, not a
+ * search that stopped too early. Tighter than hoped, but the first version of
+ * this entry that is actually, verifiably clean.
  *
  * `card-crops.test.ts` checks that everything in this table names a real card and
  * stays inside its own picture, so an entry cannot be filled in wrongly and go
@@ -166,7 +221,7 @@ const FACE_CROPS: Readonly<Record<number, Omit<CardFaceCrop, 'kind'>>> = {
   23: { x: 50, y: 50, zoom: 1.15 },
   25: { x: 50, y: 48, zoom: 1.2 },
   27: { x: 50, y: 54, zoom: 1.28 },
-  39: { x: 44, y: 54, zoom: 1.5 },
+  39: { x: 38, y: 50, zoom: 1.45 },
   59: { x: 46, y: 50, zoom: 1.2 },
 }
 
