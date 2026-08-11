@@ -1718,7 +1718,7 @@ details.group > .group__body {
  * 256×320 canvas. Originally kept only for a wholesale art-set regeneration (the
  * previous set was whole figures standing on a patch of grass rather than framed
  * portraits, and every tile needed one) — but now also earning its keep card by
- * card: four of the sixty (see `FACE_CROPS` in `card-crops.ts`) have a visible
+ * card: five of the sixty (see `FACE_CROPS` in `card-crops.ts`) have a visible
  * background margin baked into an otherwise-correct file, invisible at full
  * resolution and only obvious once actually rendered at the grid's small tile
  * size. Cropping in CSS means no second set of files to re-fetch either way,

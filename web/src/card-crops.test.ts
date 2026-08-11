@@ -12,11 +12,11 @@ import { ALL_CARDS, cardById } from './cards.ts'
 
 /*
  * The art is a purpose-made set, already cropped tight on each subject — for
- * fifty-six of sixty. Four (Golem, Lava Hound, Cannon Cart, Ice Hound) compose
- * their subject smaller in the canvas than the rest of the set and are corrected
- * individually in `FACE_CROPS`; see that table's own doc comment in
+ * fifty-five of sixty. Five (Golem, Lava Hound, Ice Golem, Cannon Cart, Ice Hound)
+ * compose their subject smaller in the canvas than the rest of the set and are
+ * corrected individually in `FACE_CROPS`; see that table's own doc comment in
  * `card-crops.ts` for how each one was found and why. Two things are worth
- * pinning here: that the cropped set is exactly those four and not some other
+ * pinning here: that the cropped set is exactly those five and not some other
  * count, and that the face-crop arithmetic itself is right — tested directly on
  * `faceCrop` below, not only through whatever the table currently holds.
  */
@@ -41,19 +41,20 @@ describe('cardFraming', () => {
     }
   })
 
-  it('frames fifty-six of sixty whole, and names exactly the four exceptions', () => {
+  it('frames fifty-five of sixty whole, and names exactly the five exceptions', () => {
     // Named per card rather than counted — a count would keep passing while the
-    // wrong card was cropped, or while a fifth crop went unnoticed. These four are
+    // wrong card was cropped, or while a sixth crop went unnoticed. These five are
     // the ones found by rendering all sixty at real tile size; see `FACE_CROPS`'s
     // doc comment in card-crops.ts for what each one's actual defect was.
     const cropped = faceCrops().map(({ id }) => `${id} ${cardById(id)?.name}`)
     assert.deepEqual(cropped, [
       '23 Golem',
       '25 Lava Hound',
+      '27 Ice Golem',
       '39 Cannon Cart',
       '59 Ice Hound',
     ])
-    assert.deepEqual(faceCroppedCardIds(), [23, 25, 39, 59])
+    assert.deepEqual(faceCroppedCardIds(), [23, 25, 27, 39, 59])
   })
 
   it('hands out the one shared whole framing, so two tiles compare by identity', () => {
@@ -68,9 +69,9 @@ describe('cardFraming', () => {
   })
 
   /*
-   * These three run over today's four real entries, not vacuously — and they stay
-   * the guard rails for the next entry too, whether that is a fifth per-card fix or
-   * a wholesale regeneration of the art: they fail rather than pass silently if an
+   * These three run over today's real entries, not vacuously — and they stay the
+   * guard rails for the next one too, whether that is another per-card fix or a
+   * wholesale regeneration of the art: they fail rather than pass silently if an
    * entry names a card that does not exist or a window that runs off the edge of
    * its picture.
    */
@@ -97,16 +98,17 @@ describe('cardFraming', () => {
    * pass silently even if `clampCenter` had actually substituted a different
    * number than the one written in `FACE_CROPS`. Every entry here keeps a real
    * margin from its own clamp floor (`50 / zoom`) on purpose — Cannon Cart, the
-   * tightest of the four at `zoom: 1.5`, still has a floor of `33.3`, comfortably
+   * tightest of the five at `zoom: 1.5`, still has a floor of `33.3`, comfortably
    * clear of both its `x: 44` and `y: 54` — so nothing here relies on the clamp to
    * do anything today. Pinning the table's exact values here, unclamped, is what
    * would fail loudly if a future edit ever pushed one of them past its floor,
    * instead of the chosen crop point quietly drifting from what someone actually
    * reviewed.
    */
-  it('never actually needs to clamp its four current entries', () => {
+  it('never actually needs to clamp its five current entries', () => {
     assert.deepEqual(cardFraming(23), { kind: 'face', x: 50, y: 50, zoom: 1.15 })
     assert.deepEqual(cardFraming(25), { kind: 'face', x: 50, y: 48, zoom: 1.2 })
+    assert.deepEqual(cardFraming(27), { kind: 'face', x: 50, y: 54, zoom: 1.28 })
     assert.deepEqual(cardFraming(39), { kind: 'face', x: 44, y: 54, zoom: 1.5 })
     assert.deepEqual(cardFraming(59), { kind: 'face', x: 46, y: 50, zoom: 1.2 })
   })
@@ -122,7 +124,7 @@ describe('cardFraming', () => {
 
 /*
  * The clamp arithmetic itself, tested directly on `faceCrop` rather than only
- * through whatever four cards `FACE_CROPS` currently corrects — the same reasoning
+ * through whatever cards `FACE_CROPS` currently corrects — the same reasoning
  * as the top-of-file comment: today's entries exercise the arithmetic that already
  * matters, but not every value combination it has to handle correctly.
  */

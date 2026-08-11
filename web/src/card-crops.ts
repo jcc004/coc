@@ -3,20 +3,20 @@ import { CARD_ID_MAX, CARD_ID_MIN } from '@coc/shared'
 /**
  * How each of the sixty tiles frames its picture.
  *
- * **Whole is the default, and it is still the framing for fifty-six of sixty.**
+ * **Whole is the default, and it is still the framing for most of the sixty.**
  * The art in `web/public/coc/cards/` is a purpose-made set — sixty PNGs, 256×320
  * portrait — and most of them are already cropped tight on their own subject, so
  * the picture *is* the framing the event uses: nothing trimmed, nothing
  * letterboxed. `.card-tile__frame` is 4:5 to match.
  *
- * Four cards are the exception, in {@link FACE_CROPS} below — not a regenerated
- * art set, but individual per-card correction, where that one file's own subject
- * sits smaller in its canvas than the rest of the set and needs the same window
- * mechanism cropped in. The mechanism reads identically either way, which is
- * exactly why it was worth keeping unused rather than deleting: an earlier art set
- * was whole figures standing on a patch of grass, needing a window cut out of
- * every tile, and if the set is ever regenerated wholesale again this same table
- * is where that goes too.
+ * A handful of cards are the exception, in {@link FACE_CROPS} below — not a
+ * regenerated art set, but individual per-card correction, where that one file's
+ * own subject sits smaller in its canvas than the rest of the set and needs the
+ * same window mechanism cropped in. The mechanism reads identically either way,
+ * which is exactly why it was worth keeping unused rather than deleting: an
+ * earlier art set was whole figures standing on a patch of grass, needing a
+ * window cut out of every tile, and if the set is ever regenerated wholesale
+ * again this same table is where that goes too.
  *
  * ## Cropping again, if the art changes
  *
@@ -92,12 +92,12 @@ export const WHOLE_FRAMING: CardWholeFraming = { kind: 'whole' }
  * not the rule.**
  *
  * The set is framed tight on its subject card by card, not uniformly: most of the
- * sixty already fill their own 256×320 canvas edge to edge, but four compose their
+ * sixty already fill their own 256×320 canvas edge to edge, but five compose their
  * subject smaller, with a visible background margin around it. That margin is easy
  * to miss reading the file at full size — it reads as modest corner shading — and
  * unmissable once the same file renders at an actual tile's ~30–90px, where the
  * margin becomes a clear gap between the character and the tile's own border. These
- * four are that correction, found by rendering all sixty at real tile size rather
+ * five are that correction, found by rendering all sixty at real tile size rather
  * than by eyeballing the source art:
  *
  * - **Golem (23)** — the rock plates are stacked with glowing seams between them;
@@ -108,35 +108,64 @@ export const WHOLE_FRAMING: CardWholeFraming = { kind: 'whole' }
  * - **Lava Hound (25)** — a flat orange-brown background band across the bottom of
  *   the frame (and a thinner one at the top), cropped out by a modest zoom shifted
  *   slightly above center.
+ * - **Ice Golem (27)** — a purple-blue gradient background shows in both top
+ *   corners, worse on the top-right (it reaches roughly the top 15% of the
+ *   canvas there, confirmed by sampling pixel color at the corner — a clearly
+ *   purple gradient, not the character's own pale-white palette). The rest of the
+ *   canvas, including the bottom corners, is the creature's own body edge to edge.
+ *   A centered zoom shifted a little below the vertical middle clears both top
+ *   corners without pushing the mouth or teeth out of frame.
  * - **Cannon Cart (39)** — the barrel is shot on a diagonal with a bright sky
  *   gradient filling whatever the barrel doesn't cover, worst at the top-left
- *   corner. This one needs the most zoom of the four to clear every corner, though
+ *   corner. This one needs the most zoom of the five to clear every corner, though
  *   still well short of losing the barrel's own recognizable shape.
  * - **Ice Hound (59)** — a solid orange-gold background band in the top-right
  *   corner. The dark navy area beside the head is *not* this — it is the
  *   creature's own shadowed body, confirmed by sampling its color against the
  *   image's actual corner pixels before treating it as background to crop away.
  *
- * **Revisited once, after shipping too tight.** The first pass at all four
+ * **Revisited once, after shipping too tight.** The first pass at the original four
  * (measured the same way — rendered at real tile size, not eyeballed at full
  * resolution) over-corrected: reported back directly as "zoomed in too much,"
  * and looking at the shipped result, it was — Ice Hound in particular had lost
  * its ice crystal and most of its head to a crop that closed the background gap
- * by a much wider margin than the gap itself needed. Every value below is the
- * result of a second pass that tried the *smallest* zoom that actually clears
- * the background at each of that card's own corners, checked against several
+ * by a much wider margin than the gap itself needed. Every value below for those
+ * four is the result of a second pass that tried the *smallest* zoom that actually
+ * clears the background at each of that card's own corners, checked against several
  * candidate zooms side by side rather than picking the first one that worked —
  * the same lesson the file's own "use the smallest zoom that actually closes the
  * gap" line above already stated but the first pass under-applied.
  *
+ * **Ice Golem (27) added in a later pass**, against a fresh batch of 28 real-game
+ * reference screenshots. That batch covered cards 1–48 (elixir, dark elixir and
+ * builder base in full, i.e. every card up to but not including this table's own
+ * two super-troop entries) at their actual in-game framing; Golem, Lava Hound and
+ * Cannon Cart were re-checked directly against it and left unchanged — still
+ * correct, tight edge-to-edge with no visible background at real tile size. **Ice
+ * Hound (49–60) was not covered by that batch** — the screenshots never scrolled
+ * that far — so it was re-checked only by rendering every one of the sixty tiles at
+ * real size and confirming they all fill their frame with the same tight, consistent
+ * scale the reference batch showed for 1–48, not against a fresh in-game screenshot
+ * of Ice Hound itself. Its existing crop was already validated against a real-game
+ * reference in the pass that first added it (see "Revisited once" above), so this is
+ * a secondary check, not a first one. Ice Golem's zoom was chosen the same way as
+ * the rest of the table: candidates at `zoom` 1.2, 1.25, 1.27, 1.28 and 1.3 (same
+ * `x`/`y`) were rendered at real tile size and inspected corner by corner. 1.2 and
+ * 1.25 both still showed a sliver of purple in the top-right corner; 1.27 was the
+ * first to fully clear every corner, and 1.28 was kept instead of 1.27 only for a
+ * small margin of safety against the same corner re-appearing at a tile width this
+ * table wasn't checked against — still well short of 1.3, which cleared it with
+ * room to spare but cropped tighter than needed.
+ *
  * `card-crops.test.ts` checks that everything in this table names a real card and
  * stays inside its own picture, so an entry cannot be filled in wrongly and go
- * unnoticed. Kept as a table rather than four one-off constants because the next
- * card found this way is another row here, not a new mechanism.
+ * unnoticed. Kept as a table rather than one-off constants because the next card
+ * found this way is another row here, not a new mechanism.
  */
 const FACE_CROPS: Readonly<Record<number, Omit<CardFaceCrop, 'kind'>>> = {
   23: { x: 50, y: 50, zoom: 1.15 },
   25: { x: 50, y: 48, zoom: 1.2 },
+  27: { x: 50, y: 54, zoom: 1.28 },
   39: { x: 44, y: 54, zoom: 1.5 },
   59: { x: 46, y: 50, zoom: 1.2 },
 }
