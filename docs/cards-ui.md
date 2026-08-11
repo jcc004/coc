@@ -122,29 +122,38 @@ option are two people's names in one label, and the reader cannot tell which is 
 
 ### The count row
 
-Under each frame, never over the art — except the badge, which straddles its lower edge:
+There is no row any more. Tap the tile to add a copy; tap a small circle over its own
+upper-right corner to remove one:
 
 ```
-┌─────────────────┐
-│   card artwork  │
-│       ×3        │
-└─────────────────┘
-       −     +
+  ┌─────────────────┐
+  │              (−)│ ← only drawn past a held copy — tap it to remove one
+  │   card artwork  │
+  │       ×3        │
+  └─────────────────┘
+   tap anywhere else to add one
 ```
 
-**There is no way to type a count, at any tile width — a number box and, later, a
-tap-to-edit badge were both tried and both dropped.** Sixty cards is sixty numbers, and
-that reasoning is real, but the cap is 10: a run of taps on `+` is never more than ten
-presses, which is the whole reason this grid can afford to make the steppers the *only*
-way to change a count. Nothing on the tile is a target for typing, so nothing has to
-reserve space, hide itself at a width, or manage a second focus state — the badge over
-the art is pure decoration, exactly as it is on the totals grid, and `−`/`+` are the
-whole of the cell.
+**There is still no way to type a count, at any tile width — a number box and, later, a
+tap-to-edit badge were both tried and both dropped, and neither is what this is.** Sixty
+cards is sixty numbers, and that reasoning is still real, but both of the earlier designs
+put a *typed, arbitrary* number within reach — a box you could type `37` into, or a badge
+doubling as a text field with its own hidden edit state. Neither exists here: the cap is
+still 10, a tap still moves the count by exactly one, and `cardCountStep()` in
+`card-entry.ts` still decides both whether a tap is offered and where it lands, unchanged
+from the two-button row this replaced. What changed is only the *hit area* a single-step
+tap has to land on — the whole tile instead of a small dedicated `+`, a corner circle
+instead of a small dedicated `−` — not the kind of value a tap can produce. Nothing on the
+tile is a target for typing, so nothing has to reserve space, hide itself at a width, or
+manage a second focus state — the badge over the art is pure decoration, exactly as it is
+on the totals grid, and the tile-wide tap and the corner circle are the whole of the cell.
 
-**Two controls, and what each is called.** Sixty tiles times two is 120 things a screen
-reader can land on, and the tiles print no names, so every word of "which card is this"
-is in an accessible name. Read back through the accessible-name computation in
-`web/src/components/BaseCardEditor.test.tsx`:
+**Two controls, in a new shape, and what each is called.** Sixty tiles times two is still
+120 things a screen reader can land on, and the tiles print no name of their own, so every
+word of "which card is this" is in one of the two controls' own accessible names — a
+whole-tile `<button>` and a small corner `<button>` now, instead of two same-sized ones in
+a row, but the same two sentences either way. Read back through the accessible-name
+computation in `web/src/components/BaseCardEditor.test.tsx`:
 
 ```
 button      One fewer Barbarian
@@ -162,37 +171,84 @@ three in full was the alternative tried first, in an earlier design, and was wor
 different reason — one deck read out `Elixir` nineteen times over — but that tradeoff no
 longer applies now that there is no third control to name at all.
 
-**Leaving the *cell* is the save.** A press on `+` moves focus onto `−`, so a save-on-blur
-would turn five presses into five PUTs of the base's whole season, each moving the
-`updated_at` the attribution line reads out. The row is one element with one `onBlur`;
-`focusout` bubbles, and `relatedTarget` says whether focus went to the other stepper in
-the same cell or out of it. The skip is the fourth reason in `blurDecision` — `sameCell`,
-ahead of `unchanged`, `notWritable` and `busy` — and a test presses `+` five times and
-asserts **one** write of `count: 5`.
+**No `<button>` nests inside another.** `CardTile` itself is still not a button — see its
+own doc comment in `web/src/components/CardTile.tsx` — so the tile-wide tap is a `<button>`
+that *wraps* it, the same resolving pattern the clan-totals grid already uses to make its
+own tiles pressable (`CardsView.tsx`'s `CardTotalPick`). The corner circle is a *sibling*
+of that wrapping button, not a child of it and not a child of `CardTile`, which is what
+keeps this legal markup instead of a button nested inside a button.
 
-**Both ends are `disabled` at the bounds, not clamping.** `−` is unavailable at 0 and `+`
-at 10 — `cardCountStep()` in `card-entry.ts` returns `null`, which is both the disabled
-state and the press's destination, so the two cannot disagree. The bound is legible
-without it: the badge past a spare and the grayscale below that already say the number.
-The one cost is handled deliberately: a `disabled` element cannot hold focus, so the
-press that takes a button away hands focus to its **sibling stepper** — the only other
-control in the cell, and the one guaranteed not disabled by the same press — rather than
-letting the browser drop it on `<body>`, which would lose the user's place *and* count as
-leaving the cell, firing a save mid-sequence.
+**`position: absolute` on its own did not win the tap, in a real browser.** The circle
+also needs an explicit `z-index: 1` — the wrapper around both buttons has to be a
+container (`container-type: inline-size`, so the circle's own size has something to
+measure against — see "Touch targets" below) and that makes it a stacking context in its
+own right, inside which a bare `z-index: auto` did not reliably beat the tile-wide
+button's own nested `position: relative` descendants. Measured before the `z-index`
+existed: `document.elementFromPoint()` at the circle's own center returned the art layer
+underneath it, so every tap silently added a copy instead of removing one — checked by
+driving a real browser and reading back what actually received the click, not assumed
+from the stacking rules on paper. That is exactly the shape of mistake a
+`pointer-events` slip or a missing `z-index` can produce here: nothing in an automated,
+non-rendering test would have caught it.
 
-**A read-only base disables both**, and the reason still reaches the reader: in full in
-the notice above the grid, and as a plain `, read-only` suffix on each button's name. It
-is said in full only once, in that notice — the sentence is about the *base*, so it is
-the same sentence on all sixty tiles, and there is no longer a third control at the tile
-to duplicate it on.
+**Leaving the *cell* is still the save.** A tap on the tile-wide `+` can move focus onto
+the corner `−` (and a tap on `−` back onto `+`), so a save-on-blur would still turn five
+taps into five PUTs of the base's whole season, each moving the `updated_at` the
+attribution line reads out. The wrapper around both controls is one element with one
+`onBlur`; `focusout` bubbles, and `relatedTarget` says whether focus went to the cell's
+other control or out of it. The skip is still the fourth reason in `blurDecision` —
+`sameCell`, ahead of `unchanged`, `notWritable` and `busy` — and a test taps `+` five
+times and asserts **one** write of `count: 5`.
 
-**The badge is decoration on both grids that draw it, drawn only past a spare.** `×1` on
-fifty tiles would be noise where a spare is the fact worth spotting, so `count > 1` is
-the whole condition — the same one the totals grid uses, and the one this grid's very
-first version used before a number box and later a tap-to-edit badge both tried, and
-both dropped, taking on the job of showing 0 and 1 as well. A card held once, or not at
-all, is grayscale-versus-not and nothing else — the same encoding the totals grid
-already carries for every card on it, not a new gap introduced here.
+**The bounds are handled differently at each end, because the two controls are no longer
+the same shape.** The tile-wide `+` is still `disabled` at the cap, exactly as the old
+row's `+` was — `cardCountStep()` returning `null` is both the disabled state and the
+tap's destination, so the two cannot disagree, and the bound is legible without it either
+way (the badge past a spare, the grayscale below that). The corner `−` has no `disabled`
+state to fall into at all: below a held copy it is not drawn, full stop, rather than drawn
+and inert — there is no count for it to be a doomed tap on. The one cost this shape still
+carries: a control that disappears (the `−` circle, on the tap that empties a tile) can no
+more hold focus than a `disabled` one could, so the tap that removes it hands focus to the
+tile-wide `+` first — the same "hand focus to the sibling before it goes away" instinct
+`StepButton`'s old row used, now needed in one direction instead of two, since the
+tile-wide `+` is never itself removed from the DOM, only disabled.
+
+**A read-only base disables the tile-wide `+` and draws no `−` circle at all.** The `+`
+carries the refusal as a `, read-only` suffix on its accessible name, exactly as the old
+row's `+` did, and the sentence is still said in full only once, in the notice above the
+grid — never duplicated per tile. The `−` circle is not merely disabled on a read-only
+base; it does not render, since there is nothing to offer a decrement that would 403 and
+no small hit area to widen for a control that can never legally fire. One real, recorded
+cost: the old row's `title={readOnlyReason}` put the *full* refusal sentence on a mouse
+tooltip at every one of the sixty tiles. That tooltip has no home to move to on a tile-wide
+button wrapping the whole picture — `CardTile`'s own `title` (the card's name and deck)
+sits on the innermost element under it, so a browser resolving "whose `title` wins" finds
+that one first and never reaches the wrapping button's. What is lost is the second,
+redundant place a mouse user used to find the refusal by hovering one tile; the notice
+above the grid still says it once, same as before.
+
+**The badge is decoration on both grids that draw it, drawn only past a spare, and is
+otherwise untouched by any of this.** `×1` on fifty tiles would be noise where a spare is
+the fact worth spotting, so `count > 1` is the whole condition — the same one the totals
+grid uses, and the one this grid's very first version used before a number box and later a
+tap-to-edit badge both tried, and both dropped, taking on the job of showing 0 and 1 as
+well. A card held once, or not at all, is grayscale-versus-not and nothing else — the same
+encoding the totals grid already carries for every card on it, not a new gap introduced
+here. The one layout change on its account: with the old stepper row gone, nothing sits
+under the frame by default any more, so `.card-tile--entry` (entry-grid tiles only) keeps a
+little padding under it for the badge's own overhang to land in — see the CSS comment for
+the measurement.
+
+**Touch targets, at the density this grid can reach.** The corner circle's own visible
+size and its actual tap target are two different boxes on purpose: at twelve columns on a
+phone a tile's own content is well under the ~44px floor most touch-target guidance uses,
+so a target sized to that floor would reach past the tile's own center and into its
+neighbor's. The target is capped below that floor instead — `clamp()`, in a container-query
+unit tied to the tile's own width, the same technique the badge's font-size already uses —
+and the visible dot inside it is smaller still. Measured against the compiled stylesheet at
+the app's own reference tile sizes, in both themes: see `BaseCardEditor.tsx`'s
+`CardEntryTile` doc comment and the CSS comments on `.card-entry-tile__minus` for the exact
+numbers this was checked against.
 
 **Sized and positioned off the real game's own card-collection screen, not an
 app-invented corner-chip convention.** Measured from a reference screenshot — the "×2"

@@ -2092,8 +2092,17 @@ details.group > .group__body {
  * The slot is reused for the one thing that genuinely needs saying at the tile: a
  * save that did not happen. Sixty fields that save themselves have no Save button
  * left to go quiet, so the failure has to be visible at the tile.
+ *
+ * **A sibling of the tile-wide button now, not `CardTile`'s own child** —
+ * `CardEntryTile`'s own doc comment has the accessibility reasoning (an
+ * `aria-label`'d button swallows its descendant text from assistive tech). `.card-tile`
+ * itself is `display: flex; flex-direction: column; gap: 2px`, which used to provide
+ * this element's spacing for free as a flex child; sitting outside that flow now, it
+ * needs its own `display: block` and top margin to read the same way.
  */
 .card-tile__note {
+  display: block;
+  margin-top: 4px;
   font-size: 11px;
   font-weight: 600;
   color: var(--critical);
@@ -2109,115 +2118,225 @@ details.group > .group__body {
 }
 
 /*
- * The stepper row under the frame: `−`, `+` — and, since the number box between them
- * went away, nothing else. Two 24px buttons and a gap is now the row's whole width
- * budget; the badge that used to share this cell's meaning lives over the art instead
- * (`.card-tile__badge`) and never competes with the row for horizontal space.
- *
- * **Under the frame and not over the art**, by request and for a reason: the art is the
- * only thing on a tile that identifies the card, and a tap target laid over it would be
- * covering the identity to reach the control. The badge is the one thing that already
- * sat over the art before it became interactive, which is why it stayed there rather
- * than moving down to join this row.
- *
- * **Stacked by default, side by side once the tile is wide enough** — see the container
- * query below for the threshold and how it was measured. `column` is the default
- * rather than something a media query has to opt into, because the buttons are always
- * drawn now: there is no width below which this row disappears the way it used to.
- *
- * `margin-top` is 12px, not a token amount: the badge above now straddles the frame's
- * bottom edge (`.card-tile__badge`'s `translateY`) rather than stopping flush inside
- * it, so this row needs real clearance under that overlap rather than the 4px that was
- * enough when the badge stayed inside the frame.
+ * The tile-wide press (`+`) and the corner circle (`−`) that replaced the old
+ * stepper row — see `BaseCardEditor.tsx`'s `CardEntryTile` and `DecrementButton`
+ * for the DOM shape and the reasoning tying both back to `cardCountStep`. Nothing
+ * below here touches `.card-tile` itself or anything the totals grid's own
+ * `CardTotalPick` relies on: `.card-entry-tile` is a new, entry-grid-only wrapper
+ * placed *around* one, the same relationship `.card-total__pick` already has to
+ * the tile it wraps for the totals grid.
  */
-.card-tile__count {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  width: 100%;
-  margin-top: 12px;
+.card-entry-tile {
+  position: relative;
+  /*
+   * A container in its own right, not a reuse of `.card-tile`'s own named
+   * `card-tile` container a few rules above. `.card-entry-tile__minus` is this
+   * element's *child*, but `.card-tile` is a grandchild several levels down a
+   * different branch (inside the sibling `<button>`) — a container query unit
+   * only ever resolves against the nearest ancestor with `container-type` set,
+   * and a sibling's descendant is not an ancestor at all. Measured before this
+   * rule existed: with no queryable container anywhere above it, `cqi` on
+   * `.card-entry-tile__minus` fell back to the *viewport's* width instead of
+   * the tile's, so the circle rendered at its clamped ceiling — 36px touch,
+   * 32px desktop — at every density, including twelve columns on a phone,
+   * which is exactly the overlap this rule exists to prevent. This element's
+   * own inline size already equals `.card-tile`'s (both fill the same grid
+   * track), so it is the correct thing to measure against.
+   *
+   * A side effect worth knowing about before it looks like a different bug:
+   * `container-type` implies `contain: layout`, which makes this element a
+   * stacking context of its own — see the `z-index` on `.card-entry-tile__minus`
+   * below, which turned out not to be optional once this rule existed.
+   */
+  container-type: inline-size;
 }
 
 /*
- * One end of the row, **always drawn** — unlike the box-and-steppers design this
- * replaced, there is no width below which a stepper goes undrawn. 24px square is the
- * floor from WCAG 2.5.8, not a comfortable size with slack in it: it is what both the
- * stacked and the side-by-side arrangement are sized around, in `.card-tile__count`'s
- * container query below. On a touch-sized screen the generic `button { min-height:
- * 44px }` in the tap targets block below takes it to 24×44 in the side-by-side
- * arrangement, and to a comfortable 24-wide-by-44-tall column when stacked too.
+ * The `+` button, neutralized to fill its grid cell exactly the way
+ * `.card-total__pick` already neutralizes the totals grid's own wrapper around
+ * `CardTile` — same reset, kept as its own rule rather than merged into that
+ * selector. Editing a rule the totals grid also resolves against is exactly the
+ * failure mode this file's own CLAUDE.md entry on styles.css warns readers about
+ * (a selector recurring far from wherever it gets touched next), and this one
+ * needs a `:disabled` state `.card-total__pick` never does — a shared rule would
+ * fork the first time either grid's own requirement changed anyway.
  */
-.card-tile__step {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
+.card-entry-tile__hit {
+  display: block;
+  width: 100%;
   padding: 0;
-  background: var(--plane);
-  color: var(--ink);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 0;
+  background: none;
+  color: inherit;
   font: inherit;
-  font-size: 15px;
-  line-height: 1;
+  text-align: inherit;
   cursor: pointer;
+  border-radius: var(--radius);
 }
 
-.card-tile__step:hover:not(:disabled) {
+.card-entry-tile__hit:hover:not(:disabled) .card-tile {
+  /* The same tint `.card-total__pick:hover .card-tile` uses, for the same "you
+     are pointing at this" reason. */
   background: var(--hover);
 }
 
 /*
- * A bound reached, or a base somebody else owns — the same treatment for both, because
- * both are "this press is not available" and the difference is said in words elsewhere:
- * a bound is visible as the number itself, in the badge whose accessible name gives the
- * range, and a refusal is in the panel above the grid and in the badge's own accessible
- * name too.
+ * Disabled for one of two different reasons, which do not get the same treatment.
+ *
+ * **At the cap** (`plusTo === null`, base still writable): no dimming beyond the
+ * lost hover tint and the pointer cursor below. The count already says the bound
+ * out loud — the badge past a spare, the grayscale beneath it — so a dimmed tile
+ * here would be a third statement of the same fact rather than a new one.
+ *
+ * **On a read-only base**, that reasoning does not hold: nothing about a held
+ * card's own appearance says "you cannot touch this" the way a capped-out count
+ * does, so a card showing `×3` on a base that is not yours looked identical to one
+ * on a base that is. `.card-tile--readonly`, below, is the fix — applied only for
+ * this reason, never for the cap, which is why it is a class `CardEntryTile` sets
+ * from `readOnlyReason` directly rather than a blanket `:disabled` rule that could
+ * not tell the two apart.
  */
-.card-tile__step:disabled {
-  color: var(--ink-muted);
-  background: var(--grid);
+.card-entry-tile__hit:disabled {
   cursor: not-allowed;
 }
 
 /*
- * Side by side once the tile can hold two 24px buttons and the gap between them —
- * **stacked below the threshold, row above it** — and every number here was measured
- * in a browser against the real stylesheet, the same way the box-and-steppers
- * threshold this replaced was.
- *
- * What has to fit for the row is just `24 + 2 + 24` — **50px** — because the badge that
- * used to share this budget with a number box now lives over the art and costs the row
- * nothing. That is a materially smaller ask than the old design's `54px + 1.25em`
- * (72.8px): removing the box did not just delete a control, it deleted the one thing
- * that made the old threshold need a font-relative term at all — the buttons here are a
- * fixed 24px regardless of type size, so a plain pixel value is the whole answer.
- *
- * Measured, six columns, both themes, against the compiled stylesheet: **44.7px of
- * tile content at 390px** stacks — two buttons need 50px side by side and only have
- * 44.7px, but a single 24px-wide column fits with room either side — and **79.7px at
- * 600px** goes side by side, 29.7px clear of the 50px floor. Sweeping the threshold
- * itself: at 50px exactly the two buttons and the 2px gap between them fit with zero
- * pixels to spare and no overlap; at 49px they clip by a pixel. **52px** is the
- * threshold below, two pixels of margin over the bare arithmetic — the same instinct as
- * the old rule's 1.9px cushion at its tightest case, sized down because there is no
- * font-relative term here that could still move after the measurement was taken.
- *
- * Across the density control at 1280px every column count clears this by a wide
- * margin: 175.3px at six, 125px at eight, 94.8px at ten, 74.7px at twelve — all well
- * past 52px, so the row goes side by side at every density on desktop. The tightest
- * case that still stacks is the default six-column phone tile; turning the phone
- * sideways (≈104px landscape) or moving to a tablet both clear the threshold and go
- * side by side.
+ * The read-only dimming `:disabled` alone cannot target — see the comment above.
+ * Opacity, not a background or a border, because it has to read the same way over
+ * every deck's own frame color and every value the art itself carries, the same
+ * reasoning `.card-entry-tile__minus`'s ring color is chosen for. Scoped to
+ * `.card-tile`, not the wrapping button, so it dims exactly the picture and badge
+ * a reader is looking at rather than a box around them.
  */
-@container card-tile (min-width: 52px) {
-  .card-tile__count {
-    flex-direction: row;
-  }
+.card-tile--readonly {
+  opacity: 0.55;
+}
+
+/*
+ * The corner circle's own read-only state. Unlike the tile-wide button above,
+ * `disabled` here has exactly one cause — see `DecrementButton`'s own doc
+ * comment, it is never disabled for reaching a bound the way the old `−` end
+ * could be — so `:disabled` alone is an unambiguous read-only signal and needs no
+ * separate class the way `.card-tile--readonly` does.
+ */
+.card-entry-tile__minus:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/*
+ * Extra room under the frame, entry-grid tiles only. The old stepper row used to
+ * absorb the badge's own overhang inside its own `margin-top` — `.card-tile__badge`'s
+ * `translateY` still pushes it about a third of its own height past the frame's
+ * bottom edge, unchanged. With that row gone, nothing sits under the frame in the
+ * common case (no failed write), so the badge would otherwise hang past this
+ * tile's own padding and border instead of stopping inside it. `.card-tile` is
+ * shared with the totals grid, whose tiles have never carried anything under the
+ * frame either, so the fix is a modifier only `CardEntryTile` applies — additive to
+ * `CardTile`'s usage there, not a change to the padding both grids' tiles share.
+ */
+.card-tile--entry {
+  padding-bottom: 16px;
+}
+
+/*
+ * The decrement circle: a small, absolutely-positioned second button over the
+ * tile's upper-right corner — a sibling of `.card-entry-tile__hit`, not a child of
+ * it and not a child of `CardTile`. See `CardEntryTile`'s own doc comment for why
+ * that split is what keeps this legal markup instead of a button inside a button.
+ *
+ * **`position: absolute` alone did not win the click, in a real browser — `z-index:
+ * 1` was the actual fix, found by checking `document.elementFromPoint()` at this
+ * circle's own center, not by trusting the stacking rules on paper.** The theory
+ * ("a positioned descendant always paints above a non-positioned one in the same
+ * stacking context") is the reasoning `CardEntryTile`'s own doc comment still gives
+ * for *why this design is legal at all*, and it is not wrong — but `.card-entry-tile`
+ * having `container-type: inline-size` (needed so `cqi` below has something to
+ * measure against — see the note on that rule) makes it establish a stacking
+ * context of its own, and inside that context a bare `z-index: auto` on this button
+ * was not enough to reliably beat `.card-entry-tile__hit`'s own nested
+ * `position: relative` descendant (`.card-tile__frame`) for hit-testing. Measured
+ * before this line existed: a click dead-center of this circle's own
+ * `getBoundingClientRect()` landed on `.card-tile__art-clip` underneath it instead,
+ * so every tap silently incremented rather than decrementing — the exact
+ * double-fire risk `CardEntryTile`'s doc comment warns has no symptom in jsdom.
+ * `1` is enough; it only has to outrank its one sibling's own internal stacking,
+ * not the rest of the page.
+ *
+ * **Two boxes, not one**, because a visible circle sized for a fingertip would be
+ * larger than some tiles are, and a hit box sized for the circle alone would be
+ * well under the ~44px floor most touch-target guidance uses. The outer
+ * `<button>` is the *tap target*: `clamp()`, in `cqi` against `.card-entry-tile`'s
+ * own inline size (that wrapper is a container in its own right — see the note on
+ * `.card-entry-tile` above for why it has to be, rather than reusing `.card-tile`'s
+ * named container a sibling branch away), so it shrinks with a narrow tile instead
+ * of overflowing one; capped at 32px so it cannot reach past this tile's own
+ * midpoint and start intercepting a neighbor's press in a tight, high-density
+ * grid — measured against the compiled stylesheet at twelve columns, 390px: a tile
+ * there is well under 40px of content, so anything close to the generic 44px
+ * tap-target floor would already be reaching into the next tile over. `::before`
+ * draws the *visible* dot, smaller and inset from that box, so the two can
+ * disagree in size on purpose.
+ *
+ * **Flush with the tile's own corner, not hanging past its edge the way the count
+ * badge hangs past the frame's bottom edge.** That was the first attempt — a
+ * `transform: translate()` push, matching the badge's own overhang — and it was
+ * measured, not eyeballed, to be a mistake: at twelve columns, 390px, a 22px
+ * floor-sized circle pushed 28% past the tile's own right edge landed 2.6px inside
+ * the *next* tile's own box, across a 4px gap that thin at this density. The badge
+ * can afford to hang past its frame because nothing else sits where it lands; this
+ * circle sits in a grid packed edge to edge, where a few pixels of overhang is a
+ * few pixels of a neighbor's own tap target. `top: 0; right: 0` with no transform
+ * keeps the whole circle inside this tile's own box at every density, which is
+ * worth more here than the corner-badge look would have bought.
+ */
+.card-entry-tile__minus {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  width: clamp(22px, 46cqi, 32px);
+  height: clamp(22px, 46cqi, 32px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.card-entry-tile__minus::before {
+  content: '';
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  /* `--critical`, this file's one red — the same token `.card-tile--failed`'s
+     border and `.card-tile__note`'s text already use, so a decrement circle and
+     an unsaved-write warning read as the same color family rather than two
+     unrelated reds. */
+  background: var(--critical);
+  /* A ring in the surface color, not a fixed-color border: the circle sits over
+     art of every deck's own frame color and every shade the art itself carries,
+     and a single border color would disappear against some part of that range
+     the way this one cannot. */
+  border: 2px solid var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.card-entry-tile__minus span {
+  position: relative;
+  color: #fff;
+  /* Same outline technique `.card-tile__badge`'s glyphs already use, for the same
+     reason: white text alone does not hold 4.5:1 against `--critical` in dark mode
+     (measured ≈3.7:1 there, ≈5.4:1 in light mode) — a dark stroke fixes that
+     regardless of the exact shade behind it, rather than needing a second color
+     per theme. */
+  -webkit-text-stroke: 0.06em #1a1200;
+  paint-order: stroke fill;
+  font-weight: 800;
+  line-height: 1;
+  font-size: max(10px, 20cqi);
 }
 
 /* Timestamps, attribution and totals: supporting text, never an encoding. */
@@ -4077,6 +4196,26 @@ table.roster--pairs td {
     min-height: 44px;
   }
 
+  /*
+   * `.card-entry-tile__minus` is a `<button>` too, so the generic rule above
+   * already applies to it — and would win outright without this: `min-height`
+   * alone, with no matching `min-width`, would stretch the small circular tap
+   * target into a 44px-tall, ~30px-wide oval, and 44px is well past this file's
+   * own note above `.card-entry-tile__minus` on why its hit box is deliberately
+   * capped below that floor at high density. Positioned *after* the generic
+   * rule on purpose: equal specificity, so this file's own CLAUDE.md note on
+   * `styles.css` ("position decides the cascade") is what makes this win rather
+   * than the rule above it. A touch-sized screen still gets a bigger target
+   * than a mouse does — 36px here against the 32px desktop cap — just not the
+   * generic 44px every other button on this breakpoint gets.
+   */
+  .card-entry-tile__minus {
+    width: clamp(22px, 46cqi, 36px);
+    height: clamp(22px, 46cqi, 36px);
+    min-width: 0;
+    min-height: 0;
+  }
+
   /* Both of these are worn by anchors and spans as well as buttons, so they
      restate the height rather than inheriting it from the rule above. */
   .icon-button {
@@ -4488,6 +4627,22 @@ table.roster--pairs td {
        thicker than the old desktop width, while still handing width back to
        the art at 390px the way the comment above explains. */
     border-width: 2px;
+  }
+
+  /*
+   * `.card-tile`'s own `padding: 3px` shorthand just above resets every side,
+   * including the bottom clearance `.card-tile--entry` adds for the badge's
+   * own overhang. Same specificity as that rule, and this one comes later in
+   * the file, so without restating it here a phone-width tile — the entry
+   * grid's tightest case — would have its clearance quietly reset to 3px and
+   * the badge would hang past the tile's own border again, right where the
+   * six-column phone default already makes every pixel of that overhang
+   * matter most. This file's own CLAUDE.md note on styles.css: position
+   * decides the cascade, not which rule reads as more specific to the thing
+   * it is fixing.
+   */
+  .card-tile--entry {
+    padding-bottom: 12px;
   }
 }
 

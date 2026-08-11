@@ -84,133 +84,203 @@ function Attribution({ base }: { base: BaseInventory | undefined }) {
 }
 
 /**
- * One end of a tile's count row: a press that moves the count by one.
- *
- * `cardCountStep` decides both whether the press is offered and where it lands, so
- * `to === null` is a bound reached — see the note there for why that is **`disabled`**
- * rather than a press that clamps. A read-only base disables both ends — the two
- * steppers are the whole of this cell, since the badge over the art is decoration,
- * never a control; see the note on `CardEntryTile` below.
+ * Safari does not focus a clicked button by default — without forcing it on
+ * `mousedown`, a blur-driven save can fire with nothing left focused to have
+ * caused it. One function, not one copy per button, so a future fix to this
+ * cannot be applied to only one of the tile's two controls and silently miss
+ * the other.
  */
-function StepButton({
+function focusOnMouseDown(event: { currentTarget: HTMLButtonElement }): void {
+  event.currentTarget.focus()
+}
+
+/**
+ * Steps `count` by `by`, and — if that lands the *other* end of the range at its
+ * own bound — hands focus to `sibling` before that control can disable or unmount
+ * out from under whatever was focused. One function for both directions, not one
+ * copy per button: `StepButton`'s old single implementation did this for both `−`
+ * and `+` from one place, and the two-sibling-button shape does not need two
+ * copies of the same reasoning just because the two controls now look different.
+ * A no-op if `by` is not itself legal from `count` — the caller's own render
+ * condition is what keeps that from happening in practice, but this stays safe to
+ * call regardless.
+ */
+function stepAndHandOff(
+  count: number,
+  by: 1 | -1,
+  onCount: (next: number) => void,
+  sibling: RefObject<HTMLButtonElement | null>,
+): void {
+  const to = cardCountStep(count, by)
+  if (to === null) return
+  if (cardCountStep(to, by) === null) sibling.current?.focus()
+  onCount(to)
+}
+
+/**
+ * The corner decrement control: a small red circle over the tile's upper-right
+ * corner.
+ *
+ * It is not `StepButton`'s old `−` end reused verbatim — that lived in a row under
+ * the frame, sized identically to its `+` sibling. This one overlays the picture
+ * instead, at a much smaller footprint, which is a real usability question of its
+ * own: see the CSS comment on `.card-entry-tile__minus` for the touch-target
+ * measurement that shape forces and what was done about it.
+ *
+ * **Rendered whenever `cardCountStep(count, -1)` is legal at all — writable or
+ * not.** That used to be conflated with `readOnlyReason === null`, which meant a
+ * read-only base holding a card drew no `−` at all, identically to a writable base
+ * holding none: a screen-reader user browsing a read-only base's controls could
+ * not tell "you hold none of this" from "this base isn't yours" for a card whose
+ * own badge shows it *is* held. The caller now renders this whenever there is a
+ * copy to decrement, and this component itself decides whether that press is
+ * actually allowed — `disabled`, with the same `, read-only` accessible-name
+ * suffix `StepButton`'s old `−` used to carry, so a read-only base's held cards
+ * show an inert-but-present control instead of an absent one indistinguishable
+ * from "you have zero."
+ */
+function DecrementButton({
+  card,
   count,
-  by,
-  glyph,
-  label,
   onCount,
   buttonRef,
   siblingRef,
   readOnlyReason,
 }: {
+  card: (typeof ALL_CARDS)[number]
   count: number
-  by: 1 | -1
-  /** Drawn, and hidden from the accessibility tree: `label` is the name. */
-  glyph: string
-  /** The whole accessible name, e.g. `One more Barbarian`. */
-  label: string
   onCount: (next: number) => void
-  /** This button's own node, so its sibling can hand focus to it — see `siblingRef`. */
+  /** This button's own node, so the tile-wide `+` can hand focus to it. */
   buttonRef: RefObject<HTMLButtonElement | null>
-  /**
-   * The *other* stepper in this cell, for the one press that takes this button away.
-   * There used to be a count box to fall back on; now the only other control in the
-   * cell that is always operable — never disabled by the same press, and never hidden
-   * by width — is the sibling button.
-   */
+  /** The tile-wide `+` button, for the press that takes this one to disabled. */
   siblingRef: RefObject<HTMLButtonElement | null>
   /** Why this base cannot be typed into, or `null` when it can. */
   readOnlyReason: string | null
 }) {
-  const to = cardCountStep(count, by)
+  const disabled = readOnlyReason !== null
 
   return (
     <button
       ref={buttonRef}
       type="button"
-      className="card-tile__step"
-      disabled={readOnlyReason !== null || to === null}
-      /* The refusal in full for a pointer, where a tooltip costs nothing. The
-         accessible name says only *that* it is read-only — see the tile's note. */
+      className="card-entry-tile__minus"
+      disabled={disabled}
+      /* Unlike the tile-wide `+`'s own `title` (see the note there), nothing sits
+         inside this button to steal the tooltip resolution — it carries only a
+         decorative, `aria-hidden` glyph — so this one genuinely surfaces on
+         hover. */
       title={readOnlyReason ?? undefined}
-      aria-label={readOnlyReason === null ? label : `${label}, read-only`}
-      /*
-       * Safari does not focus a button when it is clicked, and the commit is "focus
-       * left this cell": without this the sibling would blur to nothing, save, and
-       * then the press would change a count that nothing was left focused to commit.
-       * So the press takes focus explicitly rather than relying on the default that
-       * two of three engines happen to give.
-       */
-      onMouseDown={(event) => {
-        event.currentTarget.focus()
-      }}
+      aria-label={disabled ? `One fewer ${card.name}, read-only` : `One fewer ${card.name}`}
+      onMouseDown={focusOnMouseDown}
       onClick={() => {
-        if (to === null) return
-        /*
-         * The press that empties this button hands focus to its sibling. A `disabled`
-         * element cannot hold focus, so the browser would drop it on `<body>` —
-         * which loses the user's place, and counts as leaving the cell, firing a save
-         * in the middle of a run of presses. The sibling stepper is the control in
-         * this cell that is guaranteed still operable — it only disables at the
-         * *opposite* bound — so it is where focus belongs.
-         */
-        if (cardCountStep(to, by) === null) siblingRef.current?.focus()
-        onCount(to)
+        if (disabled) return
+        stepAndHandOff(count, -1, onCount, siblingRef)
       }}
     >
-      <span aria-hidden="true">{glyph}</span>
+      <span aria-hidden="true">−</span>
     </button>
   )
 }
 
 /**
- * One card, with the row you set its count in: `−`, `+`.
+ * One card: tap the tile to add a copy, tap the small corner circle to remove one.
  *
  * The picture, the frame, the deck color and the desaturation are all `CardTile`,
- * shared with the clan-totals grid on the card page. What is added here is that row
- * and the one thing that has to be said at a tile: a save that did not happen.
+ * shared with the clan-totals grid on the card page. What used to be a stepper row
+ * under the frame — two same-sized buttons, `−` and `+` — is now two sibling
+ * buttons wrapped around the tile instead: the whole tile for `+`, a small circle
+ * over its corner for `−`. See "Two controls, in a new shape" below for the DOM
+ * structure that makes that legal, and the paragraph after it for why this is not
+ * the number-box/tap-to-edit-badge shape this grid already tried once and dropped.
  *
- * **There is no way to type a count, at any tile width.** Sixty cards is sixty
- * numbers, and a number box or a tap-to-edit badge were both tried and both dropped:
- * the cap is 10, so a run of taps on `+` is never more than ten presses, which is the
- * whole reason this grid can afford to make the steppers the *only* way to change a
- * count rather than a convenience beside a typed one. Nothing on the tile is a target
- * for typing, so nothing has to reserve space, hide itself at a width, or manage a
- * second focus state — the badge over the art (`CardTile`'s `badge` prop) is once
- * again pure decoration, exactly as it is on the totals grid.
+ * **There is still no way to type a count, at any tile width.** A number box, and
+ * later a tap-to-edit badge, were each tried here and dropped — the record of why
+ * is worth keeping rather than replacing, because the reasoning that killed those
+ * two is not the reasoning this design has to answer to. Both of the old designs
+ * put a *typed, arbitrary* number within reach: a box you could type `37` into, or
+ * a badge doubling as a text field with its own hidden edit state — sixty of either
+ * is what that reasoning was about. Neither exists here. The cap is still 10, a
+ * press still moves the count by exactly one, and `cardCountStep` still decides
+ * both whether a press is offered and where it lands, unchanged from the
+ * two-button design — only *read* by two differently-shaped controls now instead
+ * of two identically-shaped ones. What changed is the hit area a single-step press
+ * has to land on — the whole tile for `+`, a corner circle for `−` — not the kind
+ * of value a press can produce. A tap-to-edit badge would still be the rejected
+ * shape if this design brought one back; making the *existing* tap surfaces bigger
+ * and relocating one of them is a different change than that was.
  *
- * **The row sits under the frame, not over the art.** Overlaid controls would put a
- * tap target on top of the one thing on the tile that identifies the card, and the
- * art is the identity here — there is no name to fall back on.
+ * ## Two controls, in a new shape
  *
- * ## Two controls, and what each of them is called
+ * - **The whole tile is `+`.** Tapping anywhere on the card — the art, the frame,
+ *   the badge's own dead space — adds one copy. `CardTile` itself is still not a
+ *   button (see its own doc comment); the tile-wide press is a `<button>` that
+ *   *wraps* it, the same resolving pattern the totals grid already established for
+ *   "make `CardTile` pressable without making it a button itself" — see
+ *   `CardsView.tsx`'s `CardTotalPick`. Nothing about `CardTile` changed to allow
+ *   this: it is exactly as pressable-from-outside as it always was for that other
+ *   caller, which is why `CardTile.tsx` needed no code change here, only its own
+ *   doc comment brought up to date.
+ * - **A small red circle over the upper-right corner is `−`, drawn whenever there
+ *   is a copy to remove.** It is a sibling of the tile-wide button — a child of
+ *   the positioning `<div>` this function returns, not a child of that button and
+ *   not a child of `CardTile`. A `<button>` nested inside a `<button>` is not
+ *   markup a browser will even keep, which `CardTile`'s own doc comment already
+ *   names as the trap this grid has to design around now that it is the tile
+ *   itself doing the wrapping. `.card-entry-tile__minus` is `position: absolute`
+ *   in a `position: relative` wrapper, and it also carries an explicit
+ *   `z-index: 1` — both are load-bearing, not just the first. `position: absolute`
+ *   alone was checked in a real browser and found *not* sufficient:
+ *   `.card-entry-tile` needs `container-type: inline-size` for this circle's own
+ *   `cqi` sizing to have anything to measure against (see the CSS comment on
+ *   `.card-entry-tile`), and that makes it a stacking context in its own right —
+ *   inside which a bare `z-index: auto` on this circle did not reliably win
+ *   hit-testing against `.card-entry-tile__hit`'s own nested `position: relative`
+ *   descendant (`.card-tile__frame`). Measured before the `z-index` existed:
+ *   `document.elementFromPoint()` at this circle's own center returned the art
+ *   layer underneath it, so every tap silently incremented instead of
+ *   decrementing — exactly the double-fire risk the paragraph below warns jsdom
+ *   cannot catch, caught here only because it was checked in an actual browser
+ *   rather than assumed from the stacking rules on paper. DOM order (this circle
+ *   before the tile-wide button) is free to answer to something else — Tab
+ *   order, see the comment there — because it is `z-index`, not DOM position,
+ *   doing the stacking work now.
+ * - **Which button renders is `cardCountStep`'s call, not a separate `count`
+ *   comparison.** The corner circle used to be gated on `count > 0` while its own
+ *   press was gated on `cardCountStep(count, -1) !== null` — the same fact,
+ *   restated twice, on the same "one function, not a value and a duplicate check
+ *   of it" reasoning `cardCountStep`'s own doc comment already gives for why a
+ *   stepper's `disabled` state and its landing spot must be one answer. The two
+ *   checks agree for every count a working entry grid ever produces, but `count`
+ *   is `number`, not `0 | 1 | … | 10`, and `cardCountStep` truncates before it
+ *   clamps — so a non-integer count in `(0, 1)`, however it got there, would have
+ *   satisfied the old `count > 0` gate and rendered a circle whose own press then
+ *   silently did nothing. `minusTo` below is computed once and used for both the
+ *   render gate and the disabled reasoning, so the two cannot drift apart again.
  *
- * The tile shows no card name; the art is the identity, which is how the event itself
- * presents these. The name is on the tile's `title` as a pointer tooltip and — the
- * part that has to work — in the accessible name of every control in the cell, because
- * a tooltip does not appear on a touch tap and assistive tech mostly ignores a `title`
- * on a plain container.
+ * Sixty tiles times two controls is still 120 things a screen reader can land on,
+ * and the naming is unchanged: `−` is **`One fewer Barbarian`**, `+` is
+ * **`One more Barbarian`** — now announced by a whole-tile button and a small
+ * corner one instead of two same-sized buttons in a row, but the same two
+ * sentences either way, and now the same **disabled-not-absent** treatment on a
+ * read-only base too — see `DecrementButton`'s own doc comment.
  *
- * Sixty tiles times two controls is 120 things a screen reader can land on:
+ * **A failed write is announced at the button, not swallowed by it.** The old
+ * design rendered `Not saved` as a plain child of `CardTile`, which was not
+ * wrapped in anything with an accessible name of its own. Wrapping the tile in a
+ * `<button aria-label="One more Barbarian">` changed that: an element with an
+ * explicit accessible name excludes its own descendant text from what assistive
+ * tech exposes, so the note, left where it was, would never be announced —
+ * tabbing to a failed tile would say only "One more Barbarian, button" and leave a
+ * screen-reader user believing the edit had saved. The note now renders as this
+ * component's own sibling of the button, not the button's child, and the button
+ * carries `aria-describedby` pointing at it when `failed` — so a screen reader
+ * landing on the button by Tab announces the failure as part of what it says, and
+ * one browsing the tile's own content meets the same sentence directly instead of
+ * one hidden inside a labeled control's opaque subtree.
  *
- * - `−` is **`One fewer Barbarian`** and `+` is **`One more Barbarian`**. The card's
- *   name, because somebody landing on a `+` has to know which card it belongs to.
- *
- * Naming carries less than it used to, on purpose: there is no third control left to
- * spell out the deck or the range in words, because the badge that would have carried
- * them is `aria-hidden`. The deck still reaches a screen reader nowhere but the tile's
- * `title`, which assistive tech mostly ignores — an honest cost of dropping the count
- * box's accessible name along with the box, recorded rather than papered over. What a
- * sighted reader gets that a screen reader does not: the frame's deck color, and the
- * badge's own count past a spare.
- *
- * The tile itself is still given **no** `label`. The two steppers are the named
- * things; naming the container as well would announce every card a third time.
- *
- * Held-vs-not still is not carried by color alone for a sighted reader: `--locked`
- * desaturates the art, and the badge — past a spare — prints the exact count in words
- * on top of it. Below that (a card held once, or not at all) the grayscale is what is
- * left to say so, which is the same trade the totals grid already makes for every card
- * on that grid, not a new one introduced here.
+ * Held-vs-not is unchanged: `--locked` desaturates the art, the badge prints the
+ * exact count past a spare, and below that the grayscale is what is left to say
+ * so — the same trade the totals grid already makes for every card on it.
  */
 function CardEntryTile({
   card,
@@ -233,71 +303,111 @@ function CardEntryTile({
   /** Set on the one tile whose blur triggered a save that did not happen. */
   failed: boolean
 }) {
-  /* So a press that disables its own button can hand focus to the one control in the
-     cell guaranteed still operable: its sibling. See `StepButton`'s note on
-     `siblingRef` — the badge is never a focus target, so it is never a candidate. */
+  /* So a press that disables, or un-mounts, one of this cell's controls can hand
+     focus to the other one rather than dropping it on `<body>` — see `stepAndHandOff`. */
   const minusRef = useRef<HTMLButtonElement>(null)
   const plusRef = useRef<HTMLButtonElement>(null)
 
+  const minusTo = cardCountStep(count, -1)
+  const plusTo = cardCountStep(count, 1)
+  const plusDisabled = readOnlyReason !== null || plusTo === null
+  /* One id, from the card rather than a generated one: each `CardEntryTile` in the
+     grid is already one specific card, so `card.id` is unique across the sixty
+     without a second id-generation scheme to keep in step with it. */
+  const noteId = `card-entry-note-${card.id}`
+
   return (
-    <CardTile
-      card={card}
-      held={count > 0}
-      // Only past one copy: `×1` on fifty tiles would be noise, where a spare is
-      // the fact worth spotting. The totals grid makes the same choice, for the
-      // same reason — see `CardTile`.
-      badge={count > 1 ? `×${count}` : undefined}
-      // Names the tile for a pointer now that no text does. The category rides
-      // along because the decks draw no heading any more, leaving the frame color
-      // as the only visible grouping.
-      title={`${card.name} · ${card.category}`}
-      className={failed ? 'card-tile--failed' : undefined}
-    >
-      {/*
-       * The save, and the reason this row is an element at all rather than two
-       * siblings: **leaving the cell is the commit**, not leaving one stepper.
-       * `focusout` bubbles, so one handler here sees focus move off either button,
-       * and `relatedTarget` says where it went — still inside this row, or out.
-       * Pressing `+` five times is one departure and one write; without this it
-       * would be five writes of the whole base, each moving the `updated_at` the
+    <div
+      className="card-entry-tile"
+      /*
+       * The save, and the reason this wrapper is one element with one `onBlur`
+       * rather than two independent buttons: **leaving the cell is the commit**,
+       * not leaving one control. `focusout` bubbles, so one handler here sees
+       * focus move off either button, and `relatedTarget` says where it went —
+       * still inside this wrapper (the tile's own other control), or out. Pressing
+       * `+` five times is one departure and one write; without this it would be
+       * five writes of the whole base, each moving the `updated_at` the
        * attribution line above the grid reads out. The decision itself is
-       * `blurDecision`, so the "a stepper press is not a departure" skip sits with
+       * `blurDecision`, so the "a press is not a departure" skip sits with
        * `unchanged` and `busy` rather than being a second, quieter rule living in
        * here.
+       */
+      onBlur={(event) => onLeave(event.currentTarget.contains(event.relatedTarget))}
+    >
+      {/*
+       * Placed *before* the tile-wide button in the DOM, not after — `position:
+       * absolute` is what keeps this painted (and hit-tested) above the tile-wide
+       * button regardless of which one comes first in markup, so this ordering is
+       * free to answer to something else: Tab order. `StepButton`'s old row put
+       * `−` before `+`, which made `+` the last stop in a cell and let a Tab off
+       * it read as leaving for the next card — the "saves when focus moves on to
+       * a different card" test in `BaseCardEditor.test.tsx` depends on exactly
+       * that. Swap this order and a Tab off `+` would land back on this circle in
+       * the *same* cell instead, which `blurDecision`'s `sameCell` rule reads as
+       * not leaving at all.
+       *
+       * Rendered whenever there is a copy to remove, writable or not — see
+       * `DecrementButton`'s own doc comment for why a read-only base's held cards
+       * still draw this, disabled, rather than nothing at all.
        */}
-      <div
-        className="card-tile__count"
-        onBlur={(event) => onLeave(event.currentTarget.contains(event.relatedTarget))}
-      >
-        <StepButton
+      {minusTo !== null ? (
+        <DecrementButton
+          card={card}
           count={count}
-          by={-1}
-          /* U+2212, not a hyphen: at this size a hyphen sits high and reads as
-             punctuation rather than as the other half of the `+`. */
-          glyph="−"
-          label={`One fewer ${card.name}`}
           onCount={onCount}
           buttonRef={minusRef}
           siblingRef={plusRef}
           readOnlyReason={readOnlyReason}
         />
+      ) : null}
 
-        <StepButton
-          count={count}
-          by={1}
-          glyph="+"
-          label={`One more ${card.name}`}
-          onCount={onCount}
-          buttonRef={plusRef}
-          siblingRef={minusRef}
-          readOnlyReason={readOnlyReason}
+      <button
+        ref={plusRef}
+        type="button"
+        className="card-entry-tile__hit"
+        disabled={plusDisabled}
+        aria-label={
+          readOnlyReason === null ? `One more ${card.name}` : `One more ${card.name}, read-only`
+        }
+        aria-describedby={failed ? noteId : undefined}
+        onMouseDown={focusOnMouseDown}
+        onClick={() => {
+          if (plusDisabled) return
+          stepAndHandOff(count, 1, onCount, minusRef)
+        }}
+      >
+        <CardTile
+          card={card}
+          held={count > 0}
+          // Only past one copy: `×1` on fifty tiles would be noise, where a spare is
+          // the fact worth spotting. The totals grid makes the same choice, for the
+          // same reason — see `CardTile`.
+          badge={count > 1 ? `×${count}` : undefined}
+          // Names the tile for a pointer now that no text does. The category rides
+          // along because the decks draw no heading any more, leaving the frame color
+          // as the only visible grouping.
+          title={`${card.name} · ${card.category}`}
+          // `--entry` reserves the bottom clearance the old stepper row used to
+          // provide for the badge's own overhang — see the CSS comment on
+          // `.card-tile--entry`. `--readonly` is the dimming a read-only base's
+          // held tiles need that a capped-out-but-writable one does not — see the
+          // CSS comment on `.card-entry-tile__hit--readonly`. The totals grid
+          // passes neither class, so both are additive to its usage of `CardTile`,
+          // never a change to it.
+          className={`card-tile--entry${readOnlyReason !== null ? ' card-tile--readonly' : ''}${failed ? ' card-tile--failed' : ''}`}
         />
-      </div>
+      </button>
 
-      {/* At the tile, because the Save button that used to be the success signal is
-          gone and a silent failure would leave somebody believing a count stored. */}
-      {failed ? <span className="card-tile__note">Not saved</span> : null}
-    </CardTile>
+      {/* A sibling of the button, not its child — see this component's own doc
+          comment on why an aria-labeled button would otherwise swallow this from
+          assistive tech. `aria-describedby` above is what still reaches a
+          screen-reader user tabbing straight to the button. */}
+      {failed ? (
+        <span id={noteId} className="card-tile__note">
+          Not saved
+        </span>
+      ) : null}
+    </div>
   )
 }
 

@@ -26,28 +26,41 @@ import { GameIcon } from './primitives.tsx'
  * - **the badge.** Both grids show one only past a copy — `×1` on fifty tiles is
  *   noise where a spare is the fact worth spotting — and it is always plain,
  *   decorative text: see the note on `badge` below for why the entry grid's copy is
- *   not a control despite living in a grid full of them.
- * - **what sits under the frame.** The entry grid's count row — two stepper buttons,
- *   `−` and `+`, arranged stacked or side by side depending on the tile's width — or
- *   nothing at all. The slot has never cared how many controls go in it, which is why
- *   they went in as `children` and not as a prop here.
- * - **where the accessible name comes from.** In the entry grid the two steppers are
- *   the named things, and the tile needs no name of its own — both already say which
- *   card this is, and a name on the container would be a third. In the totals grid the
- *   tile holds no control, so `label` names the tile and is the only place "nobody
- *   holds this" is stated in words — grayscale with no badge would otherwise be color
- *   alone.
+ *   not a control despite sitting inside one now.
+ * - **what sits under the frame.** Nothing, on both grids now — the entry grid's old
+ *   stepper row moved *outside* this component (see "nothing here is clickable"
+ *   below), leaving the slot to whatever a caller still needs said at the tile
+ *   itself: today that is only the entry grid's `Not saved` note, past a failed
+ *   write. The slot has never cared how many children go in it, which is why they
+ *   arrive as `children` and not as a prop here.
+ * - **where the accessible name comes from.** In the entry grid the two count
+ *   controls are the named things, and the tile needs no name of its own — both
+ *   already say which card this is, and a name on the container would be a third. In
+ *   the totals grid the tile holds no control, so `label` names the tile and is the
+ *   only place "nobody holds this" is stated in words — grayscale with no badge would
+ *   otherwise be color alone.
  *
- * **Nothing here is clickable, and that is a decision rather than an omission.** The
- * totals grid does make its tiles pressable — a press lists the bases holding that
- * card — but it does so by wrapping this in a `<button>` of its own. Handling the
- * press in here would make the entry grid's tiles pressable too, where the target
- * would sit around this cell's own `−` and `+` — a button inside a button, which is
- * not even markup a browser will keep. So the caller wrapping it is the contract: this
- * stays a picture, and `label` is the name that button computes from its content. The
- * badge is part of that picture, not an exception to it: max count is 10, so a run of
- * taps on the steppers is the whole answer to changing it, and the badge only ever
- * needs to be looked at, never touched.
+ * **Nothing here is clickable, and that is a decision rather than an omission — now
+ * true of both grids the same way, not just one of them.** The totals grid has always
+ * made its tiles pressable — a press lists the bases holding that card — by wrapping
+ * this in a `<button>` of its own rather than handling the press in here. The entry
+ * grid now does the same thing, for the same reason: a tap anywhere on its tile adds a
+ * copy, and that press is a `<button>` in `BaseCardEditor.tsx`'s `CardEntryTile`
+ * *wrapping* this component, not a handler added to it. Handling either grid's press
+ * in here would make both pressable at once with no way to tell them apart, and for
+ * the entry grid specifically it would nest that press's own target around whatever
+ * sits under the frame — a button inside a button, which is not even markup a browser
+ * will keep. `CardEntryTile` also draws a second, smaller button — the corner `−`
+ * circle — but that one is a *sibling* of the button wrapping this component, not
+ * anything rendered inside it, so it costs this component nothing either.
+ *
+ * So the caller wrapping it is the contract, for both grids identically: this stays a
+ * picture, and `label` is the name a wrapping button computes from its content when it
+ * has no better name of its own to offer (the entry grid's wrapping button supplies
+ * its own accessible name instead, so it never sets `label` here). The badge is part
+ * of that picture, not an exception to it: max count is 10, so a press on either of
+ * the entry grid's two controls is the whole answer to changing it, and the badge only
+ * ever needs to be looked at, never touched.
  *
  * `GameIcon` is used without a `fallback` on purpose: the card art is gitignored,
  * so a fresh clone has none of it, and the element removes itself on error rather
