@@ -1714,12 +1714,16 @@ details.group > .group__body {
 }
 
 /*
- * The exception, and today nothing takes it: a *crop*, for art that is a whole
- * figure standing on a patch of grass rather than a framed portrait. It was every
- * tile under the previous set and is kept because the art may be regenerated
- * unframed — cropping in CSS means no second set of files to re-fetch, nothing to
- * keep in step with the card list, no build step, and the untouched originals still
- * serve the trade table's thumbnails.
+ * The exception: a *crop*, for art whose subject does not already fill its own
+ * 256×320 canvas. Originally kept only for a wholesale art-set regeneration (the
+ * previous set was whole figures standing on a patch of grass rather than framed
+ * portraits, and every tile needed one) — but now also earning its keep card by
+ * card: four of the sixty (see `FACE_CROPS` in `card-crops.ts`) have a visible
+ * background margin baked into an otherwise-correct file, invisible at full
+ * resolution and only obvious once actually rendered at the grid's small tile
+ * size. Cropping in CSS means no second set of files to re-fetch either way,
+ * nothing to keep in step with the card list, no build step, and the untouched
+ * originals still serve the trade table's thumbnails.
  *
  * Three custom properties do it, set per tile from `card-crops.ts`, which is also
  * where the numbers and the how-to-adjust note live:
@@ -1737,6 +1741,11 @@ details.group > .group__body {
  * aspect ratio, so nothing is ever stretched. No fallback values on the custom
  * properties: `CardTile` sets all three whenever it sets `data-crop="face"`, so a
  * default here could only paper over that going wrong.
+ *
+ * This element's containing block is `.card-tile__art-clip`, not `.card-tile__frame`
+ * two levels up — see the `position: relative` on that rule's own comment for why
+ * that has to be true for this crop to actually clip rather than paint past its
+ * tile's own edges.
  */
 .card-tile__frame[data-crop='face'] .card-tile__art {
   position: absolute;
@@ -1959,6 +1968,27 @@ details.group > .group__body {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  /*
+   * Also this element's own containing block, not just `.card-tile__frame`'s —
+   * load-bearing the moment `FACE_CROPS` (`card-crops.ts`) actually names a card.
+   * The absolutely-positioned `.card-tile__frame[data-crop='face'] .card-tile__art`
+   * rule below resolves its containing block against the nearest *positioned*
+   * ancestor, which without this is `.card-tile__frame` two levels up — and
+   * `overflow: hidden` on an element that is not also that containing block does
+   * not clip an absolutely-positioned descendant whose box is calculated against
+   * a further ancestor, in every browser tested. Confirmed both ways in an
+   * isolated reproduction before this line existed: with `.card-tile__art-clip`
+   * unpositioned, a deliberately oversized absolutely-positioned test box painted
+   * fully outside its bounds despite `overflow: hidden`; adding `position:
+   * relative` here — making this element the containing block *and* the clip in
+   * one — fixed it immediately. This sat undiscovered because `FACE_CROPS` was
+   * empty until the four entries that exercise it for the first time; every
+   * `data-crop="whole"` tile (the default, and every tile before those four) never
+   * sets `position` on `.card-tile__art`, so it stays in normal flow and this
+   * change is invisible to it — confirmed by A/B screenshot, whole-framed tiles
+   * pixel-identical before and after.
+   */
+  position: relative;
   /* Inside the tile's own 12px radius and its 2px frame, so the cropped art does
      not square off the corners the deck border rounds. */
   border-radius: calc(var(--radius) - 6px);

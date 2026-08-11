@@ -7,11 +7,12 @@ import { GameIcon } from './primitives.tsx'
  * One card as a framed picture: the framing, the deck frame, the held-vs-not
  * treatment, and the corner badge.
  *
- * The framing is `cardFraming`'s, and today it is `whole` for all sixty — the art
- * is a 256×320 set already cropped on its subject, and the frame is 4:5 to match,
- * so the picture fills the frame untouched. The face-crop branch below is the
- * exception path, kept because the art may be regenerated unframed; see
- * `card-crops.ts`.
+ * The framing is `cardFraming`'s: `whole` for fifty-six of the sixty, where the
+ * art is already cropped on its subject and the 4:5 frame fills untouched, and
+ * `face` for four individually corrected cards whose own art has more background
+ * around a smaller subject than the rest of the set. See `card-crops.ts` for which
+ * four and why, and for the face-crop path's other role as the hook for a future
+ * wholesale art regeneration.
  *
  * It is here rather than inside `BaseCardEditor` because **two grids draw it** —
  * the per-base entry grid, where each tile wraps a row of count controls, and the

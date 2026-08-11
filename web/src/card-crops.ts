@@ -3,18 +3,20 @@ import { CARD_ID_MAX, CARD_ID_MIN } from '@coc/shared'
 /**
  * How each of the sixty tiles frames its picture.
  *
- * **Whole is the default, and today it is the only case.** The art in
- * `web/public/coc/cards/` is a purpose-made set — sixty PNGs, 256×320 portrait,
- * each already cropped tight on its own subject — so the picture *is* the framing
- * the event uses. Zooming into it would enlarge a face that already fills the
- * frame. `.card-tile__frame` is 4:5 to match, so a whole-framed tile shows the
- * file exactly: nothing trimmed, nothing letterboxed.
+ * **Whole is the default, and it is still the framing for fifty-six of sixty.**
+ * The art in `web/public/coc/cards/` is a purpose-made set — sixty PNGs, 256×320
+ * portrait — and most of them are already cropped tight on their own subject, so
+ * the picture *is* the framing the event uses: nothing trimmed, nothing
+ * letterboxed. `.card-tile__frame` is 4:5 to match.
  *
- * The face-crop machinery below is kept deliberately, because the art may be
- * regenerated: an earlier set was whole figures standing on a patch of grass,
- * 256px on the long side, and every tile needed a window cut out of it in CSS. If
- * that happens again, re-cropping is a table of numbers here rather than a rewrite
- * — {@link FACE_CROPS} is empty, not deleted.
+ * Four cards are the exception, in {@link FACE_CROPS} below — not a regenerated
+ * art set, but individual per-card correction, where that one file's own subject
+ * sits smaller in its canvas than the rest of the set and needs the same window
+ * mechanism cropped in. The mechanism reads identically either way, which is
+ * exactly why it was worth keeping unused rather than deleting: an earlier art set
+ * was whole figures standing on a patch of grass, needing a window cut out of
+ * every tile, and if the set is ever regenerated wholesale again this same table
+ * is where that goes too.
  *
  * ## Cropping again, if the art changes
  *
@@ -46,8 +48,8 @@ import { CARD_ID_MAX, CARD_ID_MIN } from '@coc/shared'
  * Then look at the tile. `y` and `zoom` interact: the window is `1/zoom` tall and
  * centered on `y`, so `y` must be at least `50/zoom` or the window runs off the top
  * of the picture and the tile shows empty frame. {@link faceCrop} clamps it, and
- * `card-crops.test.ts` pins that clamp — which is how the path stays tested while
- * the table is empty.
+ * `card-crops.test.ts` pins that clamp directly, independent of whatever the table
+ * currently holds.
  *
  * ## Quality ceiling
  *
@@ -89,14 +91,42 @@ export const WHOLE_FRAMING: CardWholeFraming = { kind: 'whole' }
  * Per-card face crops, keyed by the id in `cards.generated.ts`. **The exception,
  * not the rule.**
  *
- * Empty, and correctly so: the current art is already framed on its subject, and a
- * card listed here would be zoomed into a face that already fills its picture. It
- * is the hook for a future set that is not framed — see the note above for how to
- * fill it in — and `card-crops.test.ts` checks that everything in it names a real
- * card and stays inside its own picture, so it cannot be filled in wrongly and go
- * unnoticed.
+ * The set is framed tight on its subject card by card, not uniformly: most of the
+ * sixty already fill their own 256×320 canvas edge to edge, but four compose their
+ * subject smaller, with a visible background margin around it. That margin is easy
+ * to miss reading the file at full size — it reads as modest corner shading — and
+ * unmissable once the same file renders at an actual tile's ~30–90px, where the
+ * margin becomes a clear gap between the character and the tile's own border. These
+ * four are that correction, found by rendering all sixty at real tile size rather
+ * than by eyeballing the source art:
+ *
+ * - **Golem (23)** — the rock plates are stacked with glowing seams between them;
+ *   the top seam is the golem's "eyes" and sits well clear of the frame, but the
+ *   *second* seam, lower down, reaches the image's own left and right edges, and
+ *   the canvas background shows beneath it at the bottom corners. The fix crops to
+ *   the top plate and the eye-seam only, above the second seam.
+ * - **Lava Hound (25)** — a flat orange-brown background band across the bottom of
+ *   the frame, cropped out by centering higher and tighter.
+ * - **Cannon Cart (39)** — the barrel is shot on a diagonal with a bright sky
+ *   gradient filling whatever the barrel doesn't cover, worst at the top and one
+ *   corner. This one has the least headroom of the four: closing the gap costs
+ *   more zoom than the other three before the sky clears every corner.
+ * - **Ice Hound (59)** — a solid orange-gold background band down the right side of
+ *   the frame. The dark navy area beside the head is *not* this — it is the
+ *   creature's own shadowed body, confirmed by sampling its color against the
+ *   image's actual corner pixels before treating it as background to crop away.
+ *
+ * `card-crops.test.ts` checks that everything in this table names a real card and
+ * stays inside its own picture, so an entry cannot be filled in wrongly and go
+ * unnoticed. Kept as a table rather than four one-off constants because the next
+ * card found this way is another row here, not a new mechanism.
  */
-const FACE_CROPS: Readonly<Record<number, Omit<CardFaceCrop, 'kind'>>> = {}
+const FACE_CROPS: Readonly<Record<number, Omit<CardFaceCrop, 'kind'>>> = {
+  23: { x: 50, y: 30, zoom: 1.67 },
+  25: { x: 48, y: 47, zoom: 1.35 },
+  39: { x: 40, y: 58, zoom: 1.9 },
+  59: { x: 42, y: 48, zoom: 1.55 },
+}
 
 /** Keeps a window inside the picture, so a tile can never show empty frame. */
 function clampCenter(value: number, zoom: number): number {
@@ -107,9 +137,9 @@ function clampCenter(value: number, zoom: number): number {
 /**
  * A face crop with its window clamped inside the picture.
  *
- * Exported because it is the whole of the face path's arithmetic, and the table
- * that would exercise it is empty — so this is where `card-crops.test.ts` proves
- * the machinery still works rather than asserting it vacuously over no entries.
+ * Exported because it is the whole of the face path's arithmetic — so this is
+ * where `card-crops.test.ts` proves the clamp itself is correct, independent of
+ * whichever cards `FACE_CROPS` currently names.
  */
 export function faceCrop(x: number, y: number, zoom: number): CardFaceCrop {
   return { kind: 'face', zoom, x: clampCenter(x, zoom), y: clampCenter(y, zoom) }

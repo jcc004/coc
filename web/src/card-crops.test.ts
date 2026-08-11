@@ -11,12 +11,14 @@ import {
 import { ALL_CARDS, cardById } from './cards.ts'
 
 /*
- * The art is a purpose-made set, already cropped tight on each subject, so every
- * tile is framed whole and the crop table is empty. Two things are worth pinning:
- * that it really is *every* card and not fifty-nine of them, and that the face-crop
- * path still works — it is kept for the next time the art is regenerated, and an
- * empty table means the usual "check each entry" tests would pass vacuously. So the
- * arithmetic is tested directly, on `faceCrop`, rather than over no data at all.
+ * The art is a purpose-made set, already cropped tight on each subject — for
+ * fifty-six of sixty. Four (Golem, Lava Hound, Cannon Cart, Ice Hound) compose
+ * their subject smaller in the canvas than the rest of the set and are corrected
+ * individually in `FACE_CROPS`; see that table's own doc comment in
+ * `card-crops.ts` for how each one was found and why. Two things are worth
+ * pinning here: that the cropped set is exactly those four and not some other
+ * count, and that the face-crop arithmetic itself is right — tested directly on
+ * `faceCrop` below, not only through whatever the table currently holds.
  */
 
 function faceCrops(): { id: number; crop: CardFaceCrop }[] {
@@ -39,14 +41,19 @@ describe('cardFraming', () => {
     }
   })
 
-  it('frames all sixty whole, because the art arrives already cropped', () => {
-    // The switchover this file exists to record: the pictures are 256×320 and tight
-    // on their subject, and `.card-tile__frame` is 4:5 to match, so re-cropping
-    // would zoom into a face that already fills the frame. Named per card rather
-    // than counted — a count would keep passing while the wrong one was cropped.
+  it('frames fifty-six of sixty whole, and names exactly the four exceptions', () => {
+    // Named per card rather than counted — a count would keep passing while the
+    // wrong card was cropped, or while a fifth crop went unnoticed. These four are
+    // the ones found by rendering all sixty at real tile size; see `FACE_CROPS`'s
+    // doc comment in card-crops.ts for what each one's actual defect was.
     const cropped = faceCrops().map(({ id }) => `${id} ${cardById(id)?.name}`)
-    assert.deepEqual(cropped, [])
-    assert.deepEqual(faceCroppedCardIds(), [])
+    assert.deepEqual(cropped, [
+      '23 Golem',
+      '25 Lava Hound',
+      '39 Cannon Cart',
+      '59 Ice Hound',
+    ])
+    assert.deepEqual(faceCroppedCardIds(), [23, 25, 39, 59])
   })
 
   it('hands out the one shared whole framing, so two tiles compare by identity', () => {
@@ -61,10 +68,11 @@ describe('cardFraming', () => {
   })
 
   /*
-   * These three describe the crop table as it *would* be used. They pass over an
-   * empty table today; they are the guard rails for the next set of art, and they
-   * fail rather than pass silently if somebody adds an entry for a card that does
-   * not exist or a window that runs off the edge of its picture.
+   * These three run over today's four real entries, not vacuously — and they stay
+   * the guard rails for the next entry too, whether that is a fifth per-card fix or
+   * a wholesale regeneration of the art: they fail rather than pass silently if an
+   * entry names a card that does not exist or a window that runs off the edge of
+   * its picture.
    */
   it('crops only real card ids', () => {
     for (const id of faceCroppedCardIds()) {
@@ -84,6 +92,25 @@ describe('cardFraming', () => {
     }
   })
 
+  /*
+   * The test above only checks the *post-clamp* value stays in range — it would
+   * pass silently even if `clampCenter` had actually substituted a different
+   * number than the one written in `FACE_CROPS`. Golem's `y: 30` at `zoom: 1.67`
+   * sits only ~0.06 points above its own clamp floor (`50 / 1.67 ≈ 29.94`) —
+   * comfortably inside today, but close enough that the file's own advice ("too
+   * much background showing → raise zoom") could push a future edit past it
+   * without any test catching that the chosen `y` silently stopped being the
+   * effective one. Pinning the table's exact values here, unclamped, is what
+   * would fail loudly if that ever happens, instead of the number quietly
+   * drifting from what someone actually reviewed.
+   */
+  it('never actually needs to clamp its four current entries', () => {
+    assert.deepEqual(cardFraming(23), { kind: 'face', x: 50, y: 30, zoom: 1.67 })
+    assert.deepEqual(cardFraming(25), { kind: 'face', x: 48, y: 47, zoom: 1.35 })
+    assert.deepEqual(cardFraming(39), { kind: 'face', x: 40, y: 58, zoom: 1.9 })
+    assert.deepEqual(cardFraming(59), { kind: 'face', x: 42, y: 48, zoom: 1.55 })
+  })
+
   it('never zooms out past the frame, nor so far in that the art cannot carry it', () => {
     for (const { id, crop } of faceCrops()) {
       const name = cardById(id)?.name ?? id
@@ -94,8 +121,10 @@ describe('cardFraming', () => {
 })
 
 /*
- * The face path, kept for the next regeneration of the art and therefore tested on
- * its own rather than through a table that has no entries in it.
+ * The clamp arithmetic itself, tested directly on `faceCrop` rather than only
+ * through whatever four cards `FACE_CROPS` currently corrects — the same reasoning
+ * as the top-of-file comment: today's entries exercise the arithmetic that already
+ * matters, but not every value combination it has to handle correctly.
  */
 describe('faceCrop', () => {
   it('passes a window that already fits through untouched', () => {
