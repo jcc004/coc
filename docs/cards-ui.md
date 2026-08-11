@@ -234,10 +234,18 @@ grid uses, and the one this grid's very first version used before a number box a
 tap-to-edit badge both tried, and both dropped, taking on the job of showing 0 and 1 as
 well. A card held once, or not at all, is grayscale-versus-not and nothing else — the same
 encoding the totals grid already carries for every card on it, not a new gap introduced
-here. The one layout change on its account: with the old stepper row gone, nothing sits
-under the frame by default any more, so `.card-tile--entry` (entry-grid tiles only) keeps a
-little padding under it for the badge's own overhang to land in — see the CSS comment for
-the measurement.
+here.
+
+**The tile's own padding between the art and its border is deliberately thin, and the
+badge and the corner circle are both allowed to sit over that border rather than being
+kept clear of it.** Reported back directly: the earlier padding read as noticeably more
+air than the real game leaves around its own card art, where the count badge already
+straddles the frame's edge outright. `.card-tile`'s padding dropped from 6px to 2px
+(3px to 1px on the phone breakpoint) for this reason. The entry grid used to reserve
+extra room under the frame — `.card-tile--entry` — specifically to keep the badge's own
+overhang from reaching the border there, which was the opposite call from what the
+totals grid already made for the same badge; that reservation is gone now; both grids
+draw the badge exactly the same way.
 
 **Touch targets, at the density this grid can reach.** The corner circle's own visible
 size and its actual tap target are two different boxes on purpose: at twelve columns on a

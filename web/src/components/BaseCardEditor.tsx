@@ -387,14 +387,15 @@ function CardEntryTile({
           // along because the decks draw no heading any more, leaving the frame color
           // as the only visible grouping.
           title={`${card.name} · ${card.category}`}
-          // `--entry` reserves the bottom clearance the old stepper row used to
-          // provide for the badge's own overhang — see the CSS comment on
-          // `.card-tile--entry`. `--readonly` is the dimming a read-only base's
-          // held tiles need that a capped-out-but-writable one does not — see the
-          // CSS comment on `.card-entry-tile__hit--readonly`. The totals grid
-          // passes neither class, so both are additive to its usage of `CardTile`,
-          // never a change to it.
-          className={`card-tile--entry${readOnlyReason !== null ? ' card-tile--readonly' : ''}${failed ? ' card-tile--failed' : ''}`}
+          // `--readonly` is the dimming a read-only base's held tiles need that a
+          // capped-out-but-writable one does not — see the CSS comment on
+          // `.card-tile--readonly`. The totals grid passes neither this nor
+          // `--failed`, so both stay additive to its usage of `CardTile`, never a
+          // change to it. No entry-grid-only clearance under the frame any more:
+          // the badge is allowed to hang past the border here the same way it
+          // already does on the totals grid — see `.card-tile`'s own comment on
+          // the padding both grids share.
+          className={`${readOnlyReason !== null ? 'card-tile--readonly ' : ''}${failed ? 'card-tile--failed' : ''}`.trim()}
         />
       </button>
 

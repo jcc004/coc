@@ -1855,8 +1855,13 @@ details.group > .group__body {
    * the inline axis buys.
    */
   container: card-tile / inline-size;
-  /* Tighter than it was: the name line it used to sit under has gone. */
-  padding: 6px;
+  /* Tighter still: reported back as too much air between the art and the border
+     for a game whose own card frames run the picture almost edge to edge. The
+     badge and the entry grid's corner circle are both allowed to sit over the
+     border now rather than being kept clear of it — see `.card-tile__badge` and
+     `.card-entry-tile__minus`, and the removed `.card-tile--entry` clearance
+     below — the same "consistent with the game's own UI" call that shrank this. */
+  padding: 2px;
   /* 4px to read as thick as the game's own card border — 2px measured too thin
      against it. See the phone override further down: it scales this down to 2px
      rather than dropping it back to the old desktop width. */
@@ -2224,20 +2229,6 @@ details.group > .group__body {
   cursor: not-allowed;
 }
 
-/*
- * Extra room under the frame, entry-grid tiles only. The old stepper row used to
- * absorb the badge's own overhang inside its own `margin-top` — `.card-tile__badge`'s
- * `translateY` still pushes it about a third of its own height past the frame's
- * bottom edge, unchanged. With that row gone, nothing sits under the frame in the
- * common case (no failed write), so the badge would otherwise hang past this
- * tile's own padding and border instead of stopping inside it. `.card-tile` is
- * shared with the totals grid, whose tiles have never carried anything under the
- * frame either, so the fix is a modifier only `CardEntryTile` applies — additive to
- * `CardTile`'s usage there, not a change to the padding both grids' tiles share.
- */
-.card-tile--entry {
-  padding-bottom: 16px;
-}
 
 /*
  * The decrement circle: a small, absolutely-positioned second button over the
@@ -4621,28 +4612,12 @@ table.roster--pairs td {
     gap: 4px;
   }
   .card-tile {
-    padding: 3px;
+    padding: 1px;
     gap: 1px;
     /* Scaled down from the 4px desktop border, not dropped back to 1px: still
        thicker than the old desktop width, while still handing width back to
        the art at 390px the way the comment above explains. */
     border-width: 2px;
-  }
-
-  /*
-   * `.card-tile`'s own `padding: 3px` shorthand just above resets every side,
-   * including the bottom clearance `.card-tile--entry` adds for the badge's
-   * own overhang. Same specificity as that rule, and this one comes later in
-   * the file, so without restating it here a phone-width tile — the entry
-   * grid's tightest case — would have its clearance quietly reset to 3px and
-   * the badge would hang past the tile's own border again, right where the
-   * six-column phone default already makes every pixel of that overhang
-   * matter most. This file's own CLAUDE.md note on styles.css: position
-   * decides the cascade, not which rule reads as more specific to the thing
-   * it is fixing.
-   */
-  .card-tile--entry {
-    padding-bottom: 12px;
   }
 }
 
