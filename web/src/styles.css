@@ -2261,13 +2261,18 @@ details.group > .group__body {
  * own inline size (that wrapper is a container in its own right — see the note on
  * `.card-entry-tile` above for why it has to be, rather than reusing `.card-tile`'s
  * named container a sibling branch away), so it shrinks with a narrow tile instead
- * of overflowing one; capped at 32px so it cannot reach past this tile's own
- * midpoint and start intercepting a neighbor's press in a tight, high-density
- * grid — measured against the compiled stylesheet at twelve columns, 390px: a tile
- * there is well under 40px of content, so anything close to the generic 44px
- * tap-target floor would already be reaching into the next tile over. `::before`
- * draws the *visible* dot, smaller and inset from that box, so the two can
- * disagree in size on purpose.
+ * of overflowing one. Capped at 40px, not 32px any more — raised on direct
+ * feedback that the circle read as too small, and re-measured rather than just
+ * bumped: at twelve columns, 390px (the tightest case in the app, where the
+ * *floor* governs, not this ceiling) a tile is well under 40px of content, so the
+ * ceiling only ever engages on wider tiles with real room either side of it — a
+ * six-column desktop tile clears 170px, and even twelve columns at 1280px clears
+ * 90px, both comfortably wider than 40px with no neighbor to reach into. The floor
+ * stays 22px, unchanged: that is the number the neighbor-intrusion measurement
+ * below is actually about, and this feedback was about the desktop-scale circle
+ * the ceiling governs, not the phone-tightest one the floor does. `::before` draws
+ * the *visible* dot, smaller and inset from that box, so the two can disagree in
+ * size on purpose.
  *
  * **Flush with the tile's own corner, not hanging past its edge the way the count
  * badge hangs past the frame's bottom edge.** That was the first attempt — a
@@ -2286,8 +2291,8 @@ details.group > .group__body {
   z-index: 1;
   top: 0;
   right: 0;
-  width: clamp(22px, 46cqi, 32px);
-  height: clamp(22px, 46cqi, 32px);
+  width: clamp(22px, 46cqi, 40px);
+  height: clamp(22px, 46cqi, 40px);
   padding: 0;
   border: 0;
   background: transparent;
@@ -4197,12 +4202,12 @@ table.roster--pairs td {
    * rule on purpose: equal specificity, so this file's own CLAUDE.md note on
    * `styles.css` ("position decides the cascade") is what makes this win rather
    * than the rule above it. A touch-sized screen still gets a bigger target
-   * than a mouse does — 36px here against the 32px desktop cap — just not the
-   * generic 44px every other button on this breakpoint gets.
-   */
+   * than a mouse does — 44px here against the 40px desktop cap — just not
+   * pushed past that by the generic rule for every other button on this
+   * breakpoint. */
   .card-entry-tile__minus {
-    width: clamp(22px, 46cqi, 36px);
-    height: clamp(22px, 46cqi, 36px);
+    width: clamp(22px, 46cqi, 44px);
+    height: clamp(22px, 46cqi, 44px);
     min-width: 0;
     min-height: 0;
   }
