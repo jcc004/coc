@@ -95,20 +95,20 @@ describe('cardFraming', () => {
   /*
    * The test above only checks the *post-clamp* value stays in range — it would
    * pass silently even if `clampCenter` had actually substituted a different
-   * number than the one written in `FACE_CROPS`. Golem's `y: 30` at `zoom: 1.67`
-   * sits only ~0.06 points above its own clamp floor (`50 / 1.67 ≈ 29.94`) —
-   * comfortably inside today, but close enough that the file's own advice ("too
-   * much background showing → raise zoom") could push a future edit past it
-   * without any test catching that the chosen `y` silently stopped being the
-   * effective one. Pinning the table's exact values here, unclamped, is what
-   * would fail loudly if that ever happens, instead of the number quietly
-   * drifting from what someone actually reviewed.
+   * number than the one written in `FACE_CROPS`. Every entry here keeps a real
+   * margin from its own clamp floor (`50 / zoom`) on purpose — Cannon Cart, the
+   * tightest of the four at `zoom: 1.5`, still has a floor of `33.3`, comfortably
+   * clear of both its `x: 44` and `y: 54` — so nothing here relies on the clamp to
+   * do anything today. Pinning the table's exact values here, unclamped, is what
+   * would fail loudly if a future edit ever pushed one of them past its floor,
+   * instead of the chosen crop point quietly drifting from what someone actually
+   * reviewed.
    */
   it('never actually needs to clamp its four current entries', () => {
-    assert.deepEqual(cardFraming(23), { kind: 'face', x: 50, y: 30, zoom: 1.67 })
-    assert.deepEqual(cardFraming(25), { kind: 'face', x: 48, y: 47, zoom: 1.35 })
-    assert.deepEqual(cardFraming(39), { kind: 'face', x: 40, y: 58, zoom: 1.9 })
-    assert.deepEqual(cardFraming(59), { kind: 'face', x: 42, y: 48, zoom: 1.55 })
+    assert.deepEqual(cardFraming(23), { kind: 'face', x: 50, y: 50, zoom: 1.15 })
+    assert.deepEqual(cardFraming(25), { kind: 'face', x: 50, y: 48, zoom: 1.2 })
+    assert.deepEqual(cardFraming(39), { kind: 'face', x: 44, y: 54, zoom: 1.5 })
+    assert.deepEqual(cardFraming(59), { kind: 'face', x: 46, y: 50, zoom: 1.2 })
   })
 
   it('never zooms out past the frame, nor so far in that the art cannot carry it', () => {

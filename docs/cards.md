@@ -68,7 +68,11 @@ an actual tile's ~30–90px, where the margin becomes a clear gap between the ch
 tile's own border — found by rendering all sixty at real tile size, not by reading the source art.
 Each of the four has its own shape of defect (a background band on one edge, a background-touching
 seam between rock plates in Golem's case), documented card by card in `FACE_CROPS`'s own doc comment
-in `card-crops.ts`.
+in `card-crops.ts`. The first pass at all four shipped over-corrected — reported back directly as
+zoomed in too far, and it was, having traded the background gap for a crop tight enough to lose the
+subject itself in one case. `FACE_CROPS`'s current values are a second pass that measured several
+candidate zooms per card side by side and kept the smallest one that actually cleared the
+background, rather than the first value that happened to work.
 
 - `cardFraming(id)` returns `WHOLE_FRAMING` unless the id appears in `FACE_CROPS`, which today holds
   those four. Whole is still the default; a face crop is still the exception, and `CardTile` sets

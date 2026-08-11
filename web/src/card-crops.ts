@@ -101,20 +101,33 @@ export const WHOLE_FRAMING: CardWholeFraming = { kind: 'whole' }
  * than by eyeballing the source art:
  *
  * - **Golem (23)** — the rock plates are stacked with glowing seams between them;
- *   the top seam is the golem's "eyes" and sits well clear of the frame, but the
- *   *second* seam, lower down, reaches the image's own left and right edges, and
- *   the canvas background shows beneath it at the bottom corners. The fix crops to
- *   the top plate and the eye-seam only, above the second seam.
+ *   the lower seam reaches the image's own left and right edges, with canvas
+ *   background showing beneath it at the bottom corners. A small, centered zoom is
+ *   enough to clear it without losing either glowing seam — the "eyes" and the
+ *   second row both stay in frame.
  * - **Lava Hound (25)** — a flat orange-brown background band across the bottom of
- *   the frame, cropped out by centering higher and tighter.
+ *   the frame (and a thinner one at the top), cropped out by a modest zoom shifted
+ *   slightly above center.
  * - **Cannon Cart (39)** — the barrel is shot on a diagonal with a bright sky
- *   gradient filling whatever the barrel doesn't cover, worst at the top and one
- *   corner. This one has the least headroom of the four: closing the gap costs
- *   more zoom than the other three before the sky clears every corner.
- * - **Ice Hound (59)** — a solid orange-gold background band down the right side of
- *   the frame. The dark navy area beside the head is *not* this — it is the
+ *   gradient filling whatever the barrel doesn't cover, worst at the top-left
+ *   corner. This one needs the most zoom of the four to clear every corner, though
+ *   still well short of losing the barrel's own recognizable shape.
+ * - **Ice Hound (59)** — a solid orange-gold background band in the top-right
+ *   corner. The dark navy area beside the head is *not* this — it is the
  *   creature's own shadowed body, confirmed by sampling its color against the
  *   image's actual corner pixels before treating it as background to crop away.
+ *
+ * **Revisited once, after shipping too tight.** The first pass at all four
+ * (measured the same way — rendered at real tile size, not eyeballed at full
+ * resolution) over-corrected: reported back directly as "zoomed in too much,"
+ * and looking at the shipped result, it was — Ice Hound in particular had lost
+ * its ice crystal and most of its head to a crop that closed the background gap
+ * by a much wider margin than the gap itself needed. Every value below is the
+ * result of a second pass that tried the *smallest* zoom that actually clears
+ * the background at each of that card's own corners, checked against several
+ * candidate zooms side by side rather than picking the first one that worked —
+ * the same lesson the file's own "use the smallest zoom that actually closes the
+ * gap" line above already stated but the first pass under-applied.
  *
  * `card-crops.test.ts` checks that everything in this table names a real card and
  * stays inside its own picture, so an entry cannot be filled in wrongly and go
@@ -122,10 +135,10 @@ export const WHOLE_FRAMING: CardWholeFraming = { kind: 'whole' }
  * card found this way is another row here, not a new mechanism.
  */
 const FACE_CROPS: Readonly<Record<number, Omit<CardFaceCrop, 'kind'>>> = {
-  23: { x: 50, y: 30, zoom: 1.67 },
-  25: { x: 48, y: 47, zoom: 1.35 },
-  39: { x: 40, y: 58, zoom: 1.9 },
-  59: { x: 42, y: 48, zoom: 1.55 },
+  23: { x: 50, y: 50, zoom: 1.15 },
+  25: { x: 50, y: 48, zoom: 1.2 },
+  39: { x: 44, y: 54, zoom: 1.5 },
+  59: { x: 46, y: 50, zoom: 1.2 },
 }
 
 /** Keeps a window inside the picture, so a tile can never show empty frame. */
