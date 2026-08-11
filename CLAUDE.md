@@ -152,6 +152,18 @@ logic (their *underlying* pure logic is tested elsewhere; the component wiring i
 full-repo review found this framing overstating the gap's safety; treat "untested" as "the wiring
 around already-tested logic," not "nothing here can break."
 
+## Repo visibility
+
+The repo went public on 2026-08-10, still owned by the personal account `jcc004`, not an org.
+That ownership matters for one setting: GitHub's `allow_forking` toggle only works on org-owned
+private repos — `PATCH /repos/jcc004/coc -f allow_forking=false` fails with "Allow forks setting
+can only be changed on org-owned private repositories." So forking, and therefore PRs from
+non-collaborators, cannot be disabled here short of transferring the repo to an org or reverting
+to private. Decided to leave it open: anyone can open a PR from a fork, same as ordinary open
+source, but merge rights stay collaborators-only regardless. The other lever GitHub offers,
+interaction limits set to "collaborators only," was considered and rejected because it expires
+after a max of 6 months and silently needs renewing rather than being a one-time setting.
+
 ## Deploying
 
 **Committing to `main` is deploying.** The droplet runs `coc-update.timer` every five minutes,
