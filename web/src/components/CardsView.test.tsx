@@ -504,8 +504,8 @@ describe('the leaderboard view picker', () => {
       [
         'Overall',
         'Rarity',
-        'By category',
         'Full rows',
+        'By category',
         'Full decks',
         'Spares on hand',
         'Most active trader',

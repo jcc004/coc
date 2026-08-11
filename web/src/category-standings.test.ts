@@ -89,7 +89,10 @@ describe('categoryStandings — the order is total, within one deck', () => {
   /*
    * The same points-vs-distinct tie `card-standings.test.ts` uses, confined to the
    * Elixir deck: 54 is reachable both as one card held nine times (10+9+...+2) and
-   * as two cards held three times each (27+27) — same score, different breadth.
+   * as two cards held three times each (27+27) — same score, different breadth. Both
+   * routes tie on points, so this only pins that distinct still decides between them
+   * — it does not on its own distinguish a distinct-first sort from a points-first
+   * one broken by distinct, which is what the next test is for.
    */
   it('breaks a points tie on distinct, descending', () => {
     const bases = [named('#A', 'Anna'), named('#B', 'Bert')]
@@ -104,6 +107,40 @@ describe('categoryStandings — the order is total, within one deck', () => {
     )
     assert.equal(rows[0]?.distinct, 2)
     assert.equal(rows[1]?.distinct, 1)
+  })
+
+  /*
+   * The actual reported bug, 2026-08-11: on the live Elixir board, a base with 18 of
+   * 19 cards but several stacked spares (higher points) outranked a base holding all
+   * 19 (lower points, one copy each). Distinct must lead points even when points
+   * disagree outright, not merely when they tie — the test above alone would not have
+   * caught this, since it only exercises a points tie.
+   */
+  it('ranks a fully-held deck above a higher-scoring incomplete one', () => {
+    const bases = [named('#A', 'Complete'), named('#B', 'Hoarder')]
+    const inventory = [
+      // One copy each of all 19 Elixir cards: distinct 19, points 19 * cardPoints(1).
+      base(
+        '#A',
+        Array.from({ length: 19 }, (_, index) => [index + 1, 1] as [number, number]),
+      ),
+      // Nine copies each of 18 of the 19: distinct 18, but far more points.
+      base(
+        '#B',
+        Array.from({ length: 18 }, (_, index) => [index + 1, 9] as [number, number]),
+      ),
+    ]
+    const rows = categoryStandings(bases, inventory).Elixir
+
+    const complete = rows.find((row) => row.label === 'Complete')!
+    const hoarder = rows.find((row) => row.label === 'Hoarder')!
+    assert.equal(complete.distinct, 19)
+    assert.equal(hoarder.distinct, 18)
+    assert.ok(hoarder.points > complete.points, 'fixture must reproduce the reported bug')
+    assert.deepEqual(
+      rows.map((row) => row.label),
+      ['Complete', 'Hoarder'],
+    )
   })
 
   it('breaks a full points-and-distinct tie by member name', () => {
@@ -130,15 +167,15 @@ describe('categoryStandings — the order is total, within one deck', () => {
     )
   })
 
-  it('shares a rank on a genuine points tie within one deck, and skips the number it consumes', () => {
-    // Same 54-point tie as the points-vs-distinct test above: Bert (two cards, 27
-    // each) and Anna (one card, nine copies) are level on points, so they share
-    // rank 1 and Cass — the only other row — reads 3, not 2.
-    const bases = [named('#A', 'Anna'), named('#B', 'Bert'), named('#C', 'Cass')]
+  it('shares a rank on a genuine distinct tie within one deck, and skips the number it consumes', () => {
+    // Bert (cards 1,2 held three each) and Diane (cards 3,4 held one each) both hold
+    // 2 distinct Elixir cards, at very different points (54 vs 20) — rank is on
+    // distinct, so they share rank 1 regardless, and Anna (1 distinct) reads 3, not 2.
+    const bases = [named('#A', 'Anna'), named('#B', 'Bert'), named('#D', 'Diane')]
     const inventory = [
-      base('#A', [[1, 9]]),
+      base('#A', [[1, 1]]),
       base('#B', [[1, 3], [2, 3]]),
-      base('#C', [[1, 1]]),
+      base('#D', [[3, 1], [4, 1]]),
     ]
     const rows = categoryStandings(bases, inventory).Elixir
 
@@ -146,19 +183,41 @@ describe('categoryStandings — the order is total, within one deck', () => {
       rows.map((row) => [row.label, row.rank]),
       [
         ['Bert', 1],
-        ['Anna', 1],
-        ['Cass', 3],
+        ['Diane', 1],
+        ['Anna', 3],
       ],
     )
   })
 
-  it('ranks each deck on its own points, independently of the others', () => {
-    // Anna leads Elixir but trails Dark Elixir — her rank in one deck must not leak
-    // into the other, the same property the ordering test above pins for the sort.
+  it('does not share a rank on a points tie when distinct differs', () => {
+    // Anna (one card, nine copies) and Bert (two cards, three copies each) land on
+    // the same points by two different routes — distinct still tells them apart for
+    // ranking purposes even when points alone would suggest a tie.
+    const bases = [named('#A', 'Anna'), named('#B', 'Bert')]
+    const inventory = [base('#A', [[1, 9]]), base('#B', [[1, 3], [2, 3]])]
+    const rows = categoryStandings(bases, inventory).Elixir
+
+    assert.equal(rows[0]?.points, rows[1]?.points)
+    assert.notEqual(rows[0]?.rank, rows[1]?.rank)
+    assert.deepEqual(
+      rows.map((row) => [row.label, row.rank]),
+      [
+        ['Bert', 1],
+        ['Anna', 2],
+      ],
+    )
+  })
+
+  it('ranks each deck on its own standing, independently of the others', () => {
+    // Anna leads Elixir (2 distinct cards to Bert's 1) but trails Dark Elixir (1 to
+    // Bert's 2) — her rank in one deck must not leak into the other, the same
+    // property the ordering test above pins for the sort. Distinct differs outright
+    // in both decks (no tie to fall through to points for), so this pins rank on the
+    // new primary key rather than incidentally passing via the points tiebreak.
     const bases = [named('#A', 'Anna'), named('#B', 'Bert')]
     const inventory = [
-      base('#A', [[1, 9], [20, 1]]),
-      base('#B', [[1, 1], [20, 9]]),
+      base('#A', [[1, 1], [2, 1], [20, 1]]),
+      base('#B', [[1, 1], [20, 1], [21, 1]]),
     ]
     const rankings = categoryStandings(bases, inventory)
 
@@ -180,11 +239,12 @@ describe('categoryStandings — the order is total, within one deck', () => {
 
   it('reorders independently deck by deck: the Elixir order need not match Dark Elixir’s', () => {
     // Anna is ahead in Elixir but behind in Dark Elixir — each deck's list has to
-    // reflect its own scores, not one base's overall standing.
+    // reflect its own scores, not one base's overall standing. Same fixture as the
+    // rank test above.
     const bases = [named('#A', 'Anna'), named('#B', 'Bert')]
     const inventory = [
-      base('#A', [[1, 9], [20, 1]]),
-      base('#B', [[1, 1], [20, 9]]),
+      base('#A', [[1, 1], [2, 1], [20, 1]]),
+      base('#B', [[1, 1], [20, 1], [21, 1]]),
     ]
     const rankings = categoryStandings(bases, inventory)
 

@@ -13,8 +13,8 @@ the three panels under them are the whole clan and are deliberately *not* filter
 1. the base picker, with the **Mine / All** filter to its left, and the 60-tile grid for the base
    it chooses;
 2. **Trade suggestions** — who should swap what with whom, 5 options (rows) at a time;
-3. **Collection leaderboard** — a **View** picker over seven boards (Overall, Rarity, By category,
-   Full rows, Full decks, Spares on hand, Most active trader), each ranking every tracked base by
+3. **Collection leaderboard** — a **View** picker over seven boards (Overall, Rarity, Full rows,
+   By category, Full decks, Spares on hand, Most active trader), each ranking every tracked base by
    its own measure, 5 rows at a time, sharing one Owner filter and pager that never renumber — see
    [Seven boards: the View picker](#seven-boards-the-view-picker);
 4. **Cards across the clan** — an expandable copy of the same grid, every tile badged with the
@@ -470,9 +470,10 @@ same fact for every base at once.
 
 A **View** select at the top of the leaderboard table (`CardsView.tsx`, styled like `RowLimitSelect`
 and the totals panel's own `#card-total-sort`) switches between seven rankings, in this fixed order:
-**Overall**, **Rarity**, **By category**, **Full rows**, **Full decks**, **Spares on hand**,
-**Most active trader**. The choice is remembered per browser at `coc:cardLeaderboardView`, the same
-mechanism as `coc:cardStandingLimit` and `coc:cardTotalSort`.
+**Overall**, **Rarity**, **Full rows**, **By category**, **Full decks**, **Spares on hand**,
+**Most active trader** — the whole-collection boards first, then the ones scoped to a narrower
+slice (a single deck, a spare threshold, trading activity). The choice is remembered per browser at
+`coc:cardLeaderboardView`, the same mechanism as `coc:cardStandingLimit` and `coc:cardTotalSort`.
 
 Every ranking is a pure module beside `card-standings.ts`, computed from the same `bases`/`inventory`
 already on the page (plus, for the trader board, the Trade Tracker's own `trades`) — nothing is
@@ -491,8 +492,8 @@ its own columns beyond that:
 |---|---|---|
 | Overall | Points, Cards (`n/60` + meter), Copies, Last updated | Points — see above |
 | Rarity | Rarity score, Cards (`n/60` + meter) | Sum of `rarityPoints()` over distinct cards held, weighted by clan-wide scarcity right now |
-| By category | Points, Cards (`n`/deck size + meter) | Points, computed separately for the chosen deck alone |
 | Full rows | Full rows (`n/10` + ten fill marks), Longest streak, Score | `fullRowCount × 10 + longestStreak × 5` over the real game's six-wide rows |
+| By category | Cards (`n`/deck size + meter), Points | Distinct cards held **within the chosen deck**, computed separately per deck; points only break a tie |
 | Full decks | Decks complete (`n/4`), Which decks (chips), Distinct cards | How many of the four decks are held outright |
 | Spares on hand | Spares, Spare variety | Tradeable spares (copies beyond the one kept) summed across all 60 |
 | Most active trader | Completed trades, Distinct partners | Completed trades a base was party to, from the Trade Tracker |
@@ -503,6 +504,14 @@ Builder Base, Super Troop, defaulting to the first and remembered separately at
 `coc:cardLeaderboardCategory`, so switching away and back does not lose which deck was open. Unlike
 the other six, "By category" is really four independently-ranked boards; `categoryStandings()`
 returns all four at once, keyed by category, and the picker selects which key's rows to show.
+
+**Unlike every other board here, "By category" ranks by distinct cards first and points only as a
+tiebreak — the reverse of Overall's order.** Confined to one ~19-card deck, points can disagree
+outright with "how close is this base to finishing the deck", not just tie at the margins: a base
+sitting on several spares of a few cards can out-point a base one card short of a clean deck, while
+being the base further from finished. `category-standings.ts` has the full reasoning and the
+reported case that prompted it (2026-08-11): an 18-of-19 base outranking a 19-of-19 one on points
+alone.
 
 **The Rows select, Owner filter and pager are the same instance across every view**, not reset when
 the picker changes — `Leaderboard` is one generic component parameterized by the active board's row

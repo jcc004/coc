@@ -11,14 +11,14 @@ describe('LEADERBOARD_VIEWS — the picker’s seven options', () => {
   it('offers exactly these seven, in this order', () => {
     assert.deepEqual(
       LEADERBOARD_VIEWS.map((option) => option.value),
-      ['overall', 'rarity', 'category', 'rows', 'decks', 'spares', 'traders'],
+      ['overall', 'rarity', 'rows', 'category', 'decks', 'spares', 'traders'],
     )
   })
 
   it('labels them exactly as agreed, not a paraphrase', () => {
     assert.deepEqual(
       LEADERBOARD_VIEWS.map((option) => option.label),
-      ['Overall', 'Rarity', 'By category', 'Full rows', 'Full decks', 'Spares on hand', 'Most active trader'],
+      ['Overall', 'Rarity', 'Full rows', 'By category', 'Full decks', 'Spares on hand', 'Most active trader'],
     )
   })
 })

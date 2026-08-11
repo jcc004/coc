@@ -151,10 +151,10 @@ export function HelpView({ section }: { section: HelpSectionId | null }) {
         <ScoringRules />
         <h3>Rarity</h3>
         <RarityScoringRules />
-        <h3>By category</h3>
-        <CategoryScoringRules />
         <h3>Full rows</h3>
         <RowScoringRules />
+        <h3>By category</h3>
+        <CategoryScoringRules />
         <h3>Full decks</h3>
         <DeckCompletionScoringRules />
         <h3>Spares on hand</h3>

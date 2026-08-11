@@ -267,15 +267,19 @@ export function CategoryScoringRules() {
   return (
     <>
       <p className="empty-hint">
-        The same points curve as the Overall board, computed <strong>separately for each of the
-        four decks</strong> — so a base's Elixir hoard cannot carry it up the Dark Elixir board, or
-        the reverse. Choose a deck below the picker to see that deck's own ranking.
+        Ranked by <strong>distinct cards held within the chosen deck</strong>, not points — the
+        reverse of the Overall board. Choose a deck below the picker to see that deck's own ranking,
+        computed <strong>separately for each of the four decks</strong> so a base's Elixir hoard
+        cannot carry it up the Dark Elixir board, or the reverse.
       </p>
       <p className="empty-hint">
-        Level on points within the chosen deck, more distinct cards of that deck goes first; level
-        on both, by name and then tag. A rank is shared on a genuine tie within that deck and then
-        skips — each of the four boards ranks and ties entirely on its own, independently of the
-        other three.
+        More of the chosen deck's cards goes first, whatever the points; the same points curve as
+        the Overall board only breaks a tie between two bases holding the same number of that
+        deck's cards. Confined to one deck, points can disagree outright with "how close is this
+        base to finishing it" — a few spares can out-point a base one card short of complete — so
+        completeness leads here. Level on both points and distinct, by name and then tag. A rank is
+        shared on a genuine tie in distinct within that deck and then skips — each of the four
+        boards ranks and ties entirely on its own, independently of the other three.
       </p>
     </>
   )

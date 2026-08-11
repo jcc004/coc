@@ -30,17 +30,18 @@ export interface LeaderboardViewOption {
 }
 
 /**
- * The seven options, in this exact order — agreed through a full design
- * conversation and not to be reordered or relabeled independently of it.
- * Overall leads because it is the board that existed before this picker did,
- * so a reader who has never touched the control still sees what they always
- * saw.
+ * The seven options, in this order. Overall leads because it is the board that
+ * existed before this picker did, so a reader who has never touched the control
+ * still sees what they always saw. The rest — reordered 2026-08-11, moving "By
+ * category" after "Full rows" — group the whole-collection boards (Rarity, Full
+ * rows) before the ones scoped to a narrower slice (a single deck, a spare
+ * threshold, trading activity), rather than interleaving them.
  */
 export const LEADERBOARD_VIEWS: readonly LeaderboardViewOption[] = [
   { value: 'overall', label: 'Overall' },
   { value: 'rarity', label: 'Rarity' },
-  { value: 'category', label: 'By category' },
   { value: 'rows', label: 'Full rows' },
+  { value: 'category', label: 'By category' },
   { value: 'decks', label: 'Full decks' },
   { value: 'spares', label: 'Spares on hand' },
   { value: 'traders', label: 'Most active trader' },

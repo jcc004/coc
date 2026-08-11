@@ -313,16 +313,15 @@ const RARITY_COLUMNS: LeaderboardColumn<RarityStanding>[] = [
   },
 ]
 
-/** By category: points and the distinct fraction *within the chosen deck* —
+/** By category: the distinct fraction *within the chosen deck* and points —
  *  `CategoryStanding.size` is that deck's own card count, so `7/19` reads as the
- *  deck being viewed, not the whole event. */
+ *  deck being viewed, not the whole event. Cards leads, Points trails, matching
+ *  every other board's convention of listing its primary ranking measure first —
+ *  `categoryStandings()` ranks by distinct before points (see its own doc comment),
+ *  so this table's column order follows the ranking rather than disagreeing with
+ *  it the way the points-first order (this board's original design, from before
+ *  the ranking itself changed) now would. */
 const CATEGORY_COLUMNS: LeaderboardColumn<CategoryStanding>[] = [
-  {
-    key: 'points',
-    label: 'Points',
-    numeric: true,
-    cell: (row) => formatFull(row.points),
-  },
   {
     key: 'distinct',
     label: 'Cards',
@@ -339,6 +338,12 @@ const CATEGORY_COLUMNS: LeaderboardColumn<CategoryStanding>[] = [
         />
       </div>
     ),
+  },
+  {
+    key: 'points',
+    label: 'Points',
+    numeric: true,
+    cell: (row) => formatFull(row.points),
   },
 ]
 
