@@ -22,17 +22,22 @@ import type { DeckProgress } from '../deck-progress.ts'
  * *length* varies would leave four bars whose colors differ for a reason unrelated
  * to how full they are.
  *
- * **A complete deck is where that reasoning stops applying, and the fill goes
- * solid `--deck` — mirroring the event's own plaque, which does the same thing.**
- * `deck.complete` (see its own doc comment in `deck-progress.ts` for exactly what
- * counts) is not "does this look 100% full" — a data disagreement can also clamp
- * the bar to full without every card actually being held, and that must not flip
- * the fill. Once a deck genuinely is complete there is no length left to encode:
- * every one of the four decks is equally "done," so a categorical color no longer
- * competes with the magnitude ramp for the same signal, the exact condition under
- * which `--deck-*` was ruled out above. The fraction still prints on top of it,
- * unchanged — see the next paragraph for why that half of the design never bends,
- * complete or not.
+ * **A complete deck is where that reasoning stops applying, and the *whole plaque*
+ * goes solid `--deck` — mirroring the event's own plaque, which does the same
+ * thing.** Not just the bar: the outer card's tinted background, its border, the
+ * distinction between "card" and "bar inside it" all collapse into one flat
+ * block, same as the reference. A first pass got this wrong — swapped only the
+ * bar's own fill and left the card around it on its usual tint, a two-tone look
+ * the event's plaque does not have — caught by a direct screenshot comparison,
+ * not by re-reading the CSS. `deck.complete` (see its own doc comment in
+ * `deck-progress.ts` for exactly what counts) is not "does this look 100% full"
+ * — a data disagreement can also clamp the bar to full without every card
+ * actually being held, and that must not flip the fill. Once a deck genuinely is
+ * complete there is no length left to encode: every one of the four decks is
+ * equally "done," so a categorical color no longer competes with the magnitude
+ * ramp for the same signal, the exact condition under which `--deck-*` was
+ * ruled out above. The fraction still prints on top of it, unchanged — see the
+ * next paragraph for why that half of the design never bends, complete or not.
  *
  * There is **no resource icon** at the right end, unlike the game. The event's
  * elixir / dark-elixir / builder-gold / potion icons are not among the vendored
@@ -54,8 +59,17 @@ export function DeckPlaques({
     <div className={className ? `deck-plaques ${className}` : 'deck-plaques'}>
       {decks.map((deck) => (
         /* The deck's color is picked in CSS off `data-deck`, like the card tiles'
-           frames, so no color is ever set inline from data. */
-        <div key={deck.category} className="deck-plaque" data-deck={deck.slug}>
+           frames, so no color is ever set inline from data. `data-complete` is the
+           same `deck.complete` the bar below also carries — set on both rather
+           than reached via `:has()` from just the bar's, since `data-deck` already
+           proves two attributes off the same value in the same iteration cannot
+           drift from each other any more than one would. */
+        <div
+          key={deck.category}
+          className="deck-plaque"
+          data-deck={deck.slug}
+          data-complete={deck.complete ? 'true' : undefined}
+        >
           <span className="deck-plaque__name">{deck.category} Cards</span>
           {/*
            * A real progressbar, named and valued. `aria-valuetext` overrides the

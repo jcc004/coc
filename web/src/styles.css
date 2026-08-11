@@ -2631,6 +2631,17 @@ details.group > .group__body {
  * theme without restating a single value.
  */
 .deck-plaques {
+  /* The `--surface` outline ring `.deck-plaque__name` and `.deck-plaque__fraction`
+     both use against a `--deck` background — defined once, here, so the two reads
+     of it can't independently drift the way two typed-out literals could; a
+     future widening of the ring (e.g. for the measured-weakest dark-elixir/
+     dark-mode case those two rules' own comments cite) changes both at once. */
+  --plaque-ring:
+    0 0 2px var(--surface),
+    1px 0 0 var(--surface),
+    -1px 0 0 var(--surface),
+    0 1px 0 var(--surface),
+    0 -1px 0 var(--surface);
   display: grid;
   /* Four across, as the game has them; 2×2 on a phone — see the 600px block. */
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2666,6 +2677,32 @@ details.group > .group__body {
     0 2px 0 var(--bevel-dark);
 }
 
+/*
+ * A complete deck fills the *whole* plaque solid `--deck`, border included — not
+ * just the bar inside it. Corrected against a second reference screenshot after
+ * an initial pass got this wrong: the first version only swapped the inner bar's
+ * fill to `--deck` (`.deck-plaque__bar[data-complete='true'] .deck-plaque__fill`
+ * below) and left this outer card on its usual tint, which is a two-tone look the
+ * reference does not have — the game's own completed tab is one continuous block,
+ * border merged into the fill, both the name and the count sitting directly on
+ * it. `data-complete` on this element, not reached via `:has()` from the bar's
+ * own copy — the two are set from the same `deck.complete` in the same
+ * `DeckPlaques.tsx` iteration `data-deck` already is, so plain attribute
+ * selectors here are exactly as safe as `:has()` would have been, at less
+ * selector cost.
+ *
+ * `border-color`, not `border: none` — a border that disappears by matching the
+ * fill instead of one that stops existing keeps the box's own geometry identical
+ * to every other state, so nothing shifts by the border's width when a deck
+ * flips to complete. The bevel box-shadow above still applies unmodified: the
+ * reference's completed tab is still visibly "raised" the same way the other
+ * three are, just without a contrasting outline ring around it.
+ */
+.deck-plaque[data-complete='true'] {
+  background: var(--deck);
+  border-color: var(--deck);
+}
+
 .deck-plaque__name {
   display: block;
   margin-bottom: 3px;
@@ -2676,6 +2713,19 @@ details.group > .group__body {
   letter-spacing: 0.01em;
   text-align: center;
   color: var(--ink);
+}
+
+/* Same `--surface`-ring `.deck-plaque__fraction` already uses against `--deck`,
+   and for the same reason — plain `--ink` does not clear 4.5:1 against every
+   `--deck-*` token, so the name needs the same outline once the whole card
+   behind it goes solid `--deck` instead of a lighter tint. Only applies here,
+   not unconditionally: on every other state the name already sits on a light
+   tint where bare `--ink` has contrast to spare, and the ring would be pure
+   noise there. Reads `--plaque-ring` rather than repeating the five shadow
+   layers as a second literal — see that property's own definition, on
+   `.deck-plaques`, for why the two rings can't drift out of step. */
+.deck-plaque[data-complete='true'] .deck-plaque__name {
+  text-shadow: var(--plaque-ring);
 }
 
 /* The positioning context for the fill, which is absolute so the fraction stays
@@ -2764,13 +2814,13 @@ details.group > .group__body {
    * bar the badge's own stroke technique already accepted at a comparable ratio
    * against `--critical` — not re-tuned, since the outline is still doing real work
    * there, just less of it than the other three cases.
+   *
+   * Reads `--plaque-ring` (`.deck-plaques`) rather than declaring the five shadow
+   * layers here directly — `.deck-plaque__name`'s own complete-state ring reads
+   * the same property, so the two rings this file now has cannot independently
+   * drift out of step the way two copy-pasted literals could.
    */
-  text-shadow:
-    0 0 2px var(--surface),
-    1px 0 0 var(--surface),
-    -1px 0 0 var(--surface),
-    0 1px 0 var(--surface),
-    0 -1px 0 var(--surface);
+  text-shadow: var(--plaque-ring);
 }
 
 /*

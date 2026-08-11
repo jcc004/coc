@@ -1191,9 +1191,30 @@ track's own radius on a fill that already covers the track's box exactly — ver
 both elements' `getBoundingClientRect()` and computed `border-radius` directly, not by screenshot
 alone this time.
 
-The plaque's own background is a *tint* of the deck color rather than a solid fill like the game's
-tab, unaffected by any of this — the four tokens run from bright magenta to deep purple and no
-single text color clears 4.5:1 on all four; tinting keeps the name and the fraction in `--ink`.
+**The plaque's own background is a *tint* of the deck color for an incomplete deck — and the whole
+plaque, border included, for a complete one, not just the bar inside it.** A first pass got this
+second half wrong: it swapped only `.deck-plaque__fill`'s color and left the outer card on its
+usual tint, which reads as two tones stacked (a dark card wrapping a solid pill) rather than the
+game's own one continuous block. Caught by a direct side-by-side comparison against a second
+reference screenshot, not by re-reading the CSS — the first version looked plausible on its own
+and only failed once actually held up against the real popup. The fix, `.deck-plaque[data-complete=
+'true']`: `background: var(--deck)` and `border-color: var(--deck)` on the card itself, so the
+border merges into the fill instead of ringing it, the same as the reference. `data-complete` sits
+on the plaque itself, not only on the bar inside it — the same `deck.complete` value
+`DeckPlaques.tsx` already writes onto `data-deck` there, in the same `.map()` pass, so a second
+attribute off the same source is exactly as safe as the first one already was; an earlier version
+reached up from the bar's own `data-complete` with `:has()` instead, which worked but added
+selector cost a plain attribute selector on the plaque didn't need. The tint exists in the first
+place for the same reason the fraction below needs its own contrast handling: the four `--deck-*`
+tokens run from bright magenta to deep purple and no single text color clears 4.5:1 against a
+*bare* one of them, so an incomplete deck's name and fraction sit on a *tint* (diluted enough that
+plain `--ink` still has contrast to spare) rather than the full-strength token. A complete deck
+doesn't have that luxury — it needs the token at full strength to read as "done" — so the name
+picks up the same `--plaque-ring` `text-shadow` the fraction already uses (one custom property on
+`.deck-plaques`, read by both, rather than the same five shadow layers typed out twice), scoped to
+the same complete state so an incomplete deck's name (still on its light tint) is never given a
+ring it doesn't need.
+
 The fraction itself sits over bare track on an empty deck, the mid-ramp `--accent` on a partial
 one, and full-strength `--deck` on a complete one — three fill colors, not the two `--accent`
 alone would give it — so it carries a `--surface` ring in `text-shadow` instead of relying on
@@ -1206,7 +1227,9 @@ assumed: `--ink` against a bare `--deck` never clears 3.6:1 on its own (as low a
 `--deck-dark-elixir` in dark mode specifically at 3.87:1 (8.13:1 for the same token in light
 mode) — checked directly at that weakest point rather than assumed from the other three: legible,
 on the same comparably-soft-but-still-legible standard the badge's own stroke already accepts
-against `--critical`.
+against `--critical`. The name's own ring, added alongside the whole-plaque fix above, reads
+against exactly the same `--deck` tokens the fraction's ring already does, so it inherits that same
+measurement rather than needing a second one.
 
 **No resource icon** at the right end, unlike the game. The event's elixir, dark-elixir,
 builder-gold and potion icons are not among the vendored art — `web/public/coc/` has card art,
