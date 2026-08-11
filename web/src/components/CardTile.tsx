@@ -85,10 +85,10 @@ export function CardTile({
    * for no badge at all.
    *
    * Sized, shaped and placed off the real game's own card-collection screen — a
-   * wide, chamfered bar roughly half the art's width, centered on the art's bottom
-   * edge — rather than an app-invented convention, which is why it reads larger and
-   * more prominent than a typical corner-chip badge. See `.card-tile__badge` in
-   * styles.css for the measurements.
+   * wide, chamfered bar spanning roughly two-thirds of the art's width, centered on
+   * the art's bottom edge — rather than an app-invented convention, which is why it
+   * reads larger and more prominent than a typical corner-chip badge. See
+   * `.card-tile__badge` in styles.css for the measurements.
    */
   badge?: string
   /** Pointer tooltip. A convenience for a mouse — never the only carrier of anything. */

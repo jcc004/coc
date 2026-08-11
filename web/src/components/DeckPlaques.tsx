@@ -11,16 +11,28 @@ import type { DeckProgress } from '../deck-progress.ts'
  * and it is the numbers people actually quote to each other ("I'm 7 of 19").
  *
  * **The bar fill is the sequential blue ramp — `--accent` on `--track` — not the
- * game's gold.** The game fills these bars gold, but gold in this app is chrome:
- * panel edges, buttons and the two display numerals, and it has never encoded a
- * value (see the note at the top of styles.css). A gold bar whose length meant
- * something would be the first, and it would put the app's one "this is furniture,
- * not data" signal to work as data. The deck's own color was the other candidate
- * and is rejected for the mirror-image reason: `--deck-*` is a *categorical* role,
- * it already says which deck on the plaque around the bar, and reusing it for the
- * bar would leave four bars whose colors differ for a reason unrelated to their
- * lengths. So the plaque keeps the deck color, the bar keeps the magnitude ramp
- * every other meter in the app uses, and the fraction is printed either way.
+ * game's gold, for any deck still in progress.** The game fills these bars gold,
+ * but gold in this app is chrome: panel edges, buttons and the two display
+ * numerals, and it has never encoded a value (see the note at the top of
+ * styles.css). A gold bar whose length meant something would be the first, and it
+ * would put the app's one "this is furniture, not data" signal to work as data.
+ * The deck's own color was the other candidate and is rejected for the same reason
+ * *while the deck is still filling*: `--deck-*` is a *categorical* role, it already
+ * says which deck on the plaque around the bar, and reusing it for a bar whose
+ * *length* varies would leave four bars whose colors differ for a reason unrelated
+ * to how full they are.
+ *
+ * **A complete deck is where that reasoning stops applying, and the fill goes
+ * solid `--deck` — mirroring the event's own plaque, which does the same thing.**
+ * `deck.complete` (see its own doc comment in `deck-progress.ts` for exactly what
+ * counts) is not "does this look 100% full" — a data disagreement can also clamp
+ * the bar to full without every card actually being held, and that must not flip
+ * the fill. Once a deck genuinely is complete there is no length left to encode:
+ * every one of the four decks is equally "done," so a categorical color no longer
+ * competes with the magnitude ramp for the same signal, the exact condition under
+ * which `--deck-*` was ruled out above. The fraction still prints on top of it,
+ * unchanged — see the next paragraph for why that half of the design never bends,
+ * complete or not.
  *
  * There is **no resource icon** at the right end, unlike the game. The event's
  * elixir / dark-elixir / builder-gold / potion icons are not among the vendored
@@ -59,6 +71,10 @@ export function DeckPlaques({
             aria-valuemax={deck.size}
             aria-valuenow={deck.held}
             aria-valuetext={deck.spoken}
+            /* Picked up in CSS to swap the fill from the magnitude ramp to a solid
+               `--deck` — see this file's own doc comment above. Not color set
+               inline from data, same reasoning as `data-deck` on the plaque itself. */
+            data-complete={deck.complete ? 'true' : undefined}
           >
             <span className="deck-plaque__fill" style={{ width: `${deck.percent}%` }} />
             <span className="deck-plaque__fraction">{deck.fraction}</span>

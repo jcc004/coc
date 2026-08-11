@@ -2007,11 +2007,14 @@ details.group > .group__body {
  * "×2" badge on the game's own Furnace card, pixel by pixel rather than eyeballed, at
  * every property that turned out to matter:
  *
- * - **position and size**: a wide bar roughly half the art's width and about a
- *   seventh of its height, centered horizontally and straddling the art's *bottom
- *   edge* rather than tucked into a corner. `width` and `height` are percentages of
- *   `.card-tile__frame`'s own box, so the badge scales with the tile at every density
- *   and viewport the same way the art itself does;
+ * - **position and size**: a wide bar centered horizontally and straddling the
+ *   art's *bottom edge* rather than tucked into a corner. This first, measured pass
+ *   shipped roughly half the art's width and a seventh of its height; a later
+ *   judgment-call pass ("bigger, brighter, bolder" — see "Sized, then resized"
+ *   after this rule) moved the shipped numbers past this pass's measurements, so
+ *   the *current* proportions live there, not here. `width` and `height` are
+ *   percentages of `.card-tile__frame`'s own box either way, so the badge scales
+ *   with the tile at every density and viewport the same way the art itself does;
  * - **shape**: not a plain rounded rectangle. A horizontal scan of the badge's own
  *   black outline at several heights measures the top edge (nearest the art) at
  *   ~92px and the bottom edge at ~88.5px across a ~90px-wide badge — a real, subtle,
@@ -2043,29 +2046,43 @@ details.group > .group__body {
  * clear gap under the overlap rather than let the two touch.
  */
 .card-tile__badge {
+  /* The one number `-webkit-text-stroke` and `padding-inline` below both read from,
+     so a future stroke change can't widen the stroke without also widening the pad
+     that keeps it inside `min-width: min-content` — see `padding-inline`'s own
+     comment for why the two have to move together. */
+  --badge-stroke: 0.12em;
   position: absolute;
   left: 50%;
   bottom: 0;
   transform: translate(-50%, 32%);
-  width: 50%;
-  min-width: 24px;
-  height: 14%;
+  width: 62%;
   /*
-   * A floor under the proportional height, for the same reason the font-size below
-   * has one: at the app's smallest realistic tile (44.7px of content, the six-column
-   * phone default) 14% of the frame's height is under 8px — too short to hold even
-   * an 11px line of text without the glyphs spilling past the pill. 16px is enough
-   * for that floor size with a little breathing room; above it the proportional
-   * value already clears 16px on its own (79.7px of content and up, measured), so
-   * the floor only ever engages at the two or three narrowest tiles in the app.
+   * `min-width: min-content`, not a fixed pixel floor — deliberately, after a fixed
+   * number was tried twice and found wrong both times. The badge is not always "×2"
+   * through "×10": the same class also renders the clan-wide total on the "Cards
+   * across the clan" grid (`CardTotalPick`, `CardsView.tsx`), which sums one card's
+   * count across every base and has no upper bound — a large clan can genuinely
+   * produce "×47" or "×123". A fixed floor sized for the two-digit entry-grid case
+   * (24px, tuned against "×10") silently clips a three-digit clan total instead of
+   * growing for it, since a floor is a ceiling on how small the box can be but does
+   * nothing to guarantee it grows with longer content. `min-content` is the general
+   * fix: the box is never narrower than its own text needs, at any digit count, so
+   * it does not have to be re-tuned every time the widest realistic value changes.
+   * `padding-inline` below buys back the one thing `min-content` does not account
+   * for on its own — see that property's comment.
    */
+  min-width: min-content;
+  height: 18%;
+  /* `min-height` held back for the same reason `min-width` was: 16px still clears
+     the tightest tile's own frame height without the badge dominating it the way
+     scaling this floor in step with `14% → 18%` would have. */
   min-height: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
   /* Black, not `--gold-edge` — the reference's badge outline reads as the same
      near-black as the text stroke below, not a darker shade of the gold fill. */
-  border: 1px solid #1a1200;
+  border: 1.5px solid #1a1200;
   /*
    * Chamfered, not a plain rounded rectangle — measured off the reference at the
    * pixel level rather than assumed from "game badges look like a pill". The top
@@ -2080,7 +2097,29 @@ details.group > .group__body {
    * angle would.
    */
   clip-path: polygon(14% 0%, 86% 0%, 98% 12%, 96% 88%, 84% 100%, 16% 100%, 4% 88%, 2% 12%);
-  background: linear-gradient(180deg, var(--gold) 0%, var(--gold-deep) 100%);
+  /* A highlight stop, not the flat two-stop ramp below `#card-tile__badge`'s own
+     history note originally shipped: brighter at the top than a straight
+     `--gold` → `--gold-deep` blend would be, for the "brighter" half of that
+     note. `color-mix` lightens `--gold` itself rather than introducing a new
+     fixed color, so a custom `--user-gold-*` theme still drives this. */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, white 20%, var(--gold)) 0%,
+    var(--gold) 40%,
+    var(--gold-deep) 100%
+  );
+  /* The glow half of "brighter": a soft `--gold` halo outside the badge's own
+     edge, on top of the highlight above rather than instead of it — the badge
+     reads brighter both from its own fill and from the light it casts past its
+     border, which a fill change alone would not buy. `filter: drop-shadow`, not
+     `box-shadow` — checked, not assumed: `clip-path` above clips everything an
+     element paints, box-shadow included, to the polygon's own edges, so a
+     `box-shadow` glow here is silently invisible in every browser regardless of
+     how it reads in devtools. `drop-shadow` is a filter, computed on the
+     element's already-clipped output rather than clipped again itself, which is
+     the standard route around exactly this — confirmed by rendering both
+     side by side against a plain clipped box before choosing this one. */
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--gold) 70%, transparent));
   /*
    * White with a black outline, not `--on-gold` — measured off the reference, where
    * a horizontal scan straight through the "×2" glyphs reads gold badge fill, a
@@ -2095,28 +2134,76 @@ details.group > .group__body {
    * not from needing to be readable by the sighted eye that lands on it.
    */
   color: #fff;
-  /* 0.09em, not 0.06em: a side-by-side comparison against the reference showed ours
-     running thinner than the game's own outline at the same size. */
-  -webkit-text-stroke: 0.09em #1a1200;
+  /* `--badge-stroke`, currently `0.12em` — not `0.09em`, the reference-matched
+     original: the "bolder" third of this rule's own history note below widened it
+     again, on the reasoning that a thicker stroke reads as bolder without changing
+     the letterforms the way a font-weight step would risk. Read from the custom
+     property, not written here directly, so `padding-inline` below can't fall out
+     of step with it the next time this number changes. */
+  -webkit-text-stroke: var(--badge-stroke) #1a1200;
   paint-order: stroke fill;
   /*
-   * Proportional to the tile via `cqi`, the same container-query unit the stepper
-   * threshold below is measured in, floored at 11px — this app's original fixed
-   * badge size — so the digits stay legible on the narrowest tiles rather than
-   * shrinking toward unreadable the way a pure `cqi` value would. Measured: 12cqi
-   * alone renders at 5.4px on the 44.7px-content phone default, illegible; the
-   * floor keeps it at a readable 11px there and lets it grow past that from about
-   * 90px of tile content on.
+   * `min-content` sizes the badge from the glyphs' own advance widths, but
+   * `-webkit-text-stroke` paints past those widths rather than growing them —
+   * `scrollWidth`/`clientWidth` cannot see this at all (confirmed directly: an
+   * unpadded `min-content` box reports `scrollWidth === clientWidth` at every
+   * font size tested, stroke included, because a `-webkit-text-stroke` is ink
+   * painted outside the glyph's layout box, not scrollable overflow — the same
+   * category as `outline` or `box-shadow`). What actually shows the bleed is a
+   * pixel-level check: an outlined box with no padding visibly cuts into the
+   * stroke at both the app's smallest floor size and its largest reference size.
+   * `calc(var(--badge-stroke) * 0.67)`, not a hand-copied `0.08em` — the bleed is
+   * stroke-width proportional (`-webkit-text-stroke-width` draws centered on the
+   * glyph outline, so it extends roughly half its own width outward, `0.67×` for a
+   * small safety margin past that), so this is computed from the same
+   * `--badge-stroke` the stroke itself reads, not a second literal that has to be
+   * remembered and updated by hand if the stroke ever widens again — which this
+   * rule's own history shows has already happened once. Re-checked visually at
+   * this app's smallest and largest badge sizes after landing on the ratio.
    */
-  font-size: max(11px, 12cqi);
-  /* Bolder than the rest of the app's UI text on purpose — measured against the
-     reference, the "×2" reads heavier than this stylesheet's usual 700. */
-  font-weight: 800;
+  padding-inline: calc(var(--badge-stroke) * 0.67);
+  /*
+   * Proportional to the tile via `cqi`, the same container-query unit the stepper
+   * threshold below is measured in — `17cqi`, not the original `12cqi`, is where
+   * this rule's "bigger" pass actually shows at real tile sizes. `12px`, not `14px`,
+   * is the floor: with `min-width` now content-aware (see that property's comment),
+   * the floor only has to keep the digits themselves legible at the smallest
+   * container a badge ever sits in, not also fit a specific string inside a fixed
+   * box — `14px` was checked and read as legible, but `12px` is the smaller,
+   * already-validated step up from the original `11px`, kept rather than pushed
+   * further now that box width is no longer the constraint on this value.
+   */
+  font-size: max(12px, 17cqi);
+  /* This app's own maximum weight — already 800, one step from the top, before the
+     "bolder" pass below pushed it the rest of the way. */
+  font-weight: 900;
   line-height: 1;
   white-space: nowrap;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * **Sized, then resized.** The measurements above — width, height, the taper, the
+ * stroke widths, the original `11px`/`12cqi` font floor and `800` weight — came
+ * from a pixel-level scan of a reference screenshot, the game's own Furnace card,
+ * documented in this rule's own comment above the `width`/`height` declarations.
+ * A second reference screenshot (the full "Clash of Cards" event popup, not just
+ * one card) prompted a direct report that the result still read too small,
+ * dim and light against the tile's own art — bigger, brighter, bolder, in that
+ * order. This second pass is a judgment call answering that report, not a second
+ * pixel scan the way the first pass was: `width`/`height` moved from `50%`/`14%`
+ * to `62%`/`18%`, the gradient gained a lightened highlight stop and an outer
+ * glow for "brighter", and the stroke width and font weight both went up a
+ * further notch for "bolder". Recorded as a judgment call rather than a
+ * measurement so a future reader does not mistake `62%`/`18%` for numbers a
+ * screenshot was scanned for the way `50%`/`14%` originally were.
+ *
+ * **The floors did not move with them, on purpose.** `min-width`, `min-height` and
+ * the font floor each carry their own history — three passes for `min-width`
+ * alone — in their own comments below, not repeated here to avoid two accounts of
+ * the same decision drifting apart the next time one of them changes.
+ */
 
 /*
  * The `Have n` / `None` line that used to sit here has gone: the badge above it
@@ -2613,6 +2700,20 @@ details.group > .group__body {
   border-radius: 8px 2px 2px 8px;
 }
 
+/*
+ * The complete-deck fill — solid `--deck`, mirroring the event's own plaque —
+ * see `DeckPlaques.tsx`'s doc comment for why a categorical color stops competing
+ * with the magnitude ramp once there is no length left to encode. `data-complete`
+ * is on `.deck-plaque__bar`, not this element, so the selector reaches down to the
+ * fill; `--deck` is already in scope from `.deck-plaque[data-deck='…']` several
+ * rules up, an ordinary ancestor custom property, not a new one declared here.
+ * At this point `width` is always `100%` (that is what `deck.complete` means), so
+ * this never paints a *partial* bar in the deck color — only ever the whole track.
+ */
+.deck-plaque__bar[data-complete='true'] .deck-plaque__fill {
+  background: var(--deck);
+}
+
 .deck-plaque__fraction {
   position: relative;
   display: block;
@@ -2623,11 +2724,27 @@ details.group > .group__body {
   font-variant-numeric: tabular-nums;
   color: var(--ink);
   /*
-   * It sits over bare track on an empty deck and over full-strength `--accent` on a
-   * complete one, and no one ink clears 4.5:1 against both ends of the ramp. So it
-   * carries its own background: a ring of `--surface`, the panel color `--ink` is
-   * already designed to be read on, in both themes. The game outlines its numerals
-   * for the same reason.
+   * It sits over bare track on an empty deck, over the mid-ramp `--accent` on a
+   * partial one, and over full-strength `--deck` on a complete one — four more
+   * colors than just those two, since `--deck` is one of four categorical tokens
+   * rather than the single fixed `--accent` a partial bar always uses. No one ink
+   * clears 4.5:1 against every one of them. So it carries its own background
+   * instead of relying on ink-vs-fill contrast at all: a ring of `--surface`, the
+   * panel color `--ink` is already designed to be read on, in both themes — an
+   * outline technique that holds regardless of what color sits behind it, the same
+   * reasoning `.card-tile__badge`'s stroked numerals use against the art.
+   *
+   * Measured directly rather than assumed once this rule started actually painting
+   * all four `--deck-*` tokens: `--ink` against a bare `--deck` never clears 3.6:1
+   * on its own (as low as 1.6:1 for `--deck-builder-base`), which is exactly why
+   * the ring exists rather than relying on that number. The ring's own contrast —
+   * `--surface` against `--deck` — clears 7.5:1 for three of the four in both
+   * themes; the fourth, `--deck-dark-elixir` in dark mode specifically, is the
+   * weakest at 3.87:1 (8.13:1 for the same token in light mode). Read back at that
+   * weakest point in a real browser: legible, matching the softer-but-still-legible
+   * bar the badge's own stroke technique already accepted at a comparable ratio
+   * against `--critical` — not re-tuned, since the outline is still doing real work
+   * there, just less of it than the other three cases.
    */
   text-shadow:
     0 0 2px var(--surface),

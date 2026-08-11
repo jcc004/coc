@@ -97,12 +97,7 @@ export function deckCompletionStandings(
       DECK_CATEGORIES.map((category) => byCategory.get(category)!),
       (category) => DECK_SIZES.get(category),
     )
-    // Complete means `held === size`, the same boundary the `7/19` plaque reaches
-    // at `19/19` — and a deck the size lookup does not know (size 0) never counts
-    // as complete, same as `deckProgress` itself treats it as empty rather than done.
-    const completedDecks = progress
-      .filter((deck) => deck.size > 0 && deck.held === deck.size)
-      .map((deck) => deck.category)
+    const completedDecks = progress.filter((deck) => deck.complete).map((deck) => deck.category)
 
     return {
       ...base,

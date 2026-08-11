@@ -41,6 +41,16 @@ export interface DeckProgress {
   percent: number
   /** Deck, count and total in words — the plaque's accessible name. */
   label: string
+  /**
+   * Every card in the deck held, size known and positive. **Not** `percent === 100`
+   * — a base holding more distinct cards than the deck's own size disagrees with
+   * (`held > size`, the "caps the bar at full rather than overflowing" case) still
+   * clamps `percent` to 100 so the bar does not overflow its track, but `held` and
+   * `size` disagree, and printing that as "complete" would be the wrong half of
+   * the disagreement to hide. Drives the plaque's solid-fill state; see
+   * `DeckPlaques.tsx`.
+   */
+  complete: boolean
 }
 
 /** How many cards each deck holds, for the `7/19` denominators. */
@@ -78,6 +88,7 @@ export function deckProgress(
       spoken: `${held} of ${size}`,
       percent: Math.round(ratio * 1000) / 10,
       label: `${holding.category} cards: ${held} of ${size} collected`,
+      complete: size > 0 && held === size,
     }
   })
 }

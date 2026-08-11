@@ -43,10 +43,16 @@ describe('deckProgress — the numbers on the plaque', () => {
     assert.equal(deck?.percent, 0)
   })
 
-  it('fills the bar exactly at a complete deck', () => {
+  it('fills the bar exactly at a complete deck, and marks it complete', () => {
     const [deck] = deckProgress([holding('Dark Elixir', 13)], sizeOf)
     assert.equal(deck?.percent, 100)
     assert.equal(deck?.fraction, '13/13')
+    assert.equal(deck?.complete, true)
+  })
+
+  it('is not complete at any point short of the full deck', () => {
+    const [deck] = deckProgress([holding('Dark Elixir', 12)], sizeOf)
+    assert.equal(deck?.complete, false)
   })
 
   it('keeps every deck asked for, in the order asked for', () => {
@@ -62,13 +68,17 @@ describe('deckProgress — the numbers on the plaque', () => {
 })
 
 describe('deckProgress — inputs that must not produce a broken bar', () => {
-  it('caps the bar at full rather than overflowing its track', () => {
+  it('caps the bar at full rather than overflowing its track, but does not call it complete', () => {
     // Only reachable if the card list and the counts disagree, which is exactly
-    // when a bar wider than its plaque would be the least useful failure.
+    // when a bar wider than its plaque would be the least useful failure. `percent`
+    // clamps to 100 same as a genuine completion would, but `held` (25) and `size`
+    // (11) disagree, and printing that as "complete" would hide the wrong half of
+    // the disagreement — see `DeckProgress.complete`'s own doc comment.
     const [deck] = deckProgress([holding('Builder Base', 25)], sizeOf)
     assert.equal(deck?.percent, 100)
     // The fraction still tells the truth, so the disagreement is visible.
     assert.equal(deck?.fraction, '25/11')
+    assert.equal(deck?.complete, false)
   })
 
   it('treats a deck it has no size for as empty rather than dropping the plaque', () => {
@@ -76,12 +86,14 @@ describe('deckProgress — inputs that must not produce a broken bar', () => {
     assert.equal(decks.length, 1)
     assert.equal(decks[0]?.fraction, '3/0')
     assert.equal(decks[0]?.percent, 0)
+    assert.equal(decks[0]?.complete, false)
   })
 
-  it('never reports a negative bar', () => {
+  it('never reports a negative bar, or a complete one for it', () => {
     const [deck] = deckProgress([{ category: 'Elixir', distinct: -2, total: 0, spares: 0 }], sizeOf)
     assert.equal(deck?.percent, 0)
     assert.equal(deck?.held, 0)
+    assert.equal(deck?.complete, false)
   })
 })
 
