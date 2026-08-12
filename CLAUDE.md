@@ -44,13 +44,10 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
 
 ## Local rules
 
-- **Every user-facing report or artifact gets a `.docx` copy in `~/Downloads/coc/`.** This is on
-  top of, not instead of, `claude-kit/rules/working-style.md`'s "Files meant for the user go in
-  `~/Downloads`, not the scratchpad" — that rule says *where*, this one adds *what format* and
-  *which folder* for this project specifically. Generate the `.docx` with `pandoc` (confirmed
-  present on this machine at `/opt/homebrew/bin/pandoc`) from the Markdown/HTML source, not by
-  hand-authoring XML. Applies to anything produced for the user to read, not just formal reports —
-  the same trigger `working-style.md` already uses for the `~/Downloads` rule.
+- **Every user-facing report or artifact gets a `.docx` copy.** `claude-kit/rules/working-style.md`
+  now names the `~/Downloads/coc/` folder itself directly; what's project-specific is the format —
+  generate the `.docx` with `pandoc` (confirmed present on this machine at
+  `/opt/homebrew/bin/pandoc`) from the Markdown/HTML source, not by hand-authoring XML.
 - **Ask before every commit whether it belongs on What's New.** `docs/ui.md` documents the
   `No-Changelog` body-line opt-out (`skipsChangelog`, `web/src/changelog.ts`) — but which commits
   get it is not Claude's call to make silently. Ask, per commit, before committing.
