@@ -10,16 +10,19 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-User=crighjc
-# Still the human user. Moving to a dedicated `coc` account is a real improvement
-# and is written up in deploy/README.md under "A dedicated service user" — it needs
-# a chown of the database directory in the same step, which is why it is not simply
-# switched here: copying this file with a User= that does not own the data directory
-# would start a server unable to write.
-#
-# What ProtectHome=true below already closes is the concrete risk of running as a
-# person: this process can no longer read that user's home directory, so an
-# exploited app cannot reach ~/.ssh.
+User=coc
+# A dedicated system account that owns nothing but this app — see deploy/README.md's
+# "A dedicated service user" for the useradd/chown steps this depends on before it
+# can be installed: a unit whose User= does not own the data directory starts a
+# server unable to write. It replaced the human account this unit ran as before.
+# ProtectHome=true below had already closed the concrete risk of running as a real
+# login (an exploited app could not read that user's home directory, so not reach
+# ~/.ssh), but not the broader one: a process running as a real account can be used
+# anywhere that account's own uid is trusted, which a dedicated account with no
+# other purpose cannot be. `deploy/update.sh` — the deploy pipeline, not this
+# service — deliberately keeps running as the human operator, since it needs to
+# write the whole checkout, run git and npm, and hold the sudo rule for the
+# restart below; only the network-facing server itself moved.
 
 # The server workspace, because DATABASE_PATH defaults to ./data/coc.db and that has
 # always resolved to /srv/coc/server/data/coc.db — npm ran the start script with the

@@ -420,22 +420,38 @@ is the whole restart step. The unit lists which settings it cannot have and why.
 The stronger version of the above, and the one thing here that is not just a file
 copy: run the app as an account that owns nothing but the app.
 
+`coc.service`'s committed `User=` is `coc`, not the deploy account — so the account
+and the ownership below have to exist **before** this unit is installed or reloaded;
+copying it onto a host where they do not yet exist starts a server unable to write
+its own database, a failure that looks like a code bug. Run these in order:
+
 ```bash
 sudo useradd --system --home-dir /srv/coc --shell /usr/sbin/nologin coc
 sudo chown -R coc:coc /srv/coc/server/data
 sudo chown coc:coc /srv/coc/.env          # it is read by the service, not by you
-sudo sed -i 's/^User=deploy$/User=coc/' /etc/systemd/system/coc.service
+sudo cp deploy/coc.service /etc/systemd/system/coc.service
 sudo systemctl daemon-reload && sudo systemctl restart coc
 curl -fsS http://127.0.0.1:8787/api/health && echo
 ```
 
 Two things this does **not** move, deliberately: the deploy still runs as `deploy`
 (it needs to write the checkout and hold the git credentials), and `~/coc-backups`
-stays that user's. So `coc` gets the database and the token and nothing else.
+stays that user's. So `coc` gets the database and the token and nothing else. If a
+fork of this repo prefers to keep the service on the account that owns the tree
+(the state this project itself started in), leave `coc.service`'s `User=` at that
+account's name instead and skip the `useradd`/`chown` steps above — nothing else
+here depends on the service running under its own dedicated account specifically.
 
-`User=` is left as `deploy` in the committed unit rather than pre-switched, because
-copying a unit whose `User=` does not own the data directory starts a server that
-cannot write — a failure that looks like a code bug.
+**This changes what the backup step in `deploy/update.sh` can read.** `coc.service`'s
+own `UMask=0077` means the database and its WAL are created readable by their owner
+alone — deliberate, since they hold password hashes — and once that owner is `coc`
+rather than the deploy account, the deploy account can no longer open them directly.
+`update.sh`'s backup step already runs through `sudo` for exactly this reason (root
+can always read what the target account owns), so nothing further is needed here on
+a host where the deploy account's sudo access is as broad as this repo's own
+`.claude/droplet-access.local.md` describes. A host that instead grants a narrower,
+command-scoped sudoers rule needs to add `sqlite3 /srv/coc/server/data/coc.db *` and
+`cp /srv/coc/server/data/coc.db* *` to it, alongside the restart command below.
 
 ### Nginx: headers and rate limits
 
