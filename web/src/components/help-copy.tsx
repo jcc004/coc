@@ -445,7 +445,11 @@ export function SharedDataRules() {
       </p>
       <p className="empty-hint">
         So <strong>Remove means for everyone</strong> — removing a saved clan removes it from
-        everybody's list, and clearing an owner clears it for the group.
+        everybody's list, and clearing an owner clears it for the group. That is why{' '}
+        <strong>only an admin can add, rename, or remove a saved clan</strong>, the same rule
+        that already governs the owner column: a member who could reshape a list everyone else
+        sees would be changing it out from under the group, not just for themselves. Everyone
+        signed in still reads the whole list either way.
       </p>
       <p className="empty-hint">
         Every stored row records <strong>who last changed it and when</strong>, and those are shown.

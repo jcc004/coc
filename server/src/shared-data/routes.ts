@@ -1,10 +1,10 @@
 import type { Hono } from 'hono'
 import { normalizeTag, type OwnerBulkRow, type SavedClanInput } from '@coc/shared'
 import {
+  adminAccessRevoked,
   currentUser,
   requireAdminFor,
   stillActiveAdmin,
-  type AuthContext,
   type AuthEnv,
 } from '../auth/middleware.ts'
 import type { AuthStore } from '../auth/store.ts'
@@ -25,8 +25,16 @@ import type { SharedDataStore } from './store.ts'
  * **Writing the owner column is an admin decision**, because ownership now decides
  * who may edit a base's card counts — a member who could reassign a base could
  * grant themselves that write, which makes it not a permission at all. The three
- * owner writes (set, bulk apply, clear) sit behind `ownerWritesAreAdminOnly`; the
- * saved-clan routes are untouched, because a clan list is nobody's permission.
+ * owner writes (set, bulk apply, clear) sit behind `ownerWritesAreAdminOnly`.
+ *
+ * **Writing the saved-clan list is now an admin decision too**, for the same
+ * reasoning: it is shared state every signed-in member sees, and a member who
+ * could add, rename, or remove entries unilaterally could reshape what everyone
+ * else sees without anyone entitled to that call having agreed to it. This used
+ * to be untouched, on the theory that a clan list is nobody's permission — that
+ * held only as long as nobody minded a member editing it out from under the
+ * group, and the project owner has since decided otherwise. The three saved-clan
+ * writes (add, rename, remove) sit behind `savedClansAreAdminOnly`.
  *
  * `InvalidTagError` from `normalizeTag` is left to fall through to the app's error
  * handler, which already turns it into a 400 with the tag rule as a hint.
@@ -62,6 +70,11 @@ export const SAVED_CLAN_NAME_MAX = 64
 const ownerWritesAreAdminOnly = requireAdminFor(
   ADMIN_ASSIGNS_OWNERSHIP,
   'Everyone can read every owner; only an admin can change one.',
+)
+
+const savedClansAreAdminOnly = requireAdminFor(
+  'An admin manages the saved clan list. Ask one to add, rename, or remove it.',
+  'Everyone can read the saved clans; only an admin can change the list.',
 )
 
 function asString(value: unknown): string {
@@ -132,18 +145,6 @@ function tooManyRows(value: unknown, field: string): string | undefined {
   return `${field} carries ${value.length} rows; the most this endpoint accepts is ${MAX_BULK_ROWS}.`
 }
 
-function adminAccessRevoked(c: AuthContext) {
-  return c.json(
-    errorBody(
-      403,
-      'forbidden',
-      'Your admin access changed while this request was being handled.',
-      'Sign in again and retry.',
-    ),
-    403,
-  )
-}
-
 export function mountSharedDataRoutes(
   app: Hono<AuthEnv>,
   store: SharedDataStore,
@@ -153,7 +154,7 @@ export function mountSharedDataRoutes(
 
   app.get('/api/saved/clans', (c) => c.json({ clans: store.listSavedClans() }))
 
-  app.post('/api/saved/clans', async (c) => {
+  app.post('/api/saved/clans', savedClansAreAdminOnly, async (c) => {
     const input = asSavedClanInput(await readJson(c))
     if (!input) {
       return c.json(
@@ -166,10 +167,13 @@ export function mountSharedDataRoutes(
         400,
       )
     }
+
+    if (!stillActiveAdmin(auth, currentUser(c).id)) return adminAccessRevoked(c)
+
     return c.json({ clan: store.saveClan(input, currentUser(c).id) })
   })
 
-  app.patch('/api/saved/clans/:tag', async (c) => {
+  app.patch('/api/saved/clans/:tag', savedClansAreAdminOnly, async (c) => {
     const body = await readJson(c)
     const name = asString(body['name']).trim()
     if (!name) {
@@ -186,6 +190,8 @@ export function mountSharedDataRoutes(
       )
     }
 
+    if (!stillActiveAdmin(auth, currentUser(c).id)) return adminAccessRevoked(c)
+
     const clan = store.renameClan(c.req.param('tag'), name, currentUser(c).id)
     if (!clan) {
       return c.json(
@@ -196,7 +202,7 @@ export function mountSharedDataRoutes(
     return c.json({ clan })
   })
 
-  app.delete('/api/saved/clans/:tag', (c) => {
+  app.delete('/api/saved/clans/:tag', savedClansAreAdminOnly, (c) => {
     const tag = c.req.param('tag')
     if (!store.removeClan(tag)) {
       return c.json(errorBody(404, 'notFound', `${normalizeTag(tag)} is not a saved clan.`), 404)
@@ -292,12 +298,18 @@ export function mountSharedDataRoutes(
   /* ---------- one-time import ---------- */
 
   /**
-   * The upload is **not** admin-only: a member's own browser data is theirs to
-   * bring across, and their saved clans grant nobody anything.
+   * The upload route itself is not admin-only — a member's own browser data is
+   * theirs to bring across, and asking them to find an admin just to hand off a
+   * `localStorage` export would be its own kind of friction.
    *
-   * Its owner half is, though — otherwise an import would be a way around the
-   * gate on the routes above. A non-admin's owner rows are refused unexamined and
-   * counted, rather than silently dropped, so the client can say what happened.
+   * Both halves of what it carries are admin-gated, though: the owner column for
+   * the reasoning above the routes that write it, and the saved-clan list for the
+   * same reasoning above `savedClansAreAdminOnly`. Gating only one would make this
+   * route a way around the other's own gate — a member refused on
+   * `POST /api/saved/clans` could otherwise get the identical write through here
+   * instead. A non-admin's owner rows and clan rows are both refused unexamined
+   * and counted, rather than silently dropped, so the client can say what
+   * happened.
    */
   app.post('/api/import', async (c) => {
     const body = await readJson(c)
@@ -337,28 +349,31 @@ export function mountSharedDataRoutes(
     const droppedClans = rawClans.length - clans.length
 
     // Not behind `requireAdminFor` — this route is open to every signed-in
-    // caller, and only the owner half of the payload is admin-gated. Read
-    // fresh rather than off `user`'s request-start snapshot, for the same
+    // caller, and only the owner and clan halves of the payload are admin-gated.
+    // Read fresh rather than off `user`'s request-start snapshot, for the same
     // reason `stillActiveAdmin`'s other call sites do: the two `tooManyRows`
     // checks and the `asRecordArray`/`map`/`filter` passes above ran since
     // the session was resolved, and a concurrent demotion in that window
-    // should not let a no-longer-admin caller's owner rows through.
-    const mayWriteOwners = stillActiveAdmin(auth, user.id)
+    // should not let a no-longer-admin caller's rows through. One check covers
+    // both halves — they are now the identical decision, and there is no reason
+    // for them to ever diverge.
+    const isStillAdmin = stillActiveAdmin(auth, user.id)
     const result = store.importFromBrowser(
-      { owners: mayWriteOwners ? owners : [], clans },
+      { owners: isStillAdmin ? owners : [], clans: isStillAdmin ? clans : [] },
       user.id,
     )
-    result.clans.invalid += droppedClans
 
     /*
-     * A refused owner half counts every row as refused, dropped ones included, and
-     * adds nothing to `invalid`: those rows were never examined, so calling one both
+     * A refused half counts every row as refused, dropped ones included, and adds
+     * nothing to `invalid`: those rows were never examined, so calling one both
      * refused and invalid would make the total overshoot what the client sent.
      */
-    if (mayWriteOwners) {
+    if (isStillAdmin) {
       result.owners.invalid += droppedOwners
-    } else if (rawOwners.length > 0) {
-      result.owners.refused = rawOwners.length
+      result.clans.invalid += droppedClans
+    } else {
+      if (rawOwners.length > 0) result.owners.refused = rawOwners.length
+      if (rawClans.length > 0) result.clans.refused = rawClans.length
     }
 
     return c.json(result)

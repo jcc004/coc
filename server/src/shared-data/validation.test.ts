@@ -519,4 +519,32 @@ describe('every imported row is accounted for', () => {
     assert.equal(total(body.owners), sent.length)
     harness.db.close()
   })
+
+  it('counts a non-admin’s dropped clan rows as refused too, alongside their owner rows', async () => {
+    const harness = await createHarness()
+    const cookie = await signIn(harness, MEMBER)
+
+    // The saved-clan list is an admin decision now, same as the owner column, so a
+    // member's clans are refused unexamined exactly the same way — both halves of
+    // one import must be reported, not just the one that used to be gated.
+    const sentOwners = [{ tag: '#PLAYER1', owner: 'Someone' }, { tag: '', owner: 'Nobody' }]
+    const sentClans = [{ tag: CLAN_TAG, name: 'Reddit' }, { tag: '', name: 'No tag' }]
+
+    const response = await harness.app.request(
+      ...send('POST', '/api/import', { owners: sentOwners, clans: sentClans }, cookie),
+    )
+    const body = (await response.json()) as ImportResponse
+
+    assert.equal(body.owners.refused, sentOwners.length)
+    assert.equal(body.owners.invalid, 0)
+    assert.equal(total(body.owners), sentOwners.length)
+
+    assert.equal(body.clans.refused, sentClans.length)
+    assert.equal(body.clans.invalid, 0)
+    assert.equal(total(body.clans), sentClans.length)
+
+    assert.deepEqual(harness.shared.listSavedClans(), [])
+    assert.deepEqual(harness.shared.listOwners(), [])
+    harness.db.close()
+  })
 })

@@ -19,7 +19,13 @@ import { TagButton } from './TagButton.tsx'
  * workflow to answer.
  */
 
-function SaveToggle({ clan }: { clan: Clan }) {
+/**
+ * The shortcut `SavedClansView.tsx`'s own doc comment refers to: this toggle calls
+ * the identical `saveClan`/`removeClan` writes as that view's Edit/Remove chips, so
+ * it is gated the same way and for the same reason — hidden, not disabled, for a
+ * non-admin, since the write would just come back refused.
+ */
+function SaveToggle({ clan, isAdmin }: { clan: Clan; isAdmin: boolean }) {
   const saved = useSavedClans().some((entry) => entry.tag === clan.tag)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -48,6 +54,8 @@ function SaveToggle({ clan }: { clan: Clan }) {
       setBusy(false)
     }
   }
+
+  if (!isAdmin) return null
 
   return (
     <>
@@ -123,7 +131,7 @@ export function ClanView({
 
           <div className="hero-figure">
             <div className="hero-figure__actions">
-              <SaveToggle clan={clan} />
+              <SaveToggle clan={clan} isAdmin={user.role === 'admin'} />
               <a
                 className="icon-button"
                 style={{ display: 'inline-block', marginBottom: 10 }}

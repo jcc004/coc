@@ -1048,7 +1048,10 @@ describe('saved clans and owners are shared, not per-user', () => {
 
   it("shows user A's saved clan to user B, and B's edit back to A", async () => {
     const harness = await createHarness()
-    const { a, b } = await twoUsers(harness)
+    // Two admins: writing the saved-clan list is now an admin decision, the same
+    // reasoning as the owner-column race test below — the sharing this test proves
+    // is between two people both entitled to write it.
+    const { a, b } = await twoUsers(harness, 'admin')
 
     const saved = await harness.app.request(
       ...postJson(
@@ -1446,6 +1449,63 @@ describe('the owner column is an admin decision', () => {
   })
 })
 
+describe('the saved clan list is an admin decision', () => {
+  it('refuses a member every way of writing the saved clan list', async () => {
+    const harness = await createHarness()
+    const { a, b } = await twoUsers(harness)
+
+    // Something for the rename and the remove to try to change or destroy.
+    assert.equal(
+      (
+        await harness.app.request(
+          ...postJson('/api/saved/clans', { tag: '#G88CYQP', name: 'Reddit' }, a),
+        )
+      ).status,
+      200,
+    )
+
+    const attempts: [string, RequestInit][] = [
+      postJson('/api/saved/clans', { tag: '#AAABBB', name: 'Should not land' }, b),
+      patchJson('/api/saved/clans/%23G88CYQP', { name: 'Renamed by a member' }, b),
+      [`/api/saved/clans/${CLAN_TAG}`, { method: 'DELETE', headers: { cookie: b } }],
+    ]
+
+    for (const [path, init] of attempts) {
+      const response = await harness.app.request(path, init)
+      assert.equal(response.status, 403, `${init.method ?? 'POST'} ${path} must be refused`)
+      const body = (await response.json()) as { error: { reason: string; message: string } }
+      assert.equal(body.error.reason, 'forbidden')
+      // Not a bare denial: it has to say an admin is the one who manages the list.
+      assert.match(body.error.message, /admin manages the saved clan list/i)
+    }
+
+    // And nothing moved: one clan, still under its original name.
+    const clans = harness.shared.listSavedClans()
+    assert.deepEqual(
+      clans.map((row) => [row.tag, row.name]),
+      [['#G88CYQP', 'Reddit']],
+    )
+    harness.db.close()
+  })
+
+  it('lets a member read every saved clan, which is not what changed', async () => {
+    const harness = await createHarness()
+    const { a, b } = await twoUsers(harness)
+    await harness.app.request(
+      ...postJson('/api/saved/clans', { tag: '#G88CYQP', name: 'Reddit' }, a),
+    )
+
+    const response = await harness.app.request('/api/saved/clans', { headers: { cookie: b } })
+    assert.equal(response.status, 200)
+    const { clans } = (await response.json()) as { clans: { tag: string; name: string }[] }
+    assert.deepEqual(
+      clans.map((row) => [row.tag, row.name]),
+      [['#G88CYQP', 'Reddit']],
+    )
+    harness.db.close()
+  })
+})
+
 describe('one-time import of browser data', () => {
   it('fills gaps, never overwrites, and is idempotent', async () => {
     const harness = await createHarness()
@@ -1501,12 +1561,13 @@ describe('one-time import of browser data', () => {
     harness.db.close()
   })
 
-  it("refuses a member's owner rows but still takes their saved clans", async () => {
+  it("refuses a member's owner rows and saved clan rows on import", async () => {
     const harness = await createHarness()
     const { b } = await twoUsers(harness)
 
-    // The upload would otherwise be a way straight around the admin gate on
-    // /api/owners — while a member's own clan list grants nobody anything.
+    // The upload would otherwise be a way straight around the admin gate on both
+    // /api/owners and /api/saved/clans — a member refused on those routes could
+    // otherwise get the identical write through here instead.
     const response = await harness.app.request(
       ...postJson(
         '/api/import',
@@ -1521,11 +1582,11 @@ describe('one-time import of browser data', () => {
     assert.deepEqual(await response.json(), {
       // Refused unexamined, and counted rather than silently dropped.
       owners: { applied: 0, skipped: 0, invalid: 0, refused: 1 },
-      clans: { applied: 1, skipped: 0, invalid: 0 },
+      clans: { applied: 0, skipped: 0, invalid: 0, refused: 1 },
     })
 
     assert.deepEqual(harness.shared.listOwners(), [])
-    assert.equal(harness.shared.listSavedClans().length, 1)
+    assert.deepEqual(harness.shared.listSavedClans(), [])
     harness.db.close()
   })
 

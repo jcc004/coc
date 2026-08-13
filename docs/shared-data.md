@@ -2,13 +2,14 @@
 
 ## Saved clans
 
-The landing page carries one list: saved clans — tag, a display name you control, level,
-members, points, and war league. Add a tag and the app fetches the clan to validate it and
-prefill the in-game name. Clicking a row opens the clan and **War** opens its current war;
-**Edit** renames (which marks the row `custom` so **Refresh all** stops overwriting the
-label), and **Remove** deletes after a confirm. Any clan page also has a **★ Saved / ☆ Save**
-toggle. The list is **shared** — everyone signed in sees and edits the same one, so removing a
-clan removes it for everybody, which the confirm now says.
+The landing page carries one list: saved clans — tag, a display name, level, members, points,
+and war league. Clicking a row opens the clan and **War** opens its current war. The list is
+**shared** — everyone signed in sees the same one — and **writing it is an admin decision**:
+adding a tag, **Edit** (which renames and marks the row `custom` so **Refresh all** stops
+overwriting the label), and **Remove** (which deletes after a confirm, for everybody) are all
+admin-only, both in the UI and on the server. Any clan page also has a **★ Saved / ☆ Save**
+toggle for the same write, gated the same way. A non-admin still reads the whole list; what they
+lose is the ability to change it.
 
 ## The shared data model
 
@@ -53,32 +54,40 @@ were written, and a test asserts each one 401s anonymously.
 
 | Route | |
 |---|---|
-| `GET /api/saved/clans` | the shared list |
-| `POST /api/saved/clans` | insert or refresh; an existing `custom` label survives |
-| `PATCH /api/saved/clans/:tag` | rename, which marks the row `custom` |
-| `DELETE /api/saved/clans/:tag` | remove, for everyone |
+| `GET /api/saved/clans` | the shared list — **everyone** |
+| `POST /api/saved/clans` | insert or refresh; an existing `custom` label survives — **admin only** |
+| `PATCH /api/saved/clans/:tag` | rename, which marks the row `custom` — **admin only** |
+| `DELETE /api/saved/clans/:tag` | remove, for everyone — **admin only** |
 | `GET /api/owners` | every assignment, with `ownerUserId` — **everyone** |
 | `PUT /api/owners/:tag` | assign one base to one account, `{ "userId": n }` — **admin only** |
 | `DELETE /api/owners/:tag` | remove one — **admin only** |
 | `POST /api/owners/bulk` | the conditional bulk apply, below — **admin only** |
-| `POST /api/import` | the one-time browser hand-off, below; its owner half is admin only |
+| `POST /api/import` | the one-time browser hand-off, below; both its owner and clan halves are admin only |
 
 ### Who may assign an owner, and who may write a base
 
-Three rules, and they are the whole authorization model:
+Four rules, and they are the whole authorization model:
 
-1. **Everyone signed in reads everything.** Every base, every owner, every card count. That was
-   the reason this data moved to the server and it has not changed.
+1. **Everyone signed in reads everything.** Every base, every owner, every card count, every
+   saved clan. That was the reason this data moved to the server and it has not changed.
 2. **Only an admin writes the owner column** — the single set, the bulk apply, and the clear.
    Ownership decides who may edit a base's card counts, so a member who could reassign a base
    could grant themselves that write, which would make it not a permission at all. A member
    attempting one gets a 403 saying *an admin assigns ownership of a base*, not a bare denial.
-3. **Only the owning account writes that base's card counts** —
+3. **Only an admin writes the saved-clan list** — add, rename, and remove, including the
+   shortcut on a clan's own page. The list is shared state every signed-in member sees, so a
+   member who could reshape it unilaterally would be changing what everyone else sees without
+   anyone entitled to that call having agreed to it — the same reasoning as rule 2, applied to a
+   different shared table. This used to be open to every member; the project owner closed it
+   once the same "a member can unilaterally rewrite what everyone sees" shape was recognized in
+   both tables. A member attempting a write gets a 403 saying *an admin manages the saved clan
+   list*.
+4. **Only the owning account writes that base's card counts** —
    `PUT /api/cards/inventory/:tag`. A non-owner gets a 403 that **names the owner**
    ("`#2GCJ2QPU` belongs to Jared…"), because being told who to ask is the difference between a
    usable message and a wall.
 
-Two decisions inside rule 3, both deliberate:
+Two decisions inside rule 4, both deliberate:
 
 - **An admin may also write any base's counts.** An admin can reassign ownership to themselves
   in one request, so refusing them the direct write would stop nothing and would remove their
@@ -96,10 +105,12 @@ forget the admin case, another would treat an unowned base as fair game, and nob
 the rule without reading three files. The route consults it *before* parsing the body, so a
 refusal never depends on whether the payload happened to be well formed.
 
-The owner routes are gated by middleware rather than by a check inside each handler, so a route
-added later cannot become a hole by omission — the same reasoning as `/api/*` being
-deny-by-default. `requireAdminFor(message)` in `server/src/auth/middleware.ts` takes the message
-so each area can say what an admin actually does there.
+The owner routes and the saved-clan routes are both gated by middleware rather than by a check
+inside each handler, so a route added later cannot become a hole by omission — the same
+reasoning as `/api/*` being deny-by-default. `requireAdminFor(message)` in
+`server/src/auth/middleware.ts` takes the message so each area can say what an admin actually
+does there — `ownerWritesAreAdminOnly` and `savedClansAreAdminOnly`, both in
+`server/src/shared-data/routes.ts`, are two applications of the same function.
 
 ### Migration v6, and what the backfill did
 
@@ -162,11 +173,14 @@ saying what became of it is not on, least of all when some of it was skipped.
 The `localStorage` keys are **read and never cleared**, so if the import turns out to have been
 wrong the original data is still sitting there.
 
-**The upload itself is not admin-only, but its owner half is.** A member's saved clans are
-theirs to bring across and grant nobody anything; their owner rows would be a way straight
-around the admin gate on `/api/owners`, so for a non-admin they are refused unexamined and
-reported as `owners.refused` rather than silently dropped. The clans in the same request are
-still applied.
+**The upload route itself is not admin-only, but both halves of what it carries are.** A
+member's own browser data is theirs to bring across — the route stays open so nobody needs an
+admin present just to hand off a `localStorage` export — but the owner rows and the saved-clan
+rows inside it are gated exactly as their dedicated routes are. Either would otherwise be a way
+straight around the admin gate on `/api/owners` or `/api/saved/clans`: a member refused on those
+routes could get the identical write through here instead. For a non-admin both halves are
+refused unexamined and reported as `owners.refused` and `clans.refused` rather than silently
+dropped, so the client can say what happened to every row it sent.
 
 ### The client stores
 

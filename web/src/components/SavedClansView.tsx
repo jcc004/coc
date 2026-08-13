@@ -130,9 +130,11 @@ function AddForm() {
 
 function SavedClanRow({
   entry,
+  isAdmin,
   onProblem,
 }: {
   entry: SavedClan
+  isAdmin: boolean
   onProblem: (text: string) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -229,12 +231,16 @@ function SavedClanRow({
         <a className="chip" href={hrefFor({ view: 'war', tag: entry.tag })}>
           War
         </a>
-        <button type="button" className="chip" onClick={startEditing}>
-          Edit
-        </button>
-        <button type="button" className="chip" onClick={() => void remove()}>
-          Remove
-        </button>
+        {isAdmin ? (
+          <>
+            <button type="button" className="chip" onClick={startEditing}>
+              Edit
+            </button>
+            <button type="button" className="chip" onClick={() => void remove()}>
+              Remove
+            </button>
+          </>
+        ) : null}
       </td>
     </tr>
   )
@@ -242,14 +248,19 @@ function SavedClanRow({
 
 export function SavedClansView({ user }: { user: Pick<SessionUser, 'role'> }) {
   /*
-   * The saved-clans list is shared, and so is the act of adding to it: one tag typed
-   * here appears on everybody's homepage. So the form is an admin's, by request.
+   * The saved-clans list is shared: one tag added, renamed, or removed here changes
+   * what everybody sees on the homepage. Every write to it — the add form below,
+   * each row's Edit and Remove chips, and the "Refresh all" button, which is a run
+   * of writes rather than one — is an admin's, by the same decision that made the
+   * owner column admin-only.
    *
-   * **Hidden, not disabled** — an entry form nobody here can submit is worse than no
-   * form. What a member loses is only the shortcut: opening any clan and pressing
-   * Save on its page adds it just the same, which is what the empty-state and the
-   * footnote below point at. This is presentation; the server's own rule on
-   * `POST /api/saved/clans` is what actually decides.
+   * **Hidden, not disabled** — a control nobody here can use is worse than no
+   * control at all. A member keeps read access to the whole list; what they lose is
+   * only the ability to change it, which the empty-state copy below points at by
+   * naming who to ask. `ClanView.tsx`'s own Save/Remove toggle — the one shortcut
+   * that used to let a member add a clan without coming here — is gated the same
+   * way, for the same reason. This is presentation; the server's own rule on
+   * `POST`/`PATCH`/`DELETE /api/saved/clans` is what actually decides.
    */
   const isAdmin = user.role === 'admin'
   const state = useSavedClansState()
@@ -330,7 +341,7 @@ export function SavedClansView({ user }: { user: Pick<SessionUser, 'role'> }) {
                 }}
               />
             ) : null}
-            {clans.length > 0 ? (
+            {clans.length > 0 && isAdmin ? (
               <button
                 type="button"
                 className="icon-button"
@@ -358,16 +369,7 @@ export function SavedClansView({ user }: { user: Pick<SessionUser, 'role'> }) {
           <Loading what="saved clans" />
         ) : clans.length === 0 && state.status === 'idle' ? null : clans.length === 0 ? (
           <p className="empty-hint">
-            No clans saved yet.{' '}
-            {isAdmin ? (
-              <>
-                Add a tag below, or open any clan and press <strong>Save</strong>.
-              </>
-            ) : (
-              <>
-                Open any clan and press <strong>Save</strong> to add it, or ask an admin.
-              </>
-            )}
+            No clans saved yet. {isAdmin ? 'Add a tag below.' : 'Ask an admin to add one.'}
           </p>
         ) : (
           <>
@@ -419,7 +421,12 @@ export function SavedClansView({ user }: { user: Pick<SessionUser, 'role'> }) {
                 </thead>
                 <tbody role="rowgroup">
                   {view.rows.map((entry) => (
-                    <SavedClanRow key={entry.tag} entry={entry} onProblem={setRowProblem} />
+                    <SavedClanRow
+                      key={entry.tag}
+                      entry={entry}
+                      isAdmin={isAdmin}
+                      onProblem={setRowProblem}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -429,7 +436,8 @@ export function SavedClansView({ user }: { user: Pick<SessionUser, 'role'> }) {
 
             <p className="empty-hint" style={{ marginTop: 12, fontSize: 13 }}>
               Click a row to open the clan, or <strong>War</strong> for its current war. This list
-              is <strong>shared</strong> — everyone signed in sees and edits the same one.
+              is <strong>shared</strong> — everyone signed in sees it, and an admin's changes
+              apply for everyone.
             </p>
           </>
         )}

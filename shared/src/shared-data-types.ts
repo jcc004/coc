@@ -139,9 +139,11 @@ export interface ImportCounts {
   invalid: number
   /**
    * Rows the caller was not allowed to write, and so were not even examined.
-   * Only owner assignments can be refused, and only for a non-admin: the owner
-   * column is an admin decision, while a member's saved clans are their own.
-   * Absent when nothing was refused, which is the ordinary case.
+   * Both owner assignments and saved-clan rows can be refused, and only for a
+   * non-admin: both the owner column and the saved-clan list are admin
+   * decisions now, for the same reason — each is shared state every signed-in
+   * member sees, not something a member writes for themselves alone. Absent
+   * when nothing was refused, which is the ordinary case.
    */
   refused?: number
 }
