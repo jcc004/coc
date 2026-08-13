@@ -64,7 +64,7 @@ import {
 } from '../leaderboard-view.ts'
 import { ownerRecordFor, useOwners, useOwnersState } from '../owners.ts'
 import { rarityStandings, type RarityStanding } from '../rarity-standings.ts'
-import { ROW_SIZE, rowStandings, type RowStanding } from '../row-standings.ts'
+import { ROW_SIZE, rowStandings, type RowLevel, type RowStanding } from '../row-standings.ts'
 import { paginate, type RowLimit } from '../saved-table.ts'
 import { spareStandings, type SpareStanding } from '../spares-standings.ts'
 import { traderStandings, type TraderStanding } from '../trader-standings.ts'
@@ -195,21 +195,28 @@ interface LeaderboardColumn<T> {
 type LeaderboardRow = StandingBase & { rank: number }
 
 /**
- * Ten small marks — filled where a row of the grid is full, hollow where it is not —
- * beside the numeric count on the "Full rows" board. The count and the streak are
- * still printed as numbers in their own columns; this is the one thing none of the
- * other six rankings has an equivalent of, since `RowStanding.fullRows` is the only
- * per-row (not per-card) detail any of them computed, and a caller with nothing to
- * shade would be throwing it away.
+ * Ten small marks — hollow where a row of the grid is empty, green where it is
+ * full, blue where it is doubled (every one of the row's six cards held at
+ * least twice) — beside the numeric count on the "Full rows" board. The counts
+ * are still printed as numbers in their own columns; this is the one thing
+ * none of the other six rankings has an equivalent of, since
+ * `RowStanding.rowLevels` is the only per-row (not per-card) detail any of
+ * them computed, and a caller with nothing to shade would be throwing it away.
  */
-function RowMarks({ fullRows, label }: { fullRows: readonly boolean[]; label: string }) {
+function RowMarks({ rowLevels, label }: { rowLevels: readonly RowLevel[]; label: string }) {
   return (
     <span className="row-marks" role="img" aria-label={label}>
-      {fullRows.map((full, index) => (
+      {rowLevels.map((level, index) => (
         <span
           key={index}
           aria-hidden="true"
-          className={full ? 'row-marks__mark row-marks__mark--full' : 'row-marks__mark'}
+          className={
+            level === 'empty'
+              ? 'row-marks__mark'
+              : level === 'double'
+                ? 'row-marks__mark row-marks__mark--double'
+                : 'row-marks__mark row-marks__mark--full'
+          }
         />
       ))}
     </span>
@@ -317,10 +324,16 @@ const RARITY_COLUMNS: LeaderboardColumn<RarityStanding>[] = [
  *  `CategoryStanding.size` is that deck's own card count, so `7/19` reads as the
  *  deck being viewed, not the whole event. Cards leads, Points trails, matching
  *  every other board's convention of listing its primary ranking measure first —
- *  `categoryStandings()` ranks by distinct before points (see its own doc comment),
- *  so this table's column order follows the ranking rather than disagreeing with
- *  it the way the points-first order (this board's original design, from before
- *  the ranking itself changed) now would. */
+ *  `categoryStandings()` ranks by distinct, then doubled, before points (see its
+ *  own doc comment), so this table's column order follows the ranking rather than
+ *  disagreeing with it the way the points-first order (this board's original
+ *  design, from before the ranking itself changed) now would.
+ *
+ *  `×2` beside the fraction, not a color change on the meter: that meter's fill
+ *  already uses `--accent` (blue) for "not yet complete" and switches to
+ *  `--good` (green) once maxed, everywhere `Meter` is used — a doubled deck is a
+ *  stronger *green*, not a different hue, so it earns a plain-text marker rather
+ *  than fighting that existing meaning. */
 const CATEGORY_COLUMNS: LeaderboardColumn<CategoryStanding>[] = [
   {
     key: 'distinct',
@@ -330,11 +343,16 @@ const CATEGORY_COLUMNS: LeaderboardColumn<CategoryStanding>[] = [
       <div className="donation-cell">
         <span>
           {row.distinct}/{row.size}
+          {row.doubled ? <strong style={{ color: 'var(--good-text)' }}> ×2</strong> : null}
         </span>
         <Meter
           value={row.distinct}
           max={row.size}
-          label={`${row.label} holds ${row.distinct} of ${row.size} cards`}
+          label={
+            row.doubled
+              ? `${row.label} holds every card in this deck at least twice`
+              : `${row.label} holds ${row.distinct} of ${row.size} cards`
+          }
         />
       </div>
     ),
@@ -347,8 +365,8 @@ const CATEGORY_COLUMNS: LeaderboardColumn<CategoryStanding>[] = [
   },
 ]
 
-/** Full rows: the fraction plus the ten marks, then the two numbers behind the
- *  score, both printed regardless of whether the marks are worth a glance. */
+/** Full rows: the fraction plus the ten marks, then the three numbers behind the
+ *  score, all printed regardless of whether the marks are worth a glance. */
 const ROWS_COLUMNS: LeaderboardColumn<RowStanding>[] = [
   {
     key: 'fullRows',
@@ -357,20 +375,26 @@ const ROWS_COLUMNS: LeaderboardColumn<RowStanding>[] = [
     cell: (row) => (
       <div className="donation-cell">
         <span>
-          {row.fullRowCount}/{row.fullRows.length}
+          {row.fullRowCount}/{row.rowLevels.length}
         </span>
         <RowMarks
-          fullRows={row.fullRows}
-          label={`${row.label} holds ${row.fullRowCount} of ${row.fullRows.length} rows in full`}
+          rowLevels={row.rowLevels}
+          label={`${row.label} holds ${row.fullRowCount} of ${row.rowLevels.length} rows in full, ${row.doubleRowCount} of them doubled`}
         />
       </div>
     ),
   },
   {
-    key: 'streak',
-    label: 'Longest streak',
+    key: 'doubled',
+    label: 'Doubled',
     numeric: true,
-    cell: (row) => formatFull(row.longestStreak),
+    cell: (row) => formatFull(row.doubleRowCount),
+  },
+  {
+    key: 'streak',
+    label: 'Streak rows',
+    numeric: true,
+    cell: (row) => formatFull(row.streakRows),
   },
   {
     key: 'score',
@@ -401,12 +425,23 @@ const DECKS_COLUMNS: LeaderboardColumn<DeckCompletionStanding>[] = [
       ) : (
         <span className="recents recents--stacked">
           {row.completedDecks.map((category) => (
-            <span key={category} className="chip chip--static">
+            <span
+              key={category}
+              className="chip chip--static chip--deck"
+              data-deck={deckSlug(category)}
+            >
               {category}
+              {row.doubledDecks.includes(category) ? ' ×2' : ''}
             </span>
           ))}
         </span>
       ),
+  },
+  {
+    key: 'doubled',
+    label: 'Doubled',
+    numeric: true,
+    cell: (row) => `${row.doubledCount}/${DECK_CATEGORY_COUNT}`,
   },
   {
     key: 'distinct',
@@ -1878,9 +1913,10 @@ export function CardsView({ user }: { user: SessionUser }) {
           </p>
         ) : leaderboardView === 'category' ? (
           <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
-            {leaderboardCategory}, by <strong>points in this deck alone</strong> — a base's other
-            three decks do not count here. Level on points, more distinct {leaderboardCategory} cards
-            goes first. Not affected by <strong>Show</strong>: this is the whole clan.{' '}
+            {leaderboardCategory}, by <strong>distinct cards held in this deck alone</strong> — a
+            base's other three decks do not count here. Level on distinct cards, a{' '}
+            <strong>doubled</strong> deck — every card in it held twice — goes first, then more
+            points decides. Not affected by <strong>Show</strong>: this is the whole clan.{' '}
             <strong>Owner</strong> narrows which rows are drawn — the rank stays each base's place
             on this deck's board, so it never renumbers.
           </p>
@@ -1888,19 +1924,22 @@ export function CardsView({ user }: { user: SessionUser }) {
           <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
             Every tracked base, by the real game's own {ROW_SIZE}-wide collection screen:{' '}
             <strong>10 points</strong> for every row held in full, plus <strong>5 more</strong> for
-            each row of the longest unbroken streak of full rows — so finishing a stretch of decks
-            end-to-end beats the same rows scattered. Level on score, more full rows outright goes
-            first. Not affected by <strong>Show</strong>: this is the whole clan.{' '}
-            <strong>Owner</strong> narrows which rows are drawn — the rank stays each base's place
-            on the whole board, so it never renumbers.
+            each row of every unbroken streak of two or more full rows — so a run of three and a
+            separate run of two each earn their own bonus, not just the longer of the two — plus{' '}
+            <strong>10 more</strong> for each row held twice over, shown as a blue mark instead of
+            green. Level on score, more full rows outright goes first. Not affected by{' '}
+            <strong>Show</strong>: this is the whole clan. <strong>Owner</strong> narrows which rows
+            are drawn — the rank stays each base's place on the whole board, so it never renumbers.
           </p>
         ) : leaderboardView === 'decks' ? (
           <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
             Every tracked base, by how many of the four decks it holds <strong>outright</strong> — 0
-            through 4, not how far into any one it has got. Level on decks complete, more distinct
-            cards held overall goes first. Not affected by <strong>Show</strong>: this is the whole
-            clan. <strong>Owner</strong> narrows which rows are drawn — the rank stays each base's
-            place on the whole board, so it never renumbers.
+            through 4, not how far into any one it has got. Level on decks complete, more{' '}
+            <strong>doubled</strong> decks — every card in a deck held twice, marked{' '}
+            <strong>×2</strong> on its chip — goes first, then more distinct cards held overall. Not
+            affected by <strong>Show</strong>: this is the whole clan. <strong>Owner</strong> narrows
+            which rows are drawn — the rank stays each base's place on the whole board, so it never
+            renumbers.
           </p>
         ) : leaderboardView === 'spares' ? (
           <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>

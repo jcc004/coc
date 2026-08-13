@@ -16,25 +16,55 @@ import type { GeneratedCard } from './cards.ts'
  * exactly, and no new card ordering is invented here — this module only groups
  * an order that already exists.
  *
- * A row is **full** when a base holds at least one copy of all six cards in it.
- * The score rewards both breadth across rows and rows completed *together*:
+ * A row is **full** when a base holds at least one copy of all six cards in it,
+ * and **doubled** when it holds at least *two* of every one of those six — a
+ * stronger, rarer completion. The score rewards breadth, rows completed
+ * *together*, and rows completed twice over:
  *
- *   score = (full rows × 10) + (longest run of consecutive full row indices × 5)
+ *   score = (full rows × 10) + (streak rows × 5) + (doubled rows × 10)
  *
- * so five full rows scattered across the grid score 50, but the same five rows
- * as one unbroken run score 50 + 25 = 75 — finishing a deck (or a stretch of
- * decks) end-to-end is worth more than the same five rows picked at random. This
- * is an approved design decision, not something this module re-derives; see the
- * task that produced it for the reasoning behind the exact weights.
+ * where **streak rows** is the sum, over every maximal run of consecutive full
+ * rows that is at least two long, of that run's own length — not just the
+ * longest run. Two bases can hold the same five rows full and still land on
+ * different scores depending on how those five are arranged:
+ *
+ * - five full rows scattered, no two adjacent: streak rows = 0, score = 50.
+ * - the same five as one unbroken run: streak rows = 5, score = 50 + 25 = 75.
+ * - the same five as a run of three plus a separate run of two: streak rows =
+ *   3 + 2 = 5, score = 50 + 25 = 75 — each qualifying run earns its own bonus,
+ *   summed, rather than only the single longest run counting. A base with a
+ *   run of three plus two rows completed on their own (not adjacent to
+ *   anything) only banks the run of three: streak rows = 3, score = 50 + 15 =
+ *   65 — an isolated full row earns its 10 points same as any other, but nets
+ *   no togetherness bonus on its own; it needs a neighbor.
+ *
+ * This is an approved design decision, not something this module re-derives;
+ * see the task that produced it for the reasoning behind the exact weights.
+ *
+ * Reported live, 2026-08-12: two bases each holding 5 of 10 rows, one as a run
+ * of three plus two rows scattered, the other as a run of three plus a
+ * *separate* run of two, scored identically (65) under the previous
+ * longest-run-only formula — the second base's own second streak was not
+ * being credited at all. This module's history before that date only ever
+ * rewarded the single longest run; the multi-run sum above is what replaced
+ * it.
  */
 
 /** Cards per row on the real game's collection screen — see the module doc. */
 export const ROW_SIZE = 6
 
-/** What one full row is worth, on its own. */
+/** How full a single row is: not held at all, held once over, or held twice
+ *  over — see the module doc for what each threshold means and scores. */
+export type RowLevel = 'empty' | 'full' | 'double'
+
+/** What one full row is worth, on its own — includes a doubled row, which is
+ *  full and then some. */
 const FULL_ROW_POINTS = 10
-/** What each row of the longest unbroken run of full rows adds, on top of that. */
+/** What each row of a qualifying (two-or-longer) streak of full rows adds,
+ *  on top of that — summed across every such streak, not just the longest. */
 const STREAK_POINTS = 5
+/** What one doubled row adds, on top of {@link FULL_ROW_POINTS}. */
+const DOUBLE_ROW_POINTS = 10
 
 /**
  * `cards`, chunked into the real game's rows of six.
@@ -53,63 +83,81 @@ function rowsOfCards(cards: readonly GeneratedCard[]): readonly GeneratedCard[][
 }
 
 /**
- * Which of the grid's rows a single base's counts fill completely.
+ * How full each of the grid's rows is for a single base's counts.
  *
  * Exported standalone — the same way `cardPoints` is usable without
  * `baseStandings` — so a future UI that only needs to shade the sixty tiles
- * (which rows are complete) does not have to run the whole ranking to get it.
- * `cards` defaults to `cardsInGridOrder()`; a caller passes its own list only to
- * test against a synthetic layout rather than the real sixty.
+ * (which rows are complete, which are doubled) does not have to run the whole
+ * ranking to get it. `cards` defaults to `cardsInGridOrder()`; a caller passes
+ * its own list only to test against a synthetic layout rather than the real
+ * sixty.
  */
-export function fullRowsFor(
+export function rowLevelsFor(
   inventory: BaseInventory | undefined,
   cards: readonly GeneratedCard[] = cardsInGridOrder(),
-): boolean[] {
+): RowLevel[] {
   const counts = countMap(inventory)
-  return rowsOfCards(cards).map((row) => row.every((card) => (counts.get(card.id) ?? 0) > 0))
+  return rowsOfCards(cards).map((row) => {
+    const minHeld = row.reduce((min, card) => Math.min(min, counts.get(card.id) ?? 0), Infinity)
+    return minHeld >= 2 ? 'double' : minHeld >= 1 ? 'full' : 'empty'
+  })
 }
 
-/** The score, and the two counts it is built from. */
+/** The score, and the counts it is built from. */
 export interface RowScore {
-  /** How many of the ten rows are full. */
+  /** How many of the ten rows are full — includes doubled rows, which are full and then some. */
   fullRowCount: number
-  /** The longest run of *consecutive row indices* that are all full — see the module doc. */
-  longestStreak: number
-  /** `fullRowCount * 10 + longestStreak * 5`. */
+  /** How many of the ten rows are doubled: every one of that row's six cards held at least twice. */
+  doubleRowCount: number
+  /** Rows counted toward the togetherness bonus: the sum, over every run of
+   *  consecutive full rows that is at least two long, of that run's own
+   *  length — see the module doc. A run of exactly one contributes nothing. */
+  streakRows: number
+  /** `fullRowCount * 10 + streakRows * 5 + doubleRowCount * 10`. */
   score: number
 }
 
 /**
- * `fullRows` → `RowScore`, with no knowledge of bases or inventory.
+ * `rowLevels` → `RowScore`, with no knowledge of bases or inventory.
  *
- * Exported standalone for the same reason as {@link fullRowsFor}: a caller that
- * already has a boolean-per-row reading (from {@link fullRowsFor}, or from a UI
+ * Exported standalone for the same reason as {@link rowLevelsFor}: a caller that
+ * already has a level-per-row reading (from {@link rowLevelsFor}, or from a UI
  * recomputing one row at a time) can score it without going through
  * {@link rowStandings}.
  *
- * A run is broken by any non-full row, including one that is merely *absent*
- * from the input — `fullRows` is read strictly left to right, by array position,
- * so a caller must pass all ten in row order for the streak to mean what it says.
+ * A streak is broken by any non-full row, including one that is merely *absent*
+ * from the input — `rowLevels` is read strictly left to right, by array
+ * position, so a caller must pass all ten in row order for the streaks to mean
+ * what they say.
  */
-export function rowScoreFor(fullRows: readonly boolean[]): RowScore {
+export function rowScoreFor(rowLevels: readonly RowLevel[]): RowScore {
   let fullRowCount = 0
-  let longestStreak = 0
+  let doubleRowCount = 0
+  let streakRows = 0
   let currentStreak = 0
 
-  for (const full of fullRows) {
-    if (full) {
-      fullRowCount += 1
-      currentStreak += 1
-      longestStreak = Math.max(longestStreak, currentStreak)
-    } else {
-      currentStreak = 0
-    }
+  const closeStreak = () => {
+    if (currentStreak >= 2) streakRows += currentStreak
+    currentStreak = 0
   }
+
+  for (const level of rowLevels) {
+    if (level === 'empty') {
+      closeStreak()
+      continue
+    }
+    fullRowCount += 1
+    if (level === 'double') doubleRowCount += 1
+    currentStreak += 1
+  }
+  closeStreak()
 
   return {
     fullRowCount,
-    longestStreak,
-    score: fullRowCount * FULL_ROW_POINTS + longestStreak * STREAK_POINTS,
+    doubleRowCount,
+    streakRows,
+    score:
+      fullRowCount * FULL_ROW_POINTS + streakRows * STREAK_POINTS + doubleRowCount * DOUBLE_ROW_POINTS,
   }
 }
 
@@ -117,10 +165,11 @@ export function rowScoreFor(fullRows: readonly boolean[]): RowScore {
 export interface RowStanding extends StandingBase, RowScore {
   /**
    * One entry per row (ten, in grid order), so a leaderboard row can shade the
-   * rows it completed rather than only print the final number. Same order and
-   * same meaning as {@link fullRowsFor}'s return value.
+   * rows it completed — and, separately, doubled — rather than only print the
+   * final number. Same order and same meaning as {@link rowLevelsFor}'s return
+   * value.
    */
-  fullRows: readonly boolean[]
+  rowLevels: readonly RowLevel[]
   /**
    * Standing, sharing a number on a genuine tie — same convention as
    * {@link BaseStanding.rank} in `card-standings.ts`. See the sort below for what
@@ -134,8 +183,8 @@ export interface RowStanding extends StandingBase, RowScore {
  *
  * **The order is: score descending, then full-row count descending, then member
  * name, then tag.** Score is the measure, but it is not injective — a base with
- * three full rows in one unbroken run (30 + 15 = 45) and a base with four full
- * rows scattered as four separate streaks of one (40 + 5 = 45) land on the same
+ * three full rows as a run of two plus one on its own (30 + 10 = 40) and a base
+ * with four full rows scattered, no two adjacent (40 + 0 = 40) land on the same
  * score by two different routes. `fullRowCount` breaks that tie in favor of the
  * base that actually completed more rows outright, on the same reasoning
  * `baseStandings` gives `distinct` over `points`: reaching a score across more of
@@ -156,9 +205,9 @@ export function rowStandings(
   const byTag = new Map(inventory.map((base) => [base.tag, base]))
 
   const rows: RowStanding[] = bases.map((base) => {
-    const fullRows = fullRowsFor(byTag.get(base.tag), cards)
-    const { fullRowCount, longestStreak, score } = rowScoreFor(fullRows)
-    return { ...base, fullRows, fullRowCount, longestStreak, score, rank: 0 }
+    const rowLevels = rowLevelsFor(byTag.get(base.tag), cards)
+    const { fullRowCount, doubleRowCount, streakRows, score } = rowScoreFor(rowLevels)
+    return { ...base, rowLevels, fullRowCount, doubleRowCount, streakRows, score, rank: 0 }
   })
 
   rows.sort(

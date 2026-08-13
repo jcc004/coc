@@ -46,6 +46,20 @@
   --border: rgba(51, 36, 15, 0.18);
   --hover: rgba(51, 36, 15, 0.06);
 
+  /* The `--surface` outline ring anything sitting on a solid `--deck-*` fill
+     uses to stay legible — `--ink` does not clear 4.5:1 against every one of
+     those four tokens, so a ring rather than a per-token text color is what
+     keeps the name readable. Defined once, here, so `.deck-plaque__name` and
+     the leaderboard's completed-deck chips (`.chip--deck`) read the same
+     value instead of each carrying their own copy of the five shadow layers,
+     which could then drift out of step with each other. */
+  --plaque-ring:
+    0 0 2px var(--surface),
+    1px 0 0 var(--surface),
+    -1px 0 0 var(--surface),
+    0 1px 0 var(--surface),
+    0 -1px 0 var(--surface);
+
   /* sequential blue: fill = step 450, track = step 100 */
   --accent: var(--user-accent-light, #1f6cb0);
   --accent-hover: var(--user-accent-hover-light, #17558f);
@@ -1410,6 +1424,30 @@ a.chip {
   align-items: center;
   gap: 6px;
 }
+/* The Full-decks leaderboard's "Which decks" chips, one per completed deck —
+   every chip here already is a completed deck, so it always wears the same
+   solid look `.deck-plaque[data-complete='true']` uses, never the lighter
+   tint that plaque has while a deck is still in progress. Same `--deck-*`
+   tokens, same `--plaque-ring` legibility fix, so a chip and its plaque can
+   never disagree about a deck's color. */
+.chip--deck[data-deck='elixir'] {
+  --deck: var(--deck-elixir);
+}
+.chip--deck[data-deck='dark-elixir'] {
+  --deck: var(--deck-dark-elixir);
+}
+.chip--deck[data-deck='builder-base'] {
+  --deck: var(--deck-builder-base);
+}
+.chip--deck[data-deck='super-troop'] {
+  --deck: var(--deck-super-troop);
+}
+.chip--deck {
+  background: var(--deck);
+  border-color: var(--deck);
+  color: var(--ink);
+  text-shadow: var(--plaque-ring);
+}
 .chip img {
   width: 20px;
   height: 20px;
@@ -2631,17 +2669,6 @@ details.group > .group__body {
  * theme without restating a single value.
  */
 .deck-plaques {
-  /* The `--surface` outline ring `.deck-plaque__name` and `.deck-plaque__fraction`
-     both use against a `--deck` background — defined once, here, so the two reads
-     of it can't independently drift the way two typed-out literals could; a
-     future widening of the ring (e.g. for the measured-weakest dark-elixir/
-     dark-mode case those two rules' own comments cite) changes both at once. */
-  --plaque-ring:
-    0 0 2px var(--surface),
-    1px 0 0 var(--surface),
-    -1px 0 0 var(--surface),
-    0 1px 0 var(--surface),
-    0 -1px 0 var(--surface);
   display: grid;
   /* Four across, as the game has them; 2×2 on a phone — see the 600px block. */
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3377,6 +3404,14 @@ table.roster th button:hover {
 }
 .row-marks__mark--full {
   background: var(--good);
+}
+/* A doubled row (every card in it held at least twice) outranks a merely full
+   one, so it gets its own color rather than reading identically to full at a
+   glance. `--accent` rather than a new hue: it is already this app's blue and
+   already palette-validated, and a mark this small is exactly the case for
+   reusing a token instead of introducing a fifth color to keep track of. */
+.row-marks__mark--double {
+  background: var(--accent);
 }
 
 /* The progress grid's hero/pet column heads: an icon ahead of the sort button's

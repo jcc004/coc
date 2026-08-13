@@ -15,6 +15,13 @@ import { cardsInCategory, countMap } from './cards.ts'
  * a card counts here only when its id is one `cardsInCategory` puts in the deck being
  * ranked.
  *
+ * **A deck is `doubled` when every one of its cards is held at least twice** — the
+ * same "held twice over" threshold `row-standings.ts` scores on the Full rows board,
+ * applied here to one deck instead of one row of six. Doubled implies `distinct ===
+ * size` (a card held twice is held), so it can only ever be true for a base that has
+ * already completed the deck outright; it is a finer distinction within "complete,"
+ * not an alternative to it.
+ *
  * **The *ranking* is not inherited, and deliberately diverges from `baseStandings`.**
  * `baseStandings` ranks by points first because, across all sixty cards, breadth
  * genuinely should outweigh hoarding — that is what the whole `cardPoints` curve is
@@ -36,6 +43,9 @@ export interface CategoryStanding extends StandingBase {
   points: number
   /** Distinct cards of this deck the base holds — the numerator of the `7/19`. */
   distinct: number
+  /** Every card in this deck held at least twice — see the module doc. Only ever
+   *  true when `distinct === size`. */
+  doubled: boolean
   /** This deck's size — the denominator of the `7/19`. Constant across every row of one deck's list, carried per-row so a row is self-contained for a caller that maps over one deck's array without also threading the category through. */
   size: number
   /**
@@ -60,13 +70,18 @@ export interface CategoryStanding extends StandingBase {
  * each base's holdings, then bucketing by category, does the expensive part once.
  *
  * Each deck's list is independently sorted by **that deck's own distinct count,
- * descending; then that deck's own points, descending; then member name; then
- * tag** — `distinct` leads here, unlike `baseStandings`' points-first order, for the
- * reason given above: completeness within one deck is the question this board
- * answers, and points only decide between two bases that hold the same number of
- * this deck's cards. The name and tag legs exist for the same reason they do in
- * `baseStandings`: to make the order total, so two bases tied within one deck render
- * in the same sequence every time rather than swapping on each re-render.
+ * descending; then whether the deck is doubled; then that deck's own points,
+ * descending; then member name; then tag** — `distinct` leads here, unlike
+ * `baseStandings`' points-first order, for the reason given above: completeness
+ * within one deck is the question this board answers, and points only decide
+ * between two bases that hold the same number of this deck's cards. `doubled` sits
+ * between the two: two bases both holding the deck outright have not out-completed
+ * one another on `distinct` alone, but the one that has doubled it has gone further
+ * than the one that has not, and that should outrank a `points` difference the same
+ * way `distinct` itself outranks one. The name and tag legs exist for the same
+ * reason they do in `baseStandings`: to make the order total, so two bases tied
+ * within one deck render in the same sequence every time rather than swapping on
+ * each re-render.
  *
  * **Each deck carries its own `rank`, shared-and-skipped on a genuine tie within that
  * deck** — the same convention `baseStandings`'s own rank uses (`card-standings.ts:118-127`).
@@ -110,17 +125,22 @@ export function categoryStandings(
       const counts = countsByTag.get(base.tag)!
       let points = 0
       let distinct = 0
-      for (const [cardId, count] of counts) {
-        if (!ids.has(cardId)) continue
-        points += cardPoints(count)
-        distinct += 1
+      let doubled = true
+      for (const cardId of ids) {
+        const count = counts.get(cardId) ?? 0
+        if (count > 0) {
+          points += cardPoints(count)
+          distinct += 1
+        }
+        if (count < 2) doubled = false
       }
-      return { ...base, points, distinct, size: ids.size, rank: 0 }
+      return { ...base, points, distinct, doubled, size: ids.size, rank: 0 }
     })
 
     rows.sort(
       (a, b) =>
         b.distinct - a.distinct ||
+        Number(b.doubled) - Number(a.doubled) ||
         b.points - a.points ||
         a.label.localeCompare(b.label) ||
         a.tag.localeCompare(b.tag),
@@ -129,10 +149,11 @@ export function categoryStandings(
     let rank = 0
     rows.forEach((row, index) => {
       const previous = rows[index - 1]
-      /* This deck's distinct count alone decides a tie: two bases holding the same
-         number of this deck's cards have not out-completed one another here, whatever
+      /* This deck's distinct count and doubled status together decide a tie: two
+         bases holding the same number of this deck's cards, one of them doubled
+         and the other not, have not finished at the same place here, whatever
          their points or names sort like. */
-      if (!previous || previous.distinct !== row.distinct) {
+      if (!previous || previous.distinct !== row.distinct || previous.doubled !== row.doubled) {
         rank = index + 1
       }
       row.rank = rank

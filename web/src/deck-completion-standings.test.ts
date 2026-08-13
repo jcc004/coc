@@ -19,6 +19,11 @@ function base(tag: string, cardIds: readonly number[], updatedAt?: string): Base
   }
 }
 
+/** Same as `base()`, but every card held twice — for the doubled-deck tests. */
+function doubledBase(tag: string, cardIds: readonly number[]): BaseInventory {
+  return { tag, counts: cardIds.map((cardId) => ({ cardId, count: 2 })) }
+}
+
 function named(tag: string, label: string) {
   return { tag, label, owner: null, ownerUserId: null }
 }
@@ -152,6 +157,77 @@ describe('deckCompletionStandings — the order is total, because ties are the c
     assert.deepEqual(
       rows.map((row) => row.tag),
       ['#AA', '#ZZ'],
+    )
+  })
+})
+
+describe('deckCompletionStandings — doubled decks', () => {
+  it('does not credit a deck as doubled just for being complete', () => {
+    const rows = deckCompletionStandings([named('#A', 'Anna')], [base('#A', BUILDER_BASE)])
+    assert.equal(rows[0]?.completedCount, 1)
+    assert.equal(rows[0]?.doubledCount, 0)
+    assert.deepEqual(rows[0]?.doubledDecks, [])
+  })
+
+  it('credits a deck as doubled once every one of its cards is held at least twice', () => {
+    const rows = deckCompletionStandings([named('#A', 'Anna')], [doubledBase('#A', BUILDER_BASE)])
+    assert.equal(rows[0]?.completedCount, 1)
+    assert.equal(rows[0]?.doubledCount, 1)
+    assert.deepEqual(rows[0]?.doubledDecks, ['Builder Base'])
+  })
+
+  it('does not call a deck doubled while even one of its cards is held only once', () => {
+    const rows = deckCompletionStandings(
+      [named('#A', 'Anna')],
+      [
+        {
+          tag: '#A',
+          counts: [
+            ...BUILDER_BASE.slice(0, -1).map((cardId) => ({ cardId, count: 2 })),
+            { cardId: BUILDER_BASE[BUILDER_BASE.length - 1]!, count: 1 },
+          ],
+        },
+      ],
+    )
+    assert.equal(rows[0]?.completedCount, 1)
+    assert.equal(rows[0]?.doubledCount, 0)
+  })
+
+  /*
+   * Both finish Builder Base outright (completedCount 1 each), so that alone
+   * cannot separate them — but Bert has doubled it and Anna has not, which now
+   * decides ahead of the distinct-overall tiebreak below it.
+   */
+  it('breaks a completed-deck tie with doubled-deck count, ahead of distinct cards', () => {
+    const rows = deckCompletionStandings(
+      [named('#A', 'Anna'), named('#B', 'Bert')],
+      [base('#A', [...BUILDER_BASE, ...ELIXIR.slice(0, 5)]), doubledBase('#B', BUILDER_BASE)],
+    )
+    assert.equal(rows[0]?.completedCount, 1)
+    assert.equal(rows[1]?.completedCount, 1)
+    // Anna has more distinct cards overall (BUILDER_BASE + 5 Elixir) than Bert
+    // (Builder Base only), so distinct alone would put Anna first — doubled
+    // must be checked first for Bert to still lead.
+    assert.ok((rows.find((row) => row.label === 'Anna')?.distinct ?? 0) > BUILDER_BASE.length)
+    assert.deepEqual(
+      rows.map((row) => row.label),
+      ['Bert', 'Anna'],
+    )
+    assert.notEqual(rows[0]?.rank, rows[1]?.rank)
+  })
+
+  it('shares a rank between two bases doubled on the same deck', () => {
+    const rows = deckCompletionStandings(
+      [named('#A', 'Anna'), named('#B', 'Bert'), named('#C', 'Cass')],
+      [doubledBase('#A', BUILDER_BASE), doubledBase('#B', BUILDER_BASE), base('#C', BUILDER_BASE)],
+    )
+    assert.deepEqual(
+      rows.map((row) => [row.label, row.rank]),
+      [
+        ['Anna', 1],
+        ['Bert', 1],
+        ['Cass', 3],
+      ],
     )
   })
 })

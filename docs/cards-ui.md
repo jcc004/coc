@@ -628,9 +628,9 @@ its own columns beyond that:
 |---|---|---|
 | Overall | Points, Cards (`n/60` + meter), Copies, Last updated | Points — see above |
 | Rarity | Rarity score, Cards (`n/60` + meter) | Sum of `rarityPoints()` over distinct cards held, weighted by clan-wide scarcity right now |
-| Full rows | Full rows (`n/10` + ten fill marks), Longest streak, Score | `fullRowCount × 10 + longestStreak × 5` over the real game's six-wide rows |
-| By category | Cards (`n`/deck size + meter), Points | Distinct cards held **within the chosen deck**, computed separately per deck; points only break a tie |
-| Full decks | Decks complete (`n/4`), Which decks (chips), Distinct cards | How many of the four decks are held outright |
+| Full rows | Full rows (`n/10` + ten fill marks, blue where doubled), Doubled, Streak rows, Score | `fullRowCount × 10 + streakRows × 5 + doubleRowCount × 10` over the real game's six-wide rows — `streakRows` sums every run of ≥2 consecutive full rows, not just the longest |
+| By category | Cards (`n`/deck size + meter, `×2` when doubled), Points | Distinct cards held **within the chosen deck**, computed separately per deck; a doubled deck (every card held ≥2×) breaks a tie on distinct, then points breaks what's left |
+| Full decks | Decks complete (`n/4`), Which decks (deck-colored chips, `×2` when doubled), Doubled (`n/4`), Distinct cards | How many of the four decks are held outright; a doubled deck (every card in it held ≥2×) breaks a tie on decks complete, then distinct cards breaks what's left |
 | Spares on hand | Spares, Spare variety | Tradeable spares (copies beyond the one kept) summed across all 60 |
 | Most active trader | Completed trades, Distinct partners | Completed trades a base was party to, from the Trade Tracker |
 

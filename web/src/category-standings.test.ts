@@ -258,3 +258,84 @@ describe('categoryStandings — the order is total, within one deck', () => {
     )
   })
 })
+
+describe('categoryStandings — doubled decks', () => {
+  const ALL_ELIXIR: [number, number][] = Array.from({ length: 19 }, (_, index) => [index + 1, 2])
+
+  it('marks a deck doubled only once every one of its cards is held at least twice', () => {
+    const rows = categoryStandings(
+      [named('#A', 'Anna')],
+      [base('#A', ALL_ELIXIR)],
+    ).Elixir
+    assert.equal(rows[0]?.distinct, 19)
+    assert.equal(rows[0]?.doubled, true)
+  })
+
+  it('does not call a deck doubled while even one of its cards is held only once', () => {
+    // 18 of 19 doubled, the last one held only once: complete, but not doubled.
+    const counts: [number, number][] = ALL_ELIXIR.map(([cardId, count], index) =>
+      index === 18 ? [cardId, 1] : [cardId, count],
+    )
+    const rows = categoryStandings([named('#A', 'Anna')], [base('#A', counts)]).Elixir
+    assert.equal(rows[0]?.distinct, 19)
+    assert.equal(rows[0]?.doubled, false)
+  })
+
+  /*
+   * Mirrors the 2026-08-11 distinct-over-points fixture above, one tier up: a
+   * doubled deck must outrank a merely-complete one even when the merely-complete
+   * one has far more points from stacked spares — the same reasoning that put
+   * distinct ahead of points in the first place applies again between doubled and
+   * points.
+   */
+  it('ranks a doubled deck above a higher-scoring complete-but-not-doubled one', () => {
+    const bases = [named('#A', 'Doubled'), named('#B', 'Hoarder')]
+    const inventory = [
+      // All 19 held exactly twice: complete and doubled.
+      base('#A', ALL_ELIXIR),
+      // All 19 held nine times each: complete, far more points, not doubled only
+      // because doubled requires *every* card at ≥2 and this base clears that too —
+      // so drop one card to a single copy to keep it complete but not doubled.
+      base(
+        '#B',
+        Array.from({ length: 19 }, (_, index): [number, number] => [index + 1, index === 0 ? 1 : 9]),
+      ),
+    ]
+    const rows = categoryStandings(bases, inventory).Elixir
+
+    const doubled = rows.find((row) => row.label === 'Doubled')!
+    const hoarder = rows.find((row) => row.label === 'Hoarder')!
+    assert.equal(doubled.distinct, 19)
+    assert.equal(hoarder.distinct, 19)
+    assert.equal(doubled.doubled, true)
+    assert.equal(hoarder.doubled, false)
+    assert.ok(hoarder.points > doubled.points, 'fixture must give the non-doubled base more points')
+    assert.deepEqual(
+      rows.map((row) => row.label),
+      ['Doubled', 'Hoarder'],
+    )
+    assert.notEqual(rows[0]?.rank, rows[1]?.rank)
+  })
+
+  it('shares a rank between two doubled decks, ahead of a complete-but-not-doubled third', () => {
+    const bases = [named('#A', 'Anna'), named('#B', 'Bert'), named('#D', 'Diane')]
+    const inventory = [
+      base('#A', ALL_ELIXIR),
+      base('#B', ALL_ELIXIR),
+      base(
+        '#D',
+        Array.from({ length: 19 }, (_, index): [number, number] => [index + 1, 1]),
+      ),
+    ]
+    const rows = categoryStandings(bases, inventory).Elixir
+
+    assert.deepEqual(
+      rows.map((row) => [row.label, row.rank]),
+      [
+        ['Anna', 1],
+        ['Bert', 1],
+        ['Diane', 3],
+      ],
+    )
+  })
+})

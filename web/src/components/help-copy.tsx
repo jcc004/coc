@@ -273,13 +273,15 @@ export function CategoryScoringRules() {
         cannot carry it up the Dark Elixir board, or the reverse.
       </p>
       <p className="empty-hint">
-        More of the chosen deck's cards goes first, whatever the points; the same points curve as
-        the Overall board only breaks a tie between two bases holding the same number of that
-        deck's cards. Confined to one deck, points can disagree outright with "how close is this
-        base to finishing it" — a few spares can out-point a base one card short of complete — so
-        completeness leads here. Level on both points and distinct, by name and then tag. A rank is
-        shared on a genuine tie in distinct within that deck and then skips — each of the four
-        boards ranks and ties entirely on its own, independently of the other three.
+        More of the chosen deck's cards goes first, whatever the points. Between two bases holding
+        the deck outright, a <strong>doubled</strong> deck — every card in it held at least twice,
+        shown as a <strong>×2</strong> beside the fraction — goes first; the same points curve as
+        the Overall board only breaks a tie once distinct and doubled both agree. Confined to one
+        deck, points can disagree outright with "how close is this base to finishing it" — a few
+        spares can out-point a base one card short of complete — so completeness leads here. Level
+        on distinct, doubled and points together, by name and then tag. A rank is shared on a
+        genuine tie across all three and then skips — each of the four boards ranks and ties
+        entirely on its own, independently of the other three.
       </p>
     </>
   )
@@ -293,19 +295,24 @@ export function RowScoringRules() {
       <p className="empty-hint">
         Ranked by the real game's own collection screen, which is {ROW_SIZE} cards wide and flows
         continuously across deck boundaries — {ALL_CARDS.length} cards make {rowCount} rows exactly.
-        A row is <strong>full</strong> when a base holds at least one copy of every card in it.
+        A row is <strong>full</strong> when a base holds at least one copy of every card in it, and{' '}
+        <strong>doubled</strong> — marked with a blue row instead of a green one — when it holds at
+        least two of every card in it.
       </p>
       <p className="empty-hint">
-        The score rewards both breadth and finishing rows <strong>together</strong>: 10 points for
-        every full row, plus 5 more for each row of the longest unbroken run of full rows. Five full
-        rows scattered across the grid score 50; the same five rows finished end-to-end score
-        75 — the extra 25 is for the streak.
+        The score rewards breadth, finishing rows <strong>together</strong>, and finishing them{' '}
+        <strong>twice over</strong>: 10 points for every full row, plus 5 more for each row of every
+        unbroken run of two or more full rows — every qualifying run earns its own bonus, not just
+        the longest one — plus 10 more for every doubled row. Five full rows scattered across the
+        grid score 50; the same five finished end-to-end score 75; the same five as a run of three
+        plus a separate run of two also score 75, since both runs bank their own bonus. A run of
+        three plus two rows completed on their own, not next to anything, scores 65 — an isolated
+        full row still earns its 10 points, just no streak bonus on top.
       </p>
       <p className="empty-hint">
         Level on score, more full rows outright goes first — the same score is reachable by
-        different routes (a run of three plus a streak bonus, or four scattered ones), and the base
-        that completed more rows outright is the better position even when the arithmetic agrees. A
-        rank is shared on a genuine tie in score and then skips.
+        different routes, and the base that completed more rows outright is the better position even
+        when the arithmetic agrees. A rank is shared on a genuine tie in score and then skips.
       </p>
     </>
   )
@@ -317,13 +324,18 @@ export function DeckCompletionScoringRules() {
       <p className="empty-hint">
         How many of the four decks a base holds <strong>outright</strong> — 0 through 4 — not how
         far into any one of them it has got. A deck counts once every card in it is held, the same
-        boundary its own progress plaque on the grid reaches when it reads full.
+        boundary its own progress plaque on the grid reaches when it reads full — and counts again,
+        separately, as <strong>doubled</strong> once every card in it is held at least twice, shown
+        as a <strong>×2</strong> on that deck's chip.
       </p>
       <p className="empty-hint">
-        Level on decks complete, more distinct cards held <strong>overall</strong> goes first — the
-        quantity that has to grow before another deck can complete, so among bases tied on whole
-        decks finished, the one closer to a set across the rest of its collection is the one
-        genuinely ahead. A rank is shared on a genuine tie and then skips.
+        Level on decks complete, more <strong>doubled</strong> decks goes first — finishing a deck
+        twice over is further than finishing it once, the same way finishing more decks outright
+        already beats finishing fewer. Level on both, more distinct cards held{' '}
+        <strong>overall</strong> decides — the quantity that has to grow before another deck can
+        complete, so among bases tied on whole decks finished and doubled, the one closer to a set
+        across the rest of its collection is the one genuinely ahead. A rank is shared on a genuine
+        tie across all three and then skips.
       </p>
     </>
   )

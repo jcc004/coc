@@ -26,6 +26,13 @@ import { deckProgress } from './deck-progress.ts'
  * work per base and therefore O(n²) across a whole board. This ranking has no
  * use for trade partners, so calling `summarizeBase` per base here would pay
  * for a search this feature never asked for.
+ *
+ * **A deck is `doubled` when every one of its cards is held at least twice** —
+ * the same threshold `row-standings.ts` and `category-standings.ts` both score
+ * on their own boards, applied here at the whole-deck level. Doubled implies
+ * complete, so it is a finer tier within "completed," not an alternative to it,
+ * the same relationship `category-standings.ts`'s `doubled` has to its own
+ * `distinct === size`.
  */
 
 /** The event's four decks, in the order the grid and the plaques draw them. */
@@ -33,6 +40,12 @@ const DECK_CATEGORIES = cardCategoriesInOrder()
 
 /** How many cards each deck holds — the denominator `deckProgress` needs. */
 const DECK_SIZES = new Map(DECK_CATEGORIES.map((category) => [category, cardsInCategory(category).length]))
+
+/** Each deck's own card ids, for the `doubled` check below — every one of them
+ *  needs its own count looked up, not just the size `DECK_SIZES` carries. */
+const DECK_CARD_IDS = new Map(
+  DECK_CATEGORIES.map((category) => [category, cardsInCategory(category).map((card) => card.id)]),
+)
 
 export interface DeckCompletionStanding extends StandingBase {
   /** How many of the four decks this base holds outright. The measure — 0 through 4. */
@@ -43,6 +56,10 @@ export interface DeckCompletionStanding extends StandingBase {
    * bare count would throw that away.
    */
   completedDecks: CardCategory[]
+  /** How many of the four decks are doubled — see the module doc. Always ≤ `completedCount`. */
+  doubledCount: number
+  /** Which decks are doubled, in the event's own deck order — a subset of {@link completedDecks}. */
+  doubledDecks: CardCategory[]
   /** Distinct cards held across every deck, not just the completed ones — the tiebreak. */
   distinct: number
   /**
@@ -56,11 +73,15 @@ export interface DeckCompletionStanding extends StandingBase {
 /**
  * The tracked bases, most whole decks first.
  *
- * **The order is: completed-deck count descending, then distinct cards overall
- * descending, then member name, then tag.**
+ * **The order is: completed-deck count descending, then doubled-deck count
+ * descending, then distinct cards overall descending, then member name, then
+ * tag.** Doubled sits between the two: two bases both on the same completed
+ * count have not out-finished one another there, but the one that has gone on
+ * to double one or more of those decks has gone further, the same way
+ * `category-standings.ts` puts a deck's own `doubled` ahead of its `points`.
  *
  * Distinct cards, not points (`cardPoints` in `card-standings.ts`), is the
- * tiebreak. Points reward a deep stack of spares in cards a base already holds,
+ * tiebreak below that. Points reward a deep stack of spares in cards a base already holds,
  * which says nothing about how close it is to finishing a *fifth* — sorry,
  * *another* — deck: a base sitting on nine spares of one card it already owns
  * scores heavily on points but has not moved a single deck closer to complete.
@@ -98,11 +119,16 @@ export function deckCompletionStandings(
       (category) => DECK_SIZES.get(category),
     )
     const completedDecks = progress.filter((deck) => deck.complete).map((deck) => deck.category)
+    const doubledDecks = completedDecks.filter((category) =>
+      DECK_CARD_IDS.get(category)!.every((cardId) => (counts.get(cardId) ?? 0) >= 2),
+    )
 
     return {
       ...base,
       completedCount: completedDecks.length,
       completedDecks,
+      doubledCount: doubledDecks.length,
+      doubledDecks,
       distinct: [...byCategory.values()].reduce((sum, entry) => sum + entry.distinct, 0),
       rank: 0,
     }
@@ -111,6 +137,7 @@ export function deckCompletionStandings(
   rows.sort(
     (a, b) =>
       b.completedCount - a.completedCount ||
+      b.doubledCount - a.doubledCount ||
       b.distinct - a.distinct ||
       a.label.localeCompare(b.label) ||
       a.tag.localeCompare(b.tag),
@@ -119,10 +146,16 @@ export function deckCompletionStandings(
   let rank = 0
   rows.forEach((row, index) => {
     const previous = rows[index - 1]
-    // Completed-deck count alone decides a tie, same rule as `baseStandings`'s
-    // points: two bases level on whole decks finished have not out-finished one
-    // another, whatever their names or their broader collections sort like.
-    if (!previous || previous.completedCount !== row.completedCount) {
+    // Completed-deck count and doubled-deck count together decide a tie, same
+    // rule as `baseStandings`'s points: two bases level on both have not
+    // out-finished one another, whatever their names or their broader
+    // collections sort like — but one ahead on doubled decks has, even at the
+    // same completed count.
+    if (
+      !previous ||
+      previous.completedCount !== row.completedCount ||
+      previous.doubledCount !== row.doubledCount
+    ) {
       rank = index + 1
     }
     row.rank = rank

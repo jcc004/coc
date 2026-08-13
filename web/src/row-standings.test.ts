@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { BaseInventory } from '@coc/shared'
 import { cardsInGridOrder, type StandingBase } from './card-standings.ts'
-import { fullRowsFor, rowScoreFor, rowStandings, ROW_SIZE } from './row-standings.ts'
+import { rowLevelsFor, rowScoreFor, rowStandings, ROW_SIZE, type RowLevel } from './row-standings.ts'
 
 /*
  * Real card ids, for the same reason `card-standings.test.ts` uses them: every
@@ -10,7 +10,7 @@ import { fullRowsFor, rowScoreFor, rowStandings, ROW_SIZE } from './row-standing
  * list does not know, so an invented id would silently score zero and every
  * assertion below would be checking nothing.
  *
- * `GRID` is the exact sixty the app draws, in the exact order `fullRowsFor`
+ * `GRID` is the exact sixty the app draws, in the exact order `rowLevelsFor`
  * groups into rows of six — so `ROWS[n]` is the six card ids that make up row
  * `n`, the same grouping `row-standings.ts` computes internally. Reading the ids
  * off the real manifest, rather than assuming ids 1–6 are row 0, keeps this test
@@ -39,16 +39,26 @@ function countsForRows(rowIndices: readonly number[]): [number, number][] {
   return rowIndices.flatMap((index) => ROWS[index]!.map((cardId): [number, number] => [cardId, 1]))
 }
 
-describe('fullRowsFor — which rows a base has completed', () => {
-  it('marks no row full for a base holding nothing', () => {
-    const fullRows = fullRowsFor(undefined)
-    assert.equal(fullRows.length, 10)
-    assert.ok(fullRows.every((full) => full === false))
+/** Two copies of every card in the given row indices — doubles them. */
+function doubledCountsForRows(rowIndices: readonly number[]): [number, number][] {
+  return rowIndices.flatMap((index) => ROWS[index]!.map((cardId): [number, number] => [cardId, 2]))
+}
+
+/** `levels`, one entry per row 0..9, with every unlisted row left `'empty'`. */
+function levels(overrides: Record<number, RowLevel>): RowLevel[] {
+  return Array.from({ length: 10 }, (_, index) => overrides[index] ?? 'empty')
+}
+
+describe('rowLevelsFor — how full each row is', () => {
+  it('marks every row empty for a base holding nothing', () => {
+    const rowLevels = rowLevelsFor(undefined)
+    assert.equal(rowLevels.length, 10)
+    assert.ok(rowLevels.every((level) => level === 'empty'))
   })
 
   it('marks a row full only once every one of its six cards is held', () => {
     const [first, second, , , , third] = ROWS[0]!
-    const fullRows = fullRowsFor(
+    const rowLevels = rowLevelsFor(
       base('#A', [
         [first!, 1],
         [second!, 1],
@@ -56,26 +66,48 @@ describe('fullRowsFor — which rows a base has completed', () => {
       ]),
     )
     // Three of six held: not full yet.
-    assert.equal(fullRows[0], false)
+    assert.equal(rowLevels[0], 'empty')
   })
 
-  it('needs only one copy, not more, to count a card as held', () => {
-    const fullRows = fullRowsFor(base('#A', countsForRows([0])))
-    assert.equal(fullRows[0], true)
+  it('needs only one copy, not more, to count a row as full', () => {
+    const rowLevels = rowLevelsFor(base('#A', countsForRows([0])))
+    assert.equal(rowLevels[0], 'full')
+  })
+
+  it('needs two copies of every card in the row to count it as doubled', () => {
+    const [first, second, third, fourth, fifth, sixth] = ROWS[0]!
+    // Five doubled, one held only once: full, not doubled — the minimum across
+    // the row is what decides the level, not the average.
+    const rowLevels = rowLevelsFor(
+      base('#A', [
+        [first!, 2],
+        [second!, 2],
+        [third!, 2],
+        [fourth!, 2],
+        [fifth!, 2],
+        [sixth!, 1],
+      ]),
+    )
+    assert.equal(rowLevels[0], 'full')
+  })
+
+  it('marks a row doubled once every one of its six cards is held at least twice', () => {
+    const rowLevels = rowLevelsFor(base('#A', doubledCountsForRows([0])))
+    assert.equal(rowLevels[0], 'double')
   })
 
   it('reports ten entries, in grid row order, for a base holding every card', () => {
     const all: [number, number][] = GRID.map((card) => [card.id, 1])
-    const fullRows = fullRowsFor(base('#A', all))
-    assert.equal(fullRows.length, 10)
-    assert.ok(fullRows.every((full) => full === true))
+    const rowLevels = rowLevelsFor(base('#A', all))
+    assert.equal(rowLevels.length, 10)
+    assert.ok(rowLevels.every((level) => level === 'full'))
   })
 
   it('ignores counts the grid would not draw either, same as countMap elsewhere', () => {
     // A non-positive count does not complete a row, same rule `countMap` applies
     // to the grid and to `baseStandings`.
     const [first, second, third, fourth, fifth, sixth] = ROWS[0]!
-    const fullRows = fullRowsFor(
+    const rowLevels = rowLevelsFor(
       base('#A', [
         [first!, 1],
         [second!, 1],
@@ -85,52 +117,102 @@ describe('fullRowsFor — which rows a base has completed', () => {
         [sixth!, 0],
       ]),
     )
-    assert.equal(fullRows[0], false)
+    assert.equal(rowLevels[0], 'empty')
   })
 })
 
-describe('rowScoreFor — the score, from a boolean-per-row reading', () => {
+describe('rowScoreFor — the score, from a level-per-row reading', () => {
   it('scores nothing for no full rows', () => {
-    assert.deepEqual(rowScoreFor(new Array(10).fill(false)), {
+    assert.deepEqual(rowScoreFor(levels({})), {
       fullRowCount: 0,
-      longestStreak: 0,
+      doubleRowCount: 0,
+      streakRows: 0,
       score: 0,
     })
   })
 
-  it('scores one full row as 15: ten for the row, five for a streak of one', () => {
-    const fullRows = new Array(10).fill(false)
-    fullRows[0] = true
-    assert.deepEqual(rowScoreFor(fullRows), { fullRowCount: 1, longestStreak: 1, score: 15 })
+  it('scores one full row as 10: no streak bonus for a run of one', () => {
+    assert.deepEqual(rowScoreFor(levels({ 0: 'full' })), {
+      fullRowCount: 1,
+      doubleRowCount: 0,
+      streakRows: 0,
+      score: 10,
+    })
   })
 
-  it('scores two separate full rows as two streaks of one, not one streak of two', () => {
-    // Rows 0 and 2 full, row 1 empty between them: not adjacent, so the streak
-    // that matters is the longer of two runs of one, not their sum.
-    const fullRows = new Array(10).fill(false)
-    fullRows[0] = true
-    fullRows[2] = true
-    assert.deepEqual(rowScoreFor(fullRows), { fullRowCount: 2, longestStreak: 1, score: 25 })
+  it('scores two separate full rows as 20, not 20 + streak — neither run is two long', () => {
+    // Rows 0 and 2 full, row 1 empty between them: not adjacent, so neither
+    // contributes to the streak bonus on its own.
+    assert.deepEqual(rowScoreFor(levels({ 0: 'full', 2: 'full' })), {
+      fullRowCount: 2,
+      doubleRowCount: 0,
+      streakRows: 0,
+      score: 20,
+    })
   })
 
-  it('scores two adjacent full rows as one streak of two', () => {
-    const fullRows = new Array(10).fill(false)
-    fullRows[0] = true
-    fullRows[1] = true
-    assert.deepEqual(rowScoreFor(fullRows), { fullRowCount: 2, longestStreak: 2, score: 30 })
+  it('scores two adjacent full rows as 20 + 10, one streak of two', () => {
+    assert.deepEqual(rowScoreFor(levels({ 0: 'full', 1: 'full' })), {
+      fullRowCount: 2,
+      doubleRowCount: 0,
+      streakRows: 2,
+      score: 30,
+    })
   })
 
-  it('finds the longest of several runs, not the first or the last', () => {
-    // Streaks of 1, 3 and 2: the middle one is what decides longestStreak.
-    const fullRows = [true, false, true, true, true, false, true, true, false, false]
-    assert.deepEqual(rowScoreFor(fullRows), { fullRowCount: 6, longestStreak: 3, score: 75 })
+  it('sums every qualifying streak, not just the longest', () => {
+    // Runs of 1, 3 and 2 — the run of 1 contributes nothing, the other two both do.
+    const rowLevels = levels({ 0: 'full', 2: 'full', 3: 'full', 4: 'full', 6: 'full', 7: 'full' })
+    assert.deepEqual(rowScoreFor(rowLevels), {
+      fullRowCount: 6,
+      doubleRowCount: 0,
+      streakRows: 5, // 3 + 2
+      score: 85, // 60 + 25
+    })
   })
 
-  it('scores all ten rows full as the maximum: 100 + 50 = 150', () => {
-    assert.deepEqual(rowScoreFor(new Array(10).fill(true)), {
+  /*
+   * The exact shape reported live, 2026-08-12: two bases each with 5 of 10 rows
+   * full. One as a run of three plus two rows on their own (no streak bonus for
+   * either) — the other as a run of three plus a *separate* run of two, both
+   * qualifying. The previous longest-run-only formula scored these identically
+   * (65 for both); summing every qualifying run is what tells them apart.
+   */
+  it('ranks a run of three plus a separate run of two above a run of three plus two scattered rows', () => {
+    const scatteredExtra = rowScoreFor(levels({ 0: 'full', 1: 'full', 2: 'full', 5: 'full', 8: 'full' }))
+    const secondStreak = rowScoreFor(levels({ 0: 'full', 1: 'full', 2: 'full', 5: 'full', 6: 'full' }))
+    assert.equal(scatteredExtra.streakRows, 3)
+    assert.equal(scatteredExtra.score, 65) // 50 + 15
+    assert.equal(secondStreak.streakRows, 5) // 3 + 2
+    assert.equal(secondStreak.score, 75) // 50 + 25
+    assert.ok(secondStreak.score > scatteredExtra.score)
+  })
+
+  it('scores a doubled row as 20: the full 10 plus 10 more for doubled', () => {
+    assert.deepEqual(rowScoreFor(levels({ 0: 'double' })), {
+      fullRowCount: 1,
+      doubleRowCount: 1,
+      streakRows: 0,
+      score: 20,
+    })
+  })
+
+  it('counts a doubled row toward the streak the same as a merely full one', () => {
+    const rowLevels = levels({ 0: 'double', 1: 'full' })
+    assert.deepEqual(rowScoreFor(rowLevels), {
+      fullRowCount: 2,
+      doubleRowCount: 1,
+      streakRows: 2,
+      score: 40, // 20 (full×2) + 10 (streak) + 10 (one doubled)
+    })
+  })
+
+  it('scores all ten rows doubled as the maximum: 100 + 50 + 100 = 250', () => {
+    assert.deepEqual(rowScoreFor(new Array(10).fill('double') as RowLevel[]), {
       fullRowCount: 10,
-      longestStreak: 10,
-      score: 150,
+      doubleRowCount: 10,
+      streakRows: 10,
+      score: 250,
     })
   })
 })
@@ -141,40 +223,41 @@ describe('rowStandings — the leaderboard built on those scores', () => {
     const anna = rows.find((row) => row.label === 'Anna')!
     assert.equal(anna.score, 0)
     assert.equal(anna.fullRowCount, 0)
-    assert.equal(anna.longestStreak, 0)
-    assert.ok(anna.fullRows.every((full) => full === false))
+    assert.equal(anna.streakRows, 0)
+    assert.ok(anna.rowLevels.every((level) => level === 'empty'))
   })
 
-  it('scores one full row as 15, with the streak of one it is built from', () => {
+  it('scores one full row as 10, with no streak of its own', () => {
     const [row] = rowStandings([named('#A', 'Anna')], [base('#A', countsForRows([0]))])
-    assert.equal(row?.score, 15)
+    assert.equal(row?.score, 10)
     assert.equal(row?.fullRowCount, 1)
-    assert.equal(row?.longestStreak, 1)
-    assert.equal(row?.fullRows[0], true)
-    assert.ok(row?.fullRows.slice(1).every((full) => full === false))
+    assert.equal(row?.streakRows, 0)
+    assert.equal(row?.rowLevels[0], 'full')
+    assert.ok(row?.rowLevels.slice(1).every((level) => level === 'empty'))
   })
 
-  it('scores two separate full rows as 20 + 5, not 20 + 10', () => {
+  it('scores two separate full rows as 20, not 20 + a streak bonus', () => {
     const [row] = rowStandings([named('#A', 'Anna')], [base('#A', countsForRows([0, 2]))])
     assert.equal(row?.fullRowCount, 2)
-    assert.equal(row?.longestStreak, 1)
-    assert.equal(row?.score, 25)
+    assert.equal(row?.streakRows, 0)
+    assert.equal(row?.score, 20)
   })
 
   it('scores two adjacent full rows as 20 + 10, one streak of two', () => {
     const [row] = rowStandings([named('#A', 'Anna')], [base('#A', countsForRows([0, 1]))])
     assert.equal(row?.fullRowCount, 2)
-    assert.equal(row?.longestStreak, 2)
+    assert.equal(row?.streakRows, 2)
     assert.equal(row?.score, 30)
   })
 
-  it('gives a base holding all sixty cards the maximum: 10 full rows, one streak of 10, score 150', () => {
-    const all: [number, number][] = GRID.map((card) => [card.id, 1])
+  it('gives a base holding every card twice the maximum: 10 full rows, all doubled, score 250', () => {
+    const all: [number, number][] = GRID.map((card) => [card.id, 2])
     const [row] = rowStandings([named('#A', 'Anna')], [base('#A', all)])
     assert.equal(row?.fullRowCount, 10)
-    assert.equal(row?.longestStreak, 10)
-    assert.equal(row?.score, 150)
-    assert.ok(row?.fullRows.every((full) => full === true))
+    assert.equal(row?.doubleRowCount, 10)
+    assert.equal(row?.streakRows, 10)
+    assert.equal(row?.score, 250)
+    assert.ok(row?.rowLevels.every((level) => level === 'double'))
   })
 
   it('ranks the higher score first', () => {
@@ -191,21 +274,21 @@ describe('rowStandings — the leaderboard built on those scores', () => {
   })
 
   /*
-   * The tie the fullRowCount tiebreak exists for: three full rows in one
-   * unbroken run (30 + 15 = 45) versus four full rows scattered as four
-   * separate streaks of one (40 + 5 = 45). Same score, reached two different
-   * ways — the base that completed more rows outright ranks first.
+   * The tie the fullRowCount tiebreak exists for: three full rows as a run of
+   * two plus one on its own (30 + 10 = 40) versus four full rows scattered, no
+   * two adjacent (40 + 0 = 40). Same score, reached two different ways — the
+   * base that completed more rows outright ranks first.
    */
   it('breaks a score tie by full-row count, ahead of name', () => {
     const rows = rowStandings(
       [named('#Z', 'Zack'), named('#A', 'Anna')],
       [
-        base('#Z', countsForRows([0, 1, 2])), // one streak of 3: 30 + 15 = 45
-        base('#A', countsForRows([0, 2, 4, 6])), // four streaks of 1: 40 + 5 = 45
+        base('#Z', countsForRows([0, 1, 3])), // a streak of 2 plus one on its own: 30 + 10 = 40
+        base('#A', countsForRows([0, 2, 4, 6])), // four scattered: 40 + 0 = 40
       ],
     )
-    assert.equal(rows[0]?.score, 45)
-    assert.equal(rows[1]?.score, 45)
+    assert.equal(rows[0]?.score, 40)
+    assert.equal(rows[1]?.score, 40)
     assert.deepEqual(
       rows.map((row) => row.label),
       ['Anna', 'Zack'],
