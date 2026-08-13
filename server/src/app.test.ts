@@ -16,7 +16,12 @@ import {
 import { bootstrapAdmin, type BootstrapResult } from './auth/bootstrap.ts'
 import { SESSION_COOKIE } from './auth/middleware.ts'
 import { createLoginLimiter, type LimiterOptions } from './auth/rate-limit.ts'
-import { createAuthStore, SESSION_TTL_MS, type AuthStore } from './auth/store.ts'
+import {
+  createAuthStore,
+  SESSION_ABSOLUTE_TTL_MS,
+  SESSION_TTL_MS,
+  type AuthStore,
+} from './auth/store.ts'
 import { createBaseOrderStore } from './base-order/store.ts'
 import { createChangeRequestStore } from './change-requests/store.ts'
 import { TtlCache } from './cache.ts'
@@ -346,6 +351,28 @@ describe('login and session', () => {
     })
     // Still valid well past the original 30 days from issue.
     assert.ok(harness.store.resolveSession(session.token))
+    harness.db.close()
+  })
+
+  it('rejects a session past its absolute lifetime even though it was slid recently', async () => {
+    const harness = await createHarness()
+    const admin = harness.store.listUsers()[0]
+    assert.ok(admin)
+
+    // Created a day past the absolute ceiling, but "used" (slid) a minute ago —
+    // the sliding window alone would call this session healthy.
+    const createdAt = new Date(Date.now() - SESSION_ABSOLUTE_TTL_MS - 24 * 60 * 60_000)
+    const session = harness.store.createSession(admin.id, createdAt)
+    harness.db.exec(
+      `UPDATE sessions SET expires_at = '${new Date(Date.now() + SESSION_TTL_MS).toISOString()}', ` +
+        `last_seen_at = '${new Date(Date.now() - 60_000).toISOString()}'`,
+    )
+
+    const response = await harness.app.request('/api/auth/me', {
+      headers: { cookie: `${SESSION_COOKIE}=${session.token}` },
+    })
+    assert.equal(response.status, 401)
+    assert.equal(harness.store.resolveSession(session.token), undefined)
     harness.db.close()
   })
 })

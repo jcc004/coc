@@ -3,8 +3,16 @@ import { normalizeTag, type BaseInventory, type CardCount } from '@coc/shared'
 import { asText, asTextOrNull } from '../row.ts'
 
 /**
- * Hand-entered card counts for the August event — the only code that touches
- * `card_inventory`.
+ * Hand-entered card counts for the August event.
+ *
+ * Not the only code that writes `card_inventory` — `cards/trades-store.ts` writes
+ * it too, directly, because completing a trade has to move a card between two
+ * bases in the same transaction as the trade's own status change, which this
+ * file's own `saveBase` (opening and closing its own `BEGIN`/`COMMIT`) cannot
+ * compose into. Both files independently apply the same sparse-storage rule — a
+ * count of 0 deletes the row rather than storing it — because it is a handful of
+ * lines each and pulling it into a shared helper isn't worth it unless a third
+ * caller needs it.
  *
  * **Shared, not per-user**, for the same reason owner assignments are: how many
  * Barbarian cards a base holds is a fact about the base, and per-user copies

@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
-import { Hono } from 'hono'
+import { Hono, type MiddlewareHandler } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { InvalidTagError, normalizeTag } from '@coc/shared'
 import {
+  currentUser,
   requireAdmin,
   requireAuth,
   requirePasswordUpToDate,
@@ -23,6 +24,7 @@ import type { TradeStore } from './cards/trades-store.ts'
 import { mountChangeRequestRoutes } from './change-requests/routes.ts'
 import type { ChangeRequestStore } from './change-requests/store.ts'
 import { CocApiError, type CocClient } from './coc-client.ts'
+import { createApiRateLimiter, type ApiRateLimiter } from './coc-rate-limit.ts'
 import { errorBody } from './http.ts'
 import { mountProgressRoutes } from './progress/routes.ts'
 import type { ProgressStore } from './progress/store.ts'
@@ -54,6 +56,12 @@ export interface AppDeps {
   changeRequests: ChangeRequestStore
   /** Injectable so tests can trip the lockout in a few requests. */
   loginLimiter?: LoginLimiter
+  /**
+   * Injectable so tests can trip it in a few requests — see
+   * `createApiRateLimiter` for what it protects and why it is keyed per
+   * account rather than per IP.
+   */
+  apiRateLimiter?: ApiRateLimiter
   /** `Secure` on the session cookie. Derive it with `cookieSecureFromEnv`. */
   cookieSecure?: boolean
   /**
@@ -232,11 +240,37 @@ export function createApp({
   baseOrder,
   changeRequests,
   loginLimiter,
+  apiRateLimiter,
   cookieSecure = false,
   trustProxy = false,
   deployedCommitPath,
 }: AppDeps) {
   const app = new Hono<AuthEnv>()
+  const cocRateLimiter = apiRateLimiter ?? createApiRateLimiter()
+
+  /**
+   * Applied only to the CoC-API proxy routes below, not to `/api/*` broadly —
+   * see `coc-rate-limit.ts`. Keyed by account, not IP: every one of these
+   * routes already requires a session, so the caller is always a known id, and
+   * an IP key would group a whole household or office behind one bucket the
+   * way `auth/rate-limit.ts`'s own comment on its IP bucket already explains.
+   */
+  const limitCocApiReads: MiddlewareHandler<AuthEnv> = async (c, next) => {
+    const verdict = cocRateLimiter.check(`user:${currentUser(c).id}`)
+    if (!verdict.allowed) {
+      c.header('Retry-After', String(verdict.retryAfterSeconds))
+      return c.json(
+        errorBody(
+          429,
+          'tooManyRequests',
+          'Too many requests to the Clash of Clans API. Try again shortly.',
+          `Retry in ${verdict.retryAfterSeconds}s.`,
+        ),
+        429,
+      )
+    }
+    await next()
+  }
 
   /*
    * The body cap goes on first, ahead of even the session lookup: a request too
@@ -315,7 +349,7 @@ export function createApp({
 
   // "Propose a change" — the one feature here with no owner column at all: it
   // is not about any base, so it needs nothing from `sharedData`.
-  mountChangeRequestRoutes(app, changeRequests)
+  mountChangeRequestRoutes(app, changeRequests, auth)
 
   // Public so a host's liveness probe can reach it, but the cache size is an
   // internal detail an anonymous caller has no business seeing. `commit` carries no
@@ -334,7 +368,7 @@ export function createApp({
     )
   })
 
-  app.get('/api/players/:tag', async (c) => {
+  app.get('/api/players/:tag', limitCocApiReads, async (c) => {
     const tag = normalizeTag(c.req.param('tag'))
     const player = await cache.wrap(`player:${tag}`, () => coc.getPlayer(tag))
     return c.json(player)
@@ -342,7 +376,7 @@ export function createApp({
 
   // Registered before /clans/:tag so a bare /api/clans?name=… is treated as a
   // search rather than a lookup of a clan literally tagged "".
-  app.get('/api/clans', async (c) => {
+  app.get('/api/clans', limitCocApiReads, async (c) => {
     const name = c.req.query('name')?.trim()
     if (!name || name.length < 3) {
       return c.json(
@@ -365,7 +399,7 @@ export function createApp({
     return c.json(results)
   })
 
-  app.get('/api/clans/:tag', async (c) => {
+  app.get('/api/clans/:tag', limitCocApiReads, async (c) => {
     const tag = normalizeTag(c.req.param('tag'))
     const clan = await cache.wrap(`clan:${tag}`, () => coc.getClan(tag))
     return c.json(clan)
@@ -375,20 +409,20 @@ export function createApp({
   // than the rest — stale war data is the one thing you would actually notice.
   const WAR_TTL_MS = 20_000
 
-  app.get('/api/clans/:tag/currentwar', async (c) => {
+  app.get('/api/clans/:tag/currentwar', limitCocApiReads, async (c) => {
     const tag = normalizeTag(c.req.param('tag'))
     const war = await cache.wrap(`currentWar:${tag}`, () => coc.getCurrentWar(tag), WAR_TTL_MS)
     return c.json(war)
   })
 
-  app.get('/api/clans/:tag/warlog', async (c) => {
+  app.get('/api/clans/:tag/warlog', limitCocApiReads, async (c) => {
     const tag = normalizeTag(c.req.param('tag'))
     const limit = positiveInt(c.req.query('limit'))
     const log = await cache.wrap(`warLog:${tag}:${limit ?? 20}`, () => coc.getWarLog(tag, limit))
     return c.json(log)
   })
 
-  app.get('/api/clans/:tag/capitalraidseasons', async (c) => {
+  app.get('/api/clans/:tag/capitalraidseasons', limitCocApiReads, async (c) => {
     const tag = normalizeTag(c.req.param('tag'))
     const limit = positiveInt(c.req.query('limit'))
     const seasons = await cache.wrap(`capitalRaidSeasons:${tag}:${limit ?? 10}`, () =>
@@ -397,7 +431,7 @@ export function createApp({
     return c.json(seasons)
   })
 
-  app.get('/api/clans/:tag/members', async (c) => {
+  app.get('/api/clans/:tag/members', limitCocApiReads, async (c) => {
     const tag = normalizeTag(c.req.param('tag'))
     const limit = positiveInt(c.req.query('limit'))
     const members = await cache.wrap(`clanMembers:${tag}:${limit ?? 'all'}`, () =>

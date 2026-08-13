@@ -132,6 +132,24 @@ export function stillActiveAdmin(store: AuthStore, callerId: number): boolean {
   return fresh?.role === 'admin' && !fresh.disabledAt
 }
 
+/**
+ * The refusal every `stillActiveAdmin` re-check answers with — the caller was an
+ * admin when `requireAdminFor` ran and no longer is by the time the handler
+ * reached its write. Shared rather than redefined per route file, since every
+ * call site means exactly the same thing by it.
+ */
+export function adminAccessRevoked(c: AuthContext) {
+  return c.json(
+    errorBody(
+      403,
+      'forbidden',
+      'Your admin access changed while this request was being handled.',
+      'Sign in again and retry.',
+    ),
+    403,
+  )
+}
+
 /** Valid only downstream of `requireAuth`, which is what makes the throw unreachable. */
 export function currentUser(c: AuthContext): SessionUser {
   const user = c.get('user')

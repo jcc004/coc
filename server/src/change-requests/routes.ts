@@ -5,7 +5,8 @@ import {
   CHANGE_REQUEST_SUBJECT_MAX,
   type ChangeRequestResolutionType,
 } from '@coc/shared'
-import { currentUser, type AuthEnv } from '../auth/middleware.ts'
+import { adminAccessRevoked, currentUser, stillActiveAdmin, type AuthEnv } from '../auth/middleware.ts'
+import type { AuthStore } from '../auth/store.ts'
 import { errorBody, readJson } from '../http.ts'
 import {
   mayAmendChangeRequest,
@@ -29,11 +30,21 @@ import type { ChangeRequestResolutionInput, ChangeRequestStore } from './store.t
  * `/api/admin/progress/reference/:category` do — rather than this file
  * re-declaring an admin gate of its own. `mayResolveChangeRequest` is still
  * called inside the admin resolve handler; it is redundant with that
- * middleware today, but it is the one place the *rule* "resolving is
+ * middleware at request-start, but it is the one place the *rule* "resolving is
  * admin-only" is stated and tested, and the handler reading it rather than
  * relying solely on where it happens to be mounted is what stops the two
  * silently drifting if the route ever moves.
  *
+ * The resolve handler also re-checks `stillActiveAdmin` immediately before its
+ * write, after the `readJson` event-loop yield — `requireAdmin` and
+ * `mayResolveChangeRequest` both only prove the caller was an admin when the
+ * request *started*, not at the moment the write actually happens. Every other
+ * admin write in this codebase (`auth/routes.ts`, `shared-data/routes.ts`)
+ * already re-checks this way; this file previously did not, which meant a caller
+ * demoted or disabled mid-request could still resolve a request after losing
+ * admin rights.
+ *
+
  * | route | who |
  * | --- | --- |
  * | `GET /api/change-requests` | every signed-in user — their own requests |
@@ -163,7 +174,11 @@ function parseResolution(
   return { resolution: { type: raw['type'], note, commitHash, commitSubject } }
 }
 
-export function mountChangeRequestRoutes(app: Hono<AuthEnv>, store: ChangeRequestStore): void {
+export function mountChangeRequestRoutes(
+  app: Hono<AuthEnv>,
+  store: ChangeRequestStore,
+  auth: AuthStore,
+): void {
   app.get('/api/change-requests', (c) => {
     return c.json({ requests: store.listMine(currentUser(c).id) })
   })
@@ -292,6 +307,8 @@ export function mountChangeRequestRoutes(app: Hono<AuthEnv>, store: ChangeReques
     if ('problem' in parsed) {
       return c.json(errorBody(400, 'badRequest', parsed.problem, 'Nothing was resolved.'), 400)
     }
+
+    if (!stillActiveAdmin(auth, currentUser(c).id)) return adminAccessRevoked(c)
 
     const request = store.resolve(id, parsed.resolution, currentUser(c).id)
     return c.json({ request })

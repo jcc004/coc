@@ -21,6 +21,20 @@ import { burnPasswordWork, hashPassword, verifyPassword } from './passwords.ts'
 /** 30 days, slid forward on every authenticated request. */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
+/**
+ * Hard ceiling on a session's age, measured from `created_at` and independent of
+ * the sliding `SESSION_TTL_MS` renewal above.
+ *
+ * A cookie used regularly never reaches the sliding expiry — it renews forever —
+ * so without this, a session is valid indefinitely as long as someone keeps using
+ * it. That is fine for the legitimate owner and exactly the property that makes a
+ * stolen cookie dangerous: it rides along just as indefinitely. Six months is well
+ * past any real usage gap for this app's own ~10 accounts, so nobody legitimate
+ * should ever be signed out by this; it exists to bound the stolen-cookie case,
+ * not to add friction to normal use.
+ */
+export const SESSION_ABSOLUTE_TTL_MS = 180 * 24 * 60 * 60 * 1000
+
 /** 32 bytes of CSPRNG output, base64url — 256 bits, unguessable. */
 const SESSION_TOKEN_BYTES = 32
 
@@ -181,8 +195,10 @@ export interface AuthStore {
   /** Mints a session and returns the raw token — see {@link CreatedSession}. */
   createSession(userId: number, now?: Date): CreatedSession
   /** Validates, slides, and returns the session behind the raw cookie `token`;
-   *  cleans up an expired one. `undefined` means "not authenticated" for every
-   *  reason. Hashes `token` to find the row, so a plaintext id never matches. */
+   *  cleans up an expired one, including one past {@link SESSION_ABSOLUTE_TTL_MS}
+   *  regardless of how recently it was slid. `undefined` means "not authenticated"
+   *  for every reason. Hashes `token` to find the row, so a plaintext id never
+   *  matches. */
   resolveSession(token: string, now?: Date): ResolvedSession | undefined
   /** By the raw cookie value, which it hashes — not by a `sessionId`. */
   deleteSession(token: string): void
@@ -241,7 +257,7 @@ export function createAuthStore(db: DatabaseSync): AuthStore {
     // ISO-8601 UTC strings sort lexicographically, so a plain string comparison
     // is a valid expiry check and the rows stay readable in a sqlite3 shell.
     selectSession: db.prepare(
-      `SELECT s.id AS session_id, s.expires_at AS expires_at,
+      `SELECT s.id AS session_id, s.expires_at AS expires_at, s.created_at AS session_created_at,
               u.id AS id, u.guid AS guid, u.display_name AS display_name, u.email AS email,
               u.role AS role, u.created_at AS created_at, u.disabled_at AS disabled_at,
               u.must_change_password AS must_change_password
@@ -432,6 +448,15 @@ export function createAuthStore(db: DatabaseSync): AuthStore {
 
       const nowIso = now.toISOString()
       if (asText(row['expires_at']) <= nowIso) {
+        statements.deleteSession.run(id)
+        return undefined
+      }
+
+      // Absolute cap, independent of the sliding expiry just above — see
+      // SESSION_ABSOLUTE_TTL_MS. A session renewed right up to this point is not
+      // exempt: age is measured from creation, not from the last slide.
+      const createdAtMs = new Date(asText(row['session_created_at'])).getTime()
+      if (now.getTime() - createdAtMs >= SESSION_ABSOLUTE_TTL_MS) {
         statements.deleteSession.run(id)
         return undefined
       }
