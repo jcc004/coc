@@ -267,6 +267,90 @@ describe('a run of presses is one save', () => {
   })
 })
 
+describe('re-seeding when the server’s copy moves under it', () => {
+  /*
+   * The scenario a trade completion is: nobody touched this base's own grid, but
+   * something else — the other party's trade action — changed what the server holds
+   * for it, and a fresh `updatedAt` comes back on the next inventory read. The
+   * re-seed effect (`BaseCardEditor.tsx:568-576`) is keyed on `[tag, base?.updatedAt]`
+   * specifically so this counts as a reason to pull the server's counts in, same as
+   * switching to a different base would.
+   */
+  it('picks up a changed base prop once its updatedAt moves, with no edit in progress', () => {
+    stubApi({ cardInventory: () => Promise.resolve({ season: CARD_SEASON, bases: [] }) })
+    const user = sessionUser({ id: 1, displayName: 'Rae' })
+
+    const { rerender } = render(
+      <BaseCardEditor
+        tag={TAG}
+        label="Alda"
+        base={{ tag: TAG, counts: [{ cardId: 1, count: 1 }] }}
+        owner={MINE}
+        user={user}
+      />,
+    )
+    assert.equal(badgeText('Barbarian', 'Elixir'), null) // one copy: no spare badge yet
+
+    // A second card arrived on this base from elsewhere (a completed trade), and the
+    // refreshed inventory read carries a real `updatedAt` this time.
+    rerender(
+      <BaseCardEditor
+        tag={TAG}
+        label="Alda"
+        base={{
+          tag: TAG,
+          counts: [
+            { cardId: 1, count: 1 },
+            { cardId: 2, count: 1 },
+          ],
+          updatedAt: '2026-08-12T12:00:00.000Z',
+        }}
+        owner={MINE}
+        user={user}
+      />,
+    )
+
+    assert.ok(tileFor('Archer', 'Elixir'), 'the traded-in card should now be on the grid')
+  })
+
+  it('does not clobber an edit in progress when the base prop moves under it', async () => {
+    stubApi({ cardInventory: () => Promise.resolve({ season: CARD_SEASON, bases: [] }) })
+    const user = userEvent.setup()
+    const rae = sessionUser({ id: 1, displayName: 'Rae' })
+
+    const { rerender } = render(
+      <BaseCardEditor
+        tag={TAG}
+        label="Alda"
+        base={{ tag: TAG, counts: [] }}
+        owner={MINE}
+        user={rae}
+      />,
+    )
+
+    // Started typing, not yet blurred — the write (and the re-seed guard's
+    // `savedRef`) has not happened yet.
+    await user.click(more('Barbarian'))
+    assert.equal(badgeText('Barbarian', 'Elixir'), null)
+
+    // The server's copy moves under this unrelated to what's mid-edit here.
+    rerender(
+      <BaseCardEditor
+        tag={TAG}
+        label="Alda"
+        base={{ tag: TAG, counts: [{ cardId: 2, count: 1 }], updatedAt: '2026-08-12T12:00:00.000Z' }}
+        owner={MINE}
+        user={rae}
+      />,
+    )
+
+    // The in-progress Barbarian edit must survive the re-seed rather than being
+    // silently overwritten by the server's copy of counts.
+    assert.ok(tileFor('Barbarian', 'Elixir'))
+    await waitFor(() => assert.equal(badgeText('Barbarian', 'Elixir'), null))
+  })
+})
+
 describe('the ends of the range', () => {
   it('offers no − at zero, and disables + at the cap rather than a − that clamps', () => {
     editor({ base: inventory([{ cardId: 2, count: MAX_CARD_COUNT }]) })

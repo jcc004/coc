@@ -474,7 +474,7 @@ describe('activeOwnerFilter — a chosen owner who has left the board', () => {
   })
 
   it('falls back to everyone when the owner is no longer on it', () => {
-    /* The board is re-read every thirty seconds. An owner whose last base was
+    /* The board is re-read every ten seconds. An owner whose last base was
        reassigned would otherwise leave a select showing a value it has no option for,
        over an empty table. */
     const options = standingOwnerOptions(board())

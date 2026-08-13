@@ -227,7 +227,7 @@ refetch on window focus and tab-visibility change (the same two listeners `use-c
 polls the card and trade stores with, for the same reason: a laptop woken from sleep should not
 wait out the full interval), and once more whenever the menu opens, so resolving a request — or
 having one of your own resolved — in one tab shows up in another without waiting on the timer. Two
-minutes rather than `use-card-refresh.ts`'s 30 seconds on purpose: neither kind of change request
+minutes rather than `use-card-refresh.ts`'s 10 seconds on purpose: neither kind of change request
 notification is time-sensitive the way a card count mid-trade is, and a couple of minutes'
 staleness costs nothing a person would notice. A failed poll leaves the last known number on
 screen rather than blinking to nothing.

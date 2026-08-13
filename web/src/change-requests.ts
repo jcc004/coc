@@ -208,7 +208,7 @@ export function useAllChangeRequests(refreshKey?: unknown): AllChangeRequests {
 
 /**
  * How often the badge polls while a session is open and the tab is visible.
- * Far coarser than `CARD_POLL_INTERVAL_MS` (30s, `card-refresh.ts`): a card
+ * Far coarser than `CARD_POLL_INTERVAL_MS` (10s, `card-refresh.ts`): a card
  * count or an incoming trade is time-sensitive to a person mid-trade, a stray
  * change request waiting on attention is not — noticing within a couple of
  * minutes of it landing is the whole point of a badge, not the second it

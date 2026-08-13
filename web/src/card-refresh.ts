@@ -16,7 +16,7 @@
  * whole cache/TTL design exists to protect. `GET /api/cards/inventory` and
  * `GET /api/cards/trades` spend none of it: both are local SQLite reads out of
  * `card_inventory` and `trades` (`server/src/cards/routes.ts:131` and
- * `trade-routes.ts`), with no upstream call anywhere behind them. A tick every thirty
+ * `trade-routes.ts`), with no upstream call anywhere behind them. A tick every ten
  * seconds is two selects. Do not copy this to anything that reaches upstream.
  *
  * The decision is a pure function for the usual reason: it is four conditions that
@@ -30,13 +30,14 @@
 /**
  * How often a card-showing page re-reads while it is open and visible.
  *
- * Thirty seconds is chosen against how the trade actually happens: two people agree
- * in chat, one presses Complete, and the other is looking at their cards while it
- * happens. Half a minute is inside that conversation. It is not a number the page
- * should chase further down — the counts are hand-entered and lag the game by far
- * more than this.
+ * Originally thirty seconds, against how the trade actually happens: two people
+ * agree in chat, one presses Complete, and the other is looking at their cards while
+ * it happens — half a minute is inside that conversation. Tightened to ten seconds,
+ * 2026-08-12, to shrink how long the *other* party can be looking at stale counts
+ * without needing a websocket layer — still cheap for the reason above this
+ * constant: both reads are local SQLite selects, not upstream Supercell calls.
  */
-export const CARD_POLL_INTERVAL_MS = 30_000
+export const CARD_POLL_INTERVAL_MS = 10_000
 
 /**
  * The shortest gap a *focus* may re-read after the previous read started.

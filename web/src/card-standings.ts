@@ -324,7 +324,7 @@ export function filterStandingsByOwner<T extends Ownable>(
 /**
  * The filter actually in force, given what the select can currently offer.
  *
- * The board is re-read in the background every thirty seconds, so the owner somebody
+ * The board is re-read in the background every ten seconds, so the owner somebody
  * picked can stop being on it — a base reassigned, or its last base untracked. Falling
  * back to "everyone" rather than holding the stale value keeps the select showing a
  * value it has an option for, and keeps the board from going empty under a filter

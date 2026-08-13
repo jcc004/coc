@@ -37,8 +37,8 @@ function reason(decision: RefreshDecision): string | null {
 }
 
 describe('the poll interval', () => {
-  it('is thirty seconds, as a named constant rather than a literal in the hook', () => {
-    assert.equal(CARD_POLL_INTERVAL_MS, 30_000)
+  it('is ten seconds, as a named constant rather than a literal in the hook', () => {
+    assert.equal(CARD_POLL_INTERVAL_MS, 10_000)
   })
 
   it('lets a focus re-read far sooner than a poll may', () => {
@@ -102,9 +102,9 @@ describe('refreshDecision', () => {
   })
 
   it('reads on focus without waiting for the poll window to run out', () => {
-    // Twenty seconds into a thirty-second window: too soon for a tick, not too soon
-    // for somebody who has just come back to the tab.
-    const lastStartedAt = NOW - 20_000
+    // Halfway into the poll window: too soon for a tick, not too soon for somebody
+    // who has just come back to the tab.
+    const lastStartedAt = NOW - CARD_POLL_INTERVAL_MS / 2
     assert.equal(reason(due({ lastStartedAt })), 'tooSoon')
     assert.deepEqual(due({ trigger: 'focus', lastStartedAt }), { refresh: true })
   })

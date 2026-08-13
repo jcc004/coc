@@ -1372,7 +1372,7 @@ else.
 
 **Three triggers, and no websocket.** The page reads when it opens, whenever the tab is brought back
 to the front (`focus` *and* `visibilitychange` — neither covers the other, and a tab coming forward
-usually fires both), and every **30 seconds** while it is on screen. `use-card-refresh.ts` is the
+usually fires both), and every **10 seconds** while it is on screen. `use-card-refresh.ts` is the
 hook, mounted by `CardsView` and by `PlayerCardPanel` and by nothing else; `card-refresh.ts` is the
 decision, pure and tested.
 

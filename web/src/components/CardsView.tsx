@@ -1414,7 +1414,7 @@ export function CardsView({ user }: { user: SessionUser }) {
    * The counts on this page are two people's, not one's: completing a trade moves a
    * card on both bases, and the person who pressed Complete is usually in another
    * tab. So the page re-reads both shared stores while it is open — on focus and
-   * every thirty seconds, never while hidden and never across a save. The rules are
+   * every ten seconds, never while hidden and never across a save. The rules are
    * `card-refresh.ts` and the mechanism `use-card-refresh.ts`; both endpoints are
    * local SQLite reads, which is what makes polling them affordable.
    */
