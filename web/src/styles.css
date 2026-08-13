@@ -474,9 +474,6 @@ select {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
   margin: 0;
   flex: 1;
 }
@@ -509,7 +506,6 @@ select {
 
 .icon-button {
   background: var(--surface);
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 7px 11px;
   cursor: pointer;
@@ -697,7 +693,6 @@ select {
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: var(--ink-muted);
   margin: 0 0 12px;
 }
@@ -1345,7 +1340,6 @@ td.select-cell {
 /* The one hero figure on this view: the head-to-head star score. */
 .war-score__value {
   font-size: 48px;
-  font-weight: 650;
   line-height: 1;
   letter-spacing: -0.03em;
   white-space: nowrap;
@@ -1555,7 +1549,6 @@ a.chip {
 }
 .hero-figure__value {
   font-size: 48px;
-  font-weight: 650;
   line-height: 1;
   letter-spacing: -0.03em;
 }
@@ -1645,21 +1638,17 @@ a.chip {
 }
 
 .meter {
-  height: 6px;
-  border-radius: 3px;
   background: var(--track);
   overflow: hidden;
   margin-top: 5px;
 }
 .meter__fill {
   height: 100%;
-  background: var(--accent);
   /* square at the baseline, 4px rounded at the data end */
   border-radius: 0 4px 4px 0;
   min-width: 2px;
 }
 .meter__fill--max {
-  background: var(--good);
   border-radius: 3px;
 }
 
@@ -3484,7 +3473,6 @@ table.roster th button:hover {
 
 .notice {
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
   background: var(--surface);
   border-radius: var(--radius);
   padding: 16px 18px;
