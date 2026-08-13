@@ -3,10 +3,13 @@
 ```
 shared/   types for the CoC API, the auth payloads and the shared data, + tag
           parsing, email normalization and CARD_SEASON
-server/   Hono API, upstream client, TTL cache, auth (src/auth/), the shared
+server/   Hono API, upstream client + its retry/backoff (src/coc-client.ts),
+          a TTL cache and a separate per-account rate limit on the CoC-API
+          proxy routes (src/coc-rate-limit.ts), auth (src/auth/), the shared
           saved clans and owners (src/shared-data/), the card inventory
           (src/cards/), weekly progress tracking (src/progress/), per-account
-          base order (src/base-order/), migrations (src/db.ts)
+          base order (src/base-order/), member-submitted requests an admin
+          resolves (src/change-requests/), migrations (src/db.ts)
 web/      Vite + React UI
 ```
 
@@ -18,9 +21,13 @@ and `routes.ts`. `server/src/shared-data/` is the same split for the shared rows
 only code touching `saved_clans` and `owner_assignments`, `routes.ts` mounts them. Migrations
 live in `server/src/db.ts`.
 
-`server/src/cards/` is the same split again: `store.ts` is the only code touching
-`card_inventory`, `routes.ts` mounts `/api/cards/*`, and `cards.test.ts` drives both through the
-whole app.
+`server/src/cards/` is the same split again: `store.ts` holds the hand-entered counts,
+`routes.ts` mounts `/api/cards/*`, and `cards.test.ts` drives both through the whole app.
+`trades-store.ts` also writes `card_inventory` directly — completing a trade moves a card between
+two bases in the same transaction as the trade's own status change, which `store.ts`'s own
+`saveBase` (its own `BEGIN`/`COMMIT`) cannot compose into — so this is the one table two stores in
+this workspace both touch, each independently applying the same sparse-storage rule (a count of 0
+deletes the row).
 
 `server/src/progress/` holds weekly base-progress tracking: `store.ts` is the only code
 touching `base_progress` / `max_level_reference` / `wall_reference`, `routes.ts` mounts
@@ -30,8 +37,18 @@ scripts a systemd timer runs weekly (not part of the request path — see
 pure parser the reference job depends on. `server/src/base-order/` is the smallest instance of
 the same split: `store.ts` touches `base_order` alone, `routes.ts` mounts `/api/base-order`.
 
-`createApp({ coc, cache, auth, sharedData, cards, trades })` stays dependency-injected, which is
-what lets the test suite drive the whole app over an in-memory database and a stub upstream.
+`server/src/change-requests/` is "Propose a change" — the one feature with no owner column and no
+base, so `sharedData` never reaches it. `access.ts` holds the five `may*ChangeRequest` decisions
+(submit, amend, cancel, hide, resolve), pure and independently tested, the same discipline
+`cards/write-access.ts` established; `store.ts` touches `change_requests` and
+`change_request_amendments` (and, for the read side, `change_request_views`); `routes.ts` mounts
+both `/api/change-requests/*` and the admin resolution routes. See
+[Propose a change](proposed-changes.md).
+
+`createApp`'s dependencies are listed as `AppDeps` in `server/src/app.ts` — every store, the two
+rate limiters (login and per-account CoC-API), and the deploy/cookie/proxy-trust settings — kept
+dependency-injected there rather than restated here, which is what lets the test suite drive the
+whole app over an in-memory database and a stub upstream.
 
 `shared` is consumed as TypeScript source through an npm workspace link — no build step,
 so a type change is visible on both sides immediately.
@@ -62,7 +79,10 @@ the gap that stops a focus event repeating a poll — the interval and the liste
 `#/whats-new` lists: the `git log` record format, the committer-date choice, the three-workspace
 filter and the newest-first order). `changelog.ts` is the one pure module `vite.config.ts` also
 imports, so the build that writes the list and the browser that reads it back share one format
-and one set of tests.
+and one set of tests. `change-request-rules.ts` is the same split for "Propose a change": who may
+amend, cancel or hide a request on the requester's own list, and a request's display status —
+mirroring `server/src/change-requests/access.ts`, the same relationship `trade-tracker.ts` has to
+the server's own trade-access rules.
 
 The progress-tracking feature follows the same rule: `progress-grid.ts` (the board's row shape
 and sort), `progress-percent.ts` (percent-to-max against the wiki-scraped reference, never the

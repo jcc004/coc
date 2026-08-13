@@ -31,8 +31,8 @@ TLS, the systemd units — is [`deploy/README.md`](deploy/README.md).
   provide, fetching the game art before a build, and every `npm` script.
 - **[Authentication](docs/authentication.md)** — why there is a login at all, server-side
   sessions rather than JWT, scrypt, admin-mediated password recovery and why there is
-  deliberately no email reset, the account columns, the SQLite storage, all fourteen migrations,
-  and the environment variables.
+  deliberately no email reset, the account columns, the SQLite storage, the full migration
+  history, and the environment variables.
 - **[Layout](docs/layout.md)** — which workspace holds what, and the module conventions: rules
   live in pure tested modules, three files are machine-written, components shown twice are
   shared rather than copied.

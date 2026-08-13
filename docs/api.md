@@ -51,6 +51,20 @@ identical concurrent requests are coalesced into one upstream call. Both exist t
 under Supercell's per-token rate limit while clicking around a roster. The cache is
 per-process and disappears on restart — that is deliberate for a personal tool.
 
+### Retries against Supercell, and the app's own per-account limit
+
+`server/src/coc-client.ts` retries a request that fails for a reason a second attempt might
+actually fix — a rate limit, a 5xx from upstream, a network blip — with backoff (`Retry-After`
+if Supercell sent one, capped either way so one call can never turn into a long hang), and gives
+up after a few attempts. It never retries a real answer like a 404 or the 403 IP-binding case:
+trying again cannot change those.
+
+Separately, each signed-in account is throttled on these seven proxy routes specifically
+(`server/src/coc-rate-limit.ts`) — generous enough that a normal session, several tabs open on
+the same roster, never comes close, but a real ceiling on one account minting a fresh cache key
+every request and spending the shared token on each one. A 429 here carries the same
+`{ error: { ... } }` shape as everything else, with `Retry-After`.
+
 ## What the API exposes per player tag
 
 Verified against the live API, not the docs. **Only two endpoints take a player tag:**

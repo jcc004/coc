@@ -18,8 +18,14 @@ here is not a login form for decoration; it is what protects the token.
   defense for every state-changing route), `Path=/`, and `Secure` whenever
   `NODE_ENV=production` or `COOKIE_SECURE=true` — conditional only so plain-http localhost
   still receives it.
-- **Expiry** is 30 days, slid forward on every authenticated request. An expired session is
-  rejected *and* deleted; a background sweep every hour keeps the table from growing.
+- **Expiry** is 30 days, slid forward on every authenticated request — and a session used
+  regularly renews forever on that basis alone, which is exactly what makes a stolen cookie
+  dangerous: it rides along just as indefinitely. `SESSION_ABSOLUTE_TTL_MS` in
+  `server/src/auth/store.ts` closes that: six months from the session's own creation, regardless
+  of how recently it slid, past which `resolveSession` refuses it the same as an expired one. No
+  real user should ever notice it; it exists to bound the stolen-cookie case, not to add friction.
+  An expired session — by either check — is rejected *and* deleted; a background sweep every hour
+  keeps the table from growing.
 - **Passwords**: `scryptSync` with a 16-byte per-user random salt, compared with
   `timingSafeEqual`. Cost is N = 2^15, r = 8, p = 1 (32 MiB, ~40 ms per hash on a laptop) and
   the parameters are stored inside the hash string, so N can be raised later without
@@ -299,6 +305,18 @@ schema changes) because v2 has to drop and re-create `users`.
   rewrite of the second — and both indexes v7 created are recreated verbatim after the rebuild,
   since neither survives a `DROP TABLE`. See
   [Undoing a completed trade](trade-tracker.md#undoing-a-completed-trade).
+- **v15** — `change_requests` and `change_request_amendments`: "Propose a change", a
+  member-initiated request an admin resolves later. Modeled on `trades` (v7/v14) — a status-bearing
+  row, an audit trail, resolution as a separate later event — but cancel and resolve are independent
+  columns rather than one status enum, since a request can be both. See
+  [Propose a change](proposed-changes.md#schema).
+- **v16** — `change_request_views`, one row per user: the last time they checked resolved
+  requests, the other half of the account-menu badge `unseen-resolved-count` reads. Same doc as v15.
+
+This list is the full migration history and grows by one entry each time `server/src/db.ts` gains a
+step — check `MIGRATIONS`/`SCHEMA_VERSION` there for the version currently in force rather than
+trusting a number restated here, which is exactly as likely to be one version behind as this
+sentence is old.
 
 Backfill, per row:
 
@@ -328,12 +346,13 @@ log into.
 
 One SQLite file, `DATABASE_PATH` (default `./data/coc.db`, resolved against the server
 workspace's working directory, so `npm run dev` puts it at `server/data/coc.db` — gitignored).
-The directory is created if missing. Thirteen tables — `users`, `sessions`, `chat_messages`,
-`saved_clans`, `owner_assignments`, `card_inventory`, `card_base_updates`, `trades`,
-`auth_events`, `base_progress`, `max_level_reference`, `wall_reference`, `base_order` — created
-and migrated on boot by `user_version`, currently at **v14** (`SCHEMA_VERSION`,
-`server/src/db.ts`). Twelve of the thirteen are live; `chat_messages` is kept but unused, as
-above. (v14 rebuilds `trades` in place rather than adding a table, so the count stays thirteen.)
+The directory is created if missing. Every table this schema has ever created is listed in the
+migration history above — `grep 'CREATE TABLE' server/src/db.ts` for the current set rather than
+trusting a count here, since it grows with the schema. All but one are live; `chat_messages` is
+kept but unused, as v9 above explains, because dropping it on an already-migrated database is a
+step no version marker can undo. The database is created and migrated on boot by `user_version`,
+which `SCHEMA_VERSION` in `server/src/db.ts` always names exactly — that constant, not a version
+number restated here, is what a fresh checkout is actually running.
 
 `node:sqlite` is used rather than `better-sqlite3` because it is in the runtime from Node 22.5
 on: no native module, nothing to compile on the host, nothing to rebuild when Node is

@@ -24,15 +24,19 @@ it is usually recording an incident. Treat it as evidence, not decoration.
 
 The general rules are in `claude-kit`. These are this repo's instances of them.
 
-- **The season is never read from a request.** It is `CARD_SEASON`, `shared/src/card-types.ts:18`,
-  applied at `server/src/cards/routes.ts:123` and `:169` and echoed in every response.
-- **Session rows are verifiers.** `sessions.id` is `sha256(token)` — `hashToken`,
-  `server/src/auth/store.ts:43`. The raw token exists only in the cookie.
-- **`/api/*` is deny-by-default.** The public allowlist is `PUBLIC_API_PATHS`,
-  `server/src/app.ts:148`. Adding to it is a security decision.
-- **Migrations are append-only**, keyed on `PRAGMA user_version` — `MIGRATIONS`,
-  `server/src/db.ts:744`. `v1` creates a table `v9` drops; both must stay, because a fresh
-  database passes through both in one boot.
+- **The season is never read from a request.** It is `CARD_SEASON` in `shared/src/card-types.ts`,
+  applied everywhere `server/src/cards/routes.ts` touches a row and echoed in every response.
+- **Session rows are verifiers.** `sessions.id` is `sha256(token)` — `hashToken` in
+  `server/src/auth/store.ts`. The raw token exists only in the cookie. Sessions also carry a hard
+  ceiling on their own age (`SESSION_ABSOLUTE_TTL_MS`, same file) independent of the sliding
+  30-day renewal, so a cookie used regularly cannot stay valid forever the way the sliding window
+  alone would let it.
+- **`/api/*` is deny-by-default.** The public allowlist is `PUBLIC_API_PATHS` in
+  `server/src/app.ts`. Adding to it is a security decision.
+- **Migrations are append-only**, keyed on `PRAGMA user_version` — `MIGRATIONS` and
+  `SCHEMA_VERSION` in `server/src/db.ts`. `v1` creates a table `v9` drops; both must stay, because
+  a fresh database passes through both in one boot. Check that file directly for the current
+  version and table set rather than trusting a count anywhere else, including `docs/`.
 - **The runtime pin lives in three files and they move together**: `.nvmrc` (22.23.2),
   `package.json` `engines` (`>=22.23.2 <23`), and `.npmrc` (`engine-strict=true`, which is what
   makes the other two binding). A failed install naming your Node version is that working.
@@ -40,7 +44,9 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
   `cards.generated.ts`, `wiki-art.generated.ts`, and — the one the naming does not warn you about
   — `coc-assets.ts`. Each has a hand-written half where the tests point. Regenerate with the
   `assets:*` / `cards:generate` scripts.
-- **Zero `any` across ~35k lines.** Keep it there.
+- **Zero `any`.** `grep -rE ': any\b|as any|<any>' --include='*.ts' --include='*.tsx' shared server/src web/src`
+  (excluding the three generated modules above, which are machine-written either way) should come
+  back empty. Keep it that way.
 
 ## Local rules
 
@@ -53,14 +59,20 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
   get it is not Claude's call to make silently. Ask, per commit, before committing.
 - **Card counts are stored sparsely.** Absent means zero; a count of 0 deletes the row. Never
   store a 0. Sixty rows per base would be sixty times the writes to say almost nothing.
-- **Authorization lives in one pure function.** `mayWriteBaseCounts`,
-  `server/src/cards/write-access.ts:64`, is the only interesting auth decision in the app. Do not
-  reimplement it inline in a handler.
+- **Authorization decisions live in pure functions, one per feature, never inline in a handler.**
+  `mayWriteBaseCounts` (`server/src/cards/write-access.ts`) was the first and is still the model;
+  `cards/trade-access.ts` and `change-requests/access.ts` follow it directly, and the admin-only
+  gates in `shared-data/routes.ts` (owner assignments, and now the saved-clan list) go through
+  `requireAdminFor` plus a `stillActiveAdmin` re-check for the same reason. A route that decides
+  who-may-do-this-write inline, rather than calling one of these, is the pattern to avoid — see
+  `claude-kit/rules/invariants.md` on centralizing the actual authorization decision.
 - **Rules live in pure modules with adjacent tests**, never inline in a component — see
   `docs/layout.md` for the list. A new rule gets a module and a `.test.ts`, not a `useMemo`.
-- **Prettier is deliberately not in CI.** `verify.yml` argues the case at length: the code was
-  laid out by hand within the same 100 columns Prettier targets, and running it would rewrite
-  ~1,100 lines and bury every real change. Do not run `npm run format` as a drive-by.
+- **Prettier is deliberately not in CI.** `.github/workflows/verify.yml` argues the case at
+  length and carries the current measurement of how much of the codebase it would rewrite — read
+  it there rather than trusting a number restated here. The short version: the code was laid out
+  by hand within the same 100 columns Prettier targets, and running it would bury every real
+  change in the diff it landed with. Do not run `npm run format` as a drive-by.
 - **There are no CSS modules here.** Styling is `styles.css` plus inline `style={{}}` on a couple
   dozen elements across roughly half the components (`grep -rc 'style={{' web/src --include='*.tsx'`
   for the current count — deliberately not written here, see `claude-kit/rules/improving-the-kit.md`
@@ -82,7 +94,7 @@ measure reopens against, so a list claiming "most bugs live here" would be borro
 of evidence it does not have. These are named for a specific way each one has misled a reader, or
 can.
 
-- **`web/src/styles.css`** (~4.3k lines, the most-churned file in the repo) — **selectors recur far
+- **`web/src/styles.css`** (the most-churned file in the repo) — **selectors recur far
   apart, so grep to the end; the first match is not the last word.** `.topbar` is declared three
   times: twice at the top level roughly 2,900 lines apart — once with no background, once painting
   it — and a third time, a narrower override, inside a `max-width: 600px` block near the end of the
@@ -109,10 +121,24 @@ can.
   No line numbers here on purpose. The first draft of this bullet cited them, and they were stale
   within the hour — a commit landing earlier in the file moved both. A warning about a churning
   file must not be pinned to positions in it; name the selector, which is stable.
-- **`web/src/hooks.ts`** — routing and `useAsync`, so it runs during render and inside effects with
-  **no error boundary anywhere above it**. A throw here is not a broken panel, it is a blank page.
-  Both crashes found on 2026-08-04 were in this file: `decodeURIComponent` on a truncated escape,
-  and a loader that threw before returning a promise.
+
+  A later full-repo review found seven more instances of this exact shape — a base-pass
+  declaration silently overridden by the same selector's own later "chrome pass" restating the
+  same property (`.notice`, `.meter`, `.meter__fill`, `.icon-button`, `.section-title`,
+  `.topbar__title`, `.war-score__value`/`.hero-figure__value`) — and they were fixed by deleting
+  the earlier, always-losing declaration of each conflicting property, leaving one source of truth
+  per property per selector. Nothing above is still a live footgun; it is recorded because the
+  pattern recurred once already after `.topbar`/`.card`/`.chip` and can again — worth a second look
+  whenever a rule in this file's later sections stops having a visible effect when edited.
+- **`web/src/hooks.ts`** — routing and `useAsync`, so it runs during render and inside effects,
+  which is what made it dangerous: **before 2026-08-06 there was no error boundary anywhere above
+  it**, so a throw here was not a broken panel, it was a blank page. Both crashes found on
+  2026-08-04 were in this file — `decodeURIComponent` on a truncated escape, and a loader that
+  threw before returning a promise — and both are fixed at the source. `web/src/components/ErrorBoundary.tsx`
+  now wraps the whole app from `web/src/main.tsx`, added specifically in response to those two
+  incidents, so a throw anywhere in the tree is a caught, reported error rather than a blank page.
+  This file is still worth care — a new unguarded throw here is still a worse failure than one in
+  a leaf component, just no longer a *total* one.
 - **`server/src/db.ts`** — migrations are append-only and an applied one can never be edited. The
   reasoning is in the file header; read it before adding a step, and never renumber.
 - **`web/src/components/CardsView.tsx`** (990 lines when first added to this list, still growing —
@@ -143,11 +169,15 @@ production uses. `zsh -i -c 'cd <repo> && npm test'` is the form that pins it.
 Known gap, so it is not rediscovered as a surprise: **component test coverage is partial.** For the
 current ratio, `ls web/src/components/*.tsx web/src/components/*.test.tsx` and compare — but the
 ratio was never the useful fact anyway. What matters, and does not drift the way a count does: the
-gap is not uniformly presentational. `Login.tsx`, `TradeTracker.tsx`, `TradeSuggestions.tsx`,
-`ProgressGridView.tsx` and `ForcedPasswordChange.tsx` each wire up real interaction or business
-logic (their *underlying* pure logic is tested elsewhere; the component wiring itself is not). A
-full-repo review found this framing overstating the gap's safety; treat "untested" as "the wiring
-around already-tested logic," not "nothing here can break."
+gap is not uniformly presentational. `Login.tsx`, `TradeSuggestions.tsx`, `ProgressGridView.tsx`,
+`ForcedPasswordChange.tsx`, `UserMenu.tsx` and `ClanView.tsx` each wire up real interaction or
+business logic with no test file at all (their *underlying* pure logic is tested elsewhere; the
+component wiring itself is not) — treat "untested" as "the wiring around already-tested logic,"
+not "nothing here can break."
+`TradeTracker.tsx` and `SavedClansView.tsx` are a narrower version of the same gap: each now has a
+test file, but each covers one specific piece of wiring found by a review (an error-message branch
+on the first, an admin-only gate on the second) rather than the component as a whole — a real
+reduction in risk, not a closed gap.
 
 ## Repo visibility
 
@@ -171,9 +201,14 @@ deploy; `verify.yml` only typechecks, lints, tests and builds.
 build or health check fails, and supports `--rollback` / `--resume`. `deploy/README.md` is the
 host itself: Nginx, TLS, the systemd units.
 
-One trap worth knowing: the fast-forward happens *before* `npm ci`, so a failed install leaves the
-tree advanced and the service un-restarted. The next timer run then sees local equal to remote and
-reports "Already up to date" forever. Recovery is `./deploy/update.sh --force`.
+The fast-forward still happens *before* `npm ci`, so a failed install can still leave the tree
+advanced while the service stays on the old build — but the next timer run no longer treats that
+as "nothing to do." `deploy/update.sh` compares the checkout against `.deploy-last-good-sha`, not
+just against `origin/main`, so a commit that fast-forwarded but never finished deploying is
+retried automatically rather than silently accepted as current. `deploy/update-test.sh` pins this
+behavior directly (a broken `npm ci`, then a working one, with an assertion that the retry never
+reports "already up to date"). `--force` still exists for forcing a rebuild on demand; it is no
+longer the only way out of a stuck install.
 
 Two more traps, both from 2026-08-09, about seven hours apart:
 
