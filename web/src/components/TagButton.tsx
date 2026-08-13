@@ -23,7 +23,12 @@ export function TagButton({ tag }: { tag: string }) {
         })
       }}
     >
-      {tag} {copied ? '· copied' : '· copy'}
+      {tag}{' '}
+      {/* `aria-live="polite"` is `BaseCardEditor.tsx`'s own "Saving…" indicator's
+          treatment (~line 691) — the only other transient-status text in the app —
+          so a screen reader announces the copy confirmation instead of the button's
+          label silently changing underneath it. */}
+      <span aria-live="polite">{copied ? '· copied' : '· copy'}</span>
     </button>
   )
 }

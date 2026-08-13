@@ -71,3 +71,56 @@ describe('mutate refreshes on a rejected write, not only a successful one', () =
     assert.deepEqual(store.peek(), entries)
   })
 })
+
+/**
+ * `mutate`'s post-write refresh used to be a plain `load()`, which hands back
+ * whatever request is already in flight rather than starting a fresh one. A
+ * poll's GET issued just before a save completes stays in flight through the
+ * save, so that reused request was reading the server *before* the write — and
+ * its answer, arriving after the write's own refresh, would silently overwrite
+ * the just-saved data with the stale pre-write snapshot. These pin the fix: a
+ * refresh triggered by `mutate` always issues its own request, and a response
+ * from an older, superseded request is dropped rather than committed —
+ * regardless of which one's network round trip happens to finish first.
+ */
+/** Flushes pending microtasks — `await write()` inside `mutate` needs at least
+ *  one tick before its `startLoad()` call actually runs. */
+function flush(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+describe('mutate never lets a stale in-flight response win the race', () => {
+  it('keeps the post-write data even when an earlier poll resolves after it', async () => {
+    type Row = { id: number; count: number }
+    const responses: { resolve: (rows: Row[]) => void }[] = []
+    const store = createServerStore<Row>(
+      () => new Promise<Row[]>((resolve) => responses.push({ resolve })),
+    )
+
+    // A poll's GET starts first, and is still in flight when the write below
+    // completes — exactly the window the bug lived in.
+    const pollPromise = store.load()
+    assert.equal(responses.length, 1)
+
+    const mutatePromise = store.mutate(async () => 'saved')
+    await flush()
+    // `mutate`'s own refresh must be a second, independent request rather than
+    // the poll's — the whole point of the fix.
+    assert.equal(responses.length, 2, 'the write must trigger its own fresh load')
+
+    // The write's own refresh resolves first, carrying the post-write count...
+    responses[1]?.resolve([{ id: 1, count: 5 }])
+    await mutatePromise
+
+    // ...and only then does the stale poll — issued before the write — resolve,
+    // carrying the pre-write count it originally read.
+    responses[0]?.resolve([{ id: 1, count: 1 }])
+    await pollPromise
+
+    assert.deepEqual(
+      store.peek(),
+      [{ id: 1, count: 5 }],
+      'the late-arriving pre-write response must not overwrite the saved data',
+    )
+  })
+})

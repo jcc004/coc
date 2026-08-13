@@ -58,28 +58,56 @@ export function createServerStore<T>(fetchAll: () => Promise<T[]>): ServerStore<
   /** Shared so two components mounting together make one request, not two. */
   let inFlight: Promise<void> | null = null
 
+  /**
+   * Bumped by every `startLoad`, and checked before a response is allowed to
+   * commit. `mutate` needs a load that is guaranteed to reflect its own write,
+   * which `load()` alone cannot promise: if a poll's GET was already in flight
+   * when the write landed, `load()` would just hand back that same promise, and
+   * its response — read *before* the write — would commit over the just-saved
+   * data. `startLoad` always issues a fresh request instead, but that leaves two
+   * requests in the air at once, and network timing does not guarantee the older
+   * one resolves first. Gating every commit on "was this the most recently
+   * *started* request" is what stops that stale response from winning the race
+   * even when it arrives last. See the trade tracker's own bug writeup,
+   * 2026-08-08, for the shape of thing a lost race here looks like to a user.
+   */
+  let generation = 0
+
   function commit(next: StoreSnapshot<T>) {
     snapshot = next
     for (const listener of listeners) listener()
   }
 
-  function load(): Promise<void> {
-    if (inFlight) return inFlight
+  /** Always issues a fresh request, even if one is already in flight. */
+  function startLoad(): Promise<void> {
+    const gen = ++generation
 
     // Keep the entries visible while refreshing: blanking the table on every
     // write would make a normal save look like a reload.
     commit({ status: 'loading', entries: snapshot.entries, error: null })
 
-    inFlight = fetchAll()
-      .then((entries) => commit({ status: 'ready', entries, error: null }))
+    const request = fetchAll()
+      .then((entries) => {
+        // A newer request has since started; this one lost the race and its
+        // answer is stale by definition, whatever order the responses arrive in.
+        if (gen === generation) commit({ status: 'ready', entries, error: null })
+      })
       .catch((cause: unknown) => {
-        commit({ status: 'error', entries: snapshot.entries, error: toApiError(cause) })
+        if (gen === generation) {
+          commit({ status: 'error', entries: snapshot.entries, error: toApiError(cause) })
+        }
       })
       .finally(() => {
-        inFlight = null
+        // Only clear the shared slot if nothing newer has already replaced it.
+        if (inFlight === request) inFlight = null
       })
 
-    return inFlight
+    inFlight = request
+    return request
+  }
+
+  function load(): Promise<void> {
+    return inFlight ?? startLoad()
   }
 
   function subscribe(listener: () => void) {
@@ -107,7 +135,10 @@ export function createServerStore<T>(fetchAll: () => Promise<T[]>): ServerStore<
     async mutate(write) {
       try {
         const result = await write()
-        await load()
+        // `startLoad`, not `load`: a poll's GET can already be in flight when the
+        // write completes, and reusing it would commit an answer read *before*
+        // this write — see `generation`'s doc comment above.
+        await startLoad()
         return result
       } catch (cause) {
         const error = toApiError(cause)
@@ -123,16 +154,19 @@ export function createServerStore<T>(fetchAll: () => Promise<T[]>): ServerStore<
         // it. Refreshing here, not just on success, is what makes a rejected
         // trade-completion actually show as resolved instead of silently
         // requiring a second click — see the trade tracker's own bug writeup,
-        // 2026-08-08. `.catch` because `load()` already turns its own failure
-        // into a committed error state; it cannot throw here in a way that
-        // should replace the original `error` this call is about to rethrow.
-        await load().catch(() => {})
+        // 2026-08-08. `.catch` because `startLoad()` already turns its own
+        // failure into a committed error state; it cannot throw here in a way
+        // that should replace the original `error` this call is about to rethrow.
+        await startLoad().catch(() => {})
         throw error
       }
     },
 
     reset() {
       inFlight = null
+      // Stale by construction: any response still in flight from before the
+      // reset must not be allowed to resurrect the list it just cleared.
+      generation += 1
       commit({ status: 'idle', entries: [], error: null })
     },
   }

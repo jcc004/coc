@@ -201,6 +201,21 @@ interface LeaderboardColumn<T> {
 type LeaderboardRow = StandingBase & { rank: number }
 
 /**
+ * One board's worth of everything `CardsView` renders below the picker —
+ * see the `leaderboardBoards` table built inside `CardsView` for why this is
+ * a `Record<LeaderboardView, LeaderboardViewConfig>` rather than the three
+ * separate ternary chains it replaces.
+ */
+interface LeaderboardViewConfig {
+  /** The explanatory paragraph shown above the table for this board. */
+  intro: ReactNode
+  /** The wired-up `<Leaderboard rows=... columns=...>` element itself. */
+  board: ReactNode
+  /** The `*ScoringRules` disclosure shown under the table. */
+  scoringRules: ReactNode
+}
+
+/**
  * Ten small marks — hollow where a row of the grid is empty, green where it is
  * full, blue where it is doubled (every one of the row's six cards held at
  * least twice) — beside the numeric count on the "Full rows" board. The counts
@@ -1678,6 +1693,167 @@ export function CardsView({ user }: { user: SessionUser }) {
     [fodder],
   )
 
+  /*
+   * One entry per `LeaderboardView`, so the three renders below the picker —
+   * the explanatory paragraph, the `<Leaderboard>` table itself, and the
+   * scoring-rules disclosure — are a single lookup by `leaderboardView`
+   * rather than three parallel 7-way ternary chains, each of which used to
+   * end in a bare `else` that a forgotten eighth view would have fallen into
+   * silently. `Record<LeaderboardView, LeaderboardViewConfig>` is what makes
+   * this exhaustive at compile time instead: TypeScript refuses to compile if
+   * a member of the union is missing an entry, so adding a view to
+   * `leaderboard-view.ts` without adding it here is a build failure, not a
+   * board that quietly renders the wrong paragraph.
+   *
+   * Rebuilt every render rather than memoized: every field is either a plain
+   * string/JSX literal or a `<Leaderboard>` element referencing this render's
+   * own `standings`/`rarityRankings`/etc., so there is nothing here more
+   * expensive than the ternary chains it replaces.
+   */
+  const leaderboardBoards: Record<LeaderboardView, LeaderboardViewConfig> = {
+    overall: {
+      intro: (
+        <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+          Every tracked base, by <strong>points</strong>: {cardPoints(1)} for the first copy of a
+          card and less for every copy after it, so breadth outranks hoarding. Level on points,
+          more distinct cards of {totals.length} goes first. Not affected by <strong>Show</strong>:
+          this is the whole clan. <strong>Owner</strong> narrows which rows are drawn — the rank
+          stays each base's place on the whole board, so it never renumbers.
+        </p>
+      ),
+      board: (
+        <Leaderboard rows={standings} ariaLabel="Collection leaderboard" columns={OVERALL_COLUMNS} />
+      ),
+      scoringRules: <ScoringRules />,
+    },
+    rarity: {
+      intro: (
+        <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+          Every tracked base, by <strong>rarity score</strong>: one distinct card scores once,
+          weighted by how scarce it is across the whole clan right now — a spare of a card already
+          held adds nothing here. Level on rarity score, more distinct cards overall goes first.
+          Not affected by <strong>Show</strong>: this is the whole clan. <strong>Owner</strong>{' '}
+          narrows which rows are drawn — the rank stays each base's place on the whole board, so
+          it never renumbers.
+        </p>
+      ),
+      board: (
+        <Leaderboard rows={rarityRankings} ariaLabel="Rarity leaderboard" columns={RARITY_COLUMNS} />
+      ),
+      scoringRules: <RarityScoringRules />,
+    },
+    category: {
+      intro: (
+        <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+          {leaderboardCategory}, by <strong>distinct cards held in this deck alone</strong> — a
+          base's other three decks do not count here. Level on distinct cards, a{' '}
+          <strong>doubled</strong> deck — every card in it held twice — goes first, then more
+          points decides. Not affected by <strong>Show</strong>: this is the whole clan.{' '}
+          <strong>Owner</strong> narrows which rows are drawn — the rank stays each base's place
+          on this deck's board, so it never renumbers.
+        </p>
+      ),
+      board: (
+        <Leaderboard
+          rows={categoryRankings[leaderboardCategory]}
+          ariaLabel={`${leaderboardCategory} leaderboard`}
+          columns={CATEGORY_COLUMNS}
+          filters={
+            /* Same slot Owner already sits in, reused rather than a second filter
+               row — see `Leaderboard`'s own doc for why `filters` draws unconditionally
+               whenever it is passed at all: the four decks are always a real choice. */
+            <label htmlFor="leaderboard-category">
+              Deck
+              <select
+                id="leaderboard-category"
+                value={leaderboardCategory}
+                onChange={(event) => setLeaderboardCategory(event.target.value as CardCategory)}
+              >
+                {cardCategoriesInOrder().map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </label>
+          }
+        />
+      ),
+      scoringRules: <CategoryScoringRules />,
+    },
+    rows: {
+      intro: (
+        <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+          Every tracked base, by the real game's own {ROW_SIZE}-wide collection screen:{' '}
+          <strong>10 points</strong> for every row held in full, plus <strong>5 more</strong> for
+          each row of every unbroken streak of two or more full rows — so a run of three and a
+          separate run of two each earn their own bonus, not just the longer of the two — plus{' '}
+          <strong>10 more</strong> for each row held twice over, shown as a blue mark instead of
+          green. Level on score, more full rows outright goes first. Not affected by{' '}
+          <strong>Show</strong>: this is the whole clan. <strong>Owner</strong> narrows which rows
+          are drawn — the rank stays each base's place on the whole board, so it never renumbers.
+        </p>
+      ),
+      board: <Leaderboard rows={rowRankings} ariaLabel="Full rows leaderboard" columns={ROWS_COLUMNS} />,
+      scoringRules: <RowScoringRules />,
+    },
+    decks: {
+      intro: (
+        <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+          Every tracked base, by how many of the four decks it holds <strong>outright</strong> — 0
+          through 4, not how far into any one it has got. Level on decks complete, more{' '}
+          <strong>doubled</strong> decks — every card in a deck held twice, marked{' '}
+          <strong>×2</strong> on its chip — goes first, then more distinct cards held overall. Not
+          affected by <strong>Show</strong>: this is the whole clan. <strong>Owner</strong> narrows
+          which rows are drawn — the rank stays each base's place on the whole board, so it never
+          renumbers.
+        </p>
+      ),
+      board: (
+        <Leaderboard rows={deckRankings} ariaLabel="Full decks leaderboard" columns={DECKS_COLUMNS} />
+      ),
+      scoringRules: <DeckCompletionScoringRules />,
+    },
+    spares: {
+      intro: (
+        <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+          Every tracked base, by <strong>tradeable spares</strong> — copies beyond the one kept of
+          each card, summed across all {totals.length}. A base never counts its last copy. Level
+          on spares, more spare variety (distinct cards with a spare) goes first. Not affected by{' '}
+          <strong>Show</strong>: this is the whole clan. <strong>Owner</strong> narrows which rows
+          are drawn — the rank stays each base's place on the whole board, so it never renumbers.
+        </p>
+      ),
+      board: (
+        <Leaderboard
+          rows={spareRankings}
+          ariaLabel="Spares on hand leaderboard"
+          columns={SPARES_COLUMNS}
+        />
+      ),
+      scoringRules: <SpareScoringRules />,
+    },
+    traders: {
+      intro: (
+        <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+          Every tracked base, by <strong>completed trades</strong> — the Trade Tracker's own board,
+          counted by base rather than by owner, so running several bases does not inflate the
+          count. Level on trades, more distinct trading partners goes first. Not affected by{' '}
+          <strong>Show</strong>: this is the whole clan. <strong>Owner</strong> narrows which rows
+          are drawn — the rank stays each base's place on the whole board, so it never renumbers.
+        </p>
+      ),
+      board: (
+        <Leaderboard
+          rows={traderRankings}
+          ariaLabel="Most active trader leaderboard"
+          columns={TRADERS_COLUMNS}
+        />
+      ),
+      scoringRules: <TraderScoringRules />,
+    },
+  }
+
   const emptyMine = scope === 'mine' && options.length === 0 && tags.length > 0
 
   /*
@@ -1963,147 +2139,13 @@ export function CardsView({ user }: { user: SessionUser }) {
          * reader who never opens the disclosure still gets the one sentence that
          * matters for whichever board they are looking at.
          */}
-        {leaderboardView === 'overall' ? (
-          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
-            Every tracked base, by <strong>points</strong>: {cardPoints(1)} for the first copy of a
-            card and less for every copy after it, so breadth outranks hoarding. Level on points,
-            more distinct cards of {totals.length} goes first. Not affected by <strong>Show</strong>:
-            this is the whole clan. <strong>Owner</strong> narrows which rows are drawn — the rank
-            stays each base's place on the whole board, so it never renumbers.
-          </p>
-        ) : leaderboardView === 'rarity' ? (
-          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
-            Every tracked base, by <strong>rarity score</strong>: one distinct card scores once,
-            weighted by how scarce it is across the whole clan right now — a spare of a card already
-            held adds nothing here. Level on rarity score, more distinct cards overall goes first.
-            Not affected by <strong>Show</strong>: this is the whole clan. <strong>Owner</strong>{' '}
-            narrows which rows are drawn — the rank stays each base's place on the whole board, so
-            it never renumbers.
-          </p>
-        ) : leaderboardView === 'category' ? (
-          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
-            {leaderboardCategory}, by <strong>distinct cards held in this deck alone</strong> — a
-            base's other three decks do not count here. Level on distinct cards, a{' '}
-            <strong>doubled</strong> deck — every card in it held twice — goes first, then more
-            points decides. Not affected by <strong>Show</strong>: this is the whole clan.{' '}
-            <strong>Owner</strong> narrows which rows are drawn — the rank stays each base's place
-            on this deck's board, so it never renumbers.
-          </p>
-        ) : leaderboardView === 'rows' ? (
-          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
-            Every tracked base, by the real game's own {ROW_SIZE}-wide collection screen:{' '}
-            <strong>10 points</strong> for every row held in full, plus <strong>5 more</strong> for
-            each row of every unbroken streak of two or more full rows — so a run of three and a
-            separate run of two each earn their own bonus, not just the longer of the two — plus{' '}
-            <strong>10 more</strong> for each row held twice over, shown as a blue mark instead of
-            green. Level on score, more full rows outright goes first. Not affected by{' '}
-            <strong>Show</strong>: this is the whole clan. <strong>Owner</strong> narrows which rows
-            are drawn — the rank stays each base's place on the whole board, so it never renumbers.
-          </p>
-        ) : leaderboardView === 'decks' ? (
-          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
-            Every tracked base, by how many of the four decks it holds <strong>outright</strong> — 0
-            through 4, not how far into any one it has got. Level on decks complete, more{' '}
-            <strong>doubled</strong> decks — every card in a deck held twice, marked{' '}
-            <strong>×2</strong> on its chip — goes first, then more distinct cards held overall. Not
-            affected by <strong>Show</strong>: this is the whole clan. <strong>Owner</strong> narrows
-            which rows are drawn — the rank stays each base's place on the whole board, so it never
-            renumbers.
-          </p>
-        ) : leaderboardView === 'spares' ? (
-          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
-            Every tracked base, by <strong>tradeable spares</strong> — copies beyond the one kept of
-            each card, summed across all {totals.length}. A base never counts its last copy. Level
-            on spares, more spare variety (distinct cards with a spare) goes first. Not affected by{' '}
-            <strong>Show</strong>: this is the whole clan. <strong>Owner</strong> narrows which rows
-            are drawn — the rank stays each base's place on the whole board, so it never renumbers.
-          </p>
-        ) : (
-          <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
-            Every tracked base, by <strong>completed trades</strong> — the Trade Tracker's own board,
-            counted by base rather than by owner, so running several bases does not inflate the
-            count. Level on trades, more distinct trading partners goes first. Not affected by{' '}
-            <strong>Show</strong>: this is the whole clan. <strong>Owner</strong> narrows which rows
-            are drawn — the rank stays each base's place on the whole board, so it never renumbers.
-          </p>
-        )}
+        {leaderboardBoards[leaderboardView].intro}
 
-        {leaderboardView === 'overall' ? (
-          <Leaderboard rows={standings} ariaLabel="Collection leaderboard" columns={OVERALL_COLUMNS} />
-        ) : leaderboardView === 'rarity' ? (
-          <Leaderboard
-            rows={rarityRankings}
-            ariaLabel="Rarity leaderboard"
-            columns={RARITY_COLUMNS}
-          />
-        ) : leaderboardView === 'category' ? (
-          <Leaderboard
-            rows={categoryRankings[leaderboardCategory]}
-            ariaLabel={`${leaderboardCategory} leaderboard`}
-            columns={CATEGORY_COLUMNS}
-            filters={
-              /* Same slot Owner already sits in, reused rather than a second filter
-                 row — see `Leaderboard`'s own doc for why `filters` draws unconditionally
-                 whenever it is passed at all: the four decks are always a real choice. */
-              <label htmlFor="leaderboard-category">
-                Deck
-                <select
-                  id="leaderboard-category"
-                  value={leaderboardCategory}
-                  onChange={(event) =>
-                    setLeaderboardCategory(event.target.value as CardCategory)
-                  }
-                >
-                  {cardCategoriesInOrder().map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            }
-          />
-        ) : leaderboardView === 'rows' ? (
-          <Leaderboard rows={rowRankings} ariaLabel="Full rows leaderboard" columns={ROWS_COLUMNS} />
-        ) : leaderboardView === 'decks' ? (
-          <Leaderboard
-            rows={deckRankings}
-            ariaLabel="Full decks leaderboard"
-            columns={DECKS_COLUMNS}
-          />
-        ) : leaderboardView === 'spares' ? (
-          <Leaderboard
-            rows={spareRankings}
-            ariaLabel="Spares on hand leaderboard"
-            columns={SPARES_COLUMNS}
-          />
-        ) : (
-          <Leaderboard
-            rows={traderRankings}
-            ariaLabel="Most active trader leaderboard"
-            columns={TRADERS_COLUMNS}
-          />
-        )}
+        {leaderboardBoards[leaderboardView].board}
 
         <details className="group">
           <summary>{leaderboardView === 'overall' ? 'How the points work' : 'How this board scores'}</summary>
-          <div className="group__body help-prose">
-            {leaderboardView === 'overall' ? (
-              <ScoringRules />
-            ) : leaderboardView === 'rarity' ? (
-              <RarityScoringRules />
-            ) : leaderboardView === 'category' ? (
-              <CategoryScoringRules />
-            ) : leaderboardView === 'rows' ? (
-              <RowScoringRules />
-            ) : leaderboardView === 'decks' ? (
-              <DeckCompletionScoringRules />
-            ) : leaderboardView === 'spares' ? (
-              <SpareScoringRules />
-            ) : (
-              <TraderScoringRules />
-            )}
-          </div>
+          <div className="group__body help-prose">{leaderboardBoards[leaderboardView].scoringRules}</div>
         </details>
       </section>
 

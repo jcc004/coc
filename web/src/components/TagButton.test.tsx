@@ -13,7 +13,12 @@ describe('TagButton', () => {
     render(<TagButton tag="#ABC123" />)
 
     await user.click(screen.getByRole('button'))
-    await screen.findByText(/· copied/)
+    const confirmation = await screen.findByText(/· copied/)
+
+    // The confirmation is inside its own `aria-live="polite"` region, so a screen
+    // reader announces "copied" rather than the button's label silently changing —
+    // same treatment as `BaseCardEditor.tsx`'s "Saving…" indicator.
+    assert.equal(confirmation.getAttribute('aria-live'), 'polite')
   })
 
   it('clears its confirmation timer on unmount, so a late navigation cannot set state on it', async () => {

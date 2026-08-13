@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { MIN_PASSWORD_LENGTH, type SessionUser } from '@coc/shared'
 import { api, describe } from '../api.ts'
 import { PasswordField } from './primitives.tsx'
@@ -28,6 +28,21 @@ export function ForcedPasswordChange({
   const [confirm, setConfirm] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /**
+   * The server's own count of *other* sessions this change just signed out —
+   * `api.changePassword`'s real `revokedSessions`, not the generic "signs out
+   * every other session" claim the form states going in. Set only on success,
+   * and only for the brief window before {@link onChanged} unmounts this
+   * screen; there is nowhere else on the page this number could be shown.
+   */
+  const [revokedSessions, setRevokedSessions] = useState<number | null>(null)
+  const continueTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  // Cleared on unmount, the same guard `TagButton.tsx` uses for its own transient
+  // confirmation timer: this component can be torn down (a sign-out elsewhere in
+  // the tab, a hot reload) before the timer fires, and firing `onChanged` after
+  // that would be a state update with nothing left to receive it.
+  useEffect(() => () => clearTimeout(continueTimer.current), [])
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault()
@@ -45,14 +60,24 @@ export function ForcedPasswordChange({
     setBusy(true)
     setProblem(null)
     try {
-      await api.changePassword(current, next)
+      const result = await api.changePassword(current, next)
       /*
        * A 200 here means the server cleared the flag, so the local copy can be
        * flipped rather than costing another round trip to /api/auth/me. Only on
        * success — reporting a change that did not happen would drop somebody into
        * an app whose every request 403s, with no explanation on screen.
+       *
+       * `onChanged` is delayed a beat rather than fired in the same tick as the
+       * 200: the server's `revokedSessions` is real, per-change information, and
+       * showing it for a moment before navigating away is the only place on this
+       * screen it can be read at all — this component navigates itself away on
+       * success, so there is no persistent settings screen it could be logged to
+       * instead.
        */
-      onChanged({ ...user, mustChangePassword: false })
+      setRevokedSessions(result.revokedSessions)
+      continueTimer.current = setTimeout(() => {
+        onChanged({ ...user, mustChangePassword: false })
+      }, 1500)
     } catch (cause) {
       setProblem(describe(cause))
       setBusy(false)
@@ -92,34 +117,48 @@ export function ForcedPasswordChange({
           </div>
         ) : null}
 
-        <form className="search search--stacked" onSubmit={(event) => void submit(event)}>
-          {/* `current-password` is right for the temporary one: it *is* the
-              current credential, and a password manager should offer what it has
-              stored rather than try to save this throwaway value as the new one. */}
-          <PasswordField
-            label="Temporary password"
-            value={current}
-            onChange={setCurrent}
-            autoComplete="current-password"
-            autoFocus
-          />
-          <PasswordField
-            label="New password"
-            placeholder={`New password (at least ${MIN_PASSWORD_LENGTH} characters)`}
-            value={next}
-            onChange={setNext}
-            autoComplete="new-password"
-          />
-          <PasswordField
-            label="Repeat new password"
-            value={confirm}
-            onChange={setConfirm}
-            autoComplete="new-password"
-          />
-          <button type="submit" disabled={busy || !current || !next}>
-            {busy ? 'Saving…' : 'Set password and continue'}
-          </button>
-        </form>
+        {revokedSessions === null ? (
+          <form className="search search--stacked" onSubmit={(event) => void submit(event)}>
+            {/* `current-password` is right for the temporary one: it *is* the
+                current credential, and a password manager should offer what it has
+                stored rather than try to save this throwaway value as the new one. */}
+            <PasswordField
+              label="Temporary password"
+              value={current}
+              onChange={setCurrent}
+              autoComplete="current-password"
+              autoFocus
+            />
+            <PasswordField
+              label="New password"
+              placeholder={`New password (at least ${MIN_PASSWORD_LENGTH} characters)`}
+              value={next}
+              onChange={setNext}
+              autoComplete="new-password"
+            />
+            <PasswordField
+              label="Repeat new password"
+              value={confirm}
+              onChange={setConfirm}
+              autoComplete="new-password"
+            />
+            <button type="submit" disabled={busy || !current || !next || !confirm}>
+              {busy ? 'Saving…' : 'Set password and continue'}
+            </button>
+          </form>
+        ) : (
+          /* Replaces the form rather than sitting beside it: the password fields have
+             already done their job and there is nothing left to submit. `aria-live`
+             so the confirmation is announced the same way `BaseCardEditor.tsx`'s
+             "Saving…" indicator and `TagButton.tsx`'s copy confirmation are. */
+          <div className="notice" aria-live="polite">
+            <p className="notice__body">
+              Password changed. Signed out {revokedSessions}{' '}
+              {revokedSessions === 1 ? 'other session' : 'other sessions'}, including any the
+              admin's reset left behind.
+            </p>
+          </div>
+        )}
       </section>
     </div>
   )
