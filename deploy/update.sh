@@ -632,9 +632,23 @@ else
   info "local  $(git log --oneline -1 HEAD)"
   info "remote $(git log --oneline -1 "origin/$BRANCH")"
 
+  # "Up to date" means the checkout matches origin AND $LAST_GOOD says the commit it
+  # is on actually finished deploying — not just that the SHA has not moved since
+  # last time. The fast-forward below and `npm ci` are not atomic: if the install
+  # dies (a network blip, a registry outage), the branch has already advanced, and
+  # comparing only local_sha to remote_sha would find them equal on the very next
+  # tick and report "already up to date" — forever, with the broken install never
+  # retried, exactly the trap this project's own CLAUDE.md records under Deploying.
+  # $LAST_GOOD is written only after a full success, so checking it too is what
+  # turns that silent-forever failure into a retry on the next timer tick instead.
+  last_good_sha="$(cat "$LAST_GOOD" 2>/dev/null || true)"
   if [[ "$local_sha" == "$remote_sha" && "$FORCE" == 0 ]]; then
-    say "Already up to date — nothing to do"
-    exit 0
+    if [[ "$local_sha" == "$last_good_sha" ]]; then
+      say "Already up to date — nothing to do"
+      exit 0
+    fi
+    info "checkout already matches origin/$BRANCH, but the last attempt at this"
+    info "commit did not finish — retrying rather than doing nothing"
   fi
 fi
 
@@ -645,10 +659,26 @@ mkdir -p "$BACKUP_DIR"
 stamp="$(date +%Y%m%d-%H%M%S)"
 if [[ -f server/data/coc.db ]]; then
   fresh_backup=""
+  # sudo, unlike everywhere else in this file: coc.service's own UMask=0077 means
+  # the database and its WAL are readable by their owner alone (see that unit's
+  # comment on why — they hold password hashes), and once the app runs as its own
+  # dedicated account rather than this one, that owner is not this process. Root
+  # is the only identity that can read them without loosening a permission the
+  # unit set deliberately. The destination file this writes lands root-owned at
+  # the standard 644, which is why nothing downstream (rotate_backups' `rm`, the
+  # rsync read below) needs a matching chown: a directory's own write permission
+  # governs deleting a file inside it regardless of who owns the file, and 644 is
+  # readable by anyone.
+  #
+  # A single-user install that has not moved the service to its own account (see
+  # deploy/README.md's "A dedicated service user") has this account owning the
+  # database already, so `sudo` here costs nothing — root can always read what
+  # this user already could.
+  #
   # .backup folds the write-ahead log into one consistent file and is safe while
   # the service is running; copying coc.db alone would leave the WAL behind.
   if command -v sqlite3 >/dev/null 2>&1; then
-    sqlite3 server/data/coc.db ".backup '$BACKUP_DIR/coc-$stamp.db'"
+    sudo sqlite3 server/data/coc.db ".backup '$BACKUP_DIR/coc-$stamp.db'"
     # The outcome, not the exit code. sqlite3 has been known to exit 0 having written
     # nothing when the destination is unwritable, and the retention policy below is
     # about to decide what to delete on the strength of this file existing.
@@ -658,7 +688,14 @@ Check the disk and the permissions on $BACKUP_DIR."
     fresh_backup="coc-$stamp.db"
     info "$BACKUP_DIR/coc-$stamp.db"
   else
-    cp server/data/coc.db* "$BACKUP_DIR/" 2>/dev/null || true
+    # Same reason the sqlite3 branch above needs it: the files may belong to a
+    # dedicated service account this one cannot read directly. `cp` preserves the
+    # source's own mode bits, so the copies land exactly as unreadable as the
+    # originals unless handed back explicitly — sqlite3's `.backup` above does not
+    # have this problem, since it creates a fresh file rather than copying one.
+    sudo cp server/data/coc.db* "$BACKUP_DIR/" 2>/dev/null || true
+    sudo chown "$(id -u):$(id -g)" "$BACKUP_DIR"/coc.db* 2>/dev/null || true
+    sudo chmod 600 "$BACKUP_DIR"/coc.db* 2>/dev/null || true
     info "copied raw db files (sqlite3 not installed, so the WAL may lag)"
     # Those land as coc.db / coc.db-wal, with no stamp, so retention cannot place
     # them in a generation and deliberately leaves them alone. fresh_backup stays

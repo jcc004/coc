@@ -44,11 +44,13 @@ jobs:
       # week and report the change as a failure on a commit that did not cause it.
       # It is 22 rather than 24 because production is: deploy/README.md installs Node
       # from deb.nodesource.com/setup_22.x, and CI is only worth trusting where it runs
-      # the major the droplet runs. Keep this equal to .nvmrc — Renovate moves the two
-      # together and cannot raise them past 22.x (.github/renovate.json).
+      # the major the droplet runs. Read straight from .nvmrc so there is nothing left to
+      # keep in sync by hand — Renovate still bumps both together
+      # (.github/renovate.json), but a hand-edit of .nvmrc alone now takes effect here
+      # too, instead of silently diverging until the next Renovate run.
       - uses: actions/setup-node@v4
         with:
-          node-version: '22.23.2'
+          node-version-file: .nvmrc
           cache: npm
 
       # ci, not install: exactly the lockfile, and it never rewrites it.

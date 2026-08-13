@@ -9,8 +9,8 @@
 #   systemctl list-timers coc-update       # when it next fires
 #   journalctl -u coc-update -n 40         # what the last run did
 #
-# It still needs the sudoers rule for the restart — see the note in
-# .github/workflows/deploy.yml, which applies identically here.
+# It still needs the sudoers rule for the restart — see deploy/README.md's
+# "Either way, one sudoers rule" section, which applies identically here.
 
 [Unit]
 Description=Update the CoC app to origin/main if it has moved

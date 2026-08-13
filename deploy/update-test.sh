@@ -46,9 +46,18 @@ mkdir -p "$SB/bin" "$SB/origin" "$SB/home"
 
 cat > "$SB/bin/sudo" <<'STUB'
 #!/usr/bin/env bash
-# The only sudo the script uses is `systemctl restart coc`, and there is nothing
-# here to restart.
-exit 0
+# Real sudo, minus the privilege: this sandbox runs as one user throughout, so
+# there is nothing to elevate to and no real systemd to talk to.
+#
+# `systemctl restart coc` is a no-op — nothing here to restart. Everything else
+# `sudo` is asked to run (the backup step's sqlite3/cp, needed once the app runs
+# as its own dedicated account and its files stop being readable to this one) is
+# executed for real, so that logic is actually exercised rather than silently
+# skipped the way a blanket no-op would skip it.
+if [[ "${1:-}" == "systemctl" ]]; then
+  exit 0
+fi
+exec "$@"
 STUB
 
 cat > "$SB/bin/npm" <<'STUB'
@@ -357,6 +366,51 @@ check "the copy is removed on the failure path too" "$(copy_cleaned "$SB/d11.log
 check "no copies left behind by any run so far" "$(temp_left)" "0"
 
 mv "$SB/bin/npm.real" "$SB/bin/npm"
+
+banner "22. npm ci fails outright after the fast-forward, and the next run retries"
+# The fast-forward and the install are not atomic. If npm ci dies, the branch has
+# already moved — and comparing only local_sha to remote_sha on the next tick would
+# find them equal and report "already up to date" forever, with the broken install
+# never retried. This is the trap CLAUDE.md's Deploying section records.
+push_upstream v4-flaky-install "fix commit four"
+# Not `git rev-parse origin/main` here: $HOST's remote-tracking ref is only as fresh
+# as its last fetch, which has not happened yet — push_upstream pushed from $DEV,
+# straight to the bare origin, without touching $HOST's own idea of origin/main.
+prev_last_good="$(cat .deploy-last-good-sha 2>/dev/null || true)"
+
+cp "$SB/bin/npm" "$SB/bin/npm.real"
+cat > "$SB/bin/npm" <<'BROKEN'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "ci" ]]; then
+  echo "npm ERR! network timeout" >&2
+  exit 1
+fi
+exit 0
+BROKEN
+chmod +x "$SB/bin/npm"
+
+./deploy/update.sh > "$SB/d22a.log" 2>&1
+check "the broken install run fails" "$?" "1"
+# update.sh's own fetch-then-merge already ran before npm ci did, so HEAD is now
+# usable as "the commit that got stuck" — the same pattern scenario 2 uses above.
+stuck_sha="$(git rev-parse HEAD)"
+check "the fast-forward still happened" "$(cat app.txt)" "v4-flaky-install"
+check "last-good was NOT advanced" "$(cat .deploy-last-good-sha 2>/dev/null || true)" "$prev_last_good"
+
+mv "$SB/bin/npm.real" "$SB/bin/npm"
+
+./deploy/update.sh > "$SB/d22b.log" 2>&1
+check "the retry succeeds, with npm working again" "$?" "0"
+# The full sentence, not just "Already up to date" — `git merge --ff-only` prints
+# that substring on its own whenever HEAD is already at the target (as it is here),
+# which is expected and harmless; only the script's own early-exit message ("...—
+# nothing to do") would mean the retry never actually happened.
+grep -q "Already up to date — nothing to do" "$SB/d22b.log"
+check "does not report already up to date" "$?" "1"
+grep -q "did not finish — retrying" "$SB/d22b.log"
+check "says why it is retrying" "$?" "0"
+check "last-good now covers the commit that was stuck" "$(cat .deploy-last-good-sha)" "$stuck_sha"
+check "the site now serves the fix" "$(cat app.txt)" "v4-flaky-install"
 
 banner "8. an unknown option is rejected rather than ignored"
 ./deploy/update.sh --nonsense > "$SB/d10.log" 2>&1

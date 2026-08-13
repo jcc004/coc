@@ -762,11 +762,15 @@ the fix rather than assuming production is protected.
 
 ### Either way, one sudoers rule
 
-The script restarts a service, so it needs passwordless `sudo` for exactly that:
+The script restarts a service, so it needs passwordless `sudo` for exactly that —
+plus, if "A dedicated service user" above has been applied, the two commands the
+backup step uses to read a database it no longer owns directly (see that section's
+own note on why):
 
 ```bash
 sudo visudo -f /etc/sudoers.d/coc-deploy
-# deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart coc, /usr/bin/systemctl reload nginx
+# deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart coc, /usr/bin/systemctl reload nginx, \
+#   /usr/bin/sqlite3 /srv/coc/server/data/coc.db *, /bin/cp /srv/coc/server/data/coc.db* *
 sudo -n systemctl restart coc     # must not prompt
 ```
 
