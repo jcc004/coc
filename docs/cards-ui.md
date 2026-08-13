@@ -20,7 +20,9 @@ the three panels under them are the whole clan and are deliberately *not* filter
 4. **Cards across the clan** — an expandable copy of the same grid, every tile badged with the
    clan's total, and every tile a button: press one for the bases holding that card. Grid order by
    default; an opt-in sort control can rank it by total instead — see
-   [A sort control, opt-in](#a-sort-control-opt-in).
+   [A sort control, opt-in](#a-sort-control-opt-in). A second `Read as` picker switches the whole
+   grid between that reading (**Totals**) and **Trade Fodder** — which cards are safe to give away
+   — see [Read as: Totals or Trade Fodder](#read-as-totals-or-trade-fodder).
 
 **Trades sit directly under the grid** because the spares you have just typed in are what the
 suggestions are made of, and because they are the only panel on the page that asks you to *do*
@@ -628,7 +630,7 @@ its own columns beyond that:
 |---|---|---|
 | Overall | Points, Cards (`n/60` + meter), Copies, Last updated | Points — see above |
 | Rarity | Rarity score, Cards (`n/60` + meter) | Sum of `rarityPoints()` over distinct cards held, weighted by clan-wide scarcity right now |
-| Full rows | Full rows (`n/10` + ten fill marks, blue where doubled), Doubled, Streak rows, Score | `fullRowCount × 10 + streakRows × 5 + doubleRowCount × 10` over the real game's six-wide rows — `streakRows` sums every run of ≥2 consecutive full rows, not just the longest |
+| Full rows | Full rows (`n/10` + ten fill marks, blue where doubled), Doubled, Streak bonus, Score | `fullRowCount × 10 + streakBonus + doubleRowCount × 10` over the real game's six-wide rows — `streakBonus` sums, over every run of ≥2 consecutive full rows, that run's adjacent-pair count (`n × (n − 1) / 2`) × 5, so one longer run outscores several shorter runs of the same total row count (`web/src/row-standings.ts`) |
 | By category | Cards (`n`/deck size + meter, `×2` when doubled), Points | Distinct cards held **within the chosen deck**, computed separately per deck; a doubled deck (every card held ≥2×) breaks a tie on distinct, then points breaks what's left |
 | Full decks | Decks complete (`n/4`), Which decks (deck-colored chips, `×2` when doubled), Doubled (`n/4`), Distinct cards | How many of the four decks are held outright; a doubled deck (every card in it held ≥2×) breaks a tie on decks complete, then distinct cards breaks what's left |
 | Spares on hand | Spares, Spare variety | Tradeable spares (copies beyond the one kept) summed across all 60 |
@@ -894,6 +896,50 @@ previous sort instead of replacing it.
 It stays **collapsed** because sixty more tiles left open would push everything above them off a
 phone. It costs no extra art either way: measured, its sixty image URLs are byte-for-byte the entry
 grid's, so opening it adds no requests, only the drawing.
+
+### Read as: Totals or Trade Fodder
+
+A second small select, `Read as` (`.row-limit`, same as `Sort` beside it, `web/src/components/
+CardsView.tsx` around `card-total-view`), switches the **same sixty tiles** between two readings:
+
+- **Totals** — the panel as it has always worked, described above: every tile's badge is the
+  clan-wide count, grayscale is "nobody holds it."
+- **Trade Fodder** — the same tiles answering a different question: not "how many does the clan
+  hold" but "which of these is safe to give away." A card is **held** — drawn in color, same as
+  `CardTile`'s `held` prop everywhere else — only once **every reporting base already has at least
+  one copy**; its badge is then the *surplus* past that one-per-base floor, i.e.
+  `total - reporting`, so `×0` means "held by everyone, nothing spare yet" and a higher number is
+  the easy fodder to give away. A card even one reporting base still needs is grayscale with **no**
+  badge, the same visual state Totals uses for "nobody holds it" — but the meaning inverts: here it
+  means "somebody still needs this," not "nobody has it." The panel's own paragraph is two entirely
+  separate texts, not one ternary-patched paragraph, precisely because that inversion would read as
+  a hedge if stated in one sentence covering both.
+
+**`Read as` is not labeled `View`.** The collection leaderboard above already has a control by that
+exact name (`#leaderboard-view`), and both are mounted on the page at once — a second `View` would
+give two controls one accessible name, which is what an ambiguous-match test failure caught before
+this shipped. `Read as` also says more plainly what the control changes: how the same tiles are
+*read*, not which tiles are shown.
+
+**Independent of `Sort` beside it.** Switching `Read as` does not reset `Sort`, and vice versa —
+`Sort` still ranks the grid by `total` (`sortCardTotalsForDisplay`) in both readings, never by Trade
+Fodder's own `extra`. Giving `Sort` a second sortable value per reading is a real feature and was
+considered; it is not this one, so a Trade Fodder reader who wants "most spare first" today has to
+scan for it rather than sort for it.
+
+**The rule, not just the tile paint, lives in `web/src/trade-fodder.ts`** — `tradeFodder()`,
+pure and tested (`trade-fodder.test.ts`), reusing `cardDemand()` from `card-holders.ts` rather than
+re-deriving "does every base hold it" a third time: `needing === 0` from that function **is** "held
+by everyone," not a restatement that could drift from its own rule for what counts as a reporting
+base. Zero reporting bases is treated as *not* held despite `needing` coming back vacuously `0` too
+— the same trap `CardHolders`' own `bases.length > 0` guard exists to avoid elsewhere on this page.
+
+Pressing a tile does the same thing in both readings: it opens the same "who holds it / who still
+needs it" table below the grid (see [Who still needs a card](#who-still-needs-a-card) and
+[Who holds a card](#who-holds-a-card)), unaffected by which reading is active.
+
+The choice is remembered per browser at `coc:cardTotalView`, the same `localStorage` mechanism as
+`Sort`'s own `coc:cardTotalSort`.
 
 ### Who still needs a card
 

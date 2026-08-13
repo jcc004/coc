@@ -100,6 +100,14 @@ export function HelpView({ section }: { section: HelpSectionId | null }) {
           <em>is</em> a base.
         </p>
         <CardEntryRules />
+        <p className="empty-hint">
+          This is the one that catches people out on the totals panel: its <strong>Read as</strong>{' '}
+          picker shows the same sixty tiles two ways. <strong>Totals</strong> grays out a card
+          nobody in the clan holds. <strong>Trade Fodder</strong> grays out a card <em>anyone still
+          needs</em> instead, and colors in only what every base already has — with the badge
+          showing the spare copies free to give away. Gray-with-no-badge means the opposite thing
+          depending on which is chosen, so check the picker before reading the color.
+        </p>
       </HelpSection>
 
       <HelpSection id="owners">

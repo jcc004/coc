@@ -126,7 +126,7 @@ describe('rowScoreFor — the score, from a level-per-row reading', () => {
     assert.deepEqual(rowScoreFor(levels({})), {
       fullRowCount: 0,
       doubleRowCount: 0,
-      streakRows: 0,
+      streakBonus: 0,
       score: 0,
     })
   })
@@ -135,7 +135,7 @@ describe('rowScoreFor — the score, from a level-per-row reading', () => {
     assert.deepEqual(rowScoreFor(levels({ 0: 'full' })), {
       fullRowCount: 1,
       doubleRowCount: 0,
-      streakRows: 0,
+      streakBonus: 0,
       score: 10,
     })
   })
@@ -146,28 +146,29 @@ describe('rowScoreFor — the score, from a level-per-row reading', () => {
     assert.deepEqual(rowScoreFor(levels({ 0: 'full', 2: 'full' })), {
       fullRowCount: 2,
       doubleRowCount: 0,
-      streakRows: 0,
+      streakBonus: 0,
       score: 20,
     })
   })
 
-  it('scores two adjacent full rows as 20 + 10, one streak of two', () => {
+  it('scores two adjacent full rows as 20 + 5, one streak of two — one adjacent pair', () => {
     assert.deepEqual(rowScoreFor(levels({ 0: 'full', 1: 'full' })), {
       fullRowCount: 2,
       doubleRowCount: 0,
-      streakRows: 2,
-      score: 30,
+      streakBonus: 5,
+      score: 25,
     })
   })
 
   it('sums every qualifying streak, not just the longest', () => {
     // Runs of 1, 3 and 2 — the run of 1 contributes nothing, the other two both do.
+    // 3 pairs in the run of three, 1 pair in the run of two: (3 + 1) × 5 = 20.
     const rowLevels = levels({ 0: 'full', 2: 'full', 3: 'full', 4: 'full', 6: 'full', 7: 'full' })
     assert.deepEqual(rowScoreFor(rowLevels), {
       fullRowCount: 6,
       doubleRowCount: 0,
-      streakRows: 5, // 3 + 2
-      score: 85, // 60 + 25
+      streakBonus: 20,
+      score: 80, // 60 + 20
     })
   })
 
@@ -175,16 +176,27 @@ describe('rowScoreFor — the score, from a level-per-row reading', () => {
    * The exact shape reported live, 2026-08-12: two bases each with 5 of 10 rows
    * full. One as a run of three plus two rows on their own (no streak bonus for
    * either) — the other as a run of three plus a *separate* run of two, both
-   * qualifying. The previous longest-run-only formula scored these identically
-   * (65 for both); summing every qualifying run is what tells them apart.
+   * qualifying. The then-current longest-run-only formula scored these
+   * identically (65 for both); summing every qualifying run's row count was
+   * the fix at the time, which is what this test originally pinned.
+   *
+   * Reported live again, 2026-08-13: that row-count sum let a run of three plus
+   * a separate run of two (5 rows split into two pieces) outscore a single run
+   * of four or five (4 or 5 rows, unsplit) — see the module doc's worked
+   * examples. `streakBonus` counts adjacent *pairs* within each run instead,
+   * which is convex in run length: a run of three (3 pairs, 15 points) still
+   * beats a run of three plus two isolated rows (also 3 pairs — the isolated
+   * ones form no pair), but a run of three plus a *separate* run of two (3 + 1
+   * = 4 pairs, 20 points) no longer catches up to what an unsplit run of the
+   * same total rows would have scored.
    */
-  it('ranks a run of three plus a separate run of two above a run of three plus two scattered rows', () => {
+  it('still ranks a run of three plus a separate run of two above a run of three plus two scattered rows', () => {
     const scatteredExtra = rowScoreFor(levels({ 0: 'full', 1: 'full', 2: 'full', 5: 'full', 8: 'full' }))
     const secondStreak = rowScoreFor(levels({ 0: 'full', 1: 'full', 2: 'full', 5: 'full', 6: 'full' }))
-    assert.equal(scatteredExtra.streakRows, 3)
+    assert.equal(scatteredExtra.streakBonus, 15) // 3 pairs × 5
     assert.equal(scatteredExtra.score, 65) // 50 + 15
-    assert.equal(secondStreak.streakRows, 5) // 3 + 2
-    assert.equal(secondStreak.score, 75) // 50 + 25
+    assert.equal(secondStreak.streakBonus, 20) // (3 + 1) pairs × 5
+    assert.equal(secondStreak.score, 70) // 50 + 20
     assert.ok(secondStreak.score > scatteredExtra.score)
   })
 
@@ -192,7 +204,7 @@ describe('rowScoreFor — the score, from a level-per-row reading', () => {
     assert.deepEqual(rowScoreFor(levels({ 0: 'double' })), {
       fullRowCount: 1,
       doubleRowCount: 1,
-      streakRows: 0,
+      streakBonus: 0,
       score: 20,
     })
   })
@@ -202,17 +214,18 @@ describe('rowScoreFor — the score, from a level-per-row reading', () => {
     assert.deepEqual(rowScoreFor(rowLevels), {
       fullRowCount: 2,
       doubleRowCount: 1,
-      streakRows: 2,
-      score: 40, // 20 (full×2) + 10 (streak) + 10 (one doubled)
+      streakBonus: 5,
+      score: 35, // 20 (full×2) + 5 (one adjacent pair) + 10 (one doubled)
     })
   })
 
-  it('scores all ten rows doubled as the maximum: 100 + 50 + 100 = 250', () => {
+  it('scores all ten rows doubled as the maximum: 100 + 225 + 100 = 425', () => {
+    // One run of ten: 10 × 9 / 2 = 45 adjacent pairs, at 5 points each.
     assert.deepEqual(rowScoreFor(new Array(10).fill('double') as RowLevel[]), {
       fullRowCount: 10,
       doubleRowCount: 10,
-      streakRows: 10,
-      score: 250,
+      streakBonus: 225,
+      score: 425,
     })
   })
 })
@@ -223,7 +236,7 @@ describe('rowStandings — the leaderboard built on those scores', () => {
     const anna = rows.find((row) => row.label === 'Anna')!
     assert.equal(anna.score, 0)
     assert.equal(anna.fullRowCount, 0)
-    assert.equal(anna.streakRows, 0)
+    assert.equal(anna.streakBonus, 0)
     assert.ok(anna.rowLevels.every((level) => level === 'empty'))
   })
 
@@ -231,7 +244,7 @@ describe('rowStandings — the leaderboard built on those scores', () => {
     const [row] = rowStandings([named('#A', 'Anna')], [base('#A', countsForRows([0]))])
     assert.equal(row?.score, 10)
     assert.equal(row?.fullRowCount, 1)
-    assert.equal(row?.streakRows, 0)
+    assert.equal(row?.streakBonus, 0)
     assert.equal(row?.rowLevels[0], 'full')
     assert.ok(row?.rowLevels.slice(1).every((level) => level === 'empty'))
   })
@@ -239,24 +252,24 @@ describe('rowStandings — the leaderboard built on those scores', () => {
   it('scores two separate full rows as 20, not 20 + a streak bonus', () => {
     const [row] = rowStandings([named('#A', 'Anna')], [base('#A', countsForRows([0, 2]))])
     assert.equal(row?.fullRowCount, 2)
-    assert.equal(row?.streakRows, 0)
+    assert.equal(row?.streakBonus, 0)
     assert.equal(row?.score, 20)
   })
 
-  it('scores two adjacent full rows as 20 + 10, one streak of two', () => {
+  it('scores two adjacent full rows as 20 + 5, one adjacent pair', () => {
     const [row] = rowStandings([named('#A', 'Anna')], [base('#A', countsForRows([0, 1]))])
     assert.equal(row?.fullRowCount, 2)
-    assert.equal(row?.streakRows, 2)
-    assert.equal(row?.score, 30)
+    assert.equal(row?.streakBonus, 5)
+    assert.equal(row?.score, 25)
   })
 
-  it('gives a base holding every card twice the maximum: 10 full rows, all doubled, score 250', () => {
+  it('gives a base holding every card twice the maximum: 10 full rows, all doubled, score 425', () => {
     const all: [number, number][] = GRID.map((card) => [card.id, 2])
     const [row] = rowStandings([named('#A', 'Anna')], [base('#A', all)])
     assert.equal(row?.fullRowCount, 10)
     assert.equal(row?.doubleRowCount, 10)
-    assert.equal(row?.streakRows, 10)
-    assert.equal(row?.score, 250)
+    assert.equal(row?.streakBonus, 225) // 45 adjacent pairs × 5
+    assert.equal(row?.score, 425)
     assert.ok(row?.rowLevels.every((level) => level === 'double'))
   })
 
@@ -274,21 +287,22 @@ describe('rowStandings — the leaderboard built on those scores', () => {
   })
 
   /*
-   * The tie the fullRowCount tiebreak exists for: three full rows as a run of
-   * two plus one on its own (30 + 10 = 40) versus four full rows scattered, no
-   * two adjacent (40 + 0 = 40). Same score, reached two different ways — the
-   * base that completed more rows outright ranks first.
+   * The tie the fullRowCount tiebreak exists for: three full rows as one
+   * unbroken run (3 pairs × 5 = 15, score 30 + 15 = 45) versus four full rows
+   * as a run of two (1 pair × 5 = 5) plus two rows on their own (30 + 10 + 5 =
+   * 45). Same score, reached two different ways — the base that completed
+   * more rows outright ranks first.
    */
   it('breaks a score tie by full-row count, ahead of name', () => {
     const rows = rowStandings(
       [named('#Z', 'Zack'), named('#A', 'Anna')],
       [
-        base('#Z', countsForRows([0, 1, 3])), // a streak of 2 plus one on its own: 30 + 10 = 40
-        base('#A', countsForRows([0, 2, 4, 6])), // four scattered: 40 + 0 = 40
+        base('#Z', countsForRows([0, 1, 2])), // one run of three: 30 + 15 = 45
+        base('#A', countsForRows([0, 1, 4, 7])), // a run of two plus two on their own: 40 + 5 = 45
       ],
     )
-    assert.equal(rows[0]?.score, 40)
-    assert.equal(rows[1]?.score, 40)
+    assert.equal(rows[0]?.score, 45)
+    assert.equal(rows[1]?.score, 45)
     assert.deepEqual(
       rows.map((row) => row.label),
       ['Anna', 'Zack'],

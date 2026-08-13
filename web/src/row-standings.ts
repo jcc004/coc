@@ -21,33 +21,61 @@ import type { GeneratedCard } from './cards.ts'
  * stronger, rarer completion. The score rewards breadth, rows completed
  * *together*, and rows completed twice over:
  *
- *   score = (full rows × 10) + (streak rows × 5) + (doubled rows × 10)
+ *   score = (full rows × 10) + streak bonus + (doubled rows × 10)
  *
- * where **streak rows** is the sum, over every maximal run of consecutive full
- * rows that is at least two long, of that run's own length — not just the
- * longest run. Two bases can hold the same five rows full and still land on
- * different scores depending on how those five are arranged:
+ * where the **streak bonus** is earned per *adjacent pair* of full rows within
+ * a run, not per row in it — a run of length `n` contributes
+ * `n × (n − 1) / 2` pairs (the count of every two-row combination inside that
+ * one unbroken run), each worth {@link STREAK_PAIR_POINTS}, summed across
+ * every qualifying run on the board, not just the longest. A run of one has no
+ * pair and earns nothing beyond its own 10.
  *
- * - five full rows scattered, no two adjacent: streak rows = 0, score = 50.
- * - the same five as one unbroken run: streak rows = 5, score = 50 + 25 = 75.
- * - the same five as a run of three plus a separate run of two: streak rows =
- *   3 + 2 = 5, score = 50 + 25 = 75 — each qualifying run earns its own bonus,
- *   summed, rather than only the single longest run counting. A base with a
- *   run of three plus two rows completed on their own (not adjacent to
- *   anything) only banks the run of three: streak rows = 3, score = 50 + 15 =
- *   65 — an isolated full row earns its 10 points same as any other, but nets
- *   no togetherness bonus on its own; it needs a neighbor.
+ * The pair count grows faster than the row count, so **one longer unbroken
+ * run outscores several shorter runs whose row-counts add up to the same
+ * total or more** — three-of-a-kind beats two-pair. A run of three (3 pairs)
+ * outscores two separate runs of two (1 pair each, 2 total), even though both
+ * shapes complete five full rows between them; a run of four (6 pairs)
+ * outscores two runs of two by a wide margin, rather than tying it the way a
+ * per-row sum would.
+ *
+ * Worked examples:
+ *
+ * - five full rows scattered, no two adjacent: streak bonus = 0, score = 50.
+ * - the same five as one unbroken run of five (10 pairs): streak bonus = 50,
+ *   score = 50 + 50 = 100.
+ * - the same five as a run of three (3 pairs) plus a separate run of two
+ *   (1 pair): streak bonus = (3 + 1) × 5 = 20, score = 50 + 20 = 70 — lower
+ *   than the single run of five, and lower than it would have scored under a
+ *   flat per-row sum (which gave both arrangements 75), because concentration
+ *   now counts for more than raw row total.
+ * - a run of three plus two rows completed on their own, not adjacent to
+ *   anything: streak bonus = 3 × 5 = 15, score = 50 + 15 = 65 — an isolated
+ *   full row still earns its own 10 points, just no pair bonus; it needs a
+ *   neighbor.
  *
  * This is an approved design decision, not something this module re-derives;
  * see the task that produced it for the reasoning behind the exact weights.
  *
  * Reported live, 2026-08-12: two bases each holding 5 of 10 rows, one as a run
  * of three plus two rows scattered, the other as a run of three plus a
- * *separate* run of two, scored identically (65) under the previous
+ * *separate* run of two, scored identically (65) under the then-current
  * longest-run-only formula — the second base's own second streak was not
- * being credited at all. This module's history before that date only ever
- * rewarded the single longest run; the multi-run sum above is what replaced
- * it.
+ * being credited at all. The fix at the time was to sum every qualifying
+ * run's *row count* rather than crediting only the longest — but that summed
+ * a run of three plus one of two (5 total rows) to the same total, and above,
+ * to *more* than a single run of five (also 5 rows) split no further, as a
+ * single run of four (4 rows). Reported live again, 2026-08-13: several bases
+ * with one longer unbroken run were ranking at or below bases with the same or
+ * fewer full rows split into multiple shorter runs — a run of three (Chay)
+ * below two separate runs of two (Lisa_Sweatt6); a run of four (Mad Dogg 2020,
+ * TheGrillMaster) merely tied with two runs of two (foo), the tie then broken
+ * alphabetically; a run of three (bambamrainbow) below the same two-runs-of-two
+ * shape (foo) despite completing the same four rows. The row-count sum from
+ * 2026-08-12 fixed under-crediting a second streak, but treated a run's rows
+ * as separately fungible, which is what let a fragmented shape out-total a
+ * concentrated one of equal or lesser row count. The pair-count bonus above is
+ * what replaced it: convex in run length, so a single run always outscores any
+ * split of the same rows into more than one run.
  */
 
 /** Cards per row on the real game's collection screen — see the module doc. */
@@ -60,11 +88,20 @@ export type RowLevel = 'empty' | 'full' | 'double'
 /** What one full row is worth, on its own — includes a doubled row, which is
  *  full and then some. */
 const FULL_ROW_POINTS = 10
-/** What each row of a qualifying (two-or-longer) streak of full rows adds,
- *  on top of that — summed across every such streak, not just the longest. */
-const STREAK_POINTS = 5
+/** What each adjacent pair of full rows within one unbroken run adds, on top
+ *  of that — a run of length `n` has `n × (n − 1) / 2` such pairs, summed
+ *  across every qualifying (two-or-longer) run on the board, not just the
+ *  longest. See the module doc for why pairs, not rows. */
+const STREAK_PAIR_POINTS = 5
 /** What one doubled row adds, on top of {@link FULL_ROW_POINTS}. */
 const DOUBLE_ROW_POINTS = 10
+
+/** The bonus for one unbroken run of `length` full rows — the count of
+ *  adjacent pairs inside it, at {@link STREAK_PAIR_POINTS} each. Zero for a
+ *  run of one, since a lone row has no pair to form. */
+function streakBonusFor(length: number): number {
+  return ((length * (length - 1)) / 2) * STREAK_PAIR_POINTS
+}
 
 /**
  * `cards`, chunked into the real game's rows of six.
@@ -109,11 +146,12 @@ export interface RowScore {
   fullRowCount: number
   /** How many of the ten rows are doubled: every one of that row's six cards held at least twice. */
   doubleRowCount: number
-  /** Rows counted toward the togetherness bonus: the sum, over every run of
-   *  consecutive full rows that is at least two long, of that run's own
-   *  length — see the module doc. A run of exactly one contributes nothing. */
-  streakRows: number
-  /** `fullRowCount * 10 + streakRows * 5 + doubleRowCount * 10`. */
+  /** The togetherness bonus itself, in points: the sum, over every run of
+   *  consecutive full rows that is at least two long, of that run's adjacent-pair
+   *  count at {@link STREAK_PAIR_POINTS} each — see the module doc for why pairs,
+   *  not rows. A run of exactly one contributes nothing. */
+  streakBonus: number
+  /** `fullRowCount * 10 + streakBonus + doubleRowCount * 10`. */
   score: number
 }
 
@@ -133,11 +171,11 @@ export interface RowScore {
 export function rowScoreFor(rowLevels: readonly RowLevel[]): RowScore {
   let fullRowCount = 0
   let doubleRowCount = 0
-  let streakRows = 0
+  let streakBonus = 0
   let currentStreak = 0
 
   const closeStreak = () => {
-    if (currentStreak >= 2) streakRows += currentStreak
+    streakBonus += streakBonusFor(currentStreak)
     currentStreak = 0
   }
 
@@ -155,9 +193,8 @@ export function rowScoreFor(rowLevels: readonly RowLevel[]): RowScore {
   return {
     fullRowCount,
     doubleRowCount,
-    streakRows,
-    score:
-      fullRowCount * FULL_ROW_POINTS + streakRows * STREAK_POINTS + doubleRowCount * DOUBLE_ROW_POINTS,
+    streakBonus,
+    score: fullRowCount * FULL_ROW_POINTS + streakBonus + doubleRowCount * DOUBLE_ROW_POINTS,
   }
 }
 
@@ -206,8 +243,8 @@ export function rowStandings(
 
   const rows: RowStanding[] = bases.map((base) => {
     const rowLevels = rowLevelsFor(byTag.get(base.tag), cards)
-    const { fullRowCount, doubleRowCount, streakRows, score } = rowScoreFor(rowLevels)
-    return { ...base, rowLevels, fullRowCount, doubleRowCount, streakRows, score, rank: 0 }
+    const { fullRowCount, doubleRowCount, streakBonus, score } = rowScoreFor(rowLevels)
+    return { ...base, rowLevels, fullRowCount, doubleRowCount, streakBonus, score, rank: 0 }
   })
 
   rows.sort(

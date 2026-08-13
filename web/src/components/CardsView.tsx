@@ -43,6 +43,11 @@ import {
   sortCardTotalsForDisplay,
   type CardTotalSort,
 } from '../card-total-sort.ts'
+import {
+  CARD_TOTAL_VIEWS,
+  parseCardTotalView,
+  type CardTotalView,
+} from '../card-total-view.ts'
 import { ALL_CARDS, cardCategoriesInOrder, deckSlug, type GeneratedCard } from '../cards.ts'
 import { categoryStandings, type CategoryStanding } from '../category-standings.ts'
 import { deckCompletionStandings, type DeckCompletionStanding } from '../deck-completion-standings.ts'
@@ -67,6 +72,7 @@ import { rarityStandings, type RarityStanding } from '../rarity-standings.ts'
 import { ROW_SIZE, rowStandings, type RowLevel, type RowStanding } from '../row-standings.ts'
 import { paginate, type RowLimit } from '../saved-table.ts'
 import { spareStandings, type SpareStanding } from '../spares-standings.ts'
+import { tradeFodder, type TradeFodderEntry } from '../trade-fodder.ts'
 import { traderStandings, type TraderStanding } from '../trader-standings.ts'
 import { useTrades } from '../trades.ts'
 import { useCardRefresh } from '../use-card-refresh.ts'
@@ -392,9 +398,9 @@ const ROWS_COLUMNS: LeaderboardColumn<RowStanding>[] = [
   },
   {
     key: 'streak',
-    label: 'Streak rows',
+    label: 'Streak bonus',
     numeric: true,
-    cell: (row) => formatFull(row.streakRows),
+    cell: (row) => formatFull(row.streakBonus),
   },
   {
     key: 'score',
@@ -701,6 +707,21 @@ function heldAcrossTheClan(total: number): string {
 }
 
 /**
+ * How a `TradeFodderEntry` reads in words — the Trade Fodder view's own version of
+ * `heldAcrossTheClan` above, for the same tile in the same grid read a different
+ * way. `held`/`extra` already carry the actual rule (`tradeFodder()`,
+ * `trade-fodder.ts`); this only says it in a sentence, the same split every other
+ * one-line sentence on this page (`holdersLine`, `needingLine`) already keeps
+ * between the pure module that decides and the component file that phrases it.
+ */
+function tradeFodderSummary(entry: TradeFodderEntry): string {
+  if (!entry.held) return 'not held by every base yet'
+  return entry.extra > 0
+    ? `${entry.extra} spare once everyone has one`
+    : 'held by every base, no spares yet'
+}
+
+/**
  * Every card, and how many copies the whole group holds between them — as the
  * **same tile grid** the base above is entered in.
  *
@@ -794,13 +815,25 @@ function CardTotalPick({
   total,
   isPicked,
   onPick,
+  fodder,
 }: {
   card: GeneratedCard
   total: number
   isPicked: boolean
   onPick: (cardId: number | null) => void
+  /**
+   * This card's Trade Fodder reading, present exactly when the panel's View
+   * picker is on `'fodder'` — `undefined` for the Totals view, unchanged from
+   * before this prop existed. Presence alone decides which of `held`/`badge`
+   * below this tile draws; there is no separate `view` prop to keep in sync
+   * with it.
+   */
+  fodder?: TradeFodderEntry
 }) {
-  const held = heldAcrossTheClan(total)
+  const held = fodder === undefined ? total > 0 : fodder.held
+  const badge =
+    fodder === undefined ? (total > 0 ? `×${total}` : undefined) : held ? `×${fodder.extra}` : undefined
+  const summary = fodder === undefined ? heldAcrossTheClan(total) : tradeFodderSummary(fodder)
   return (
     <button
       type="button"
@@ -815,13 +848,13 @@ function CardTotalPick({
     >
       <CardTile
         card={card}
-        held={total > 0}
-        badge={total > 0 ? `×${total}` : undefined}
-        title={`${card.name} · ${card.category} · ${held}`}
+        held={held}
+        badge={badge}
+        title={`${card.name} · ${card.category} · ${summary}`}
         /* The tile's own name, because nothing inside it is a control that
-           could carry one — and because it is where the zero is said in
-           words. */
-        label={`${card.name}, ${card.category} — ${held}`}
+           could carry one — and because it is where the zero (or "not held by
+           every base yet") is said in words. */
+        label={`${card.name}, ${card.category} — ${summary}`}
       />
     </button>
   )
@@ -833,12 +866,20 @@ function CardTotalsGrid({
   picked,
   onPick,
   grouped,
+  fodderById,
 }: {
   totals: CardTotal[]
   columns: number
   /** The card whose holders are shown below, or `null` for none. */
   picked: number | null
   onPick: (cardId: number | null) => void
+  /**
+   * This card's Trade Fodder reading, by id — `null` for the Totals view.
+   * Looked up once per tile and handed to `CardTotalPick` as `fodder`; see that
+   * prop's own doc comment for why presence alone is what switches a tile's
+   * rendering, with no separate `view` prop threaded alongside it.
+   */
+  fodderById: ReadonlyMap<number, TradeFodderEntry> | null
   /**
    * Whether to break the grid into per-deck `role="group"` sections with a
    * hidden heading — only correct when `totals` arrives in deck-contiguous
@@ -900,6 +941,7 @@ function CardTotalsGrid({
             total={total}
             isPicked={picked === card.id}
             onPick={onPick}
+            fodder={fodderById?.get(card.id)}
           />
         ))}
       </div>
@@ -922,6 +964,7 @@ function CardTotalsGrid({
                 total={total}
                 isPicked={picked === card.id}
                 onPick={onPick}
+                fodder={fodderById?.get(card.id)}
               />
             ))}
           </div>
@@ -1338,6 +1381,9 @@ function HeadingJumpChip({ label, to }: { label: string; to: CardSectionId }) {
 /** Where the chosen display order for "Cards across the clan" is remembered. */
 const TOTAL_SORT_KEY = 'coc:cardTotalSort'
 
+/** Where the chosen view (Totals or Trade Fodder) for the same panel is remembered. */
+const TOTAL_VIEW_KEY = 'coc:cardTotalView'
+
 /**
  * The chosen display order for "Cards across the clan", remembered per browser —
  * the same mechanism `useRowLimit`/`useCardColumns` use in `hooks.ts` (a reading
@@ -1378,6 +1424,7 @@ function CardTotals({
   bases,
   labelOf,
   grouped,
+  fodderById,
 }: {
   totals: CardTotal[]
   columns: number
@@ -1386,6 +1433,8 @@ function CardTotals({
   /** Passed straight through to `CardTotalsGrid` — see its own doc comment
    *  for why this must be `false` whenever `totals` is not in deck order. */
   grouped: boolean
+  /** Passed straight through to `CardTotalsGrid` — `null` for the Totals view. */
+  fodderById: ReadonlyMap<number, TradeFodderEntry> | null
 }) {
   const [picked, setPicked] = useState<number | null>(null)
   const entry = useMemo(() => totals.find((row) => row.card.id === picked), [totals, picked])
@@ -1398,6 +1447,7 @@ function CardTotals({
         picked={picked}
         onPick={setPicked}
         grouped={grouped}
+        fodderById={fodderById}
       />
       {/* Below the grid, not above it: the tiles are what the panel is, and a table
           that pushed sixty tiles down the page every time one was pressed would move
@@ -1607,6 +1657,25 @@ export function CardsView({ user }: { user: SessionUser }) {
   const sortedTotals = useMemo(
     () => sortCardTotalsForDisplay(totals, totalSort),
     [totals, totalSort],
+  )
+
+  /*
+   * Which reading of the same sixty tiles the panel shows — the clan-wide count
+   * ("Totals", unchanged) or which cards are safe to trade away ("Trade Fodder",
+   * `tradeFodder()` in `trade-fodder.ts`). Independent of `totalSort` above: the
+   * Sort control still ranks `sortedTotals` by `total` in either view, so choosing
+   * Trade Fodder does not lose a Highest/Lowest choice already in effect, and
+   * switching sort does not silently reset the view.
+   */
+  const [totalView, setTotalView] = usePersistedChoice(TOTAL_VIEW_KEY, parseCardTotalView)
+  const fodder = useMemo(() => tradeFodder(sortedTotals, bases), [sortedTotals, bases])
+  const fodderById = useMemo(
+    () => (totalView === 'fodder' ? new Map(fodder.map((entry) => [entry.card.id, entry])) : null),
+    [totalView, fodder],
+  )
+  const notFullyHeldCount = useMemo(
+    () => fodder.filter((entry) => !entry.held).length,
+    [fodder],
   )
 
   const emptyMine = scope === 'mine' && options.length === 0 && tags.length > 0
@@ -2063,13 +2132,19 @@ export function CardsView({ user }: { user: SessionUser }) {
               : `, sorted ${cardTotalSortLabel(totalSort).toLowerCase()}`}
             <span
               className={
-                absentCount > 0 ? 'card-panel__trades card-total__none' : 'card-panel__trades card-meta'
+                (totalView === 'fodder' ? notFullyHeldCount : absentCount) > 0
+                  ? 'card-panel__trades card-total__none'
+                  : 'card-panel__trades card-meta'
               }
             >
               {' · '}
-              {absentCount > 0
-                ? `${absentCount} nobody holds`
-                : 'every card is held by somebody'}
+              {totalView === 'fodder'
+                ? notFullyHeldCount > 0
+                  ? `${notFullyHeldCount} not held by every base`
+                  : 'every card is held by every base'
+                : absentCount > 0
+                  ? `${absentCount} nobody holds`
+                  : 'every card is held by somebody'}
             </span>
           </summary>
           <div className="group__body">
@@ -2082,7 +2157,42 @@ export function CardsView({ user }: { user: SessionUser }) {
              * `card-total-sort.ts` — not a quiet reversal of it, which is why the
              * summary line and the paragraph below both say out loud when it is
              * in effect.
+             *
+             * Labeled `Read as`, not `View` — the collection leaderboard above
+             * already has a control literally called `View` (`leaderboard-view`),
+             * and both are mounted on this same page at once, so a second `View`
+             * would be two controls sharing one accessible name a screen reader,
+             * and `getByLabelText`, cannot tell apart. `Read as` also says more
+             * plainly what the control does: it changes how the *same* sixty
+             * tiles are read, not which tiles are shown.
+             *
+             * It sits before `Sort`, deciding *what the tiles mean* before `Sort`
+             * decides *what order they're in* — the two are independent:
+             * switching this leaves whatever Sort was already chosen in place,
+             * and vice versa. `Sort` itself is untouched by the addition — it
+             * still ranks `sortedTotals` by `total` (`sortCardTotalsForDisplay`),
+             * never by the Trade Fodder view's own `extra`, a deliberate scope
+             * decision rather than a gap: giving `Sort` a second sortable value
+             * per view is a real feature, just not this one.
              */}
+            <label
+              className="row-limit"
+              htmlFor="card-total-view"
+              style={{ marginBottom: 12 }}
+            >
+              Read as
+              <select
+                id="card-total-view"
+                value={totalView}
+                onChange={(event) => setTotalView(event.target.value as CardTotalView)}
+              >
+                {CARD_TOTAL_VIEWS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label
               className="row-limit"
               htmlFor="card-total-sort"
@@ -2104,29 +2214,50 @@ export function CardsView({ user }: { user: SessionUser }) {
             {/* The last sentence is what tells anybody the tiles are pressable. A grid
                 of sixty buttons has no other affordance at this size — there is no room
                 for a caption on a 52px tile — so the panel says it once, in the line
-                that is already explaining what the badges mean. */}
-            <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
-              The same grid as above, with the copies held across <strong>every</strong> tracked
-              base — linked to an account or not — as the badge in each tile's corner.{' '}
-              {totalSort === 'default' ? (
-                <>The order is the grid's, so the two can be read tile for tile.</>
-              ) : (
-                <>
-                  Sorted by clan-wide total ({cardTotalSortLabel(totalSort).toLowerCase()}), so
-                  tiles no longer line up with the grid above — choose{' '}
-                  <strong>Grid order</strong> to restore that.
-                </>
-              )}{' '}
-              A tile in <strong>gray with no badge</strong> is a card nobody in the clan holds; it
-              cannot be got by trading, only from the game. <strong>Choose a card</strong> to list
-              the bases holding it below.
-            </p>
+                that is already explaining what the badges mean. Two entirely different
+                paragraphs, not one reused across both `View` states: what gray-with-no-
+                badge *means* inverts between them (nobody holds it, versus somebody
+                still needs it), so a single paragraph patched with a ternary in the
+                middle would read as a hedge instead of a plain statement of the rule
+                actually in effect. */}
+            {totalView === 'fodder' ? (
+              <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+                The same grid as above, reading it a different way: which cards are safe to{' '}
+                <strong>give away</strong> without leaving any tracked base short. A tile in{' '}
+                <strong>gray with no badge</strong> means at least one reporting base does not
+                hold this card yet — keep it, someone still needs it. A tile{' '}
+                <strong>in color</strong> means every reporting base already has one, and its
+                badge is the surplus past that — copies free to trade once everybody's own is
+                accounted for, so <strong>×0</strong> is "held by everyone, nothing spare" and
+                a higher number is easy fodder. <strong>Choose a card</strong> to list the
+                bases holding it below, same as the Totals view.
+              </p>
+            ) : (
+              <p className="empty-hint" style={{ margin: '0 0 12px', fontSize: 13 }}>
+                The same grid as above, with the copies held across <strong>every</strong>{' '}
+                tracked base — linked to an account or not — as the badge in each tile's
+                corner.{' '}
+                {totalSort === 'default' ? (
+                  <>The order is the grid's, so the two can be read tile for tile.</>
+                ) : (
+                  <>
+                    Sorted by clan-wide total ({cardTotalSortLabel(totalSort).toLowerCase()}),
+                    so tiles no longer line up with the grid above — choose{' '}
+                    <strong>Grid order</strong> to restore that.
+                  </>
+                )}{' '}
+                A tile in <strong>gray with no badge</strong> is a card nobody in the clan
+                holds; it cannot be got by trading, only from the game.{' '}
+                <strong>Choose a card</strong> to list the bases holding it below.
+              </p>
+            )}
             <CardTotals
               totals={sortedTotals}
               columns={columns}
               bases={bases}
               labelOf={labelOf}
               grouped={totalSort === 'default'}
+              fodderById={fodderById}
             />
           </div>
         </details>

@@ -301,13 +301,16 @@ export function RowScoringRules() {
       </p>
       <p className="empty-hint">
         The score rewards breadth, finishing rows <strong>together</strong>, and finishing them{' '}
-        <strong>twice over</strong>: 10 points for every full row, plus 5 more for each row of every
-        unbroken run of two or more full rows — every qualifying run earns its own bonus, not just
-        the longest one — plus 10 more for every doubled row. Five full rows scattered across the
-        grid score 50; the same five finished end-to-end score 75; the same five as a run of three
-        plus a separate run of two also score 75, since both runs bank their own bonus. A run of
-        three plus two rows completed on their own, not next to anything, scores 65 — an isolated
-        full row still earns its 10 points, just no streak bonus on top.
+        <strong>twice over</strong>: 10 points for every full row, plus 10 more for every doubled
+        row, plus a streak bonus for rows finished as one unbroken run. The streak bonus is earned
+        per <strong>adjacent pair</strong> of full rows in the same run, not per row in it, so a
+        longer run is worth more than the same rows split into separate runs — the same reason
+        three-of-a-kind beats two pair. Five full rows scattered across the grid score 50; the same
+        five as one unbroken run score 100; the same five as a run of three plus a separate run of
+        two score 70 — more than scattered, but less than the unsplit run of five, because
+        concentration counts for more than raw row total. A run of three plus two rows completed on
+        their own, not next to anything, scores 65 — an isolated full row still earns its 10
+        points, just no streak bonus on top.
       </p>
       <p className="empty-hint">
         Level on score, more full rows outright goes first — the same score is reachable by
