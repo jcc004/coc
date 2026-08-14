@@ -48,7 +48,8 @@ TLS, the systemd units — is [`deploy/README.md`](deploy/README.md).
   paging machinery every table here uses.
 - **[The card-collecting event](docs/cards.md)** — the generated sixty-card list, how a tile is
   framed, the inventory tables and why the counts are shared, the season constant, the routes,
-  and the four rules that make a swap legal.
+  and the rules that make a swap legal — including the one-sided case, where only the proposer
+  needs the card back.
 - **[The card event's screens](docs/cards-ui.md)** — the card page top to bottom: base picker and
   grid, trade suggestions and why they page by row, the collection leaderboard and its points
   curve, clan-wide totals, the Mine/All filter, the deck plaques, and the same grid on a player

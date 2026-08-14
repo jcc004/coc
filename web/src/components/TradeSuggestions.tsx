@@ -11,6 +11,7 @@ import { scrollAndFocusFirst, scrollBehaviorFor } from '../card-sections.ts'
 import {
   flattenTradePairs,
   groupTradesByPair,
+  sortTradesByMutuality,
   suggestTrades,
   type TradePair,
   type TradeRow,
@@ -527,7 +528,11 @@ export function TradeSuggestions({
   const flatTrades = useMemo(() => suggestTrades(bases, categoryOfCard), [bases])
   const achievable = useMemo(() => maxAchievableTrades(flatTrades, bases), [flatTrades, bases])
   const pairs = useMemo(() => {
-    const all = groupTradesByPair(sortTradesByAchievability(flatTrades, achievable))
+    /* `flatTrades` itself stays pure rarity order — `sortTradePairsForPriority`'s
+       `highestValue` mode ranks directly off it and needs that, see
+       `suggestTrades`'s own doc comment. Mutual-preference is layered on top
+       here, for `pairs`/`optimal` only, the same way achievability already is. */
+    const all = groupTradesByPair(sortTradesByAchievability(sortTradesByMutuality(flatTrades), achievable))
     return focus === null ? all : pairsInvolving(all, focus)
   }, [flatTrades, achievable, focus])
 
@@ -535,9 +540,10 @@ export function TradeSuggestions({
    * The priority selector only changes which order `pairs` displays in — the
    * matching above, and what counts as "achievable", are unaffected. `optimal`
    * is `pairs` unchanged; every other mode still falls back to `pairs`' own
-   * order (achievable first, rarest value second) wherever its own key ties,
-   * which is what keeps optimal trading the invisible second ordering
-   * mechanism regardless of which priority is picked — see `trade-priority.ts`.
+   * order (achievable first, mutual second, rarest value third) wherever its
+   * own key ties, which is what keeps optimal trading the invisible second
+   * ordering mechanism regardless of which priority is picked — see
+   * `trade-priority.ts`.
    */
   const [priority, setPriority] = usePersistedChoice(TRADE_PRIORITY_KEY, parseTradePriority)
   const prioritizedPairs = useMemo(
@@ -860,8 +866,22 @@ function SuggestionTable({
                   <td role="cell" data-label="Gives">
                     <TradeCard cardId={right.cardId} />
                   </td>
+                  {/* `mutual` is false only when one side of the swap already owns
+                      the card it would receive — still a legal trade (`card-trades.ts`),
+                      just lower priority, which is why it sorts to the bottom of
+                      its group rather than getting a whole column. Either owner (or
+                      an admin) may press Propose below, so the tooltip describes the
+                      trade itself rather than assuming who clicks it. */}
                   <td className="card-meta" role="cell" data-label="Category">
                     {trade.category}
+                    {!trade.mutual && (
+                      <span
+                        className="chip chip--static"
+                        title="One side already owns the card it would receive — still legal, just lower priority"
+                      >
+                        {' One-sided'}
+                      </span>
+                    )}
                   </td>
                   <td className="row-actions" role="cell" data-label="Propose">
                     <ProposeButton

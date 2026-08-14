@@ -4,8 +4,9 @@ import type { TradePair, TradeSuggestion } from './card-trades.ts'
 
 /**
  * Display order for the trade suggestions table, layered over the pair order
- * `TradeSuggestions.tsx` already builds (`groupTradesByPair(sortTradesByAchievability(...))`
- * — achievable first, rarest value second, `card-trades.ts`/`trade-matching.ts`).
+ * `TradeSuggestions.tsx` already builds
+ * (`groupTradesByPair(sortTradesByAchievability(sortTradesByMutuality(...), ...))` — achievable
+ * first, mutual second, rarest value third, `card-trades.ts`/`trade-matching.ts`).
  *
  * `optimal` is that order, unchanged: it is the reason the site can promise a
  * headline "up to N trades could happen at once" at all, and every other mode
@@ -21,6 +22,16 @@ import type { TradePair, TradeSuggestion } from './card-trades.ts'
  * this one follows: a small closed set of states, a stable sort layered over
  * an existing order rather than a replacement of it, and a `parse*` fallback
  * for a stored value an older or newer build no longer offers.
+ *
+ * **`highestValue` is the one mode that does *not* inherit mutual-first from
+ * `pairs`.** It ranks off `flatTrades` directly (`valueRankOf`/`buildValueRank`
+ * below) — `suggestTrades`'s own raw output, deliberately pure rarity order,
+ * mutual-blind, per that function's own doc comment — because this mode's own
+ * promise is "the rarest card either pair's own trades would give up,
+ * *regardless* of whether that trade is achievable right now". A one-sided
+ * trade for the clan's rarest card still outranks a common mutual one here;
+ * `fewestPartners` and the `optimal` fallback both still see mutual trades
+ * first, since both read from `pairs`, not `flatTrades`.
  */
 export type TradePriority = 'optimal' | 'fewestPartners' | 'highestValue'
 
@@ -55,10 +66,11 @@ function achievableCountIn(pair: TradePair, achievable: ReadonlySet<string>): nu
  * then tag, then card id, with no ties, per `card-trades.ts`), no two pairs
  * can ever land on the same rank. `highestValue` needs this instead of
  * `pairs`' own incoming order because `pairs` has *already* had achievability
- * layered over value (`sortTradesByAchievability`): reading rank from `pairs`
- * would silently keep bucketing by achievability first, which is exactly what
- * this mode exists to set aside as the *primary* key while still honoring it
- * as this module's fallback for other modes.
+ * and mutual-preference layered over value (`sortTradesByAchievability`,
+ * `sortTradesByMutuality`): reading rank from `pairs` would silently keep
+ * bucketing by achievability and mutual-ness first, which is exactly what
+ * this mode exists to set aside as the *primary* key while still honoring
+ * both as this module's fallback for other modes.
  */
 function valueRankOf(pair: TradePair, valueRank: ReadonlyMap<string, number>): number {
   let best = Number.POSITIVE_INFINITY

@@ -101,15 +101,15 @@ export function SwapRules() {
         every render and stored nowhere. It answers "what could we swap", and it is true only for as
         long as the numbers behind it are.
       </p>
-      <p className="empty-hint">A swap is legal when all four of these hold:</p>
+      <p className="empty-hint">A swap is legal when all of these hold:</p>
       <ul className="rule-list">
         <li>
           the giver holds <strong>{MIN_TRADEABLE_COUNT} or more</strong> of the card it gives — a
           base never trades away its last copy, which is the rule people get wrong by hand;
         </li>
         <li>
-          the receiver holds <strong>none</strong> of it — a second copy of something you already
-          have is worth nothing to you;
+          at least <strong>one</strong> side holds none of what it would receive — otherwise
+          neither base gains a new card, and there is no point offering it;
         </li>
         <li>
           both cards are in the <strong>same deck</strong>, because the game only swaps within one;
@@ -119,10 +119,16 @@ export function SwapRules() {
         </li>
       </ul>
       <p className="empty-hint">
-        All four apply <strong>in both directions</strong>: this is a swap, not a gift, so each side
-        gives one card and receives one. A pair is listed once however the two bases are named, one
-        pair can offer several options, and one spare can appear against several partners — so each
-        row is an option to choose between, not a plan. Pick one per card.
+        This is a swap, not a gift, so each side still gives one card and receives one — the rule
+        that changed is only <strong>which</strong> side has to actually need it. If you have a
+        spare and are missing something else in the same deck, you can propose that swap, and
+        whoever accepts may already own the card coming back the other way — completing it just
+        won't gain <em>them</em> a new card. A row like that carries a small{' '}
+        <strong>One-sided</strong> tag next to its deck, and sorts below the swaps that gain both
+        sides something new — a real, completable trade, just a lower-priority one. A pair is
+        listed once however the two bases are named, one pair can offer several options, and one
+        spare can appear against several partners — so each row is an option to choose between, not
+        a plan. Pick one per card.
       </p>
       <p className="empty-hint">
         <strong>Propose records the swap and stops. No cards move.</strong> It puts the swap on the

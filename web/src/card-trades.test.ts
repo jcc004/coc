@@ -5,6 +5,7 @@ import {
   flattenTradePairs,
   groupTradesByPair,
   resourceKey,
+  sortTradesByMutuality,
   spareCapacity,
   suggestTrades,
   type TradeSuggestion,
@@ -51,36 +52,59 @@ function shape(trades: TradeSuggestion[]): string[] {
  */
 
 /**
- * One base holding every real card, so `cardTotals`/`cardRarity` never see a
- * card absent (total zero) — without this, ~56 of the 60 real cards would tie
- * at zero and, since zero-total cards alone already fill 9 of the 10 tiers,
- * swallow every card a test actually trades into that same single bottom tier
- * together, leaving no room for a test to tell a "rare" trade from a "common"
- * one.
+ * Enough bases holding every real card that `cardTotals`/`cardRarity` never
+ * see a card absent (total zero) — without this, ~56 of the 60 real cards
+ * would tie at zero and, since zero-total cards alone already fill 9 of the
+ * 10 tiers, swallow every card a test actually trades into that same single
+ * bottom tier together, leaving no room for a test to tell a "rare" trade
+ * from a "common" one.
  *
- * `rareIds` get a padding count of 1 — enough to make this base immune (see
- * below) but too small to be a spare, so a test's own bases decide their real
- * total via however many copies *they* hold. Every other id gets `1000 + id`:
- * larger than any count a test base plausibly holds, and spread out by id so
- * ties among them are impossible. That guarantees `rareIds` sort as the
- * smallest totals in the whole 60-card set — tier 1, the rarest, however many
- * of them there are (as long as it's within the tier's 6-card width) — while
- * anything a test wants to read as "common" needs no special-casing at all:
- * left out of `rareIds`, its `1000 + id` floor already puts it at the
- * opposite end.
+ * **Every padding base holds at most 1 of any single card — never a spare**
+ * (`MIN_TRADEABLE_COUNT` is 2). That is what keeps these bases invisible to
+ * `suggestTrades`: a candidate trade needs a spare to give away on *both*
+ * sides, and a base with no spares at all can never supply `cardFromA` or
+ * `cardFromB`, regardless of what it does or doesn't hold. Older versions of
+ * this fixture relied on "the receiver already holds everything" instead —
+ * true only while rule 2 required *both* sides of a trade to be missing what
+ * they'd receive. `suggestTrades` now also offers a trade only one side
+ * needs, and a base holding a real spare of nearly every card (the old
+ * `1000 + id` design) turned out to generate exactly that kind of one-sided
+ * trade with almost every other base in the suite once the rule relaxed —
+ * found by running the suite after the rule changed, not reasoned out in
+ * advance. Capping every padding base at "at most 1 of anything" is immune to
+ * that regardless of which matching rule is in force: it is not a spare
+ * either way.
  *
- * This base can never itself appear in a suggestion, regardless of which ids
- * are in `rareIds`: holding a *positive* count of literally every id (1 or
- * `1000 + id`, never 0) means it can never satisfy rule 2 ("the receiver must
- * hold zero") on either side of any pair, for any card. So it inflates the
- * totals `cardRarity` sees without adding any noise to the trade list itself.
+ * A single count of 1 can't carry both jobs at once for the "common" ids —
+ * scarcer than nothing, but a total safely above `rareIds`' own total and
+ * above whatever a test's own bases separately add — so the magnitude comes
+ * from *how many* padding bases hold that 1, not from the size of the count
+ * itself. `rareIds` get their 1 from a single dedicated base, keeping their
+ * total at exactly 1 regardless of `COMMON_PADDING`. Every other real card id
+ * gets a 1 from each of `COMMON_PADDING` separate bases, summing to a total
+ * comfortably larger than any count a test base plausibly holds — the same
+ * property the old `1000 + id` gave a single base, here spread across many
+ * spare-ineligible ones instead. No test in this file compares one "common"
+ * id's rank against another's, so — unlike the old `1000 + id` — this does
+ * not need to spread non-rare ids apart from each other, only from the
+ * `rareIds` floor.
+ *
+ * 20 is not load-bearing on its own — any value comfortably above the largest
+ * count a test base in this file actually holds (10, at most) keeps a
+ * non-rare id's total ahead of a rare id's, since both add whatever their own
+ * test bases contribute on top of this floor.
  */
-function paddingBase(rareIds: readonly number[]): BaseInventory {
+const COMMON_PADDING = 20
+
+function paddingBases(rareIds: readonly number[]): BaseInventory[] {
   const rare = new Set(rareIds)
-  const counts = Object.fromEntries(
-    ALL_CARDS.map((card) => [card.id, rare.has(card.id) ? 1 : 1000 + card.id]),
+  const commonIds = ALL_CARDS.filter((card) => !rare.has(card.id)).map((card) => card.id)
+
+  const rareBase = base('#PAD-rare', Object.fromEntries(rareIds.map((id) => [id, 1])))
+  const commonBases = Array.from({ length: COMMON_PADDING }, (_, index) =>
+    base(`#PAD-common-${index}`, Object.fromEntries(commonIds.map((id) => [id, 1]))),
   )
-  return base('#PAD', counts)
+  return [rareBase, ...commonBases]
 }
 
 describe('suggestTrades — the core swap', () => {
@@ -126,8 +150,11 @@ describe('suggestTrades — you may only receive what you do not hold', () => {
   })
 
   it('never proposes a card for itself', () => {
-    // The only way X === Y would need A to hold 2+ of X while B holds none and
-    // 2+ of X at once, so it is unreachable — asserted rather than assumed.
+    // X === Y would need the shared card to be both a spare (2+) and a need
+    // (zero) for the same base at once — still self-contradictory even with
+    // rule 2 relaxed to "at least one side needs it", since whichever base is
+    // giving the card away must hold 2+ of it (rule 1). Unreachable, asserted
+    // rather than assumed.
     const trades = suggestTrades(
       [base('#AAA', { 1: 2, 2: 2, 3: 2 }), base('#BBB', { 4: 2, 5: 2 })],
       categoryOf,
@@ -135,10 +162,130 @@ describe('suggestTrades — you may only receive what you do not hold', () => {
     for (const trade of trades) assert.notEqual(trade.cardFromA, trade.cardFromB)
   })
 
-  it('lets a one-sided surplus produce nothing, since a trade needs both halves', () => {
-    // A has spares B lacks, but B has nothing A can receive.
+  it('lets a one-sided surplus produce nothing when the other base has nothing to give', () => {
+    // A has spares B lacks, but B has nothing at all — a trade still needs
+    // both bases to have something to give, even when only one needs to gain.
     const trades = suggestTrades([base('#AAA', { 1: 3, 2: 4 }), base('#BBB', {})], categoryOf)
     assert.deepEqual(trades, [])
+  })
+})
+
+describe('suggestTrades — one-sided trades, mutual: false', () => {
+  it('offers a swap the proposer needs even when the acceptor already owns what it would receive', () => {
+    // #AAA is missing 2 and spares 1; #BBB already holds a 1 (not a spare, but
+    // owns one) and spares 2. #BBB doesn't gain a new card, but #AAA does.
+    const trades = suggestTrades(
+      [base('#AAA', { 1: 2 }), base('#BBB', { 1: 1, 2: 2 })],
+      categoryOf,
+    )
+    assert.deepEqual(shape(trades), ['#AAA:1 <-> #BBB:2 (Elixir)'])
+    assert.equal(trades[0]?.mutual, false)
+  })
+
+  it('offers the mirror image just as readily — either side may be the one already holding its card', () => {
+    const trades = suggestTrades(
+      [base('#AAA', { 1: 2, 2: 1 }), base('#BBB', { 2: 2 })],
+      categoryOf,
+    )
+    assert.deepEqual(shape(trades), ['#AAA:1 <-> #BBB:2 (Elixir)'])
+    assert.equal(trades[0]?.mutual, false)
+  })
+
+  it('still refuses when neither side would gain a new card', () => {
+    // Both bases already hold one of the other's spare — nobody gains anything.
+    const trades = suggestTrades(
+      [base('#AAA', { 1: 2, 2: 1 }), base('#BBB', { 1: 1, 2: 2 })],
+      categoryOf,
+    )
+    assert.deepEqual(trades, [])
+  })
+
+  it('marks the ordinary two-sided-need swap mutual: true', () => {
+    const trades = suggestTrades([base('#AAA', { 1: 2 }), base('#BBB', { 2: 2 })], categoryOf)
+    assert.equal(trades[0]?.mutual, true)
+  })
+
+  it('stays pure rarity order on its own — mutual-ness does not affect suggestTrades’ own sort', () => {
+    // #YYY/#ZZZ swap the clan's rarest cards (1, 2) but one-sided — #ZZZ
+    // already owns a 1. #AAA/#BBB swap only common cards (58, 59) but both
+    // sides gain a new one. suggestTrades ranks by rarity alone, so the rare
+    // one-sided trade still sorts first — `trade-priority.ts`'s `highestValue`
+    // mode depends on this staying true. `sortTradesByMutuality` (below) is
+    // the layer that reorders mutual ahead, applied by callers that want it.
+    const trades = suggestTrades(
+      [
+        ...paddingBases([1, 2]),
+        base('#AAA', { 58: 2 }),
+        base('#BBB', { 59: 2 }),
+        base('#YYY', { 1: 2 }),
+        base('#ZZZ', { 1: 1, 2: 2 }),
+      ],
+      categoryOfCard,
+    )
+
+    assert.deepEqual(shape(trades), [
+      '#YYY:1 <-> #ZZZ:2 (Elixir)',
+      '#AAA:58 <-> #BBB:59 (Super Troop)',
+    ])
+    assert.equal(trades[0]?.mutual, false)
+    assert.equal(trades[1]?.mutual, true)
+  })
+})
+
+describe('sortTradesByMutuality', () => {
+  it('moves every mutual trade ahead of every one-sided one, regardless of rarity', () => {
+    const trades = suggestTrades(
+      [
+        ...paddingBases([1, 2]),
+        base('#AAA', { 58: 2 }),
+        base('#BBB', { 59: 2 }),
+        base('#YYY', { 1: 2 }),
+        base('#ZZZ', { 1: 1, 2: 2 }),
+      ],
+      categoryOfCard,
+    )
+    // Confirms the input actually mixes the two groups, so the reorder below
+    // is exercising something — see the previous test for why this is the order.
+    assert.deepEqual(
+      trades.map((t) => t.mutual),
+      [false, true],
+    )
+
+    const sorted = sortTradesByMutuality(trades)
+    assert.deepEqual(shape(sorted), [
+      '#AAA:58 <-> #BBB:59 (Super Troop)',
+      '#YYY:1 <-> #ZZZ:2 (Elixir)',
+    ])
+    assert.deepEqual(
+      sorted.map((t) => t.mutual),
+      [true, false],
+    )
+  })
+
+  it('is a stable sort — keeps each group in whatever order it arrived in', () => {
+    const trade = (
+      baseA: string,
+      baseB: string,
+      cardFromA: number,
+      cardFromB: number,
+      mutual: boolean,
+    ): TradeSuggestion => ({ baseA, baseB, cardFromA, cardFromB, category: 'Elixir', mutual })
+    const trades = [
+      trade('#AAA', '#BBB', 1, 2, true),
+      trade('#CCC', '#DDD', 3, 4, false),
+      trade('#EEE', '#FFF', 5, 6, true),
+      trade('#GGG', '#HHH', 7, 8, false),
+    ]
+    assert.deepEqual(shape(sortTradesByMutuality(trades)), [
+      '#AAA:1 <-> #BBB:2 (Elixir)',
+      '#EEE:5 <-> #FFF:6 (Elixir)',
+      '#CCC:3 <-> #DDD:4 (Elixir)',
+      '#GGG:7 <-> #HHH:8 (Elixir)',
+    ])
+  })
+
+  it('returns nothing for nothing', () => {
+    assert.deepEqual(sortTradesByMutuality([]), [])
   })
 })
 
@@ -334,8 +481,8 @@ describe('suggestTrades — ordered by rarity value', () => {
     // AAA/BBB would sort first ('A' < 'Y'); rarity should override that.
     const trades = suggestTrades(
       [
-        paddingBase([1, 2]),
-        base('#AAA', { 58: 2 }), // Super Troop — common: no special padding, so its 1000+id floor stands
+        ...paddingBases([1, 2]),
+        base('#AAA', { 58: 2 }), // Super Troop — common: sits on the COMMON_PADDING floor
         base('#BBB', { 59: 2 }), // Super Troop partner
         base('#YYY', { 1: 2 }), // Elixir — rare: in `rareIds`, so its total is just this base's count
         base('#ZZZ', { 2: 2 }), // Elixir partner
@@ -362,7 +509,7 @@ describe('suggestTrades — ordered by rarity value', () => {
     // one instead of just its intended partner.
     const trades = suggestTrades(
       [
-        paddingBase([1, 2, 3, 4]),
+        ...paddingBases([1, 2, 3, 4]),
         base('#EEE', { 1: 2, 3: 1, 4: 1 }),
         base('#FFF', { 2: 2, 3: 1, 4: 1 }),
         base('#CCC', { 3: 2, 1: 1, 2: 1 }),
@@ -384,7 +531,7 @@ describe('suggestTrades — ordered by rarity value', () => {
     // this to exactly the two intended combinations rather than all four
     // cross-category ones.
     const trades = suggestTrades(
-      [paddingBase([1, 2, 20, 21]), base('#GGG', { 1: 2, 20: 2 }), base('#HHH', { 2: 2, 21: 2 })],
+      [...paddingBases([1, 2, 20, 21]), base('#GGG', { 1: 2, 20: 2 }), base('#HHH', { 2: 2, 21: 2 })],
       categoryOfCard,
     )
 
@@ -445,7 +592,7 @@ describe('groupTradesByPair', () => {
     // list should come out with #YYY/#ZZZ first too.
     const trades = suggestTrades(
       [
-        paddingBase([1, 2]),
+        ...paddingBases([1, 2]),
         base('#AAA', { 58: 2 }),
         base('#BBB', { 59: 2 }),
         base('#YYY', { 1: 2 }),
@@ -507,7 +654,7 @@ describe('flattenTradePairs', () => {
   it('preserves pair order and each pair’s own trade order', () => {
     const trades = suggestTrades(
       [
-        paddingBase([1, 2]),
+        ...paddingBases([1, 2]),
         base('#AAA', { 58: 2 }),
         base('#BBB', { 59: 2 }),
         base('#YYY', { 1: 2 }),

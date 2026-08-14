@@ -75,7 +75,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
   {
     id: 'trades',
     title: 'Trade suggestions: what makes a swap legal',
-    summary: 'Arithmetic over the current counts, and the four rules behind it',
+    summary: 'Arithmetic over the current counts, and the rules behind it',
   },
   {
     id: 'tracker',

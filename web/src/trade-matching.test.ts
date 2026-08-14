@@ -24,7 +24,7 @@ function suggestion(
   cardFromA: number,
   cardFromB: number,
 ): TradeSuggestion {
-  return { baseA, baseB, cardFromA, cardFromB, category: 'Elixir' }
+  return { baseA, baseB, cardFromA, cardFromB, category: 'Elixir', mutual: true }
 }
 
 /**
@@ -131,16 +131,36 @@ describe('maxAchievableTrades — one spare, several partners', () => {
 
   it('extends to as many partners as the spare count allows, keeping the last copy', () => {
     // #AAA holds three of card 1: one to keep, two to give away — so both of its
-    // candidate trades can go through at once, to two different partners. #CCC's
-    // extra, non-spare copy of card 2 only blocks the third candidate this
-    // triangle would otherwise also produce (#BBB <-> #CCC, card 2 for card 3) —
-    // see the dedicated triangle scenario below for that shape on its own.
+    // candidate trades can go through at once, to two different partners.
+    //
+    // #CCC's extra, non-spare copy of card 2 no longer blocks a third candidate
+    // this triangle would otherwise also produce (#BBB <-> #CCC, card 2 for card
+    // 3) the way it used to: #CCC already holding one of card 2 only rules out
+    // the *mutual* version of that trade. #BBB is still missing card 3, #CCC
+    // still has a spare of it, so `suggestTrades`'s one-sided rule offers it
+    // anyway (`mutual: false` — #CCC gains nothing new, #BBB does). See the
+    // dedicated triangle scenario below for this same shape considered on its
+    // own, including its now-three-candidate count.
     const bases = [base('#AAA', { 1: 3 }), base('#BBB', { 2: 2 }), base('#CCC', { 3: 2, 2: 1 })]
     const trades = suggestTrades(bases, categoryOf)
-    assert.equal(trades.length, 2)
+    assert.equal(trades.length, 3, 'the two mutual candidates, plus the one-sided #BBB <-> #CCC')
 
     const achievable = maxAchievableTrades(trades, bases)
-    assert.equal(achievable.size, 2, 'both partners can be served from the two spare copies')
+    assert.equal(
+      achievable.size,
+      2,
+      'still only 2: #BBB and #CCC each have exactly one spare unit, and both are ' +
+        'already spent completing the two mutual, higher-priority trades',
+    )
+
+    // Not a tie-break preference — #BBB<->#CCC is genuinely infeasible alongside
+    // either mutual trade, since it would need a second unit of whichever of
+    // #BBB's card-2 or #CCC's card-3 capacity that trade already spent. The two
+    // mutual trades are the *only* feasible pair, regardless of input order.
+    const mutualAAABBB = tradeKey({ baseA: '#AAA', baseB: '#BBB', cardFromA: 1, cardFromB: 2 })
+    const mutualAAACCC = tradeKey({ baseA: '#AAA', baseB: '#CCC', cardFromA: 1, cardFromB: 3 })
+    assert.deepEqual([...achievable].sort(), [mutualAAABBB, mutualAAACCC].sort())
+
     assertFeasible(achievable, trades, bases)
   })
 })

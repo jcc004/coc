@@ -168,6 +168,7 @@ const row = (p: TradePair): TradeRow => {
     cardFromA: 1,
     cardFromB: 2,
     category: 'Elixir',
+    mutual: true,
   }
   return { pair: p, trade, pairStart: true }
 }

@@ -60,7 +60,7 @@ tests point — `wiki-art.ts` for the second, `cards.ts` for the third.
 
 Anything with rules in it is a pure module in `web/src/` with its own tests, never inline in a
 component: `saved-table.ts` (sorting, paging), `base-names.ts` (how a base is written),
-`card-trades.ts` (the four swap rules), `card-summary.ts` (per-deck counts and "is a trade
+`card-trades.ts` (the swap rules, including the one-sided case), `card-summary.ts` (per-deck counts and "is a trade
 waiting"), `deck-progress.ts` (those counts as the four progress plaques),
 `card-standings.ts` (the leaderboard's order, its Owner filter and its how-stale column — the
 filter runs *after* the ranking, so a narrowed board keeps each base's place on the whole one —

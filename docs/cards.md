@@ -182,13 +182,22 @@ A trade pairs base A giving card X to base B, and B giving card Y to A, where **
 
 1. **A holds 2 or more of X, and B holds 2 or more of Y.** A base never trades away its last
    copy, so a count of exactly 1 is *not* tradeable. This is the rule people get wrong by hand.
-2. **B holds zero of X, and A holds zero of Y.** You may only receive a card you do not already
-   own — a second copy of something you hold once is worth nothing to you.
+2. **B holds zero of X, or A holds zero of Y (or both).** At least one side has to actually gain a
+   new card, or there is no point offering the swap — but it no longer has to be both. A member
+   holding a spare and missing something else in the same deck may propose that swap, and whoever
+   accepts it may already own the card coming back the other way; `TradeSuggestion.mutual` records
+   which case a given suggestion is (`true` when both sides gain a new card, the original,
+   higher-priority case). `suggestTrades` itself stays pure rarity order, `mutual`-blind;
+   `sortTradesByMutuality` is a separate function the display layers on top, the same way
+   achievability already layers over rarity — see [One-sided trades: a real swap where only the
+   proposer needs it](cards-ui.md#one-sided-trades-a-real-swap-where-only-the-proposer-needs-it).
 3. **X and Y are in the same category.** The game only swaps within a deck.
 4. **A and B are different bases**, including when one tag appears twice in the input.
 
-Rules 1 and 2 together make `X === Y` unreachable without a special case, and there is a test
-that says so rather than only a comment.
+Rules 1 and 2 together still make `X === Y` unreachable, even with rule 2 relaxed to "at least one
+side": the shared card would have to be both a spare (2+) and a need (zero) for the *same* base at
+once, on whichever side is giving it away, which rule 1 already rules out. There is a test that
+says so rather than only a comment.
 
 **Mirrors are reported once.** A↔B and B↔A are one trade seen from two sides, so each unordered
 pair is considered once and the result is always oriented with the lexicographically smaller tag

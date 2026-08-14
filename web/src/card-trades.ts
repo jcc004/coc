@@ -17,22 +17,32 @@ import { cardTotals } from './card-standings.ts'
  * do.
  *
  * A trade is a **swap**, not a gift: both sides give one card and receive one.
- * The four rules, and why each is there:
+ * The five rules, and why each is there:
  *
  * 1. **The giver must hold 2 or more.** A base never trades away its last copy —
  *    that would be losing a card, not swapping one. A count of exactly 1 is
  *    therefore not tradeable, which is the rule people get wrong by hand.
- * 2. **The receiver must hold zero.** There is no point receiving a card you
- *    already have; the event rewards distinct cards, so a second copy of
- *    something you hold once is worth nothing to you.
+ * 2. **At least one receiver must hold zero.** There is no point receiving a
+ *    card you already have — the event rewards distinct cards — so a trade
+ *    where *neither* side would gain a new card is not offered at all. But
+ *    only one side has to actually need what it receives: a member who has a
+ *    spare and is missing something else in the same deck may propose that
+ *    swap, and whoever accepts may already own the card coming back the other
+ *    way — the game allows this, it just means the acceptor isn't gaining a
+ *    new card from it. `TradeSuggestion.mutual` records which case a given
+ *    suggestion is; see `suggestTrades`' own doc comment for how that affects
+ *    ordering.
  * 3. **Same category.** The game only swaps within a deck, so an Elixir card
  *    cannot be traded for a Dark Elixir one however well the counts line up.
  * 4. **Different bases.** A base cannot trade with itself, including when the
  *    same tag appears twice in the input.
  *
- * Rule 1 and rule 2 together make `X === Y` impossible without a special case:
- * A would need 2 or more of X while B has none of it, *and* B would need 2 or
- * more of the same X. There is a test for that rather than a comment alone.
+ * Rule 1 and rule 2 together still make `X === Y` impossible, even with rule 2
+ * relaxed to "at least one side": for `cardFromA === cardFromB` to happen, the
+ * shared card would have to be both a spare (2+) and a need (zero) for the
+ * *same* base at once, on at least one side, and rule 1 already requires 2+ on
+ * whichever side is giving it. There is a test for that rather than a comment
+ * alone.
  */
 
 /** One swap: A gives `cardFromA`, B gives `cardFromB`, both in `category`. */
@@ -40,11 +50,19 @@ export interface TradeSuggestion {
   /** The lexicographically smaller of the two tags. See `suggestTrades`. */
   baseA: string
   baseB: string
-  /** A holds 2+ of this and B holds none. Travels A → B. */
+  /** A holds 2+ of this. Travels A → B. B may or may not already hold one. */
   cardFromA: number
-  /** B holds 2+ of this and A holds none. Travels B → A. */
+  /** B holds 2+ of this. Travels B → A. A may or may not already hold one. */
   cardFromB: number
   category: CardCategory
+  /**
+   * True when **both** sides are missing what they'd receive — the original,
+   * higher-priority case. False when only one side is: the proposer's own
+   * surplus-and-gap justifies offering the swap, but the acceptor is giving
+   * up a spare for a card it may already own. See `suggestTrades`'s doc
+   * comment for how this affects ordering.
+   */
+  mutual: boolean
 }
 
 /** Resolves a card id to its deck. `undefined` for an id the caller does not know. */
@@ -83,6 +101,11 @@ function spares(holdings: Holdings): number[] {
     .filter(([, count]) => count >= MIN_TRADEABLE_COUNT)
     .map(([cardId]) => cardId)
     .sort((a, b) => a - b)
+}
+
+/** Rule 2's per-side question: would this base actually gain a new card from it? */
+function needsCard(holdings: Holdings, cardId: number): boolean {
+  return (holdings.counts.get(cardId) ?? 0) === 0
 }
 
 /**
@@ -136,11 +159,24 @@ export function spareCapacity(bases: readonly BaseInventory[]): Map<string, numb
  * card either side would give away is what makes a trade worth doing, so that
  * — `max(rarityPoints(cardFromA), rarityPoints(cardFromB))`, descending — is
  * the primary sort key. The previous alphabetical-by-tag ordering is kept as
- * the tiebreak, both because two trades can genuinely tie on value and because
+ * the tiebreak, both because two trades can genuinely tie on rarity and because
  * a comparator that only sometimes orders its inputs is not a total order —
  * `Array.sort` would then be free to leave equal-value trades in whatever
  * order it likes, which is exactly the flakiness the old tiebreak already
  * existed to avoid.
+ *
+ * **Deliberately not ordered by `mutual` here.** `trade-priority.ts`'s
+ * `highestValue` mode promises "the rarest card either pair's own trades
+ * would give up, regardless of whether that trade is achievable right now" —
+ * and it builds that ranking directly from this function's own output order.
+ * Baking a mutual-first split into this comparator would silently break that
+ * promise for `mutual`, the same way it does for achievability: a common
+ * mutual trade would out-rank a rare one-sided one even for a member who
+ * asked to see the rarest card first, full stop. `sortTradesByMutuality`
+ * (below) gives every *other* consumer of this order — the display pipeline
+ * in `TradeSuggestions.tsx`, layered the same way `sortTradesByAchievability`
+ * already is — "mutual sorts ahead of one-sided" without baking it into the
+ * one order `highestValue` depends on staying pure-rarity.
  */
 export function suggestTrades(
   bases: BaseInventory[],
@@ -162,18 +198,25 @@ export function suggestTrades(
       const [a, b] = left.tag < right.tag ? [left, right] : [right, left]
 
       for (const cardFromA of spares(a)) {
-        // Rule 2, for the card A is giving.
-        if ((b.counts.get(cardFromA) ?? 0) > 0) continue
         const category = categoryOf(cardFromA)
         if (category === undefined) continue
+        const bNeedsA = needsCard(b, cardFromA)
 
         for (const cardFromB of spares(b)) {
-          // Rule 2 again, mirrored.
-          if ((a.counts.get(cardFromB) ?? 0) > 0) continue
           // Rule 3.
           if (categoryOf(cardFromB) !== category) continue
+          const aNeedsB = needsCard(a, cardFromB)
+          // Rule 2: a trade neither side gains a new card from is not offered.
+          if (!bNeedsA && !aNeedsB) continue
 
-          suggestions.push({ baseA: a.tag, baseB: b.tag, cardFromA, cardFromB, category })
+          suggestions.push({
+            baseA: a.tag,
+            baseB: b.tag,
+            cardFromA,
+            cardFromB,
+            category,
+            mutual: bNeedsA && aNeedsB,
+          })
         }
       }
     }
@@ -199,6 +242,26 @@ export function suggestTrades(
 }
 
 /**
+ * `suggestions`, reordered so every `mutual` trade sorts ahead of every
+ * one-sided one, and otherwise unchanged — the same stable-sort-layered-over-
+ * an-existing-order shape `sortTradesByAchievability` (`trade-matching.ts`)
+ * already uses over this module's own `suggestTrades` output, so `Array.sort`'s
+ * stability keeps each of the two groups in whatever order they arrived in
+ * (rarity value, then alphabetical, if fed `suggestTrades`'s own output
+ * directly).
+ *
+ * A separate function rather than a key inside `suggestTrades`'s own
+ * comparator on purpose: `trade-priority.ts`'s `highestValue` mode ranks
+ * pairs from `suggestTrades`'s raw order and needs that order to stay pure
+ * rarity, `mutual`-blind — see `suggestTrades`'s own doc comment. Every other
+ * consumer that wants "mutual first" applies this on top explicitly, the same
+ * layering discipline the rest of the ordering pipeline already follows.
+ */
+export function sortTradesByMutuality(suggestions: readonly TradeSuggestion[]): TradeSuggestion[] {
+  return [...suggestions].sort((x, y) => Number(y.mutual) - Number(x.mutual))
+}
+
+/**
  * The same suggestions, collected under the pair of bases they involve.
  *
  * The flat list is the tested thing; this is presentation, because "these two
@@ -215,13 +278,13 @@ export function suggestTrades(
  * by value, the first entry seen for any given pair can only be that pair's
  * highest-value entry, so first-occurrence order and best-value order agree.
  * `TradeSuggestions.tsx` instead feeds this a list `sortTradesByAchievability`
- * (`trade-matching.ts`) has already re-ordered — achievable trades first,
- * value second — so there a pair's position instead reflects whether *any* of
- * its options survived the matching, not the raw rarity of its best card. Both
- * callers get a real, total order out of this function; which one they get
- * depends entirely on what they pass in, which is deliberate: this function
- * stays a plain grouping, not a second place a sort could drift from the
- * first.
+ * (`trade-matching.ts`) has already re-ordered on top of `sortTradesByMutuality`
+ * — achievable trades first, mutual trades second, value third — so there a
+ * pair's position instead reflects whether *any* of its options survived the
+ * matching, not the raw rarity of its best card. Both callers get a real,
+ * total order out of this function; which one they get depends entirely on
+ * what they pass in, which is deliberate: this function stays a plain
+ * grouping, not a second place a sort could drift from the first.
  */
 export interface TradePair {
   baseA: string

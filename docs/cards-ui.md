@@ -494,6 +494,37 @@ every other display preference on this page, and shared by both places `TradeSug
 (the card page and a player page) — one preference about how a member likes to trade, not a
 per-page setting.
 
+### One-sided trades: a real swap where only the proposer needs it
+
+A trade suggestion used to require **both** sides to be missing what they'd receive
+(`TradeSuggestion.mutual`, `web/src/card-trades.ts`). The game allows more than that: a member who
+holds a spare and is missing something else in the same deck can propose that swap, and whoever
+accepts it may already own the card coming back the other way. `suggestTrades` now offers this too
+— it still requires *some* base to gain a new card from the swap (a trade neither side gains
+anything from is still not offered at all), just not necessarily both.
+
+**Ordering treats these as a distinct, lower tier — layered on top, not baked into rarity order.**
+`suggestTrades`'s own sort stays pure rarity, `mutual`-blind, on purpose: `sortTradesByMutuality`
+(`web/src/card-trades.ts`) is a separate function that reorders mutual trades ahead of one-sided
+ones, applied the same stable-sort-on-top-of-an-existing-order way `sortTradesByAchievability`
+already layers over rarity (see "Pairs and options are ordered by achievability first, rarity
+second" above). The display pipeline composes both —
+`groupTradesByPair(sortTradesByAchievability(sortTradesByMutuality(flatTrades), achievable))` — so
+`Priority`'s `Optimal` and `Fewest partners` modes both inherit "mutual sorts ahead of one-sided"
+for free (achievable first, mutual second, rarity third). **`Highest value` is the one mode that
+deliberately does not**: it ranks `flatTrades` directly, `suggestTrades`'s own raw, pure-rarity
+output, because its whole promise is "the rarest card either pair's own trades would give up,
+regardless of whether that trade is achievable right now" — a one-sided trade for the clan's
+rarest card still outranks a common mutual one there, the same way it already outranks an
+unachievable-vs-achievable common one.
+
+**The row itself carries a small `One-sided` tag** next to its Category cell
+(`web/src/components/TradeSuggestions.tsx`) — a plain-text badge in the same `card-meta` styling
+Category already uses, not a new column, since only a minority of rows ever carry it. Proposing and
+completing a one-sided trade goes through the exact same flow as any other: nothing on the server
+side changed, since a completed trade was never re-checked against "does the receiver still lack
+the card" in the first place (`docs/trade-tracker.md`'s "What is deliberately not re-checked").
+
 ## The collection leaderboard
 
 Every tracked base, ranked by how far it has got, directly under the trade suggestions — because

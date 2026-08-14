@@ -14,8 +14,9 @@ function suggestion(
   baseB: string,
   cardFromA: number,
   cardFromB: number,
+  mutual = true,
 ): TradeSuggestion {
-  return { baseA, baseB, cardFromA, cardFromB, category: 'Elixir' }
+  return { baseA, baseB, cardFromA, cardFromB, category: 'Elixir', mutual }
 }
 
 describe('sortTradePairsForPriority — optimal leaves the incoming pair order untouched', () => {
@@ -143,6 +144,28 @@ describe('sortTradePairsForPriority — highestValue ranks by earliest position 
     assert.deepEqual(
       pairs.map((pair) => `${pair.baseA}-${pair.baseB}`),
       before,
+    )
+  })
+
+  it('ranks by rarity alone, even when a lower-rarity mutual trade sorts ahead of it in pairs', () => {
+    // #A-#C is the rarer trade (earlier in flatTrades) but one-sided; #A-#B is
+    // common but mutual. `pairs` arrives already reordered mutual-first — the
+    // shape `TradeSuggestions.tsx` actually feeds this function
+    // (`groupTradesByPair(sortTradesByAchievability(sortTradesByMutuality(flatTrades), ...))`)
+    // — so this pins that `highestValue` reads `flatTrades` directly rather
+    // than inheriting that bias from `pairs`' own incoming order.
+    const flatTrades = [suggestion('#A', '#C', 1, 2, false), suggestion('#A', '#B', 3, 4, true)]
+    const pairs = groupTradesByPair([
+      suggestion('#A', '#B', 3, 4, true),
+      suggestion('#A', '#C', 1, 2, false),
+    ])
+
+    const sorted = sortTradePairsForPriority(pairs, 'highestValue', flatTrades, new Set())
+
+    assert.deepEqual(
+      sorted.map((pair) => `${pair.baseA}-${pair.baseB}`),
+      ['#A-#C', '#A-#B'],
+      'the rarer one-sided trade still wins — mutual-ness is not this mode’s key',
     )
   })
 })
