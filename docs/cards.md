@@ -44,47 +44,48 @@ cards share a file. `card-crops.test.ts` pins that: it groups all sixty by image
 no path is reused, naming the offenders if one ever is. Keying on the id anyway is what makes the
 grid survive a set that *does* reuse a file.
 
-## The tiles are framed whole, except five corrected individually
+## The tiles are framed whole, all sixty
 
-Fifty-five of the sixty tiles show the **whole** of their picture. `.card-tile__frame` is
-`aspect-ratio: 4 / 5` because the art is 4:5 — 256×320, all sixty — so `object-fit: contain` at the
-matching ratio neither trims an edge nor leaves a letterbox bar. For those fifty-five, read back off
-the DOM at 390, 600 and 1280px, light and dark: the `<img>` box is **exactly** equal to the frame
-box, offset 0,0. At 1280px that is a 107×134 frame showing a 256×320 file, so the art downscales —
-sharper than any crop of it could be.
+All sixty tiles show the **whole** of their picture. `.card-tile__frame` is `aspect-ratio: 4 / 5`
+because the art is 4:5 — 256×320, all sixty — so `object-fit: contain` at the matching ratio neither
+trims an edge nor leaves a letterbox bar. Read back off the DOM at 390, 600 and 1280px, light and
+dark: the `<img>` box is **exactly** equal to the frame box, offset 0,0. At 1280px that is a 107×134
+frame showing a 256×320 file, so the art downscales — sharper than any crop of it could be.
 
 This replaced a per-card **crop table**. The art used to be whole figures standing on a patch of
 grass, and `card-crops.ts` held three numbers per card (`x`, `y`, `zoom`) that CSS used to slide a
-window over the head. The new art is already framed on its subject for most of the set, so cropping
-most of it would zoom into a face that already fills the frame. The frame was 3:4 while its shape
-was a free choice.
+window over the head. The new art is already framed on its subject, so cropping it would zoom into
+a face that already fills the frame. The frame was 3:4 while its shape was a free choice.
 
 **The crop machinery was kept for a second reason beyond a wholesale regeneration, and that second
-reason has now happened.** Five cards — Golem (23), Lava Hound (25), Ice Golem (27), Cannon Cart
-(39), Ice Hound (59) — compose their subject smaller in the canvas than the rest of the set, with a
-visible background margin around it. That margin is easy to miss reading the source file at full
-resolution; it reads as modest corner shading. It is not easy to miss once the same file renders at
-an actual tile's ~30–90px, where the margin becomes a clear gap between the character and the
-tile's own border — found by rendering all sixty at real tile size, not by reading the source art.
-Each of the five has its own shape of defect (a background band on one edge, a background-touching
-seam between rock plates in Golem's case), documented card by card in `FACE_CROPS`'s own doc comment
-in `card-crops.ts`. The first pass at the original four shipped over-corrected — reported back
-directly as zoomed in too far, and it was, having traded the background gap for a crop tight enough
-to lose the subject itself in one case. Those four's current values are a second pass that measured
-several candidate zooms per card side by side and kept the smallest one that actually cleared the
-background, rather than the first value that happened to work. Ice Golem was found and corrected in
-a later pass, against a fresh batch of real-game reference screenshots, using the same
-several-candidates-side-by-side method.
+reason happened — twice.** Five cards, at various points, composed their subject smaller in the
+canvas than the rest of the set, with a visible background margin around it: Golem (23), Lava Hound
+(25), Ice Golem (27), Cannon Cart (39), Ice Hound (59). That margin is easy to miss reading the
+source file at full resolution; it reads as modest corner shading. It is not easy to miss once the
+same file renders at an actual tile's ~30–90px, where the margin becomes a clear gap between the
+character and the tile's own border — found by rendering all sixty at real tile size, not by reading
+the source art. Golem and Ice Hound's first pass shipped over-corrected — reported back directly as
+zoomed in too far, and it was, having traded the background gap for a crop tight enough to lose the
+subject itself in one case — and a second pass found each card's smallest zoom that actually cleared
+its background.
 
-- `cardFraming(id)` returns `WHOLE_FRAMING` unless the id appears in `FACE_CROPS`, which today holds
-  those five. Whole is still the default; a face crop is still the exception, and `CardTile` sets
-  `data-crop="face"` plus the three custom properties only for those five.
+**All five are gone as of 2026-08-14.** A direct side-by-side of a generated contact sheet (the raw
+files, uncropped) against a screenshot of the live grid showed the crop losing more than it was
+buying, across the whole set — Cannon Cart worst of all, its crop filling the entire tile with just
+the barrel disc, discarding the cart itself, to clear a background sliver nobody had actually flagged
+as a problem in the raw art. `FACE_CROPS`'s own doc comment in `card-crops.ts` carries the full
+history of each card's specific defect and correction, in case a future regeneration of the art
+reopens a visible gap and the table is needed again.
+
+- `cardFraming(id)` returns `WHOLE_FRAMING` unless the id appears in `FACE_CROPS`, which is empty
+  today. Whole is still the default; a face crop is still the exception, and `CardTile` sets
+  `data-crop="face"` plus the three custom properties only when an id appears in the table.
 - `faceCrop(x, y, zoom)` is exported and carries the clamp that keeps a window inside its picture.
   It is tested **directly**, independent of whatever the table currently holds — a crop at zoom 2
   clamps to 25–75%, at zoom 4 to 12.5–87.5%, and at zoom 1 collapses to dead center.
 - the per-entry guard rails (ids must name real cards, windows must stay inside the picture, zoom
-  in 1–3) are still there and still run, so the table cannot be refilled wrongly unnoticed — by a
-  fifth per-card fix or by a future wholesale regeneration, whichever comes first.
+  in 1–3) are still there and still run — vacuously today, since the table is empty — so the table
+  cannot be refilled wrongly unnoticed by a future per-card fix or wholesale regeneration.
 
 **Roughly half the files carry transparency** (31 of 60 have fully transparent pixels; 29 are
 opaque edge to edge — measured by decoding the PNGs properly, filters reconstructed, not by reading

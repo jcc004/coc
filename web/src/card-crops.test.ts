@@ -11,14 +11,14 @@ import {
 import { ALL_CARDS, cardById } from './cards.ts'
 
 /*
- * The art is a purpose-made set, already cropped tight on each subject — for
- * fifty-five of sixty. Five (Golem, Lava Hound, Ice Golem, Cannon Cart, Ice Hound)
- * compose their subject smaller in the canvas than the rest of the set and are
- * corrected individually in `FACE_CROPS`; see that table's own doc comment in
- * `card-crops.ts` for how each one was found and why. Two things are worth
- * pinning here: that the cropped set is exactly those five and not some other
- * count, and that the face-crop arithmetic itself is right — tested directly on
- * `faceCrop` below, not only through whatever the table currently holds.
+ * The art is a purpose-made set, already cropped tight on every subject — all
+ * sixty are framed whole today. `FACE_CROPS` in `card-crops.ts` is empty, not
+ * deleted: see that table's own doc comment for the five cards (Golem, Lava
+ * Hound, Ice Golem, Cannon Cart, Ice Hound) that carried a crop here at one point
+ * and why none do now. What is worth pinning here: that the table really is
+ * empty and not silently reintroducing an entry, and that the face-crop
+ * arithmetic itself is right if it is ever needed again — tested directly on
+ * `faceCrop` below, independent of whatever the table currently holds.
  */
 
 function faceCrops(): { id: number; crop: CardFaceCrop }[] {
@@ -41,20 +41,13 @@ describe('cardFraming', () => {
     }
   })
 
-  it('frames fifty-five of sixty whole, and names exactly the five exceptions', () => {
-    // Named per card rather than counted — a count would keep passing while the
-    // wrong card was cropped, or while a sixth crop went unnoticed. These five are
-    // the ones found by rendering all sixty at real tile size; see `FACE_CROPS`'s
-    // doc comment in card-crops.ts for what each one's actual defect was.
-    const cropped = faceCrops().map(({ id }) => `${id} ${cardById(id)?.name}`)
-    assert.deepEqual(cropped, [
-      '23 Golem',
-      '25 Lava Hound',
-      '27 Ice Golem',
-      '39 Cannon Cart',
-      '59 Ice Hound',
-    ])
-    assert.deepEqual(faceCroppedCardIds(), [23, 25, 27, 39, 59])
+  it('frames all sixty whole — no per-card exceptions today', () => {
+    // Empty, not absent: `FACE_CROPS` in card-crops.ts still exists for the next
+    // card that needs it, and its own doc comment carries the five (Golem, Lava
+    // Hound, Ice Golem, Cannon Cart, Ice Hound) that were corrected here at one
+    // point or another and no longer are.
+    assert.deepEqual(faceCrops(), [])
+    assert.deepEqual(faceCroppedCardIds(), [])
   })
 
   it('hands out the one shared whole framing, so two tiles compare by identity', () => {
@@ -69,11 +62,14 @@ describe('cardFraming', () => {
   })
 
   /*
-   * These three run over today's real entries, not vacuously — and they stay the
-   * guard rails for the next one too, whether that is another per-card fix or a
-   * wholesale regeneration of the art: they fail rather than pass silently if an
-   * entry names a card that does not exist or a window that runs off the edge of
-   * its picture.
+   * These run vacuously today — `FACE_CROPS` is empty, so each loop body never
+   * executes. Kept anyway as the guard rails for whenever an entry returns,
+   * whether that is another per-card fix or a wholesale regeneration of the art:
+   * they fail rather than pass silently if an entry names a card that does not
+   * exist or a window that runs off the edge of its picture. There is nothing to
+   * pin about today's table beyond the emptiness already asserted above — a test
+   * that pinned specific values here previously and was deleted along with the
+   * last two entries, rather than left asserting values nobody chose anymore.
    */
   it('crops only real card ids', () => {
     for (const id of faceCroppedCardIds()) {
@@ -91,36 +87,6 @@ describe('cardFraming', () => {
       assert.ok(crop.x >= half - 1e-9, `${name}: x ${crop.x} runs off the left`)
       assert.ok(crop.x <= 100 - half + 1e-9, `${name}: x ${crop.x} runs off the right`)
     }
-  })
-
-  /*
-   * The test above only checks the *post-clamp* value stays in range — it would
-   * pass silently even if `clampCenter` had actually substituted a different
-   * number than the one written in `FACE_CROPS`. Every entry here keeps a real
-   * margin from its own clamp floor (`50 / zoom`) on purpose, checked on *both*
-   * axes — an earlier version of this comment checked only `x` for whichever
-   * entry looked tightest and asserted that as "the narrowest margin in the
-   * table," which missed that the same entry's `y` was tighter still on the
-   * other side of its own clamp band; a review caught the gap before it shipped.
-   * The narrowest today, checked both ways, is Cannon Cart: `zoom: 1.45`'s floor
-   * is `34.48` and ceiling `65.52`, `x: 38` sits `3.52` above the floor (the
-   * table's tightest single margin), `y: 50` sits `15.52` from either bound —
-   * genuinely uneven between its own two axes, unlike the rest of the table, but
-   * that asymmetry is now stated rather than assumed away, which is the exact gap
-   * that let an earlier, wrong version of this same comment ship. Still real
-   * margin on both axes, not the clamp doing the work — so nothing here relies on
-   * the clamp to do anything today. Pinning the table's exact values here,
-   * unclamped, is what
-   * would fail loudly if a future edit ever pushed one of them past its floor,
-   * instead of the chosen crop point quietly drifting from what someone actually
-   * reviewed.
-   */
-  it('never actually needs to clamp its five current entries', () => {
-    assert.deepEqual(cardFraming(23), { kind: 'face', x: 50, y: 50, zoom: 1.15 })
-    assert.deepEqual(cardFraming(25), { kind: 'face', x: 50, y: 48, zoom: 1.2 })
-    assert.deepEqual(cardFraming(27), { kind: 'face', x: 50, y: 54, zoom: 1.28 })
-    assert.deepEqual(cardFraming(39), { kind: 'face', x: 38, y: 50, zoom: 1.45 })
-    assert.deepEqual(cardFraming(59), { kind: 'face', x: 46, y: 50, zoom: 1.2 })
   })
 
   it('never zooms out past the frame, nor so far in that the art cannot carry it', () => {
