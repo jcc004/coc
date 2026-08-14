@@ -145,7 +145,13 @@ export function HelpView({ section }: { section: HelpSectionId | null }) {
           entirely — most trades worth chasing gain both bases something, so that is what a
           first look shows. Switch to <strong>One-sided</strong> to see only the ones where just
           one base gains, or <strong>Both</strong> to see everything a pair could offer at once.
-          Clear, next to it, resets both this and the owner pickers together.
+        </p>
+        <p className="empty-hint">
+          A <strong>Deck</strong> select beside Sides narrows the table to one of the four decks —
+          useful once you know which deck you are short on and want to ignore offers in the other
+          three. <strong>All decks</strong> is the default; unlike Sides, no deck is a lower
+          priority than another, so nothing is hidden until you actually pick one. Clear, at the
+          end of the row, resets Sides, Deck, and the owner pickers together.
         </p>
       </HelpSection>
 

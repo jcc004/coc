@@ -22,6 +22,14 @@ import { hrefFor, usePersistedChoice, useRowLimit } from '../hooks.ts'
 import { useOwners } from '../owners.ts'
 import { paginate, type PagedRows, type RowLimit } from '../saved-table.ts'
 import {
+  filterPairsByDeck,
+  parseTradeDeckFilter,
+  tradeDeckFilterLabel,
+  tradeDeckFilterSummary,
+  TRADE_DECK_FILTERS,
+  type TradeDeckFilter,
+} from '../trade-deck-filter.ts'
+import {
   UNOWNED,
   UNOWNED_LABEL,
   filterPairsByOwners,
@@ -350,8 +358,8 @@ function BaseLabel({
  * cannot deliver, since which side an owner lands on is decided by their base's tag.
  *
  * Clear lives in {@link TradeSuggestions} itself now, not here — it resets this
- * component's own three fields plus the mutuality filter beside it, and neither
- * filter is this component's to own.
+ * component's own three fields plus the Sides and Deck filters beside it, and
+ * neither of those filters is this component's to own.
  */
 function OwnerFilterControls({
   ownerChoices,
@@ -436,6 +444,9 @@ const TRADE_PRIORITY_KEY = 'coc:tradePriority'
 /** Where the chosen two-sided/one-sided/both filter is remembered — same reasoning
     as `TRADE_PRIORITY_KEY` above: a reading preference, not a per-page setting. */
 const TRADE_MUTUALITY_FILTER_KEY = 'coc:tradeMutualityFilter'
+
+/** Where the chosen deck filter is remembered — same reasoning as the two keys above. */
+const TRADE_DECK_FILTER_KEY = 'coc:tradeDeckFilter'
 
 /** `null` for input that cannot be a tag, and so can never name a stored base. */
 function canonicalOrNull(tag: string): string | null {
@@ -587,6 +598,19 @@ export function TradeSuggestions({
     pairs.length,
   )
 
+  /*
+   * Which deck the table is narrowed to, or `'all'` — chained after the
+   * mutuality filter rather than in parallel with it, since both narrow the
+   * same `trades` array and there is no ordering dependency between them: a
+   * trade excluded by one filter is never a candidate the other needs to see.
+   */
+  const [deckFilter, setDeckFilter] = usePersistedChoice(TRADE_DECK_FILTER_KEY, parseTradeDeckFilter)
+  const deckFilteredPairs = useMemo(
+    () => filterPairsByDeck(mutualityFilteredPairs, deckFilter),
+    [mutualityFilteredPairs, deckFilter],
+  )
+  const deckNote = tradeDeckFilterSummary(deckFilter, deckFilteredPairs.length, pairs.length)
+
   /* The headline number: how many of `pairs`'s own candidates could really all
      complete together, not merely how many pairs have *an* option — see
      `trade-matching.ts` for why those two counts differ. Scoped to `pairs`
@@ -631,8 +655,8 @@ export function TradeSuggestions({
      picker of the very options you would want next. */
   const ownerChoices = useMemo(() => ownersInPairs(pairs, ownerOf), [pairs, ownerOf])
   const shown = useMemo(
-    () => filterPairsByOwners(mutualityFilteredPairs, ownerOf, firstOwner, secondOwner, otherOnly),
-    [mutualityFilteredPairs, ownerOf, firstOwner, secondOwner, otherOnly],
+    () => filterPairsByOwners(deckFilteredPairs, ownerOf, firstOwner, secondOwner, otherOnly),
+    [deckFilteredPairs, ownerOf, firstOwner, secondOwner, otherOnly],
   )
   const filterNote = tradeFilterSummary(
     shown.length,
@@ -743,7 +767,30 @@ export function TradeSuggestions({
             </select>
           </label>
 
-          {firstOwner !== null || secondOwner !== null || mutualityFilter !== 'twoSided' ? (
+          {/* Which deck to show at all — `'all'` is the default, since unlike Sides no
+              deck is a lower priority than another. See `trade-deck-filter.ts`. */}
+          <label htmlFor="trade-deck">
+            Deck
+            <select
+              id="trade-deck"
+              value={deckFilter}
+              onChange={(event) => {
+                setDeckFilter(event.target.value as TradeDeckFilter)
+                setPage(1)
+              }}
+            >
+              {TRADE_DECK_FILTERS.map((option) => (
+                <option key={option} value={option}>
+                  {tradeDeckFilterLabel(option)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {firstOwner !== null ||
+          secondOwner !== null ||
+          mutualityFilter !== 'twoSided' ||
+          deckFilter !== 'all' ? (
             <button
               type="button"
               className="icon-button"
@@ -752,6 +799,7 @@ export function TradeSuggestions({
                 setSecondOwner(null)
                 setOtherOnly(false)
                 setMutualityFilter('twoSided')
+                setDeckFilter('all')
                 setPage(1)
               }}
             >
@@ -761,10 +809,11 @@ export function TradeSuggestions({
         </div>
       ) : null}
 
-      {/* What the mutuality filter did, then what the owner filters did — two
-          independent narrowings, each explaining its own share so a shorter list
-          never reads as missing data. */}
+      {/* What each filter did, mutuality then deck then owner — independent
+          narrowings, each explaining its own share so a shorter list never reads
+          as missing data. */}
       {mutualityNote !== null ? <p className="empty-hint">{mutualityNote}</p> : null}
+      {deckNote !== null ? <p className="empty-hint">{deckNote}</p> : null}
       {filterNote !== null ? <p className="empty-hint">{filterNote}</p> : null}
 
       {pairs.length === 0 ? (

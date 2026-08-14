@@ -10,9 +10,10 @@ import { ErrorPanel, HelpLink, Loading } from './primitives.tsx'
 /**
  * `#/base-order` — the order this account's own bases appear in, wherever a
  * later page chooses to read it. Setting the order is all this page does;
- * `CardsView`'s Mine picker and `ProgressGridView`'s "just me" Owner filter
- * both read it (via `useBaseOrder`'s read side, `applyBaseOrder`), but neither
- * writes to it — this is the only page that calls `reorder()`.
+ * `CardsView`'s Mine picker, `ProgressGridView`'s "just me" Owner filter, and
+ * `ProgressTrendsSection`'s bases-over-time selection all read it (via
+ * `useBaseOrder`'s read side, `applyBaseOrder`), but none of them write to
+ * it — this is the only page that calls `reorder()`.
  *
  * The list is this account's owned tags only (`tagsInScope(..., 'mine', ...)`,
  * the same rule `CardsView`'s Mine filter uses), reconciled against whatever

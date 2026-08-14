@@ -464,10 +464,12 @@ for the composed order the page actually shows.
 
 ### The site is always optimizing for achievable trades — a priority mode only changes the order
 
-A `Priority` select sits in the filter row above the table, beside a `Sides` select, the owner
-pickers, and Clear (or alone, on a single-owner account, where the owner pickers never render at
-all — see ["Two-sided, One-sided, or Both" below](#two-sided-one-sided-or-both-the-sides-filter)
-for `Sides`). `Priority` offers three states, `web/src/trade-priority.ts`:
+A `Priority` select sits in the filter row above the table, beside a `Sides` select, a `Deck`
+select, the owner pickers, and Clear (or alone, on a single-owner account, where the owner pickers
+never render at all — see ["Two-sided, One-sided, or
+Both"](#two-sided-one-sided-or-both-the-sides-filter) for `Sides` and ["Narrowing to one
+deck"](#narrowing-to-one-deck-the-deck-filter) for `Deck`, both below). `Priority` offers three
+states, `web/src/trade-priority.ts`:
 
 - **Optimal** — the default, and exactly the mutual-then-achievable-then-rarity order described
   below, unchanged.
@@ -559,12 +561,32 @@ uses, and a note above the table (`tradeMutualityFilterSummary`) says how many p
 hiding whenever it is not `Both` — the same "a shorter list with no explanation reads as missing
 data" reasoning the owner-filter summary line already follows.
 
-**Clear now lives here, to the right of `Sides`, instead of at the end of the owner pickers.** It
-resets the owner pickers *and* `Sides` together — both are display filters that can shrink the
-table, so one control clearing both is the same consolidation `OwnerFilterControls` already did for
-its own three fields. It shows whenever either owner select or `Sides` is off its default;
-`Other only` is cleared along with the rest but, as before, does not by itself trigger Clear's
-visibility.
+### Narrowing to one deck — the `Deck` filter
+
+A `Deck` select sits beside `Sides`, `web/src/trade-deck-filter.ts`. Every trade already carries
+its own `category` — a swap only ever moves a card within one deck (rule 3, ["The trade
+rules"](cards.md#the-trade-rules)) — so this reads that field directly rather than deriving
+anything new. It offers **All decks** (the default) plus the four decks in the same order
+`cardCategoriesInOrder()` already draws them in everywhere else on the page — the card grid's
+section order and the leaderboard's own `Deck` picker (["Seven boards: the View
+picker"](#seven-boards-the-view-picker)) — so "standard deck order" means one order, not a second
+one this control invented for itself.
+
+**All decks is the default**, unlike `Sides`: no deck is a lower priority than another the way a
+one-sided trade is, so nothing is hidden until a member actually picks one. `filterPairsByDeck`
+filters *within* a pair's own `trades`, the same shape `filterPairsByMutuality` uses and for the
+same reason — one pair can hold spares in more than one deck the other side needs, so dropping the
+whole pair on one trade's deck would silently hide the pair's other, still-wanted options in a
+different deck. The choice persists at `coc:tradeDeckFilter`, and a note above the table
+(`tradeDeckFilterSummary`) names the count and the chosen deck whenever it is not `All decks`, the
+same as `Sides`' own note.
+
+**Clear now lives at the end of the row, to the right of `Deck`, instead of at the end of the owner
+pickers.** It resets the owner pickers, `Sides`, *and* `Deck` together — all three are display
+filters that can shrink the table, so one control clearing all of them is the same consolidation
+`OwnerFilterControls` already did for its own three fields. It shows whenever an owner select,
+`Sides`, or `Deck` is off its default; `Other only` is cleared along with the rest but, as before,
+does not by itself trigger Clear's visibility.
 
 ## The collection leaderboard
 

@@ -125,10 +125,12 @@ export function SwapRules() {
         whoever accepts may already own the card coming back the other way — completing it just
         won't gain <em>them</em> a new card. A row like that carries a small{' '}
         <strong>One-sided</strong> tag next to its deck, and sorts below the swaps that gain both
-        sides something new — a real, completable trade, just a lower-priority one. A pair is
-        listed once however the two bases are named, one pair can offer several options, and one
-        spare can appear against several partners — so each row is an option to choose between, not
-        a plan. Pick one per card.
+        sides something new — a real, completable trade, just a lower-priority one. The{' '}
+        <strong>Sides</strong> filter above the table hides these by default; switch it to{' '}
+        <strong>One-sided</strong> or <strong>Both</strong> to see them. A pair is listed once
+        however the two bases are named, one pair can offer several options, and one spare can
+        appear against several partners — so each row is an option to choose between, not a plan.
+        Pick one per card.
       </p>
       <p className="empty-hint">
         <strong>Propose records the swap and stops. No cards move.</strong> It puts the swap on the
@@ -285,9 +287,10 @@ export function CategoryScoringRules() {
         the Overall board only breaks a tie once distinct and doubled both agree. Confined to one
         deck, points can disagree outright with "how close is this base to finishing it" — a few
         spares can out-point a base one card short of complete — so completeness leads here. Level
-        on distinct, doubled and points together, by name and then tag. A rank is shared on a
-        genuine tie across all three and then skips — each of the four boards ranks and ties
-        entirely on its own, independently of the other three.
+        on distinct, doubled and points together, by name and then tag — but a rank is shared only
+        on a genuine tie in distinct and doubled; points breaks the display order between two such
+        bases without giving them different ranks. Each of the four boards ranks and ties entirely
+        on its own, independently of the other three.
       </p>
     </>
   )
@@ -343,8 +346,9 @@ export function DeckCompletionScoringRules() {
         already beats finishing fewer. Level on both, more distinct cards held{' '}
         <strong>overall</strong> decides — the quantity that has to grow before another deck can
         complete, so among bases tied on whole decks finished and doubled, the one closer to a set
-        across the rest of its collection is the one genuinely ahead. A rank is shared on a genuine
-        tie across all three and then skips.
+        across the rest of its collection is the one genuinely ahead — though a rank is shared only
+        on a genuine tie in decks complete and doubled decks; distinct cards overall breaks the
+        display order between two such bases without giving them different ranks.
       </p>
     </>
   )
