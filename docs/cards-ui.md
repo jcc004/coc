@@ -450,23 +450,27 @@ own tests check that greedy against brute force on small cases — including one
 to demonstrate the known worst case (half of the true maximum) — so the gap is measured, not
 assumed away.
 
-**Pairs and options are ordered by achievability first, rarity second.** A pair with an option that
-is part of the achievable set sorts ahead of one whose every option would cost a conflicting trade
-elsewhere, and within one pair's own block of options, the achievable ones come before the ones
-that are not — `sortTradesByAchievability`, layered over `suggestTrades`'s own order the same way
-`sortCardTotalsForDisplay` layers over `cardTotals()` (see [A sort control,
-opt-in](#a-sort-control-opt-in)). The previous ordering was rarity alone — the single rarest card
-either side would give away, descending — and that is still the tiebreak within each group, so a
-scarce, time-sensitive trade still surfaces near the top of whichever group it lands in.
+**Pairs and options are ordered by achievability first, rarity second — within whichever mutuality
+group they land in.** A pair with an option that is part of the achievable set sorts ahead of one
+whose every option would cost a conflicting trade elsewhere, and within one pair's own block of
+options, the achievable ones come before the ones that are not — `sortTradesByAchievability`,
+layered over `suggestTrades`'s own order the same way `sortCardTotalsForDisplay` layers over
+`cardTotals()` (see [A sort control, opt-in](#a-sort-control-opt-in)). The previous ordering was
+rarity alone — the single rarest card either side would give away, descending — and that is still
+the tiebreak within each group, so a scarce, time-sensitive trade still surfaces near the top of
+whichever group it lands in. This describes `sortTradesByAchievability` on its own; the table
+layers one more sort on top of it — see ["One-sided trades" below](#one-sided-trades-a-real-swap-where-only-the-proposer-needs-it)
+for the composed order the page actually shows.
 
 ### The site is always optimizing for achievable trades — a priority mode only changes the order
 
-A `Priority` select sits in the filter row above the table, beside the owner pickers and Clear (or
-alone, on a single-owner account, where the owner pickers never render at all). It offers three
-states, `web/src/trade-priority.ts`:
+A `Priority` select sits in the filter row above the table, beside a `Sides` select, the owner
+pickers, and Clear (or alone, on a single-owner account, where the owner pickers never render at
+all — see ["Two-sided, One-sided, or Both" below](#two-sided-one-sided-or-both-the-sides-filter)
+for `Sides`). `Priority` offers three states, `web/src/trade-priority.ts`:
 
-- **Optimal** — the default, and exactly the achievable-then-rarity order described above,
-  unchanged.
+- **Optimal** — the default, and exactly the mutual-then-achievable-then-rarity order described
+  below, unchanged.
 - **Fewest partners** — ranks a pair by how many of its own options are currently achievable,
   descending. A partner who can complete several trades at once outranks one who can only complete
   one, so working down the table in this order opens the fewest distinct trade windows for the same
@@ -480,10 +484,10 @@ states, `web/src/trade-priority.ts`:
 **No mode ever stops the table from being about achievable trades.** This is worth stating
 explicitly, because it is easy to misread "Fewest partners" or "Highest value" as opting out of the
 achievability matching described above — they do not. `sortTradePairsForPriority` only reorders the
-pairs `sortTradesByAchievability` already produced; it never changes which trades are in the
-achievable set, never changes the `Up to N trades could happen at once` count, and — because
-`Array.prototype.sort` is stable — every mode falls back to that same achievable-then-rarity order
-wherever its own key ties. **Optimal, achievable trading is the invisible second ordering mechanism
+pairs `pairs` already arrived in; it never changes which trades are in the achievable set, never
+changes the `Up to N trades could happen at once` count, and — because `Array.prototype.sort` is
+stable — every mode falls back to that same mutual-then-achievable-then-rarity order wherever its
+own key ties. **Optimal, achievable trading is the invisible second and third ordering mechanism
 under every priority mode, not a fourth option you can turn off.** The same layering discipline
 `sortTradesByAchievability` itself uses over `suggestTrades`, and `sortCardTotalsForDisplay` uses
 over `cardTotals()` (see [A sort control, opt-in](#a-sort-control-opt-in)) — a reordering step that
@@ -503,20 +507,29 @@ accepts it may already own the card coming back the other way. `suggestTrades` n
 — it still requires *some* base to gain a new card from the swap (a trade neither side gains
 anything from is still not offered at all), just not necessarily both.
 
-**Ordering treats these as a distinct, lower tier — layered on top, not baked into rarity order.**
-`suggestTrades`'s own sort stays pure rarity, `mutual`-blind, on purpose: `sortTradesByMutuality`
-(`web/src/card-trades.ts`) is a separate function that reorders mutual trades ahead of one-sided
-ones, applied the same stable-sort-on-top-of-an-existing-order way `sortTradesByAchievability`
-already layers over rarity (see "Pairs and options are ordered by achievability first, rarity
-second" above). The display pipeline composes both —
-`groupTradesByPair(sortTradesByAchievability(sortTradesByMutuality(flatTrades), achievable))` — so
-`Priority`'s `Optimal` and `Fewest partners` modes both inherit "mutual sorts ahead of one-sided"
-for free (achievable first, mutual second, rarity third). **`Highest value` is the one mode that
-deliberately does not**: it ranks `flatTrades` directly, `suggestTrades`'s own raw, pure-rarity
-output, because its whole promise is "the rarest card either pair's own trades would give up,
-regardless of whether that trade is achievable right now" — a one-sided trade for the clan's
-rarest card still outranks a common mutual one there, the same way it already outranks an
+**Ordering treats these as a distinct, lower tier — layered on top, not baked into rarity order,
+and dominant over achievability.** `suggestTrades`'s own sort stays pure rarity, `mutual`-blind, on
+purpose: `sortTradesByMutuality` (`web/src/card-trades.ts`) is a separate function that reorders
+mutual trades ahead of one-sided ones, applied the same stable-sort-on-top-of-an-existing-order way
+`sortTradesByAchievability` already layers over rarity (see "Pairs and options are ordered by
+achievability first, rarity second" above). The display pipeline composes both —
+`groupTradesByPair(sortTradesByMutuality(sortTradesByAchievability(flatTrades, achievable)))` — and
+mutuality is the **outermost**, dominant sort: every two-sided trade sorts ahead of every one-sided
+one regardless of achievability, with achievability only breaking ties *within* each mutuality
+group. So `Priority`'s `Optimal` and `Fewest partners` modes both inherit "mutual sorts ahead of
+one-sided, full stop" for free (mutual first, achievable second, rarity third). **`Highest value` is
+the one mode that deliberately does not**: it ranks `flatTrades` directly, `suggestTrades`'s own
+raw, pure-rarity output, because its whole promise is "the rarest card either pair's own trades
+would give up, regardless of whether that trade is achievable right now" — a one-sided trade for the
+clan's rarest card still outranks a common mutual one there, the same way it already outranks an
 unachievable-vs-achievable common one.
+
+Reported live: mutuality used to be the *inner* sort and achievability the outer one
+(`sortTradesByAchievability(sortTradesByMutuality(...), achievable)`), which meant an achievable
+one-sided trade could sort ahead of an unachievable mutual one — contradicting the "sorts below the
+swaps that gain both sides something new" promise the row's own `One-sided` tag makes (see below).
+Fixed 2026-08-14 by swapping which sort goes on the outside, so mutuality wins the tie regardless of
+achievability, matching what the tag already claimed.
 
 **The row itself carries a small `One-sided` tag** next to its Category cell
 (`web/src/components/TradeSuggestions.tsx`) — a plain-text badge in the same `card-meta` styling
@@ -524,6 +537,34 @@ Category already uses, not a new column, since only a minority of rows ever carr
 completing a one-sided trade goes through the exact same flow as any other: nothing on the server
 side changed, since a completed trade was never re-checked against "does the receiver still lack
 the card" in the first place (`docs/trade-tracker.md`'s "What is deliberately not re-checked").
+
+### Two-sided, One-sided, or Both — the `Sides` filter
+
+A `Sides` select sits beside `Priority` in the same filter row, `web/src/trade-mutuality-filter.ts`.
+Unlike `Priority`, which only reorders, this one actually removes rows: it offers **Two-sided**
+(the default), **One-sided**, and **Both**, and narrows each pair down to just the trades matching
+the chosen side before anything downstream — owner filtering, paging, the row count — ever sees the
+rest. A pair left with none of its own trades matching drops from the table entirely, the same way
+an owner filter can drop a pair to zero.
+
+**Two-sided is the default**, so a one-sided trade is hidden unless a member explicitly asks for
+`One-sided` or `Both` — the table's first impression is the higher-priority kind of swap, with the
+rest a click away. `filterPairsByMutuality` filters *within* a pair's own `trades`, not whether to
+keep the pair, because one pair can legally offer both a two-sided option and a one-sided one at
+once; keeping or dropping the whole pair on one trade's mutuality would silently hide the pair's
+other, still-wanted option.
+
+The choice is remembered per browser at `coc:tradeMutualityFilter`, the same mechanism `Priority`
+uses, and a note above the table (`tradeMutualityFilterSummary`) says how many pairs the filter is
+hiding whenever it is not `Both` — the same "a shorter list with no explanation reads as missing
+data" reasoning the owner-filter summary line already follows.
+
+**Clear now lives here, to the right of `Sides`, instead of at the end of the owner pickers.** It
+resets the owner pickers *and* `Sides` together — both are display filters that can shrink the
+table, so one control clearing both is the same consolidation `OwnerFilterControls` already did for
+its own three fields. It shows whenever either owner select or `Sides` is off its default;
+`Other only` is cleared along with the rest but, as before, does not by itself trigger Clear's
+visibility.
 
 ## The collection leaderboard
 

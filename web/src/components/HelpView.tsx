@@ -134,9 +134,18 @@ export function HelpView({ section }: { section: HelpSectionId | null }) {
           bases: it groups a partner's several trades together, so clearing everything with one
           partner happens before moving to the next, instead of the default order interleaving
           partners by rarity. <strong>Highest value</strong> chases the rarest card either side
-          would give up even when it cannot complete this instant. Whichever one is picked, the
-          table is still ranking by what can actually complete underneath — Priority only decides
-          what you see first.
+          would give up even when it cannot complete this instant. Whichever one is picked, a
+          two-sided trade always sorts ahead of a one-sided one wherever both are shown, and
+          within that, the table is still ranking by what can actually complete underneath —
+          Priority only decides what you see first.
+        </p>
+        <p className="empty-hint">
+          A <strong>Sides</strong> select beside Priority controls which of a pair's own options
+          show at all. <strong>Two-sided</strong> is the default and hides one-sided options
+          entirely — most trades worth chasing gain both bases something, so that is what a
+          first look shows. Switch to <strong>One-sided</strong> to see only the ones where just
+          one base gains, or <strong>Both</strong> to see everything a pair could offer at once.
+          Clear, next to it, resets both this and the owner pickers together.
         </p>
       </HelpSection>
 

@@ -31,6 +31,14 @@ import {
 } from '../trade-filters.ts'
 import { maxAchievableTrades, sortTradesByAchievability, tradeKey } from '../trade-matching.ts'
 import {
+  filterPairsByMutuality,
+  parseTradeMutualityFilter,
+  tradeMutualityFilterLabel,
+  tradeMutualityFilterSummary,
+  TRADE_MUTUALITY_FILTERS,
+  type TradeMutualityFilter,
+} from '../trade-mutuality-filter.ts'
+import {
   parseTradePriority,
   sortTradePairsForPriority,
   tradePriorityLabel,
@@ -332,14 +340,18 @@ function BaseLabel({
 }
 
 /**
- * The "Involving" / "and" owner pickers, the "Other only" checkbox, and Clear —
- * pulled out of {@link TradeSuggestions} so its own `ownerChoices.length > 1 ? ... :
+ * The "Involving" / "and" owner pickers and the "Other only" checkbox — pulled
+ * out of {@link TradeSuggestions} so its own `ownerChoices.length > 1 ? ... :
  * null` guard is one conditional rather than one nested inside `pairs.length > 0`'s.
  *
  * Labeled "Involving" and "and" rather than by column, because that is what they
  * do: the pair of selections is matched as a set against the pair of owners, in
  * either order. Naming them for the columns would promise something the table
  * cannot deliver, since which side an owner lands on is decided by their base's tag.
+ *
+ * Clear lives in {@link TradeSuggestions} itself now, not here — it resets this
+ * component's own three fields plus the mutuality filter beside it, and neither
+ * filter is this component's to own.
  */
 function OwnerFilterControls({
   ownerChoices,
@@ -349,7 +361,6 @@ function OwnerFilterControls({
   onFirstOwner,
   onSecondOwner,
   onOtherOnly,
-  onClear,
 }: {
   ownerChoices: string[]
   firstOwner: string | null
@@ -358,7 +369,6 @@ function OwnerFilterControls({
   onFirstOwner: (owner: string | null) => void
   onSecondOwner: (owner: string | null) => void
   onOtherOnly: (checked: boolean) => void
-  onClear: () => void
 }) {
   return (
     <>
@@ -411,12 +421,6 @@ function OwnerFilterControls({
         />
         Other only
       </label>
-
-      {firstOwner !== null || secondOwner !== null ? (
-        <button type="button" className="icon-button" onClick={onClear}>
-          Clear
-        </button>
-      ) : null}
     </>
   )
 }
@@ -428,6 +432,10 @@ const TRADE_ROW_LIMITS: RowLimit[] = [5, 10, 20, 'all']
     component renders on, since it is a preference about how the member likes to
     trade, not about which page they are on. */
 const TRADE_PRIORITY_KEY = 'coc:tradePriority'
+
+/** Where the chosen two-sided/one-sided/both filter is remembered — same reasoning
+    as `TRADE_PRIORITY_KEY` above: a reading preference, not a per-page setting. */
+const TRADE_MUTUALITY_FILTER_KEY = 'coc:tradeMutualityFilter'
 
 /** `null` for input that cannot be a tag, and so can never name a stored base. */
 function canonicalOrNull(tag: string): string | null {
@@ -531,8 +539,13 @@ export function TradeSuggestions({
     /* `flatTrades` itself stays pure rarity order — `sortTradePairsForPriority`'s
        `highestValue` mode ranks directly off it and needs that, see
        `suggestTrades`'s own doc comment. Mutual-preference is layered on top
-       here, for `pairs`/`optimal` only, the same way achievability already is. */
-    const all = groupTradesByPair(sortTradesByAchievability(sortTradesByMutuality(flatTrades), achievable))
+       here, for `pairs`/`optimal` only, and it goes on *last* — applied after
+       achievability, not before — so it is the dominant key: every two-sided
+       trade sorts ahead of every one-sided one regardless of achievability,
+       matching the promise `help-copy.tsx`'s `SwapRules` makes ("sorts below
+       the swaps that gain both sides something new"). Achievability only
+       breaks ties within a mutual/one-sided group. */
+    const all = groupTradesByPair(sortTradesByMutuality(sortTradesByAchievability(flatTrades, achievable)))
     return focus === null ? all : pairsInvolving(all, focus)
   }, [flatTrades, achievable, focus])
 
@@ -540,7 +553,7 @@ export function TradeSuggestions({
    * The priority selector only changes which order `pairs` displays in — the
    * matching above, and what counts as "achievable", are unaffected. `optimal`
    * is `pairs` unchanged; every other mode still falls back to `pairs`' own
-   * order (achievable first, mutual second, rarest value third) wherever its
+   * order (mutual first, achievable second, rarest value third) wherever its
    * own key ties, which is what keeps optimal trading the invisible second
    * ordering mechanism regardless of which priority is picked — see
    * `trade-priority.ts`.
@@ -549,6 +562,29 @@ export function TradeSuggestions({
   const prioritizedPairs = useMemo(
     () => sortTradePairsForPriority(pairs, priority, flatTrades, achievable),
     [pairs, priority, flatTrades, achievable],
+  )
+
+  /*
+   * Which side(s) of a pair's own trades show at all — a filter, not just a
+   * reading order, so it narrows `prioritizedPairs` before anything downstream
+   * sees it. `'twoSided'` is the default (`parseTradeMutualityFilter`), so a
+   * one-sided trade is hidden unless a member explicitly asks for it or for
+   * `'both'` — see `trade-mutuality-filter.ts` for why the default leans this
+   * way. Filters *trades within* a pair, not whether to keep the pair, since
+   * one pair can offer both kinds of option at once.
+   */
+  const [mutualityFilter, setMutualityFilter] = usePersistedChoice(
+    TRADE_MUTUALITY_FILTER_KEY,
+    parseTradeMutualityFilter,
+  )
+  const mutualityFilteredPairs = useMemo(
+    () => filterPairsByMutuality(prioritizedPairs, mutualityFilter),
+    [prioritizedPairs, mutualityFilter],
+  )
+  const mutualityNote = tradeMutualityFilterSummary(
+    mutualityFilter,
+    mutualityFilteredPairs.length,
+    pairs.length,
   )
 
   /* The headline number: how many of `pairs`'s own candidates could really all
@@ -595,8 +631,8 @@ export function TradeSuggestions({
      picker of the very options you would want next. */
   const ownerChoices = useMemo(() => ownersInPairs(pairs, ownerOf), [pairs, ownerOf])
   const shown = useMemo(
-    () => filterPairsByOwners(prioritizedPairs, ownerOf, firstOwner, secondOwner, otherOnly),
-    [prioritizedPairs, ownerOf, firstOwner, secondOwner, otherOnly],
+    () => filterPairsByOwners(mutualityFilteredPairs, ownerOf, firstOwner, secondOwner, otherOnly),
+    [mutualityFilteredPairs, ownerOf, firstOwner, secondOwner, otherOnly],
   )
   const filterNote = tradeFilterSummary(
     shown.length,
@@ -660,19 +696,14 @@ export function TradeSuggestions({
                 setOtherOnly(checked)
                 setPage(1)
               }}
-              onClear={() => {
-                setFirstOwner(null)
-                setSecondOwner(null)
-                setOtherOnly(false)
-                setPage(1)
-              }}
             />
           ) : null}
 
           {/* Reorders `pairs` for display — never which trades are achievable, only
               which of them show up first. See `trade-priority.ts`: every mode still
-              falls back to the achievable-then-rarity order underneath, so this is a
-              reading preference layered on top of "optimal", not a replacement for it. */}
+              falls back to the mutual-then-achievable-then-rarity order underneath, so
+              this is a reading preference layered on top of "optimal", not a
+              replacement for it. */}
           <label htmlFor="trade-priority">
             Priority
             <select
@@ -690,11 +721,50 @@ export function TradeSuggestions({
               ))}
             </select>
           </label>
+
+          {/* Which side(s) of a pair's own trades to show at all — a real filter,
+              not just a reading order, so it can shrink the list on its own. See
+              `trade-mutuality-filter.ts` for why `'twoSided'` is the default. */}
+          <label htmlFor="trade-mutuality">
+            Sides
+            <select
+              id="trade-mutuality"
+              value={mutualityFilter}
+              onChange={(event) => {
+                setMutualityFilter(event.target.value as TradeMutualityFilter)
+                setPage(1)
+              }}
+            >
+              {TRADE_MUTUALITY_FILTERS.map((option) => (
+                <option key={option} value={option}>
+                  {tradeMutualityFilterLabel(option)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {firstOwner !== null || secondOwner !== null || mutualityFilter !== 'twoSided' ? (
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => {
+                setFirstOwner(null)
+                setSecondOwner(null)
+                setOtherOnly(false)
+                setMutualityFilter('twoSided')
+                setPage(1)
+              }}
+            >
+              Clear
+            </button>
+          ) : null}
         </div>
       ) : null}
 
-      {/* What the filter did. A shorter list with nothing to explain it reads as missing
-          data — the same failure the blank member cells were. */}
+      {/* What the mutuality filter did, then what the owner filters did — two
+          independent narrowings, each explaining its own share so a shorter list
+          never reads as missing data. */}
+      {mutualityNote !== null ? <p className="empty-hint">{mutualityNote}</p> : null}
       {filterNote !== null ? <p className="empty-hint">{filterNote}</p> : null}
 
       {pairs.length === 0 ? (
