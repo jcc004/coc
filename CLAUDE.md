@@ -4,7 +4,7 @@ A Clash of Clans API explorer. Hono API on Node, React + Vite front end, `node:s
 everything persistent. Three workspaces: `shared/`, `server/`, `web/`.
 
 The shared working rules are deliberately **not** imported here. They live in
-`~/repos-jcc/claude-kit/rules/` and are imported by `~/repos-jcc/CLAUDE.md`, one directory up.
+`~/repos/claude-kit/rules/` and are imported by `~/repos/CLAUDE.md`, one directory up.
 Claude Code walks up the tree from the working directory and concatenates every `CLAUDE.md` it
 finds, parent first, so those rules are already in context by the time this file is read.
 Importing them again would load them twice.
@@ -84,7 +84,7 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
   the bottom; `ProgressGridView.tsx` shipped that way once and had to be moved.
 - **Stay inside this repo.** Any agent working here — including one subagent spawning another —
   operates only within `coc/`, or an isolated worktree of it. Touching another repository under
-  `~/repos-jcc/` (`claude-kit/` included) or anything outside this checkout needs explicit
+  `~/repos/` (`claude-kit/` included) or anything outside this checkout needs explicit
   direction first; do not infer it from context or convenience.
 
 ## Files that bite, and how
