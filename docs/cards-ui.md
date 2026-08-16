@@ -465,11 +465,12 @@ for the composed order the page actually shows.
 ### The site is always optimizing for achievable trades — a priority mode only changes the order
 
 A `Priority` select sits in the filter row above the table, beside a `Sides` select, a `Deck`
-select, the owner pickers, and Clear (or alone, on a single-owner account, where the owner pickers
-never render at all — see ["Two-sided, One-sided, or
-Both"](#two-sided-one-sided-or-both-the-sides-filter) for `Sides` and ["Narrowing to one
-deck"](#narrowing-to-one-deck-the-deck-filter) for `Deck`, both below). `Priority` offers three
-states, `web/src/trade-priority.ts`:
+select, a `Base` select, the owner pickers, and Clear (or alone, on a single-owner account, where
+the owner pickers never render at all — see ["Two-sided, One-sided, or
+Both"](#two-sided-one-sided-or-both-the-sides-filter) for `Sides`, ["Narrowing to one
+deck"](#narrowing-to-one-deck-the-deck-filter) for `Deck`, and ["Narrowing to one
+base"](#narrowing-to-one-base-the-base-filter) for `Base`, all three below). `Priority` offers
+three states, `web/src/trade-priority.ts`:
 
 - **Optimal** — the default, and exactly the mutual-then-achievable-then-rarity order described
   below, unchanged.
@@ -581,12 +582,37 @@ different deck. The choice persists at `coc:tradeDeckFilter`, and a note above t
 (`tradeDeckFilterSummary`) names the count and the chosen deck whenever it is not `All decks`, the
 same as `Sides`' own note.
 
-**Clear now lives at the end of the row, to the right of `Deck`, instead of at the end of the owner
-pickers.** It resets the owner pickers, `Sides`, *and* `Deck` together — all three are display
-filters that can shrink the table, so one control clearing all of them is the same consolidation
-`OwnerFilterControls` already did for its own three fields. It shows whenever an owner select,
-`Sides`, or `Deck` is off its default; `Other only` is cleared along with the rest but, as before,
-does not by itself trigger Clear's visibility.
+### Narrowing to one base — the `Base` filter
+
+A `Base` select sits beside `Deck`, `web/src/trade-filters.ts` (`basesInPairs`,
+`filterPairsByBase`, `tradeBaseFilterSummary` — colocated with the owner-filter functions rather
+than getting its own module, since both narrow `TradePair`s by base identity). It offers **All
+bases** (the default) plus every base currently on the table, by display label
+(`labelOf`, alphabetical).
+
+**Its own options already respect the `Involving` and `and` owner pickers, not just the whole
+clan's roster.** `basesInPairs` is built from the *owner*-filtered pairs, not the unfiltered ones
+— the same "offered from what's already narrowed" relationship the owner pickers themselves have
+to the raw `pairs` — so picking one or two owners in `Involving` first leaves only their bases to
+choose from here, never a base `Involving` has already ruled out. **A selection `Involving` narrows
+out from under it is cleared, not left pointing at a base no longer offered** — the same clamp the
+row-limit's `page` gets when a filter shrinks the list under it.
+
+**All bases is the default**, the same as `Deck`: no single base is a lower priority to see than
+another, so nothing is hidden until a member actually picks one. `filterPairsByBase` filters
+*which pairs survive*, not which of a pair's own trades do — unlike `Sides` and `Deck`, a base is
+either on one side of a pair or it is not, so there is no partial-pair case to preserve. The
+selection is transient, like the owner pickers, not persisted to `localStorage`: a specific base is
+even more session-specific than an owner is. A note above the table (`tradeBaseFilterSummary`)
+names the count and the chosen base whenever one is selected, the same as `Sides` and `Deck`'s own
+notes.
+
+**Clear now lives at the end of the row, to the right of `Base`, instead of at the end of the owner
+pickers.** It resets the owner pickers, `Sides`, `Deck`, *and* `Base` together — all four are
+display filters that can shrink the table, so one control clearing all of them is the same
+consolidation `OwnerFilterControls` already did for its own three fields. It shows whenever an
+owner select, `Sides`, `Deck`, or `Base` is off its default; `Other only` is cleared along with the
+rest but, as before, does not by itself trigger Clear's visibility.
 
 ## The collection leaderboard
 

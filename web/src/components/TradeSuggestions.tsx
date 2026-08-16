@@ -32,9 +32,12 @@ import {
 import {
   UNOWNED,
   UNOWNED_LABEL,
+  basesInPairs,
+  filterPairsByBase,
   filterPairsByOwners,
   orientRowForOwner,
   ownersInPairs,
+  tradeBaseFilterSummary,
   tradeFilterSummary,
 } from '../trade-filters.ts'
 import { maxAchievableTrades, sortTradesByAchievability, tradeKey } from '../trade-matching.ts'
@@ -358,8 +361,8 @@ function BaseLabel({
  * cannot deliver, since which side an owner lands on is decided by their base's tag.
  *
  * Clear lives in {@link TradeSuggestions} itself now, not here — it resets this
- * component's own three fields plus the Sides and Deck filters beside it, and
- * neither of those filters is this component's to own.
+ * component's own three fields plus the Sides, Deck and Base filters beside it,
+ * and none of those filters is this component's to own.
  */
 function OwnerFilterControls({
   ownerChoices,
@@ -654,17 +657,41 @@ export function TradeSuggestions({
   /* Offered from the unfiltered pairs, so choosing one owner never empties the other
      picker of the very options you would want next. */
   const ownerChoices = useMemo(() => ownersInPairs(pairs, ownerOf), [pairs, ownerOf])
-  const shown = useMemo(
+  const ownerFilteredPairs = useMemo(
     () => filterPairsByOwners(deckFilteredPairs, ownerOf, firstOwner, secondOwner, otherOnly),
     [deckFilteredPairs, ownerOf, firstOwner, secondOwner, otherOnly],
   )
   const filterNote = tradeFilterSummary(
-    shown.length,
+    ownerFilteredPairs.length,
     pairs.length,
     firstOwner,
     secondOwner,
     otherOnly,
   )
+
+  /*
+   * Which single base to narrow to, offered from `ownerFilteredPairs` rather than
+   * `pairs` — so the choices already respect "Involving": narrow to one or two
+   * owners first and only their bases are offered here next, not the whole clan's.
+   * `null` means everybody currently shown. Transient like the owner pickers above,
+   * for the same reason: a specific base is even more session-specific than an owner.
+   */
+  const [baseFilter, setBaseFilter] = useState<string | null>(null)
+  const baseChoices = useMemo(
+    () => basesInPairs(ownerFilteredPairs, labelOf),
+    [ownerFilteredPairs, labelOf],
+  )
+  /* A selection the Involving pickers just narrowed away from under it — reset
+     rather than left pointing at a base no longer offered, the same clamp `page`
+     gets below for the row limit. */
+  useEffect(() => {
+    if (baseFilter !== null && !baseChoices.includes(baseFilter)) setBaseFilter(null)
+  }, [baseChoices, baseFilter])
+  const shown = useMemo(
+    () => filterPairsByBase(ownerFilteredPairs, baseFilter),
+    [ownerFilteredPairs, baseFilter],
+  )
+  const baseNote = tradeBaseFilterSummary(baseFilter, labelOf, shown.length, ownerFilteredPairs.length)
 
   /* One row per option, not one per pair — see the `TradeSuggestions` doc comment
      above for why the limit has to page over this instead of over `shown` itself. */
@@ -787,10 +814,37 @@ export function TradeSuggestions({
             </select>
           </label>
 
+          {/* Narrows to one base's own trades — offered from `ownerFilteredPairs`, so
+              it already respects "Involving" rather than offering the whole clan's
+              bases regardless of who Involving is narrowed to. Gated on more than one
+              choice for the same reason `OwnerFilterControls` is: with one base to
+              pick it could only ever mean everything or nothing. */}
+          {baseChoices.length > 1 ? (
+            <label htmlFor="trade-base">
+              Base
+              <select
+                id="trade-base"
+                value={baseFilter ?? ''}
+                onChange={(event) => {
+                  setBaseFilter(event.target.value === '' ? null : event.target.value)
+                  setPage(1)
+                }}
+              >
+                <option value="">All bases</option>
+                {baseChoices.map((tag) => (
+                  <option key={tag} value={tag}>
+                    {labelOf(tag)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
           {firstOwner !== null ||
           secondOwner !== null ||
           mutualityFilter !== 'twoSided' ||
-          deckFilter !== 'all' ? (
+          deckFilter !== 'all' ||
+          baseFilter !== null ? (
             <button
               type="button"
               className="icon-button"
@@ -800,6 +854,7 @@ export function TradeSuggestions({
                 setOtherOnly(false)
                 setMutualityFilter('twoSided')
                 setDeckFilter('all')
+                setBaseFilter(null)
                 setPage(1)
               }}
             >
@@ -809,12 +864,13 @@ export function TradeSuggestions({
         </div>
       ) : null}
 
-      {/* What each filter did, mutuality then deck then owner — independent
+      {/* What each filter did, mutuality then deck then owner then base — independent
           narrowings, each explaining its own share so a shorter list never reads
           as missing data. */}
       {mutualityNote !== null ? <p className="empty-hint">{mutualityNote}</p> : null}
       {deckNote !== null ? <p className="empty-hint">{deckNote}</p> : null}
       {filterNote !== null ? <p className="empty-hint">{filterNote}</p> : null}
+      {baseNote !== null ? <p className="empty-hint">{baseNote}</p> : null}
 
       {pairs.length === 0 ? (
         <p className="empty-hint">

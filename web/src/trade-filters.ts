@@ -92,6 +92,59 @@ export function filterPairsByOwners(
   })
 }
 
+/**
+ * The bases worth offering, in display order.
+ *
+ * Drawn from `pairs` exactly the way {@link ownersInPairs} draws its own owner
+ * list — from whatever is already on screen, not the whole account list — so
+ * that when this is called with the *owner*-filtered pairs, the base choices
+ * already respect "Involving": narrowing to one or two owners first leaves only
+ * their bases to pick from next, rather than the whole clan's.
+ */
+export function basesInPairs(
+  pairs: readonly TradePair[],
+  labelOf: (tag: string) => string,
+): string[] {
+  const found = new Set<string>()
+  for (const pair of pairs) {
+    found.add(pair.baseA)
+    found.add(pair.baseB)
+  }
+
+  const tags = [...found]
+  tags.sort(
+    (a, b) => labelOf(a).toLowerCase().localeCompare(labelOf(b).toLowerCase()) || a.localeCompare(b),
+  )
+  return tags
+}
+
+/**
+ * `pairs`, narrowed to the ones `base` is on either side of. `null` means
+ * everybody — the same "no selection, no narrowing" shape {@link filterPairsByOwners}
+ * uses for its own `first`/`second`.
+ */
+export function filterPairsByBase(pairs: readonly TradePair[], base: string | null): TradePair[] {
+  return base === null ? pairs.slice() : pairs.filter((pair) => pair.baseA === base || pair.baseB === base)
+}
+
+/**
+ * What the base filter did, in words, or `null` when nothing is selected — same
+ * shape as {@link tradeFilterSummary}, but for the one-base narrowing rather
+ * than the owner pickers.
+ */
+export function tradeBaseFilterSummary(
+  base: string | null,
+  labelOf: (tag: string) => string,
+  shown: number,
+  total: number,
+): string | null {
+  if (base === null) return null
+  const name = labelOf(base)
+
+  if (shown === 0) return `No suggested trades involving ${name}.`
+  return `Showing ${shown} of ${total} pair${total === 1 ? '' : 's'}, involving ${name}.`
+}
+
 /** One side of a displayed row: which base, and which card it gives. */
 export interface TradeSide {
   tag: string
