@@ -125,7 +125,9 @@ export function SwapRules() {
         whoever accepts may already own the card coming back the other way — completing it just
         won't gain <em>them</em> a new card. A row like that carries a small{' '}
         <strong>One-sided</strong> tag next to its deck, and sorts below the swaps that gain both
-        sides something new — a real, completable trade, just a lower-priority one. The{' '}
+        sides something new — a real, completable trade, just a lower-priority one. Whichever
+        member is the one actually gaining a new card has a green outline around their name, so
+        it's clear at a glance who the swap is really for. The{' '}
         <strong>Sides</strong> filter above the table hides these by default; switch it to{' '}
         <strong>One-sided</strong> or <strong>Both</strong> to see them. A pair is listed once
         however the two bases are named, one pair can offer several options, and one spare can

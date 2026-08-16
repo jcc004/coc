@@ -17,7 +17,7 @@ import {
   type TradeRow,
   type TradeSuggestion,
 } from '../card-trades.ts'
-import { cardById, categoryOfCard } from '../cards.ts'
+import { cardById, categoryOfCard, countMap } from '../cards.ts'
 import { hrefFor, usePersistedChoice, useRowLimit } from '../hooks.ts'
 import { useOwners } from '../owners.ts'
 import { paginate, type PagedRows, type RowLimit } from '../saved-table.ts'
@@ -333,10 +333,15 @@ function BaseLabel({
   tag,
   label,
   owner,
+  receivingNew = false,
 }: {
   tag: string
   label: string
   owner: string | undefined
+  /** True on a one-sided trade's row, for whichever side does not yet hold what it
+      is about to receive — see `holdsCard` above. Never the outline's only carrier:
+      this also says so in words, for anyone the color alone would not reach. */
+  receivingNew?: boolean
 }) {
   return (
     <>
@@ -346,6 +351,9 @@ function BaseLabel({
         {label === tag ? null : <>{tag} · </>}
         {owner ?? 'no owner set'}
       </span>
+      {receivingNew ? (
+        <span className="visually-hidden">, receiving a card it doesn't have yet</span>
+      ) : null}
     </>
   )
 }
@@ -465,6 +473,17 @@ function pairsInvolving(pairs: TradePair[], tag: string): TradePair[] {
   return pairs.filter((pair) => pair.baseA === tag || pair.baseB === tag)
 }
 
+/** Whether `tag`'s base currently holds one or more of `cardId` — read straight off
+    the inventory the row was rendered from, the same present-tense question a
+    fresh count grid answers, not a recomputation of `suggestTrades`'s own rules. */
+function holdsCard(
+  inventoryByTag: ReadonlyMap<string, ReadonlyMap<number, number>>,
+  tag: string,
+  cardId: number,
+): boolean {
+  return (inventoryByTag.get(tag)?.get(cardId) ?? 0) > 0
+}
+
 /**
  * Every swap the current counts allow, grouped by the pair of bases involved.
  *
@@ -549,6 +568,14 @@ export function TradeSuggestions({
    */
   const flatTrades = useMemo(() => suggestTrades(bases, categoryOfCard), [bases])
   const achievable = useMemo(() => maxAchievableTrades(flatTrades, bases), [flatTrades, bases])
+  /* One `countMap` per base, so a row can answer "does this base already have
+     what it's about to receive" straight off the inventory it was rendered from,
+     rather than recomputing `suggestTrades`'s own per-side `needsCard` — see
+     `holdsCard` below, where this gets used. */
+  const inventoryByTag = useMemo(
+    () => new Map(bases.map((base) => [base.tag, countMap(base)])),
+    [bases],
+  )
   const pairs = useMemo(() => {
     /* `flatTrades` itself stays pure rarity order — `sortTradePairsForPriority`'s
        `highestValue` mode ranks directly off it and needs that, see
@@ -886,6 +913,7 @@ export function TradeSuggestions({
           view={view}
           labelOf={labelOf}
           ownerOf={ownerOf}
+          inventoryByTag={inventoryByTag}
           user={user}
           owners={owners}
           tracked={tracked}
@@ -924,6 +952,7 @@ function SuggestionTable({
   view,
   labelOf,
   ownerOf,
+  inventoryByTag,
   user,
   owners,
   tracked,
@@ -938,6 +967,10 @@ function SuggestionTable({
   view: PagedRows<TradeRow>
   labelOf: (tag: string) => string
   ownerOf: (tag: string) => string | undefined
+  /** Per-base card counts, keyed by tag — see `holdsCard` above. Used to mark
+      which side of a one-sided trade's row does not yet hold what it would
+      receive. */
+  inventoryByTag: ReadonlyMap<string, ReadonlyMap<number, number>>
   user: Pick<SessionUser, 'id' | 'role'>
   owners: OwnerRecord[]
   tracked: TradeRecord[]
@@ -993,6 +1026,16 @@ function SuggestionTable({
                  wherever `suggestTrades`'s tag comparison happened to put it. See
                  `orientRowForOwner` in `trade-filters.ts`. */
               const { left, right } = orientRowForOwner(row, ownerOf, soleOwner)
+              /* Each side gives the other's `cardId` — "Gives" is what the column
+                 header over it says — so left *receives* right.cardId and right
+                 *receives* left.cardId. On a mutual trade both sides already lack
+                 what they're getting, so there is nothing to single out; a
+                 one-sided trade has exactly one side that does, by `card-trades.ts`'s
+                 own rule 2 ("at least one receiver must hold zero"). */
+              const leftReceivingNew =
+                !trade.mutual && !holdsCard(inventoryByTag, left.tag, right.cardId)
+              const rightReceivingNew =
+                !trade.mutual && !holdsCard(inventoryByTag, right.tag, left.cardId)
               return (
                 <tr
                   key={`${trade.baseA}-${trade.baseB}-${trade.cardFromA}-${trade.cardFromB}`}
@@ -1029,14 +1072,32 @@ function SuggestionTable({
                    * for a pair's options to be split by a page boundary now: the row on
                    * either side of the split still names both bases on its own.
                    */}
-                  <td className="stack-title" role="cell">
-                    <BaseLabel tag={left.tag} label={labelOf(left.tag)} owner={ownerOf(left.tag)} />
+                  <td
+                    className={leftReceivingNew ? 'stack-title trade-receiving' : 'stack-title'}
+                    role="cell"
+                    title={leftReceivingNew ? "Receiving a card it doesn't have yet" : undefined}
+                  >
+                    <BaseLabel
+                      tag={left.tag}
+                      label={labelOf(left.tag)}
+                      owner={ownerOf(left.tag)}
+                      receivingNew={leftReceivingNew}
+                    />
                   </td>
                   <td role="cell" data-label="Gives">
                     <TradeCard cardId={left.cardId} />
                   </td>
-                  <td className="stack-title" role="cell">
-                    <BaseLabel tag={right.tag} label={labelOf(right.tag)} owner={ownerOf(right.tag)} />
+                  <td
+                    className={rightReceivingNew ? 'stack-title trade-receiving' : 'stack-title'}
+                    role="cell"
+                    title={rightReceivingNew ? "Receiving a card it doesn't have yet" : undefined}
+                  >
+                    <BaseLabel
+                      tag={right.tag}
+                      label={labelOf(right.tag)}
+                      owner={ownerOf(right.tag)}
+                      receivingNew={rightReceivingNew}
+                    />
                   </td>
                   <td role="cell" data-label="Gives">
                     <TradeCard cardId={right.cardId} />

@@ -541,6 +541,19 @@ completing a one-sided trade goes through the exact same flow as any other: noth
 side changed, since a completed trade was never re-checked against "does the receiver still lack
 the card" in the first place (`docs/trade-tracker.md`'s "What is deliberately not re-checked").
 
+**The `Member` cell of whichever side actually needs the card carries a green outline**
+(`.trade-receiving`, `web/src/styles.css`), so a one-sided row's tag doesn't have to be decoded
+against the two `Gives` cells to see who the swap is really for. `TradeSuggestions.tsx` computes
+this straight off the base inventory passed into the page (`holdsCard`, over a `countMap` per base
+built once and reused for every row) rather than re-deriving `suggestTrades`'s own per-side
+`needsCard` rule a second time — the two questions ("does this base hold the card right now") are
+the same one, just asked at different layers, and this reads the answer off the data instead of
+recomputing it. Never the outline's only carrier: the cell's `title` and a `.visually-hidden` line
+inside `BaseLabel` both say "receiving a card it doesn't have yet" in words, the same rule
+`.card-panel__trades--yes` already follows for its own status color. A mutual (two-sided) row gets
+no outline on either side — both already need what they're receiving, so singling one out would
+claim a distinction the trade doesn't have.
+
 ### Two-sided, One-sided, or Both — the `Sides` filter
 
 A `Sides` select sits beside `Priority` in the same filter row, `web/src/trade-mutuality-filter.ts`.

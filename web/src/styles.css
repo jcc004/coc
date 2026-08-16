@@ -2885,6 +2885,22 @@ table.roster tbody tr[data-pair-start='true']:not(:first-child) > td {
 }
 
 /*
+ * Marks which base a one-sided trade's row is actually new for — the side that does
+ * not yet hold what it is about to receive (`TradeSuggestions.tsx`'s `holdsCard`).
+ * `outline`, inset rather than added on top, so it sits inside the cell's own
+ * padding without shifting a column width or a stacked card's own layout — the same
+ * reason `:focus-visible` above uses `outline` rather than `border`. Color is never
+ * the only carrier: the cell's own `title` and a `.visually-hidden` line inside
+ * `BaseLabel` both say the same thing in words, matching `.card-panel__trades--yes`'s
+ * own "never the only carrier" rule.
+ */
+.trade-receiving {
+  outline: 2px solid var(--good);
+  outline-offset: -3px;
+  border-radius: var(--radius);
+}
+
+/*
  * The same divider, for a table where **every** row is a whole record rather than
  * one option in a group — the trade tracker. Its own class instead of borrowing
  * `data-pair-start`: that attribute means "a new pair begins here", which is a claim
