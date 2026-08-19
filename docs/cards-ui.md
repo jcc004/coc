@@ -464,12 +464,13 @@ for the composed order the page actually shows.
 
 ### The site is always optimizing for achievable trades — a priority mode only changes the order
 
-A `Priority` select sits in the filter row above the table, beside a `Sides` select, a `Deck`
-select, a `Base` select, the owner pickers, and Clear (or alone, on a single-owner account, where
-the owner pickers never render at all — see ["Two-sided, One-sided, or
+A `Priority` select sits in the filter row above the table, beside a `Sort` select, a `Sides`
+select, a `Deck` select, a `Base` select, the owner pickers, and Clear (or alone, on a
+single-owner account, where the owner pickers never render at all — see ["Sorting by
+member"](#sorting-by-member-the-sort-control) for `Sort`, ["Two-sided, One-sided, or
 Both"](#two-sided-one-sided-or-both-the-sides-filter) for `Sides`, ["Narrowing to one
 deck"](#narrowing-to-one-deck-the-deck-filter) for `Deck`, and ["Narrowing to one
-base"](#narrowing-to-one-base-the-base-filter) for `Base`, all three below). `Priority` offers
+base"](#narrowing-to-one-base-the-base-filter) for `Base`, all four below). `Priority` offers
 three states, `web/src/trade-priority.ts`:
 
 - **Optimal** — the default, and exactly the mutual-then-achievable-then-rarity order described
@@ -500,6 +501,31 @@ The choice is remembered per browser at `coc:tradePriority`, the same `localStor
 every other display preference on this page, and shared by both places `TradeSuggestions` renders
 (the card page and a player page) — one preference about how a member likes to trade, not a
 per-page setting.
+
+### Sorting by member — the `Sort` control
+
+A `Sort` select sits beside `Priority`, `web/src/trade-member-sort.ts`. It answers a different
+question from `Priority`'s own — "what's worth trading first" versus "where is this member in the
+list" — and is layered *on top* of whatever order `Priority` already produced rather than competing
+with it: **Default order** (the default) leaves `Priority`'s own order untouched, and the other four
+states — **First member (A–Z)**, **First member (Z–A)**, **Second member (A–Z)**, **Second member
+(Z–A)** — re-sort by one of the table's two `Member` columns, falling back to `Priority`'s order on
+a name tie (`sortByComputedKey`, `web/src/saved-table.ts`, a stable decorate/sort/undecorate shared
+with `sortTradePairsForPriority` itself).
+
+**"First member" and "second member" mean whichever base is actually printed in that column right
+now, not the pair's own canonical `baseA`/`baseB`.** Those two are fixed per pair — `suggestTrades`
+always orients the lexicographically smaller tag as `baseA` — but which column a base displays in is
+not: `orientRowForOwner` (`web/src/trade-filters.ts`) swaps a pair's display left/right whenever a
+single "Involving" owner is focused, so that owner's own base always reads on the left regardless of
+which one is `baseA`. `sortTradePairsByMember` re-derives the same swap at the pair level
+(`orientPairForOwner`, the same file) and sorts by *that*, so the sort always matches the column a
+member is actually reading down — this is why the select is wired to run after the owner filter in
+`TradeSuggestions.tsx`, not before it.
+
+The choice is remembered per browser at `coc:tradeMemberSort`, the same mechanism `Priority` uses,
+and is not one of the filters Clear resets — like `Priority`, it is a reading preference about how a
+member likes to read the table, not a per-session narrowing.
 
 ### One-sided trades: a real swap where only the proposer needs it
 

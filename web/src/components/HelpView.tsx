@@ -140,6 +140,18 @@ export function HelpView({ section }: { section: HelpSectionId | null }) {
           Priority only decides what you see first.
         </p>
         <p className="empty-hint">
+          A <strong>Sort</strong> select beside Priority reorders the table by member name instead
+          — a different question from Priority's own ("what's worth trading first") and layered on
+          top of it, so switching Sort back to <strong>Default order</strong> returns you to
+          whatever Priority already had showing. Every row names two members, and{' '}
+          <strong>First member</strong> and <strong>Second member</strong> sort by whichever one
+          happens to print in that row's first or second Member column — not "the base you're
+          looking for" specifically, since which side of a pair a base lands on isn't fixed to a
+          person the way the owner pickers below are. Handy for scanning the whole list
+          alphabetically; if you only care about one member's own trades, the{' '}
+          <strong>Involving</strong> pickers above narrow the table to them directly instead.
+        </p>
+        <p className="empty-hint">
           A <strong>Sides</strong> select beside Priority controls which of a pair's own options
           show at all. <strong>Two-sided</strong> is the default and hides one-sided options
           entirely — most trades worth chasing gain both bases something, so that is what a

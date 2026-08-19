@@ -25,6 +25,24 @@ export function textCompare(
   return ascending ? left.localeCompare(right) : right.localeCompare(left)
 }
 
+/**
+ * Decorate/sort/undecorate: `keyOf` runs once per item rather than being rerun by
+ * `Array.prototype.sort`'s comparator O(n log n) times. `trade-priority.ts`'s
+ * `sortTradePairsForPriority` and `trade-member-sort.ts`'s `sortTradePairsByMember`
+ * both need exactly this shape — one over a numeric achievability/rarity rank, the
+ * other over a member name — so it lives here once rather than being hand-rolled
+ * per caller, matching every other comparator on this page.
+ */
+export function sortByComputedKey<T, K>(
+  items: readonly T[],
+  keyOf: (item: T) => K,
+  compare: (a: K, b: K) => number,
+): T[] {
+  const decorated = items.map((item) => ({ item, key: keyOf(item) }))
+  decorated.sort((a, b) => compare(a.key, b.key))
+  return decorated.map((entry) => entry.item)
+}
+
 export function numberCompare(
   a: number | undefined,
   b: number | undefined,

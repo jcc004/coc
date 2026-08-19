@@ -33,6 +33,21 @@ function ownerKey(tag: string, ownerOf: (tag: string) => string | undefined): st
 }
 
 /**
+ * Case-insensitive name comparison, with a tiebreak for two names that only
+ * differ by case — a plain `localeCompare` on the lowercased strings alone
+ * would call "anna" and "Anna" equal and let them swap order on every render.
+ *
+ * `tiebreakA`/`tiebreakB` default to `a`/`b` themselves, which is right for
+ * comparing two names directly ({@link ownersInPairs}, `trade-member-sort.ts`'s
+ * own member sort). {@link basesInPairs} passes the two bases' own *tags*
+ * instead, so two bases sharing a display name still land in one deterministic
+ * order rather than whatever order the incoming `Set` happened to iterate in.
+ */
+export function nameCompare(a: string, b: string, tiebreakA: string = a, tiebreakB: string = b): number {
+  return a.toLowerCase().localeCompare(b.toLowerCase()) || tiebreakA.localeCompare(tiebreakB)
+}
+
+/**
  * The owners worth offering, in display order, with {@link UNOWNED} last when some base
  * in these pairs has none.
  *
@@ -52,7 +67,7 @@ export function ownersInPairs(
   }
 
   const named = [...found].filter((owner) => owner !== UNOWNED)
-  named.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()) || a.localeCompare(b))
+  named.sort((a, b) => nameCompare(a, b))
   return found.has(UNOWNED) ? [...named, UNOWNED] : named
 }
 
@@ -112,9 +127,7 @@ export function basesInPairs(
   }
 
   const tags = [...found]
-  tags.sort(
-    (a, b) => labelOf(a).toLowerCase().localeCompare(labelOf(b).toLowerCase()) || a.localeCompare(b),
-  )
+  tags.sort((a, b) => nameCompare(labelOf(a), labelOf(b), a, b))
   return tags
 }
 
@@ -152,6 +165,32 @@ export interface TradeSide {
 }
 
 /**
+ * Which tag prints on the left and which on the right for a pair, given a
+ * possible single-owner focus — pulled out as its own function because the
+ * swap decision depends only on `baseA`/`baseB` and `soleOwner`, never on
+ * which particular trade of the pair is being drawn, so a caller that only
+ * needs to know *which base* is displayed left (`trade-member-sort.ts`'s
+ * "First member"/"Second member" sort, so it orders by what's actually on
+ * screen rather than by the pair's own canonical, tag-oriented `baseA`/
+ * `baseB`) has no reason to build a `TradeSide` for either one. See
+ * {@link orientRowForOwner} below, which delegates to this for the swap
+ * decision and adds each side's card on top.
+ */
+export function orientPairForOwner(
+  pair: Pick<TradePair, 'baseA' | 'baseB'>,
+  ownerOf: (tag: string) => string | undefined,
+  soleOwner: string | null,
+): { left: string; right: string } {
+  if (soleOwner === null) return { left: pair.baseA, right: pair.baseB }
+
+  const aMatches = ownerKey(pair.baseA, ownerOf) === soleOwner
+  const bMatches = ownerKey(pair.baseB, ownerOf) === soleOwner
+  return bMatches && !aMatches
+    ? { left: pair.baseB, right: pair.baseA }
+    : { left: pair.baseA, right: pair.baseB }
+}
+
+/**
  * Which side of one row to print on the left, once the "Involving" picker has
  * narrowed the table to a single owner.
  *
@@ -177,11 +216,8 @@ export function orientRowForOwner(
 ): { left: TradeSide; right: TradeSide } {
   const a: TradeSide = { tag: row.pair.baseA, cardId: row.trade.cardFromA }
   const b: TradeSide = { tag: row.pair.baseB, cardId: row.trade.cardFromB }
-  if (soleOwner === null) return { left: a, right: b }
-
-  const aMatches = ownerKey(a.tag, ownerOf) === soleOwner
-  const bMatches = ownerKey(b.tag, ownerOf) === soleOwner
-  return bMatches && !aMatches ? { left: b, right: a } : { left: a, right: b }
+  const oriented = orientPairForOwner(row.pair, ownerOf, soleOwner)
+  return oriented.left === a.tag ? { left: a, right: b } : { left: b, right: a }
 }
 
 /**

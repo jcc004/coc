@@ -50,6 +50,13 @@ import {
   type TradeMutualityFilter,
 } from '../trade-mutuality-filter.ts'
 import {
+  parseTradeMemberSort,
+  sortTradePairsByMember,
+  tradeMemberSortLabel,
+  TRADE_MEMBER_SORTS,
+  type TradeMemberSort,
+} from '../trade-member-sort.ts'
+import {
   parseTradePriority,
   sortTradePairsForPriority,
   tradePriorityLabel,
@@ -459,6 +466,10 @@ const TRADE_MUTUALITY_FILTER_KEY = 'coc:tradeMutualityFilter'
 /** Where the chosen deck filter is remembered — same reasoning as the two keys above. */
 const TRADE_DECK_FILTER_KEY = 'coc:tradeDeckFilter'
 
+/** Where the chosen member sort is remembered — same reasoning as the three keys
+    above: a reading preference about this table, not a per-page setting. */
+const TRADE_MEMBER_SORT_KEY = 'coc:tradeMemberSort'
+
 /** `null` for input that cannot be a tag, and so can never name a stored base. */
 function canonicalOrNull(tag: string): string | null {
   try {
@@ -697,11 +708,35 @@ export function TradeSuggestions({
   )
 
   /*
+   * A second, independent reading order, layered on top of the priority order
+   * rather than competing with it — `'none'` (the default) leaves
+   * `ownerFilteredPairs` exactly as it was, and any other value re-sorts by
+   * one of the two member names, falling back to whatever order was already
+   * there on a tie. Applied *after* the owner filter, not before, because
+   * `sortTradePairsByMember` needs `firstOwner` as its own `soleOwner` — the
+   * same "Involving" focus `orientRowForOwner` swaps a pair's display
+   * left/right for — so "first member" means whichever base actually prints
+   * in the table's first column, not the pair's raw, un-oriented `baseA`. See
+   * `trade-member-sort.ts`.
+   */
+  const [memberSort, setMemberSort] = usePersistedChoice(TRADE_MEMBER_SORT_KEY, parseTradeMemberSort)
+  const memberSortedPairs = useMemo(
+    () => sortTradePairsByMember(ownerFilteredPairs, memberSort, labelOf, ownerOf, firstOwner),
+    [ownerFilteredPairs, memberSort, labelOf, ownerOf, firstOwner],
+  )
+
+  /*
    * Which single base to narrow to, offered from `ownerFilteredPairs` rather than
    * `pairs` — so the choices already respect "Involving": narrow to one or two
    * owners first and only their bases are offered here next, not the whole clan's.
    * `null` means everybody currently shown. Transient like the owner pickers above,
    * for the same reason: a specific base is even more session-specific than an owner.
+   *
+   * Reads `ownerFilteredPairs`, not `memberSortedPairs`, deliberately: `basesInPairs`
+   * re-sorts its own result alphabetically regardless of what order it's handed, so
+   * depending on the member-sorted list would only add a recompute on every Sort
+   * change for no different answer. `shown` below is the one place order actually
+   * has to survive — see `memberSortedPairs` above.
    */
   const [baseFilter, setBaseFilter] = useState<string | null>(null)
   const baseChoices = useMemo(
@@ -715,8 +750,8 @@ export function TradeSuggestions({
     if (baseFilter !== null && !baseChoices.includes(baseFilter)) setBaseFilter(null)
   }, [baseChoices, baseFilter])
   const shown = useMemo(
-    () => filterPairsByBase(ownerFilteredPairs, baseFilter),
-    [ownerFilteredPairs, baseFilter],
+    () => filterPairsByBase(memberSortedPairs, baseFilter),
+    [memberSortedPairs, baseFilter],
   )
   const baseNote = tradeBaseFilterSummary(baseFilter, labelOf, shown.length, ownerFilteredPairs.length)
 
@@ -795,6 +830,28 @@ export function TradeSuggestions({
               {TRADE_PRIORITIES.map((option) => (
                 <option key={option} value={option}>
                   {tradePriorityLabel(option)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {/* A second, independent reading order, over the same pairs Priority
+              already ordered — see the note above `memberSortedPairs` for why
+              "first"/"second" are well-defined even though the owner pickers
+              deliberately don't offer a per-column filter. */}
+          <label htmlFor="trade-member-sort">
+            Sort
+            <select
+              id="trade-member-sort"
+              value={memberSort}
+              onChange={(event) => {
+                setMemberSort(event.target.value as TradeMemberSort)
+                setPage(1)
+              }}
+            >
+              {TRADE_MEMBER_SORTS.map((option) => (
+                <option key={option} value={option}>
+                  {tradeMemberSortLabel(option)}
                 </option>
               ))}
             </select>

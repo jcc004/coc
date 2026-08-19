@@ -1,4 +1,5 @@
 import { parseAllowlisted } from './persisted-choice.ts'
+import { sortByComputedKey } from './saved-table.ts'
 import { tradeKey } from './trade-matching.ts'
 import type { TradePair, TradeSuggestion } from './card-trades.ts'
 
@@ -89,21 +90,18 @@ function buildValueRank(flatTrades: readonly TradeSuggestion[]): Map<string, num
 }
 
 /**
- * Sorts `pairs` by a numeric key computed once per pair rather than
- * recomputed on every comparison — decorate/sort/undecorate, since
- * `Array.prototype.sort`'s comparator otherwise reruns `keyOf` O(n log n)
- * times instead of the O(n) this needs. Descending when `ascending` is
- * false, so `fewestPartners` (highest achievable count first) and
- * `highestValue` (lowest rank — i.e. rarest — first) can share one helper.
+ * Sorts `pairs` by a numeric key, descending when `ascending` is false — so
+ * `fewestPartners` (highest achievable count first) and `highestValue` (lowest
+ * rank — i.e. rarest — first) can share one helper. The decorate/sort/undecorate
+ * itself is `sortByComputedKey` (`saved-table.ts`), shared with
+ * `trade-member-sort.ts`'s own pair sort rather than hand-rolled here.
  */
 function sortByKey(
   pairs: readonly TradePair[],
   keyOf: (pair: TradePair) => number,
   ascending: boolean,
 ): TradePair[] {
-  const decorated = pairs.map((pair) => ({ pair, key: keyOf(pair) }))
-  decorated.sort((a, b) => (ascending ? a.key - b.key : b.key - a.key))
-  return decorated.map((entry) => entry.pair)
+  return sortByComputedKey(pairs, keyOf, (a, b) => (ascending ? a - b : b - a))
 }
 
 /**

@@ -86,6 +86,20 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
   operates only within `coc/`, or an isolated worktree of it. Touching another repository under
   `~/repos/` (`claude-kit/` included) or anything outside this checkout needs explicit
   direction first; do not infer it from context or convenience.
+- **Check for open change requests at the start of every session's work here, and close out what
+  you can.** `#/change-requests`'s admin table (`GET /api/admin/change-requests`,
+  `server/src/change-requests/routes.ts:281`) is the same list a human admin would open on spec —
+  `docs/proposed-changes.md` explains the whole feature; the point of this bullet is that Claude
+  should not need to be asked to look. Where an open request describes something this session can
+  actually implement, do it, then resolve the request the same way `docs/proposed-changes.md`
+  describes for a human admin: `POST /api/admin/change-requests/:id/resolve`
+  (`server/src/change-requests/routes.ts:291`), resolution type **Tied to a commit**, citing the
+  commit that ships the fix. That call needs an authenticated admin session, which nothing in this
+  checkout currently gives Claude — ask the user to either supply one or resolve the request
+  themselves once the fix has shipped, rather than silently skipping the resolve step. A request
+  outside this session's scope, or one only a human can decide (**As designed**, **Outside of
+  project scope**), gets named to the user rather than left for the next session to rediscover from
+  scratch.
 
 ## Files that bite, and how
 
