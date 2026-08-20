@@ -506,12 +506,17 @@ per-page setting.
 
 A `Sort` select sits beside `Priority`, `web/src/trade-member-sort.ts`. It answers a different
 question from `Priority`'s own — "what's worth trading first" versus "where is this member in the
-list" — and is layered *on top* of whatever order `Priority` already produced rather than competing
-with it: **Default order** (the default) leaves `Priority`'s own order untouched, and the other four
-states — **First member (A–Z)**, **First member (Z–A)**, **Second member (A–Z)**, **Second member
-(Z–A)** — re-sort by one of the table's two `Member` columns, falling back to `Priority`'s order on
-a name tie (`sortByComputedKey`, `web/src/saved-table.ts`, a stable decorate/sort/undecorate shared
-with `sortTradePairsForPriority` itself).
+list" — and, unlike `Priority`, a non-default choice here **replaces** whatever order `Priority`
+produced rather than layering on top of it: **Default order** (the default) leaves `Priority`'s own
+order untouched, and the other four states — **First member (A–Z)**, **First member (Z–A)**,
+**Second member (A–Z)**, **Second member (Z–A)** — are a two-key, Excel-style alphabetical sort. The
+mode names the primary column and its direction; the *other* `Member` column is always the secondary
+key, always ascending, regardless of the primary's own direction — so a tied primary name is broken
+by the counterparty's name, not by `Priority`'s achievable/mutual/rarity order. Only a pair whose
+*both* columns are byte-for-byte identical to another pair's falls back to arrival order
+(`sortByComputedKey`, `web/src/saved-table.ts`, a stable decorate/sort/undecorate shared with
+`sortTradePairsForPriority` itself). A member choosing a name sort is asking to read the table
+purely by name, so nothing about achievability or rarity should silently decide the rest of it.
 
 **"First member" and "second member" mean whichever base is actually printed in that column right
 now, not the pair's own canonical `baseA`/`baseB`.** Those two are fixed per pair — `suggestTrades`

@@ -9,8 +9,14 @@ import type { TradePair } from './card-trades.ts'
  * not a replacement for it. `sortTradePairsByMember` is applied *after*
  * `sortTradePairsForPriority`, so `'none'` here leaves the priority's own order
  * (achievable, then mutual, then rarity, then whichever priority mode is
- * active) exactly as it was, and any other value here is layered on top of it
- * as the new primary key.
+ * active) exactly as it was, and any other value here replaces it entirely
+ * with a two-key alphabetical sort — the primary column named by the mode,
+ * the *other* column always ascending as the Excel-style secondary key. A
+ * member sort is a request to read the table purely by name, so it does not
+ * fall back to Priority's order on a tie the way an earlier version of this
+ * function did — see the "sorts purely by name" note on `sortTradePairsByMember`
+ * below for why a request specifically for name order should not have
+ * achievability or rarity silently deciding the rest of it.
  *
  * **Both member columns, sorted by what's actually printed under them, not by
  * `pair.baseA`/`pair.baseB` directly.** Those two are stable — `suggestTrades`
@@ -67,16 +73,28 @@ export function tradeMemberSortLabel(sort: TradeMemberSort): string {
  * focused, and this has to sort by that same column, not by the pair's own
  * canonical `baseA`/`baseB`.
  *
- * A stable sort over `pairs` as handed in (via `sortByComputedKey`,
- * `saved-table.ts`), so two pairs whose sorted-on name is byte-for-byte
- * identical (two bases sharing a display name exactly) keep whatever order
- * `pairs` already carried — the priority order this is layered over — rather
- * than an arbitrary one. Two names differing only by case (`"Anna"` vs.
- * `"anna"`) are a narrower case: `nameCompare` (`trade-filters.ts`)
- * deliberately gives them a *deterministic* order of their own — the same
- * "don't let two case-variants swap on every render" guarantee it makes for
- * {@link ownersInPairs}/{@link basesInPairs} — rather than falling through to
- * arrival order the way a true tie does.
+ * **A member sort is a two-key Excel-style sort, not a single key with a
+ * fallback.** The mode names its primary column and direction — `firstAsc`
+ * sorts the first column A–Z, `secondDesc` sorts the second column Z–A — and
+ * the *other* column is always the secondary key, always ascending,
+ * regardless of the primary's own direction: a member asking to read the
+ * table by name wants a name order all the way down, not achievability or
+ * rarity silently deciding what a tied primary name falls back to. (An
+ * earlier version of this function used `pairs`' own incoming order — the
+ * achievable/mutual/rarity/priority order this is layered over — as the
+ * tiebreak instead; that made "sort by name" only a partial reorder whenever
+ * two pairs shared a first-column name, which is exactly the case a member
+ * asking for alphabetical order cares about most.)
+ *
+ * Two pairs whose *both* columns are byte-for-byte identical are the only
+ * true tie left, and keep whatever order `pairs` already carried, via
+ * `sortByComputedKey`'s stable sort (`saved-table.ts`). Two names differing
+ * only by case (`"Anna"` vs. `"anna"`) are a narrower case handled by
+ * `nameCompare` itself (`trade-filters.ts`), which deliberately gives them a
+ * *deterministic* order of their own — the same "don't let two case-variants
+ * swap on every render" guarantee it makes for
+ * {@link ownersInPairs}/{@link basesInPairs} — so a tie on the secondary key
+ * is resolved the same way a tie on the primary key would be.
  */
 export function sortTradePairsByMember(
   pairs: readonly TradePair[],
@@ -89,9 +107,16 @@ export function sortTradePairsByMember(
 
   const ascending = sort === 'firstAsc' || sort === 'secondAsc'
   const side = sort === 'firstAsc' || sort === 'firstDesc' ? 'left' : 'right'
-  const nameOf = (pair: TradePair) => labelOf(orientPairForOwner(pair, ownerOf, soleOwner)[side])
+  const otherSide = side === 'left' ? 'right' : 'left'
+  const keyOf = (pair: TradePair) => {
+    const oriented = orientPairForOwner(pair, ownerOf, soleOwner)
+    return { primary: labelOf(oriented[side]), secondary: labelOf(oriented[otherSide]) }
+  }
 
-  return sortByComputedKey(pairs, nameOf, (a, b) => (ascending ? nameCompare(a, b) : nameCompare(b, a)))
+  return sortByComputedKey(pairs, keyOf, (a, b) => {
+    const primaryCmp = ascending ? nameCompare(a.primary, b.primary) : nameCompare(b.primary, a.primary)
+    return primaryCmp !== 0 ? primaryCmp : nameCompare(a.secondary, b.secondary)
+  })
 }
 
 /**

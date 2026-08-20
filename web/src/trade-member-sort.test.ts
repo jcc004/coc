@@ -100,15 +100,39 @@ describe('sortTradePairsByMember — first/second member, both directions, no ow
     )
   })
 
-  it('ties keep the incoming order — a stable sort, not a re-derived one', () => {
-    // Both pairs share a baseA display name ("Zara" is reused for #D here), so
-    // firstAsc has nothing to break the tie with and must fall back to arrival order.
+  it('a primary-column tie is broken by the secondary column, not by arrival order', () => {
+    // Both pairs share a baseA display name ("Zara" is reused for #D here). Arrival
+    // order alone would keep #A-#B ahead of #D-#C — but their baseB names are Milo
+    // and Anna, so the secondary key (ascending, regardless of firstAsc/firstDesc)
+    // puts Anna's pair first: the opposite of arrival order, proving the tiebreak is
+    // the second column and not "whatever pairs already carried".
     const tiedNames: Record<string, string> = { ...NAMES, '#D': 'Zara' }
     const tiedLabelOf = (tag: string) => tiedNames[tag] ?? tag
     const flatTrades = [suggestion('#A', '#B', 1, 2), suggestion('#D', '#C', 3, 4)]
     const pairs = groupTradesByPair(flatTrades)
 
-    const sorted = sortTradePairsByMember(pairs, 'firstAsc', tiedLabelOf, noOwners, null)
+    const ascending = sortTradePairsByMember(pairs, 'firstAsc', tiedLabelOf, noOwners, null)
+    assert.deepEqual(
+      ascending.map((pair) => `${pair.baseA}-${pair.baseB}`),
+      ['#A-#B', '#D-#C'],
+    )
+
+    // firstDesc still ties on the primary column ("Zara" both ways), and the
+    // secondary key stays ascending either way — same order as firstAsc above.
+    const descending = sortTradePairsByMember(pairs, 'firstDesc', tiedLabelOf, noOwners, null)
+    assert.deepEqual(
+      descending.map((pair) => `${pair.baseA}-${pair.baseB}`),
+      ['#A-#B', '#D-#C'],
+    )
+  })
+
+  it('true ties — both columns byte-identical — keep the incoming order', () => {
+    const dupeNames: Record<string, string> = { ...NAMES, '#D': 'Zara', '#E': 'Anna' }
+    const dupeLabelOf = (tag: string) => dupeNames[tag] ?? tag
+    const flatTrades = [suggestion('#A', '#B', 1, 2), suggestion('#D', '#E', 3, 4)]
+    const pairs = groupTradesByPair(flatTrades)
+
+    const sorted = sortTradePairsByMember(pairs, 'firstAsc', dupeLabelOf, noOwners, null)
 
     assert.deepEqual(
       sorted.map((pair) => `${pair.baseA}-${pair.baseB}`),
@@ -133,15 +157,18 @@ describe('sortTradePairsByMember — sorts by what is actually printed, not by r
   const owners: Record<string, string> = { '#B': 'anna-owner' }
   const ownerOf = (tag: string) => owners[tag]
 
-  it('firstAsc keeps arrival order once the focused owner ties every displayed-left name', () => {
+  it('firstAsc, with every displayed-left name tied on the focused owner, breaks the tie by counterparty name', () => {
     const flatTrades = [suggestion('#A', '#B', 1, 2), suggestion('#B', '#C', 3, 4)]
     const pairs = groupTradesByPair(flatTrades)
 
     const sorted = sortTradePairsByMember(pairs, 'firstAsc', labelOf, ownerOf, 'anna-owner')
 
+    // Displayed-left is Anna for both pairs (the focused owner). The counterparty —
+    // displayed-right — is Zara (#A) for the first pair and Milo (#C) for the second;
+    // ascending on that secondary key puts Milo's pair first.
     assert.deepEqual(
       sorted.map((pair) => `${pair.baseA}-${pair.baseB}`),
-      pairs.map((pair) => `${pair.baseA}-${pair.baseB}`),
+      ['#B-#C', '#A-#B'],
     )
   })
 
