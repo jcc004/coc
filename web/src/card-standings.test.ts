@@ -8,7 +8,10 @@ import {
   cardPoints,
   cardsInGridOrder,
   cardTotals,
+  COMPLETE_SET_BONUS,
   filterStandingsByOwner,
+  KTOWN_BASE_TAG,
+  KTOWN_FIRST_TO_COMPLETE_BONUS,
   lastUpdatedCell,
   standingOwnerOptions,
   type StandingBase,
@@ -215,8 +218,8 @@ describe('baseStandings — the complete-set bonus', () => {
       [base('#A', [[1, 1], [2, 1], [20, 1]])],
       3,
     )
-    // 10 + 10 + 10 = 30, plus the 20-point bonus.
-    assert.equal(row?.points, 50)
+    // 10 + 10 + 10 = 30, plus the bonus.
+    assert.equal(row?.points, 30 + COMPLETE_SET_BONUS)
     assert.equal(row?.distinct, 3)
   })
 
@@ -230,8 +233,8 @@ describe('baseStandings — the complete-set bonus', () => {
    * The bonus is folded into `points` before the sort, so it competes on equal
    * terms with depth — it can flip the order, not just pad a display value.
    * Without it: Anna (3 cards once each = 30) loses to Bert (one card six times
-   * = 45). With it: Anna's total becomes 50 and takes the lead, because she
-   * finished the set and Bert has not.
+   * = 45). With it, Anna's total gains the bonus and takes the lead, because
+   * she finished the set and Bert has not.
    */
   it('can outrank a deeper but incomplete base once folded into points', () => {
     const rows = baseStandings(
@@ -243,7 +246,7 @@ describe('baseStandings — the complete-set bonus', () => {
       rows.map((row) => row.label),
       ['Anna', 'Bert'],
     )
-    assert.equal(rows[0]?.points, 50)
+    assert.equal(rows[0]?.points, 30 + COMPLETE_SET_BONUS)
     assert.equal(rows[1]?.points, 45)
   })
 
@@ -258,6 +261,44 @@ describe('baseStandings — the complete-set bonus', () => {
     const [row] = baseStandings([named('#A', 'Anna')], [], 0)
     assert.equal(row?.points, 0)
     assert.equal(row?.distinct, 0)
+  })
+})
+
+describe('baseStandings — the KTown first-to-complete bonus', () => {
+  it('adds its own points to that one tag, and stacks with the complete-set bonus', () => {
+    const rows = baseStandings(
+      [named(KTOWN_BASE_TAG, 'KTown'), named('#B', 'Bert')],
+      [base(KTOWN_BASE_TAG, [[1, 1], [2, 1], [20, 1]]), base('#B', [[1, 1], [2, 1], [20, 1]])],
+      3,
+    )
+    const ktown = rows.find((row) => row.tag === KTOWN_BASE_TAG)
+    const bert = rows.find((row) => row.tag === '#B')
+    // Both hold all three: 30 base points plus the complete-set bonus each,
+    // plus KTown's own bonus on top of that.
+    assert.equal(ktown?.points, 30 + COMPLETE_SET_BONUS + KTOWN_FIRST_TO_COMPLETE_BONUS)
+    assert.equal(bert?.points, 30 + COMPLETE_SET_BONUS)
+  })
+
+  it('is not conditioned on currently holding a complete set', () => {
+    // A historical, one-off award, not a live-state rule — it does not require
+    // `distinct === size` the way `COMPLETE_SET_BONUS` does.
+    const [row] = baseStandings([named(KTOWN_BASE_TAG, 'KTown')], [base(KTOWN_BASE_TAG, [[1, 1]])])
+    assert.equal(row?.points, cardPoints(1) + KTOWN_FIRST_TO_COMPLETE_BONUS)
+  })
+
+  it('never applies to any other tag', () => {
+    const [row] = baseStandings([named('#A', 'Anna')], [base('#A', [[1, 1], [2, 1], [20, 1]])], 3)
+    assert.equal(row?.points, 30 + COMPLETE_SET_BONUS)
+  })
+
+  it('never applies to an untracked base with no inventory entry at all', () => {
+    // A base can be tracked (in `bases`) with no `card_inventory` row yet — the
+    // ordinary "never entered" state `baseStandings`'s own doc comment describes.
+    // The tag match alone must not award 50 points to a row the Points column
+    // would otherwise show as unrecorded.
+    const [row] = baseStandings([named(KTOWN_BASE_TAG, 'KTown')], [])
+    assert.equal(row?.points, 0)
+    assert.equal(row?.recorded, false)
   })
 })
 

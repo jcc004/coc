@@ -1,6 +1,6 @@
 import { MAX_CARD_COUNT, MIN_TRADEABLE_COUNT } from '@coc/shared'
 import { RARITY_TIER_COUNT } from '../card-rarity.ts'
-import { cardPoints, COMPLETE_SET_BONUS } from '../card-standings.ts'
+import { cardPoints, COMPLETE_SET_BONUS, KTOWN_FIRST_TO_COMPLETE_BONUS } from '../card-standings.ts'
 import { ALL_CARDS } from '../cards.ts'
 import { formatFull } from '../format.ts'
 import { ROW_SIZE } from '../row-standings.ts'
@@ -238,6 +238,12 @@ export function ScoringRules() {
         them are stacked to the cap, since it only asks for breadth, not depth. It is folded into
         the same points total the board sorts on, not a badge of its own, so finishing the set can
         tip a close tie or edge out a base that has stacked deep copies of fewer cards.
+      </p>
+      <p className="empty-hint">
+        <strong>KTown</strong> carries a further <strong>{formatFull(KTOWN_FIRST_TO_COMPLETE_BONUS)}
+        -point award</strong> on top of everything above, for being the first base to hold all{' '}
+        {ALL_CARDS.length} — a one-time recognition, not a rule anyone else's base can also earn:
+        nothing else on this board singles out one base by name, and nothing else works this way.
       </p>
       <p className="empty-hint">
         Level on points, more distinct cards goes first; level on both, by name and then tag, so the

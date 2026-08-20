@@ -29,6 +29,8 @@ import {
   cardPoints,
   cardTotals,
   COMPLETE_SET_BONUS,
+  KTOWN_BASE_TAG,
+  KTOWN_FIRST_TO_COMPLETE_BONUS,
   cardsInGridOrder,
   filterStandingsByOwner,
   lastUpdatedCell,
@@ -264,12 +266,23 @@ const OVERALL_COLUMNS: LeaderboardColumn<BaseStanding>[] = [
        * raising `MAX_CARD_COUNT` cannot leave this tooltip quoting a ceiling that no
        * longer exists. `+ COMPLETE_SET_BONUS` for the same reason: a base at the cap
        * on every card has, by construction, also held at least one of every card, so
-       * it always earns the bonus too — the true ceiling is 3,320, not 3,300.
+       * it always earns the bonus too — computed, not a hand-typed 3,300 or 3,350,
+       * so raising either constant cannot leave this tooltip stale.
+       *
+       * `+ KTOWN_FIRST_TO_COMPLETE_BONUS`, only for that one row: everybody else's
+       * ceiling is `size * cardPoints(MAX_CARD_COUNT) + COMPLETE_SET_BONUS`, but
+       * that base's own award (`card-standings.ts`) is real, earned points that
+       * would otherwise read as exceeding "possible" — the same "attained more
+       * than the stated max" bug the two fixes above this one already exist to
+       * prevent, just for a ceiling that differs per row instead of being one
+       * shared constant.
        */
       row.recorded ? (
         <span
           title={`${formatFull(row.points)} of ${formatFull(
-            row.size * cardPoints(MAX_CARD_COUNT) + COMPLETE_SET_BONUS,
+            row.size * cardPoints(MAX_CARD_COUNT) +
+              COMPLETE_SET_BONUS +
+              (row.tag === KTOWN_BASE_TAG ? KTOWN_FIRST_TO_COMPLETE_BONUS : 0),
           )} possible`}
         >
           {formatFull(row.points)}

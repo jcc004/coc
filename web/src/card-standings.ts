@@ -47,7 +47,27 @@ const FIRST_COPY_POINTS = 10
  * value, so it does not belong in a function that only ever sees one card's own
  * copy count.
  */
-export const COMPLETE_SET_BONUS = 20
+export const COMPLETE_SET_BONUS = 50
+
+/**
+ * A one-off, hand-awarded 50 points for the single base that finished the set
+ * first — `#9Y9UYCU9Q` (KTown). Unlike every other number on this board, this
+ * is **not computed from anything the app can check**: `card_inventory` keeps
+ * only current counts, not a history of when they changed, so "first" is not
+ * a fact this codebase can verify, re-derive, or ever award to a different
+ * base automatically — it is asserted once, here, because it was true when
+ * this shipped. A second base has since also reached all sixty
+ * (`#2PJP889PC`, as of 2026-08-20); that base gets {@link COMPLETE_SET_BONUS}
+ * like any other complete set, but not this, because it was not first.
+ *
+ * This is the only per-base special case anywhere in this scoring system —
+ * everything else in `baseStandings` is a rule, not a name. If a second
+ * "first to X" moment is ever worth recognizing this way, that is a sign this
+ * deserves a real, admin-recorded mechanism instead of a second hardcoded
+ * tag; do not add a third one here.
+ */
+export const KTOWN_FIRST_TO_COMPLETE_BONUS = 50
+export const KTOWN_BASE_TAG = '#9Y9UYCU9Q'
 
 /**
  * What one card is worth to a base holding `copies` of it.
@@ -156,6 +176,12 @@ export interface BaseStanding extends StandingBase {
  * actually finished the set, or let a complete-but-shallow base pull ahead of an
  * incomplete-but-deep one that was ahead on raw depth alone.
  *
+ * **`KTOWN_FIRST_TO_COMPLETE_BONUS` is added on top, for exactly one tag.** See
+ * that constant's own doc comment for what it is and why it exists as a named
+ * special case rather than a rule — it stacks with `COMPLETE_SET_BONUS` rather
+ * than replacing it, since a base can hold both facts at once (finished the set,
+ * *and* was the one that finished it first).
+ *
  * Takes the whole inventory rather than one base's counts, so the caller does not
  * have to pre-join: a base with no entry in it is a real base with nothing
  * recorded, and it ranks last rather than being dropped off the board.
@@ -177,6 +203,11 @@ export function baseStandings(
       points += cardPoints(count)
     }
     if (size > 0 && counts.size === size) points += COMPLETE_SET_BONUS
+    /* Gated on `held !== undefined`, not just the tag: an untracked-then-retracked
+       base with no inventory entry at all would otherwise still collect these 50
+       points while `recorded` (below) reads `false` and the Points column shows
+       "—" — a row the board would rank on data the page never actually displays. */
+    if (held !== undefined && base.tag === KTOWN_BASE_TAG) points += KTOWN_FIRST_TO_COMPLETE_BONUS
     return {
       ...base,
       points,

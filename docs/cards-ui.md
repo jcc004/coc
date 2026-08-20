@@ -680,7 +680,7 @@ it would be a second name for the option next to it. Same helpers as every other
 | Worth | 10 | 9 | 8 | … | 1 | 1 each |
 
 So a card held once is 10 points, twice 19, three times 27, ten times 55. Summed over the sixty,
-a complete set at the cap is 3,300, plus the bonus below — **3,320**. The curve means the first
+a complete set at the cap is 3,300, plus the bonus below — **3,350**. The curve means the first
 copy of a card you lack is worth ten times the eleventh copy of one you have, so breadth outweighs
 hoarding — while spares still count, because spares are what make a trade possible at all.
 
@@ -688,18 +688,31 @@ The beyond-ten arm is **deliberately unreachable today**: `MAX_CARD_COUNT` caps 
 nothing can score it through the interface. It is implemented so that raising the cap cannot
 silently change what a base scores, and a test pins it.
 
-**A flat `COMPLETE_SET_BONUS` (20 points) is added once a base holds at least one copy of every
+**A flat `COMPLETE_SET_BONUS` (50 points) is added once a base holds at least one copy of every
 card in the deck** — `distinct === size`, not "every card at the cap." That is a deliberately
 earlier, more common milestone than maxing every card to the cap (the 3,300-point sum above,
 before this bonus): breadth alone earns it, no depth required — and a base that does reach the cap
 on every card has, by construction, already held one of everything, so it always collects this
-bonus too, which is why 3,320 rather than 3,300 is the real ceiling stated above. It is added
+bonus too, which is why 3,350 rather than 3,300 is the real ceiling stated above. It is added
 inside `baseStandings()`, not `cardPoints()` — it is a one-time,
 base-level fact ("did this base finish the set"), not a per-card value, so a function that only
 ever sees one card's own copy count is the wrong place for it. It is folded into `points` *before*
 the sort runs, so it competes on the same terms as every other point: it can tip a genuine points
 tie toward the base that actually finished the set, or let a complete-but-shallow base outrank an
 incomplete-but-deep one that was ahead on raw depth alone.
+
+**One further, `KTOWN_FIRST_TO_COMPLETE_BONUS` (50 points), applies to exactly one tag —
+`#9Y9UYCU9Q` (KTown) — for being first to hold all sixty.** This is the only per-base special case
+anywhere in this scoring system; everything else described here is a rule computed off current
+counts, not a name. It is not, and cannot be, computed: `card_inventory` keeps only current state,
+not a history of when it changed, so "who got there first" is not a fact this app can verify or
+re-derive — a second base (`#2PJP889PC`) has since also reached all sixty and earns
+`COMPLETE_SET_BONUS` like any other complete set, but not this, because it was not first. The
+3,350 ceiling above is the true maximum for every other base; that one tag's own ceiling is 3,400,
+and the Points column's own tooltip (`CardsView.tsx`) computes that per row rather than sharing one
+constant, so it never reads as exceeding its own stated "possible." If a second moment like this
+is ever worth recognizing, that is a sign it deserves a real, admin-recorded mechanism instead of a
+second hardcoded tag here.
 
 The order, in `baseStandings()`:
 
