@@ -41,11 +41,21 @@ import { UNASSIGNED_OWNER } from './saved-table.ts'
 const FIRST_COPY_POINTS = 10
 
 /**
+ * The flat bonus a base earns for holding at least one copy of every card in the
+ * deck — see the completion check in {@link baseStandings}, not here: this is a
+ * one-time, base-level fact ("has this base finished the set"), not a per-card
+ * value, so it does not belong in a function that only ever sees one card's own
+ * copy count.
+ */
+export const COMPLETE_SET_BONUS = 20
+
+/**
  * What one card is worth to a base holding `copies` of it.
  *
  * The first copy scores 10, the second 9, and so on down to the tenth at 1;
  * every copy past the tenth scores 1. So a card held once is 10 points, twice 19,
- * three times 27, ten times 55 — and sixty cards at ten copies each is 3,300.
+ * three times 27, ten times 55 — and sixty cards at ten copies each is 3,300,
+ * plus {@link COMPLETE_SET_BONUS} once every card is held at least once.
  *
  * The point of the curve is that the first copy of a card you lack is worth ten
  * times the eleventh copy of one you already have, so the ranking rewards
@@ -138,6 +148,14 @@ export interface BaseStanding extends StandingBase {
  * *total*, so two level bases render in the same sequence every time rather than
  * swapping places on each re-render.
  *
+ * **`COMPLETE_SET_BONUS` is added to `points` once a base holds at least one
+ * copy of every card in the deck** (`distinct === size`, not "every card at the
+ * cap" — the earlier, more common milestone). It is folded into `points` before
+ * the sort runs, not kept as a separate key, so it competes on the same terms as
+ * every other point: it can tip a genuine points tie toward the base that
+ * actually finished the set, or let a complete-but-shallow base pull ahead of an
+ * incomplete-but-deep one that was ahead on raw depth alone.
+ *
  * Takes the whole inventory rather than one base's counts, so the caller does not
  * have to pre-join: a base with no entry in it is a real base with nothing
  * recorded, and it ranks last rather than being dropped off the board.
@@ -158,6 +176,7 @@ export function baseStandings(
       total += count
       points += cardPoints(count)
     }
+    if (size > 0 && counts.size === size) points += COMPLETE_SET_BONUS
     return {
       ...base,
       points,

@@ -201,6 +201,66 @@ describe('baseStandings — the measure', () => {
   })
 })
 
+describe('baseStandings — the complete-set bonus', () => {
+  /*
+   * `size` overridden to 3 rather than the real 60, so "complete" only needs
+   * three real card ids (1, 2, 20 — Elixir, Elixir, Dark Elixir) rather than a
+   * fixture enumerating the whole deck. Production always calls `baseStandings`
+   * with the default `size` (`ALL_CARDS.length`), so this is purely a fixture
+   * convenience, not a different code path.
+   */
+  it('adds the bonus once every card in the deck is held at least once', () => {
+    const [row] = baseStandings(
+      [named('#A', 'Anna')],
+      [base('#A', [[1, 1], [2, 1], [20, 1]])],
+      3,
+    )
+    // 10 + 10 + 10 = 30, plus the 20-point bonus.
+    assert.equal(row?.points, 50)
+    assert.equal(row?.distinct, 3)
+  })
+
+  it('does not add the bonus one card short of complete', () => {
+    const [row] = baseStandings([named('#A', 'Anna')], [base('#A', [[1, 1], [2, 1]])], 3)
+    assert.equal(row?.points, 20)
+    assert.equal(row?.distinct, 2)
+  })
+
+  /*
+   * The bonus is folded into `points` before the sort, so it competes on equal
+   * terms with depth — it can flip the order, not just pad a display value.
+   * Without it: Anna (3 cards once each = 30) loses to Bert (one card six times
+   * = 45). With it: Anna's total becomes 50 and takes the lead, because she
+   * finished the set and Bert has not.
+   */
+  it('can outrank a deeper but incomplete base once folded into points', () => {
+    const rows = baseStandings(
+      [named('#A', 'Anna'), named('#B', 'Bert')],
+      [base('#A', [[1, 1], [2, 1], [20, 1]]), base('#B', [[1, 6]])],
+      3,
+    )
+    assert.deepEqual(
+      rows.map((row) => row.label),
+      ['Anna', 'Bert'],
+    )
+    assert.equal(rows[0]?.points, 50)
+    assert.equal(rows[1]?.points, 45)
+  })
+
+  it('never applies at the real deck size to a base short of all sixty', () => {
+    const [row] = baseStandings([named('#A', 'Anna')], [base('#A', [[1, 10]])])
+    assert.equal(row?.points, cardPoints(10))
+  })
+
+  it('never applies to an empty base against a zero-sized deck', () => {
+    // `distinct` (0) would equal `size` (0) with no held cards at all — the guard
+    // exists so a deck of zero cards can never trivially look "complete."
+    const [row] = baseStandings([named('#A', 'Anna')], [], 0)
+    assert.equal(row?.points, 0)
+    assert.equal(row?.distinct, 0)
+  })
+})
+
 describe('baseStandings — the order is total, because ties are the common case', () => {
   it('breaks a tie on distinct with copies, descending', () => {
     const rows = baseStandings(

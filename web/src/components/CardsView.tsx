@@ -28,6 +28,7 @@ import {
   baseStandings,
   cardPoints,
   cardTotals,
+  COMPLETE_SET_BONUS,
   cardsInGridOrder,
   filterStandingsByOwner,
   lastUpdatedCell,
@@ -261,12 +262,14 @@ const OVERALL_COLUMNS: LeaderboardColumn<BaseStanding>[] = [
        *
        * The best possible score comes from the curve rather than a literal 55, so
        * raising `MAX_CARD_COUNT` cannot leave this tooltip quoting a ceiling that no
-       * longer exists.
+       * longer exists. `+ COMPLETE_SET_BONUS` for the same reason: a base at the cap
+       * on every card has, by construction, also held at least one of every card, so
+       * it always earns the bonus too — the true ceiling is 3,320, not 3,300.
        */
       row.recorded ? (
         <span
           title={`${formatFull(row.points)} of ${formatFull(
-            row.size * cardPoints(MAX_CARD_COUNT),
+            row.size * cardPoints(MAX_CARD_COUNT) + COMPLETE_SET_BONUS,
           )} possible`}
         >
           {formatFull(row.points)}

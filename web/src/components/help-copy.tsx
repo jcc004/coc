@@ -1,6 +1,6 @@
 import { MAX_CARD_COUNT, MIN_TRADEABLE_COUNT } from '@coc/shared'
 import { RARITY_TIER_COUNT } from '../card-rarity.ts'
-import { cardPoints } from '../card-standings.ts'
+import { cardPoints, COMPLETE_SET_BONUS } from '../card-standings.ts'
 import { ALL_CARDS } from '../cards.ts'
 import { formatFull } from '../format.ts'
 import { ROW_SIZE } from '../row-standings.ts'
@@ -204,7 +204,7 @@ function worthOfCopy(copy: number): number {
 const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th']
 
 export function ScoringRules() {
-  const perfect = ALL_CARDS.length * cardPoints(MAX_CARD_COUNT)
+  const perfect = ALL_CARDS.length * cardPoints(MAX_CARD_COUNT) + COMPLETE_SET_BONUS
 
   return (
     <>
@@ -231,6 +231,13 @@ export function ScoringRules() {
         The point of the curve is that the first copy of a card you lack is worth ten times the
         eleventh copy of one you have, so <strong>breadth beats hoarding</strong> — while spares
         still count, because spares are what make a trade possible at all.
+      </p>
+      <p className="empty-hint">
+        Holding at least <strong>one copy of every card</strong> adds a flat{' '}
+        <strong>{formatFull(COMPLETE_SET_BONUS)}-point bonus</strong> on top — well before any of
+        them are stacked to the cap, since it only asks for breadth, not depth. It is folded into
+        the same points total the board sorts on, not a badge of its own, so finishing the set can
+        tip a close tie or edge out a base that has stacked deep copies of fewer cards.
       </p>
       <p className="empty-hint">
         Level on points, more distinct cards goes first; level on both, by name and then tag, so the

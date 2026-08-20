@@ -680,13 +680,26 @@ it would be a second name for the option next to it. Same helpers as every other
 | Worth | 10 | 9 | 8 | … | 1 | 1 each |
 
 So a card held once is 10 points, twice 19, three times 27, ten times 55. Summed over the sixty,
-a complete set at the cap is **3,300**. The curve means the first copy of a card you lack is worth
-ten times the eleventh copy of one you have, so breadth outweighs hoarding — while spares still
-count, because spares are what make a trade possible at all.
+a complete set at the cap is 3,300, plus the bonus below — **3,320**. The curve means the first
+copy of a card you lack is worth ten times the eleventh copy of one you have, so breadth outweighs
+hoarding — while spares still count, because spares are what make a trade possible at all.
 
 The beyond-ten arm is **deliberately unreachable today**: `MAX_CARD_COUNT` caps entry at ten, so
 nothing can score it through the interface. It is implemented so that raising the cap cannot
 silently change what a base scores, and a test pins it.
+
+**A flat `COMPLETE_SET_BONUS` (20 points) is added once a base holds at least one copy of every
+card in the deck** — `distinct === size`, not "every card at the cap." That is a deliberately
+earlier, more common milestone than maxing every card to the cap (the 3,300-point sum above,
+before this bonus): breadth alone earns it, no depth required — and a base that does reach the cap
+on every card has, by construction, already held one of everything, so it always collects this
+bonus too, which is why 3,320 rather than 3,300 is the real ceiling stated above. It is added
+inside `baseStandings()`, not `cardPoints()` — it is a one-time,
+base-level fact ("did this base finish the set"), not a per-card value, so a function that only
+ever sees one card's own copy count is the wrong place for it. It is folded into `points` *before*
+the sort runs, so it competes on the same terms as every other point: it can tip a genuine points
+tie toward the base that actually finished the set, or let a complete-but-shallow base outrank an
+incomplete-but-deep one that was ahead on raw depth alone.
 
 The order, in `baseStandings()`:
 
