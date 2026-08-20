@@ -3852,38 +3852,53 @@ table.roster th button:hover {
 }
 
 /*
- * `table.roster td` sets `white-space: nowrap` as its base rule, and this cell
- * can hold a full commit subject plus an admin's own note — real prose, not a
- * short label like every other column here. Below the `roster--stack` phone
- * breakpoint that base rule is already overridden (`styles.css`'s own
- * `table.roster--stack td` block), which is why this only ever showed up at
- * desktop width: a long, unbroken resolution pushed the row wide enough that
- * `.table-wrap`'s `overflow-x: auto` quietly took over rather than wrapping,
- * scrolling the row's own Resolve button out of view instead of showing it.
- * Same `white-space: normal; overflow-wrap: anywhere;` pair `.roster--pairs`
- * already uses for its own long, unbreakable content (an account guid).
+ * `table.roster td` sets `white-space: nowrap` as its base rule, and three
+ * cells on this one table — resolution, subject, and the request body under
+ * it — hold real prose, not a short label like every other column here.
+ * Below the `roster--stack` phone breakpoint that base rule is already
+ * overridden (`styles.css`'s own `table.roster--stack td` block), which is
+ * why this only ever showed up at desktop width: long, unbroken text pushed
+ * the row wide enough that `.table-wrap`'s `overflow-x: auto` quietly took
+ * over rather than wrapping, scrolling whatever sat past it — a Resolve
+ * button, then the Resolution column itself — out of view instead of
+ * showing it. Same `white-space: normal; overflow-wrap: anywhere;` pair
+ * `.roster--pairs` already uses for its own long, unbreakable content (an
+ * account guid).
+ *
+ * One shared rule for the three of them, not three copies of the same two
+ * declarations — the second occurrence (`.request-subject`, "reported and
+ * fixed alongside the resolution column, same underlying cause, same day")
+ * should already have prompted this, and a third, `.request-body`, missed
+ * the same fix again before it did: it sits in a `<span class="card-meta">`
+ * that inherited `nowrap` with nothing overriding it, and `ExpandableBody`'s
+ * 200-character summary cap is still one line wide enough, unbroken, to
+ * blow the Subject column out and push Resolution and Actions off the
+ * table's own scrollable width entirely — reported live as "the Resolution
+ * column is very narrow," which was really Subject claiming effectively
+ * unbounded width for a body nobody could see wrap.
  */
-.request-resolution {
-  margin-top: 8px;
+.request-resolution,
+.request-subject,
+.request-body {
   white-space: normal;
   overflow-wrap: anywhere;
 }
 
+.request-resolution {
+  margin-top: 8px;
+}
+
 /*
- * The subject column, on the same table and hitting the same base
- * `white-space: nowrap` this file already explains above — but a long
- * subject needs more than *permission* to wrap, since nothing stops the
- * column growing to fit it on one line anyway when the table has room to
- * spare. `max-width` in `ch` (a CSS unit sized to the font's own character
- * width) forces the wrap at roughly the requested ~20 characters regardless
- * of how wide the table could otherwise stretch — reported and fixed
- * alongside the resolution column, same underlying cause, same day.
+ * `max-width` in `ch` (a CSS unit sized to the font's own character width)
+ * forces the subject to wrap at roughly the requested ~20 characters
+ * regardless of how wide the table could otherwise stretch — the wrap rule
+ * above only grants *permission* to wrap, and nothing stops the column
+ * growing to fit the text on one line anyway when the table has room to
+ * spare.
  */
 .request-subject {
   display: inline-block;
   max-width: 20ch;
-  white-space: normal;
-  overflow-wrap: anywhere;
   vertical-align: top;
 }
 

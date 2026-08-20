@@ -708,7 +708,7 @@ function AdminChangeRequestsCard({ all }: { all: AllChangeRequests }) {
                     <span className="request-subject">{request.subject}</span>{' '}
                     <StatusBadge status={changeRequestStatus(request)} />
                     <br />
-                    <span className="card-meta">
+                    <span className="card-meta request-body">
                       <ExpandableBody text={request.body} />
                     </span>
                   </td>
