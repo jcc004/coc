@@ -207,7 +207,7 @@ after a max of 6 months and silently needs renewing rather than being a one-time
 
 ## Deploying
 
-**Committing to `main` is deploying.** The droplet runs `coc-update.timer` every five minutes,
+**Committing to `main` is deploying.** The droplet runs `coc-update.timer` every fifteen minutes,
 which fast-forwards to `origin/main` and runs `deploy/update.sh`. There is no push-triggered CI
 deploy; `verify.yml` only typechecks, lints, tests and builds.
 

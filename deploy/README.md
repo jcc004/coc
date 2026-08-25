@@ -66,7 +66,7 @@ session cookies cross the network in clear text.
   to go through `npm start`; npm wants a writable home directory, which the
   sandboxing below forbids) and is sandboxed with `ProtectSystem=strict`,
   `ProtectHome=true` and the rest.
-- `coc-update.service` / `coc-update.timer` — the pull-based deploy: every five
+- `coc-update.service` / `coc-update.timer` — the pull-based deploy: every fifteen
   minutes the droplet checks `origin/main` and runs `update.sh` if it has moved.
   Sandboxed much more lightly, and the unit says why.
 - `coc-progress-reference.service` / `.timer` and `coc-progress-snapshot.service` /
@@ -549,7 +549,7 @@ renews at 30 days remaining, so 21 means the renewal *did not run* and there are
 weeks to find out why.
 
 **The deployed-commit half exists because liveness alone missed a real incident.**
-`coc-update.timer` fast-forwards to `origin/main` every five minutes, and a
+`coc-update.timer` fast-forwards to `origin/main` every fifteen minutes, and a
 `git filter-repo` history rewrite once left the droplet's clone unable to do that —
 `git merge --ff-only` refused forever, silently, while `coc.service` stayed up the
 whole time serving 13-commits-stale code. Liveness can never catch that shape of
@@ -560,9 +560,9 @@ confirmed live — written only after a deploy's build and health check both pas
 unlike raw git HEAD it cannot lie about a deploy that advanced the tree but never
 restarted the service (the "fast-forward happens before `npm ci`" trap above). The
 workflow compares that commit against `main` via GitHub's compare API: `identical` is
-fine, `ahead` is fine for a while (the timer's own five minutes plus however long a
+fine, `ahead` is fine for a while (the timer's own fifteen minutes plus however long a
 build takes — the check only fails an `ahead` state once the oldest undeployed commit
-is over 20 minutes old), and `diverged`, `behind`, or a 404 (the deployed commit is
+is over 30 minutes old), and `diverged`, `behind`, or a 404 (the deployed commit is
 unknown to GitHub — exactly what a rewritten history looks like) fail immediately,
 since none of those three recovers on its own. The failure message gives the fix
 directly:
@@ -654,7 +654,7 @@ Practical notes:
   protect it from.
 - This also covers you when *you* are the one replacing the file: `cp`, `scp` or
   `rsync --inplace` of a new `update.sh` onto the droplet truncates the existing file
-  rather than replacing it, and the five-minute timer does not know you are mid-copy.
+  rather than replacing it, and the fifteen-minute timer does not know you are mid-copy.
 
 `update-test.sh` proves the mechanism rather than arguing about it: it builds a
 throwaway script that rewrites itself part way through, shows it executing a fragment
@@ -664,8 +664,8 @@ completing normally with `update.sh`'s re-exec preamble in front of it.
 ### Rolling back
 
 Until recently there was no rollback, and recovery from a bad commit was another
-commit. With a timer that deploys `origin/main` unreviewed within five minutes, that
-is a thin plan.
+commit. With a timer that deploys `origin/main` unreviewed within fifteen minutes,
+that is a thin plan.
 
 Each successful deploy now records its commit in `.deploy-last-good-sha` — recorded
 only after the service came back and answered a health check, which is the only
@@ -682,7 +682,7 @@ tested even less than the first.
 
 **Then it writes `.deploy-hold`, and this is the part that makes it work.** Without
 it the timer would fast-forward straight back onto the commit you just rolled back,
-five minutes later — which is exactly how a rollback comes to feel like it did
+fifteen minutes later — which is exactly how a rollback comes to feel like it did
 nothing. While the hold is in place every timer run prints one line and exits
 without so much as fetching.
 
@@ -766,9 +766,9 @@ systemctl list-timers coc-update     # when it next fires
 journalctl -u coc-update -n 40       # what the last run did
 ```
 
-The droplet checks every five minutes and pulls when there is something to pull. No
+The droplet checks every fifteen minutes and pulls when there is something to pull. No
 private key leaves your machine, nothing is held by a CI provider, and SSH need not be
-reachable from the internet at all. The cost is up to five minutes of latency.
+reachable from the internet at all. The cost is up to fifteen minutes of latency.
 
 **The timer is the deploy path.** For ten users, immediacy is worth less than not
 having a deploy key for your server sitting in a third-party service. Note what that

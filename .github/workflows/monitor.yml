@@ -144,7 +144,7 @@ jobs:
               ;;
             ahead)
               # main has commits the droplet hasn't deployed yet — normal for up to
-              # about 5 minutes (the timer's own interval) plus however long a build
+              # about 15 minutes (the timer's own interval) plus however long a build
               # takes. Only the *age* of the oldest missing commit says whether this
               # is in-flight lag or a stuck cycle, so that is what gates pass/fail,
               # not the count.
@@ -152,8 +152,8 @@ jobs:
               oldest_epoch="$(date -u -d "$oldest_date" +%s)"
               age_minutes=$(( ($(date -u +%s) - oldest_epoch) / 60 ))
               echo "deployed commit $commit is $ahead_by commit(s) behind main; oldest undeployed commit is ${age_minutes}m old"
-              if [ "$age_minutes" -gt 20 ]; then
-                echo "::error::Oldest undeployed commit is ${age_minutes}m old — comfortably past the ~5min timer interval plus build time, so the auto-deploy cycle looks stuck rather than merely lagging."
+              if [ "$age_minutes" -gt 30 ]; then
+                echo "::error::Oldest undeployed commit is ${age_minutes}m old — comfortably past the ~15min timer interval plus build time, so the auto-deploy cycle looks stuck rather than merely lagging."
                 echo "Fix: ssh <droplet>@<droplet> 'cd /srv/coc && git fetch origin main && git reset --hard origin/main && ./deploy/update.sh --force'"
                 exit 1
               fi

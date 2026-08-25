@@ -19,7 +19,7 @@ account. [Setup, deployment and scripts](docs/setup.md#setup) has the exact sequ
 thing that most often goes wrong first — the API key's IP binding — is immediately beneath it.
 
 Deployment is not this repo's CI. `.github/workflows/verify.yml` typechecks, tests and builds;
-the droplet pulls `main` on its own timer and deploys within five minutes. What a host has to
+the droplet pulls `main` on its own timer and deploys within fifteen minutes. What a host has to
 provide is under [Deployment](docs/setup.md#deployment); how the box is actually built — Nginx,
 TLS, the systemd units — is [`deploy/README.md`](deploy/README.md).
 

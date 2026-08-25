@@ -117,7 +117,7 @@ esac
 #   - **A held host re-execs anyway**, even though it is about to exit before touching
 #     git. Whether a host is held is state read further down, not something the
 #     arguments say, and hoisting that decision up here would put two answers to "is
-#     this host held" in one file. One file copy every five minutes is the cheaper
+#     this host held" in one file. One file copy every fifteen minutes is the cheaper
 #     mistake.
 #   - **If the copy cannot be made, refuse.** Carrying on would mean running the
 #     original, which is the exact situation being fixed, and doing it in the one case
@@ -222,7 +222,7 @@ LAST_GOOD="$ROOT/.deploy-last-good-sha"
 
 # A rollback leaves this behind, and a normal run refuses to proceed while it
 # exists. Without it the timer would fast-forward straight back onto the commit that
-# was just rolled back, five minutes later — which is the failure mode that makes a
+# was just rolled back, fifteen minutes later — which is the failure mode that makes a
 # rollback feel like it did not work.
 HOLD="$ROOT/.deploy-hold"
 
@@ -527,7 +527,7 @@ if [[ "$RESUME" == 1 ]]; then
 fi
 
 # The hold is checked before anything else so a held host does no work at all: no
-# fetch, no backup, no build. A timer firing every five minutes against a held
+# fetch, no backup, no build. A timer firing every fifteen minutes against a held
 # deploy should be almost free, and should say the same thing every time.
 if [[ -f "$HOLD" && "$ROLLBACK" == 0 ]]; then
   say "Deploy is on hold — doing nothing"
