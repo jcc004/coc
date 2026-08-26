@@ -706,19 +706,6 @@ the sort runs, so it competes on the same terms as every other point: it can tip
 tie toward the base that actually finished the set, or let a complete-but-shallow base outrank an
 incomplete-but-deep one that was ahead on raw depth alone.
 
-**One further, `KTOWN_FIRST_TO_COMPLETE_BONUS` (50 points), applies to exactly one tag —
-`#9Y9UYCU9Q` (KTown) — for being first to hold all sixty.** This is the only per-base special case
-anywhere in this scoring system; everything else described here is a rule computed off current
-counts, not a name. It is not, and cannot be, computed: `card_inventory` keeps only current state,
-not a history of when it changed, so "who got there first" is not a fact this app can verify or
-re-derive — a second base (`#2PJP889PC`) has since also reached all sixty and earns
-`COMPLETE_SET_BONUS` like any other complete set, but not this, because it was not first. The
-3,350 ceiling above is the true maximum for every other base; that one tag's own ceiling is 3,400,
-and the Points column's own tooltip (`CardsView.tsx`) computes that per row rather than sharing one
-constant, so it never reads as exceeding its own stated "possible." If a second moment like this
-is ever worth recognizing, that is a sign it deserves a real, admin-recorded mechanism instead of a
-second hardcoded tag here.
-
 The order, in `baseStandings()`:
 
 > **points descending, then distinct descending, then member name, then tag.**
