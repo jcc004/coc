@@ -44,9 +44,14 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
   `cards.generated.ts`, `wiki-art.generated.ts`, and — the one the naming does not warn you about
   — `coc-assets.ts`. Each has a hand-written half where the tests point. Regenerate with the
   `assets:*` / `cards:generate` scripts.
-- **Zero `any`.** `grep -rE ': any\b|as any|<any>' --include='*.ts' --include='*.tsx' shared server/src web/src`
-  (excluding the three generated modules above, which are machine-written either way) should come
-  back empty. Keep it that way.
+- **Zero `any`.** The authoritative, CI-enforced check is `npm run lint` — `eslint.config.js:60`
+  applies `tseslint.configs.recommendedTypeChecked`, which sets `@typescript-eslint/no-explicit-any`
+  to `error`, and `.github/workflows/verify.yml` runs it with `--max-warnings 0`. A plain
+  `grep -rE ': any\b|as any|<any>'` across `shared server/src web/src` is not a reliable substitute:
+  it also matches ordinary English prose containing "any"/"anyone"/"anything" in comments, test
+  descriptions, and string literals, so it will show hits even when the real rule holds. Use it
+  only as a rough manual sanity check, and expect to triage benign prose matches by hand — trust
+  `npm run lint` for a real answer.
 
 ## Local rules
 
