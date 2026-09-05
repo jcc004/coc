@@ -110,7 +110,7 @@ check "/ (index.html) is explicitly uncached" "$r" "0"
 for label_hdrs in "/assets/:$assets_hdrs" "/coc/:$coc_hdrs" "SPA /:$spa_hdrs"; do
   label="${label_hdrs%%:*}"
   hdrs="${label_hdrs#*:}"
-  for h in "content-security-policy" "strict-transport-security"; do
+  for h in "content-security-policy" "strict-transport-security" "permissions-policy"; do
     echo "$hdrs" | grep -qi "^$h:" && r=0 || r=1
     check "$h still present on $label (survived its own Cache-Control)" "$r" "0"
   done
@@ -148,7 +148,7 @@ echo
 echo "=== security headers ==="
 hdrs=$(curl -skI -H "$H" https://127.0.0.1/)
 for h in "content-security-policy" "strict-transport-security" "x-frame-options" \
-         "x-content-type-options" "referrer-policy"; do
+         "x-content-type-options" "referrer-policy" "permissions-policy"; do
   echo "$hdrs" | grep -qi "^$h:" && r=0 || r=1
   check "$h present on the SPA" "$r" "0"
 done
