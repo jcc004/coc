@@ -227,15 +227,16 @@ production uses. `zsh -i -c 'cd <repo> && npm test'` is the form that pins it.
 Known gap, so it is not rediscovered as a surprise: **component test coverage is partial.** For the
 current ratio, `ls web/src/components/*.tsx web/src/components/*.test.tsx` and compare — but the
 ratio was never the useful fact anyway. What matters, and does not drift the way a count does: the
-gap is not uniformly presentational. `Login.tsx`, `TradeSuggestions.tsx`, `ProgressGridView.tsx`,
+gap is not uniformly presentational. `Login.tsx`, `ProgressGridView.tsx`,
 `ForcedPasswordChange.tsx`, `UserMenu.tsx` and `ClanView.tsx` each wire up real interaction or
 business logic with no test file at all (their *underlying* pure logic is tested elsewhere; the
 component wiring itself is not) — treat "untested" as "the wiring around already-tested logic,"
 not "nothing here can break."
-`TradeTracker.tsx` and `SavedClansView.tsx` are a narrower version of the same gap: each now has a
-test file, but each covers one specific piece of wiring found by a review (an error-message branch
-on the first, an admin-only gate on the second) rather than the component as a whole — a real
-reduction in risk, not a closed gap.
+`TradeTracker.tsx`, `SavedClansView.tsx` and `TradeSuggestions.tsx` are a narrower version of the
+same gap: each now has a test file, but each covers one specific piece of wiring found by a review
+(an error-message branch on the first, an admin-only gate on the second, the admin/party
+fast-path buttons on the third) rather than the component as a whole — a real reduction in risk,
+not a closed gap.
 
 ## Repo visibility
 
