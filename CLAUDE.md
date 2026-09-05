@@ -211,11 +211,14 @@ can.
   (`RosterTable.tsx`'s own doc comment cites 660) that file was split out from `ClanView.tsx` at.
   The split was verified behavior-preserving by `CardsView.test.tsx`'s existing black-box suite
   (imports only the page's exported `CardsView`, organized by these same section boundaries)
-  passing unchanged before and after, not by new tests — none of the six new files has its own
-  adjacent test file yet, which is a real, if not new, instance of the component test-coverage gap
-  noted below. `CardsView.tsx` remains the card page's controller, still sharing three components
-  with the player page (`BaseCardEditor`, `CardTile`, `TradeSuggestions`) — a change here can still
-  land there too.
+  passing unchanged before and after, not by new tests — and each of the six new files then got
+  its own adjacent test file the same day, closing that gap rather than leaving it open: 50 new
+  tests across `Leaderboard.test.tsx`, `CardsLeaderboardSection.test.tsx`,
+  `CardTotalsGrid.test.tsx`, `CardHolders.test.tsx`, `CardTotals.test.tsx` and
+  `CardSectionNav.test.tsx`, each independently falsified (a real behavior deliberately broken,
+  confirmed the new test caught it, then reverted) before being trusted. `CardsView.tsx` remains
+  the card page's controller, still sharing three components with the player page
+  (`BaseCardEditor`, `CardTile`, `TradeSuggestions`) — a change here can still land there too.
 
 The first two are recorded from incidents; the last two are reasoned from the code and have not yet
 cost anything. Add to this list when a file misleads you, and say what it did.
