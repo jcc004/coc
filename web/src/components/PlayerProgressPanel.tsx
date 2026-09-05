@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useMemo, useState, type FormEvent } from 'react'
 import type {
   MaxLevelReferenceRow,
   ProgressSnapshot,
@@ -12,6 +12,7 @@ import { baseOwnerOf, cardEntryAccess } from '../card-entry.ts'
 import { describe } from '../api.ts'
 import { seriesStyle, wallLevelColor } from '../chart-colors.ts'
 import { formatDate } from '../format.ts'
+import { useDateFormatPreference } from '../hooks.ts'
 import { ownerRecordFor, useOwners } from '../owners.ts'
 import { combineSnapshotNotes } from '../progress-diff.ts'
 import {
@@ -193,17 +194,19 @@ function CurrentWeekDetail({
   snapshot,
   maxLevels,
   walls: wallReference,
+  formatWeek,
 }: {
   snapshot: ProgressSnapshot
   maxLevels: MaxLevelReferenceRow[]
   walls: WallReferenceRow[]
+  formatWeek: (isoDate: string) => string
 }) {
   const notes = combineSnapshotNotes(snapshot)
 
   return (
     <div className="progress-week">
       <div className="progress-week__header">
-        <span className="progress-week__date">{formatDate(snapshot.weekStart)}</span>
+        <span className="progress-week__date">{formatWeek(snapshot.weekStart)}</span>
         {snapshot.thLevel === null ? (
           <span className="card-meta">Town Hall not yet auto-captured</span>
         ) : (
@@ -253,10 +256,12 @@ function CategoryChart({
   category,
   title,
   history,
+  formatWeek,
 }: {
   category: 'hero' | 'pet' | 'spell'
   title: string
   history: ProgressSnapshot[]
+  formatWeek: (isoDate: string) => string
 }) {
   const { weeks, series } = useMemo(() => buildCategorySeries(history, category), [history, category])
   if (weeks.length === 0) return null
@@ -271,13 +276,24 @@ function CategoryChart({
   return (
     <div className="progress-category">
       <h4 className="progress-category__title">{title}</h4>
-      <LineChart weeks={weeks} series={chartSeries} ariaLabel={`${title} levels, by captured week`} />
+      <LineChart
+        weeks={weeks}
+        series={chartSeries}
+        ariaLabel={`${title} levels, by captured week`}
+        formatWeek={formatWeek}
+      />
     </div>
   )
 }
 
 /** One line per wall level the base has actually held — counts over time. */
-function WallsChart({ history }: { history: ProgressSnapshot[] }) {
+function WallsChart({
+  history,
+  formatWeek,
+}: {
+  history: ProgressSnapshot[]
+  formatWeek: (isoDate: string) => string
+}) {
   const { weeks, series } = useMemo(() => buildWallsSeries(history), [history])
   if (weeks.length === 0) return null
 
@@ -291,7 +307,12 @@ function WallsChart({ history }: { history: ProgressSnapshot[] }) {
   return (
     <div className="progress-category">
       <h4 className="progress-category__title">Walls</h4>
-      <LineChart weeks={weeks} series={chartSeries} ariaLabel="Wall counts by level, by captured week" />
+      <LineChart
+        weeks={weeks}
+        series={chartSeries}
+        ariaLabel="Wall counts by level, by captured week"
+        formatWeek={formatWeek}
+      />
     </div>
   )
 }
@@ -308,9 +329,11 @@ function WallsChart({ history }: { history: ProgressSnapshot[] }) {
 function TroopsSection({
   history,
   reference,
+  formatWeek,
 }: {
   history: ProgressSnapshot[]
   reference: MaxLevelReferenceRow[]
+  formatWeek: (isoDate: string) => string
 }) {
   const percentSeries = useMemo(() => buildTroopPercentSeries(history, reference), [history, reference])
   const heatmap = useMemo(() => buildTroopHeatmap(history, reference), [history, reference])
@@ -333,12 +356,14 @@ function TroopsSection({
         yBounds={[0, 100]}
         yUnit="%"
         formatValue={(value) => String(Math.round(value))}
+        formatWeek={formatWeek}
       />
       <TroopHeatmap
         weeks={heatmap.weeks}
         troopNames={heatmap.troopNames}
         matrix={heatmap.matrix}
         ariaLabel="Each troop's percent to cap, by captured week"
+        formatWeek={formatWeek}
       />
     </div>
   )
@@ -353,7 +378,13 @@ function TroopsSection({
  * level) still shows the current level with an honest "no upgrades
  * captured yet" rather than an empty section.
  */
-function OverallProgress({ history }: { history: ProgressSnapshot[] }) {
+function OverallProgress({
+  history,
+  formatWeek,
+}: {
+  history: ProgressSnapshot[]
+  formatWeek: (isoDate: string) => string
+}) {
   const upgrades = useMemo(() => buildThUpgrades(history), [history])
   // `history` is newest-first (the server's order — see `HistoryCharts`'s own
   // note), so the first snapshot with a captured `thLevel` is the current one.
@@ -371,7 +402,7 @@ function OverallProgress({ history }: { history: ProgressSnapshot[] }) {
         <ul className="progress-th-upgrades">
           {upgrades.map((event) => (
             <li key={event.weekStart}>
-              TH {event.from} → {event.to} — {formatDate(event.weekStart)}
+              TH {event.from} → {event.to} — {formatWeek(event.weekStart)}
             </li>
           ))}
         </ul>
@@ -391,17 +422,19 @@ function OverallProgress({ history }: { history: ProgressSnapshot[] }) {
 function HistoryCharts({
   history,
   reference,
+  formatWeek,
 }: {
   history: ProgressSnapshot[]
   reference: { maxLevels: MaxLevelReferenceRow[] }
+  formatWeek: (isoDate: string) => string
 }) {
   return (
     <>
-      <CategoryChart category="hero" title="Heroes" history={history} />
-      <CategoryChart category="pet" title="Pets" history={history} />
-      <WallsChart history={history} />
-      <CategoryChart category="spell" title="Spells" history={history} />
-      <TroopsSection history={history} reference={reference.maxLevels} />
+      <CategoryChart category="hero" title="Heroes" history={history} formatWeek={formatWeek} />
+      <CategoryChart category="pet" title="Pets" history={history} formatWeek={formatWeek} />
+      <WallsChart history={history} formatWeek={formatWeek} />
+      <CategoryChart category="spell" title="Spells" history={history} formatWeek={formatWeek} />
+      <TroopsSection history={history} reference={reference.maxLevels} formatWeek={formatWeek} />
     </>
   )
 }
@@ -415,13 +448,19 @@ function HistoryCharts({
  * over `history.slice(1)` — showing both for the same week would say the
  * same buildings-left/notes twice.
  */
-function WeekSummaryRow({ snapshot }: { snapshot: ProgressSnapshot }) {
+function WeekSummaryRow({
+  snapshot,
+  formatWeek,
+}: {
+  snapshot: ProgressSnapshot
+  formatWeek: (isoDate: string) => string
+}) {
   const notes = combineSnapshotNotes(snapshot)
 
   return (
     <div className="progress-week">
       <div className="progress-week__header">
-        <span className="progress-week__date">{formatDate(snapshot.weekStart)}</span>
+        <span className="progress-week__date">{formatWeek(snapshot.weekStart)}</span>
         {snapshot.thLevel === null ? (
           <span className="card-meta">Town Hall not yet auto-captured</span>
         ) : (
@@ -742,11 +781,13 @@ function PastWeekWallEditor({
   snapshot,
   wallReference,
   onSaved,
+  formatWeek,
 }: {
   tag: string
   snapshot: ProgressSnapshot
   wallReference: WallReferenceRow[]
   onSaved: (snapshot: ProgressSnapshot) => void
+  formatWeek: (isoDate: string) => string
 }) {
   const wallRows = useWallRows(snapshot.walls)
   const [submitting, setSubmitting] = useState(false)
@@ -813,11 +854,11 @@ function PastWeekWallEditor({
         </div>
       ) : null}
       {saved && !problem ? (
-        <p className="card-meta">Saved — {formatDate(snapshot.weekStart)}’s walls were corrected.</p>
+        <p className="card-meta">Saved — {formatWeek(snapshot.weekStart)}’s walls were corrected.</p>
       ) : null}
 
       <button type="submit" disabled={submitting || overCap || anyLevelOutOfRange}>
-        {submitting ? 'Saving…' : `Save correction to ${formatDate(snapshot.weekStart)}`}
+        {submitting ? 'Saving…' : `Save correction to ${formatWeek(snapshot.weekStart)}`}
       </button>
     </form>
   )
@@ -848,11 +889,13 @@ function PastWeekWallForm({
   history,
   wallReference,
   onSaved,
+  formatWeek,
 }: {
   tag: string
   history: ProgressSnapshot[]
   wallReference: WallReferenceRow[]
   onSaved: (snapshot: ProgressSnapshot) => void
+  formatWeek: (isoDate: string) => string
 }) {
   const [selectedWeek, setSelectedWeek] = useState('')
   const selected = history.find((snapshot) => snapshot.weekStart === selectedWeek) ?? null
@@ -867,7 +910,7 @@ function PastWeekWallForm({
             <option value="">Choose a week…</option>
             {history.map((snapshot) => (
               <option key={snapshot.weekStart} value={snapshot.weekStart}>
-                {formatDate(snapshot.weekStart)}
+                {formatWeek(snapshot.weekStart)}
               </option>
             ))}
           </select>
@@ -880,6 +923,7 @@ function PastWeekWallForm({
             snapshot={selected}
             wallReference={wallReference}
             onSaved={onSaved}
+            formatWeek={formatWeek}
           />
         ) : null}
       </div>
@@ -897,6 +941,9 @@ export function PlayerProgressPanel({
   /** Only a base's owner, or an admin, may enter this week's manual fields. */
   user: SessionUser
 }) {
+  const [dateFormat] = useDateFormatPreference(user.id)
+  const formatWeek = useCallback((isoDate: string) => formatDate(isoDate, dateFormat), [dateFormat])
+
   /* Subscribed rather than read once, so an admin reassigning this base flips the
      form between offered and read-only without a reload — the same reactivity
      `PlayerCardPanel` gets from the same store. */
@@ -937,7 +984,7 @@ export function PlayerProgressPanel({
         <>
           {/* Outside `<details>` on purpose — see the module doc's note on
               `OverallProgress` for why this stays visible even collapsed. */}
-          <OverallProgress history={state.data} />
+          <OverallProgress history={state.data} formatWeek={formatWeek} />
 
           <details className="group">
             <summary>
@@ -975,12 +1022,17 @@ export function PlayerProgressPanel({
                   snapshot={state.data[0]}
                   maxLevels={reference.maxLevels}
                   walls={reference.walls}
+                  formatWeek={formatWeek}
                 />
               ) : null}
 
               {state.data.length > 0 ? (
                 <>
-                  <HistoryCharts history={state.data} reference={{ maxLevels: reference.maxLevels }} />
+                  <HistoryCharts
+                    history={state.data}
+                    reference={{ maxLevels: reference.maxLevels }}
+                    formatWeek={formatWeek}
+                  />
                   <details className="group">
                     <summary>Why some charts look empty, and what the percent means</summary>
                     <div className="group__body help-prose">
@@ -992,7 +1044,7 @@ export function PlayerProgressPanel({
 
               {/* `slice(1)`: the newest week already got the full treatment above. */}
               {state.data.slice(1).map((snapshot) => (
-                <WeekSummaryRow key={snapshot.weekStart} snapshot={snapshot} />
+                <WeekSummaryRow key={snapshot.weekStart} snapshot={snapshot} formatWeek={formatWeek} />
               ))}
 
               {access.writable && state.data.length > 0 ? (
@@ -1001,6 +1053,7 @@ export function PlayerProgressPanel({
                   history={state.data}
                   wallReference={reference.walls}
                   onSaved={handleSaved}
+                  formatWeek={formatWeek}
                 />
               ) : null}
             </div>

@@ -1,6 +1,7 @@
 import {
   parseCocTimestamp,
   type CurrentWar,
+  type SessionUser,
   type WarClan,
   type WarLogEntry,
   type WarLogResponse,
@@ -8,7 +9,7 @@ import {
 } from '@coc/shared'
 import { api } from '../api.ts'
 import { formatDateTime, formatFull, formatRelative } from '../format.ts'
-import { hrefFor, useAsync } from '../hooks.ts'
+import { hrefFor, useAsync, useDateFormatPreference } from '../hooks.ts'
 import {
   Card,
   ErrorPanel,
@@ -115,7 +116,13 @@ function SideRoster({ side, war }: { side: WarClan; war: CurrentWar }) {
   )
 }
 
-function CurrentWarPanel({ war }: { war: CurrentWar }) {
+function CurrentWarPanel({
+  war,
+  formatExact,
+}: {
+  war: CurrentWar
+  formatExact: (date: Date) => string
+}) {
   if (war.state === 'notInWar') {
     return (
       <Card title="Current war">
@@ -157,17 +164,17 @@ function CurrentWarPanel({ war }: { war: CurrentWar }) {
               {war.teamSize ? ` · ${war.teamSize}v${war.teamSize}` : ''}
             </div>
             {war.state === 'preparation' && startsAt ? (
-              <div className="war-score__time" title={formatDateTime(startsAt)}>
+              <div className="war-score__time" title={formatExact(startsAt)}>
                 Battle starts {formatRelative(startsAt)}
               </div>
             ) : null}
             {war.state === 'inWar' && endsAt ? (
-              <div className="war-score__time" title={formatDateTime(endsAt)}>
+              <div className="war-score__time" title={formatExact(endsAt)}>
                 Ends {formatRelative(endsAt)}
               </div>
             ) : null}
             {war.state === 'warEnded' && endsAt ? (
-              <div className="war-score__time" title={formatDateTime(endsAt)}>
+              <div className="war-score__time" title={formatExact(endsAt)}>
                 Ended {formatRelative(endsAt)}
               </div>
             ) : null}
@@ -252,7 +259,13 @@ function CurrentWarPanel({ war }: { war: CurrentWar }) {
   )
 }
 
-function WarLogRow({ entry }: { entry: WarLogEntry }) {
+function WarLogRow({
+  entry,
+  formatExact,
+}: {
+  entry: WarLogEntry
+  formatExact: (date: Date) => string
+}) {
   const ended = parseCocTimestamp(entry.endTime)
   return (
     <tr role="row">
@@ -289,14 +302,20 @@ function WarLogRow({ entry }: { entry: WarLogEntry }) {
       <td className="num" role="cell" data-label="XP">
         {entry.clan.expEarned === undefined ? '—' : formatFull(entry.clan.expEarned)}
       </td>
-      <td role="cell" data-label="Ended" title={formatDateTime(ended)}>
+      <td role="cell" data-label="Ended" title={formatExact(ended)}>
         {formatRelative(ended)}
       </td>
     </tr>
   )
 }
 
-function WarLogPanel({ tag }: { tag: string }) {
+function WarLogPanel({
+  tag,
+  formatExact,
+}: {
+  tag: string
+  formatExact: (date: Date) => string
+}) {
   const state = useAsync<WarLogResponse>((signal) => api.warLog(tag, signal), [tag])
 
   if (state.status === 'loading') return <Loading what="war log" />
@@ -336,7 +355,11 @@ function WarLogPanel({ tag }: { tag: string }) {
             </thead>
             <tbody role="rowgroup">
               {entries.map((entry) => (
-                <WarLogRow key={`${entry.endTime}-${entry.opponent.tag ?? entry.opponent.name}`} entry={entry} />
+                <WarLogRow
+                  key={`${entry.endTime}-${entry.opponent.tag ?? entry.opponent.name}`}
+                  entry={entry}
+                  formatExact={formatExact}
+                />
               ))}
             </tbody>
           </table>
@@ -346,18 +369,22 @@ function WarLogPanel({ tag }: { tag: string }) {
   )
 }
 
-export function WarView({ tag }: { tag: string }) {
+export function WarView({ tag, user }: { tag: string; user: Pick<SessionUser, 'id'> }) {
   const state = useAsync<CurrentWar>((signal) => api.currentWar(tag, signal), [tag])
+  const [dateFormat] = useDateFormatPreference(user.id)
+  const formatExact = (date: Date) => formatDateTime(date, dateFormat)
 
   return (
     <>
       {state.status === 'loading' ? <Loading what={`war for ${tag}`} /> : null}
       {state.status === 'error' ? <ErrorPanel error={state.error} /> : null}
-      {state.status === 'ready' ? <CurrentWarPanel war={state.data} /> : null}
+      {state.status === 'ready' ? (
+        <CurrentWarPanel war={state.data} formatExact={formatExact} />
+      ) : null}
 
       {/* Fetched separately: a clan can be mid-war while the log is unavailable,
           and one failing should not blank the other. */}
-      <WarLogPanel tag={tag} />
+      <WarLogPanel tag={tag} formatExact={formatExact} />
     </>
   )
 }

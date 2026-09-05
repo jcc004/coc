@@ -39,7 +39,7 @@ import {
 } from '../cards.ts'
 import { deckProgress, deckSizes } from '../deck-progress.ts'
 import { formatDateTime } from '../format.ts'
-import { hrefFor } from '../hooks.ts'
+import { hrefFor, useDateFormatPreference } from '../hooks.ts'
 import type { GeneratedCard } from '../cards.ts'
 import { CardTile } from './CardTile.tsx'
 import { DeckPlaques } from './DeckPlaques.tsx'
@@ -68,7 +68,13 @@ import { HelpLink } from './primitives.tsx'
  */
 
 /** Who last touched a base, in words. */
-function Attribution({ base }: { base: BaseInventory | undefined }) {
+function Attribution({
+  base,
+  formatExact,
+}: {
+  base: BaseInventory | undefined
+  formatExact: (date: Date) => string
+}) {
   if (!base?.updatedAt) {
     return <span className="card-meta">Nothing recorded yet</span>
   }
@@ -76,7 +82,7 @@ function Attribution({ base }: { base: BaseInventory | undefined }) {
   const when = new Date(base.updatedAt)
   return (
     <span className="card-meta">
-      Updated {Number.isNaN(when.getTime()) ? base.updatedAt : formatDateTime(when)}
+      Updated {Number.isNaN(when.getTime()) ? base.updatedAt : formatExact(when)}
       {/* `null` means the account that entered it is gone — the counts outlive it. */}
       {base.updatedBy ? ` by ${base.updatedBy}` : ' by a since-removed account'}
     </span>
@@ -533,6 +539,9 @@ export function BaseCardEditor({
   const access = useMemo(() => cardEntryAccess(user, owner, tag), [user, owner, tag])
   const writable = access.writable
 
+  const [dateFormat] = useDateFormatPreference(user.id)
+  const formatExact = (date: Date) => formatDateTime(date, dateFormat)
+
   /*
    * What the server is known to hold. A ref, not state: it is read inside the blur
    * handler at the moment of the decision, and a re-render is never the thing that
@@ -708,7 +717,7 @@ export function BaseCardEditor({
         {/* The tag is still the identity a trade is arranged against, so it stays
             on screen even though the heading now reads as a name. */}
         {label === tag ? null : <>{tag} · </>}
-        <Attribution base={base} />
+        <Attribution base={base} formatExact={formatExact} />
       </p>
 
       <ReadOnlyNotice access={access} />

@@ -9,8 +9,9 @@ import {
   type UserRole,
 } from '@coc/shared'
 import { api, describe } from '../api.ts'
+import type { DateFormatPreference } from '../date-format.ts'
 import { formatDateTime } from '../format.ts'
-import { useAsync } from '../hooks.ts'
+import { useAsync, useDateFormatPreference } from '../hooks.ts'
 import { parseBulkPasteRows } from '../progress-bulk-paste.ts'
 import { refreshProgressReference, useProgressReference } from '../progress.ts'
 import { ErrorPanel, Loading, PasswordField } from './primitives.tsx'
@@ -417,6 +418,9 @@ interface Issued {
 }
 
 function UsersCard({ currentUserId }: { currentUserId: number }) {
+  // The viewer's own preference, not each row's account — this table's admin
+  // always is `currentUserId`, so their format choice is what "Added" prints in.
+  const [dateFormat] = useDateFormatPreference(currentUserId)
   const [version, setVersion] = useState(0)
   const [problem, setProblem] = useState<string | null>(null)
   /** Per-row failures, so a rejected write is reported where it was triggered. */
@@ -590,7 +594,7 @@ function UsersCard({ currentUserId }: { currentUserId: number }) {
                     </button>
                   </td>
                   <td role="cell" data-label="Added">
-                    {formatDateTime(new Date(user.createdAt))}
+                    {formatDateTime(new Date(user.createdAt), dateFormat)}
                   </td>
                   {/* Words, not a color: disabled has to be legible on its own. */}
                   <td role="cell" data-label="Status">
@@ -664,11 +668,13 @@ function ReferenceRow({
   row,
   problem,
   onProblem,
+  dateFormat,
 }: {
   category: HandEnteredReferenceCategory
   row: MaxLevelReferenceRow
   problem?: string
   onProblem: (key: string, text: string | null) => void
+  dateFormat: DateFormatPreference
 }) {
   const key = rowKey(row)
   const [editing, setEditing] = useState(false)
@@ -754,7 +760,7 @@ function ReferenceRow({
         {problem ? <p className="row-actions__problem">{problem}</p> : null}
       </td>
       <td role="cell" data-label="Updated">
-        {formatDateTime(new Date(row.updatedAt))}
+        {formatDateTime(new Date(row.updatedAt), dateFormat)}
       </td>
     </tr>
   )
@@ -924,7 +930,8 @@ function BulkPastePanel({ category }: { category: HandEnteredReferenceCategory }
  * typing anything is the same table the percent bars are already scoring
  * against — including a category with nothing in it yet, today.
  */
-function ProgressReferenceCard() {
+function ProgressReferenceCard({ viewerId }: { viewerId: number }) {
+  const [dateFormat] = useDateFormatPreference(viewerId)
   const [category, setCategory] = useState<HandEnteredReferenceCategory>('pet')
   const [rowProblems, setRowProblems] = useState<Record<string, string>>({})
   const reference = useProgressReference()
@@ -1003,6 +1010,7 @@ function ProgressReferenceCard() {
                     row={row}
                     problem={rowProblems[rowKey(row)]}
                     onProblem={setRowProblem}
+                    dateFormat={dateFormat}
                   />
                 ))
               )}
@@ -1034,7 +1042,7 @@ export function AdminView({ user }: { user: SessionUser }) {
   return (
     <>
       <UsersCard currentUserId={user.id} />
-      <ProgressReferenceCard />
+      <ProgressReferenceCard viewerId={user.id} />
     </>
   )
 }

@@ -25,8 +25,9 @@ import {
   type ChangeRequestDisplayStatus,
 } from '../change-request-rules.ts'
 import { type Change, loadChanges, whatsNewHref } from '../changelog.ts'
+import type { DateFormatPreference } from '../date-format.ts'
 import { formatDateTime, formatRelative, formatShortDate, summarize } from '../format.ts'
-import { useAsync } from '../hooks.ts'
+import { useAsync, useDateFormatPreference } from '../hooks.ts'
 import { ChangeRequestRules } from './help-copy.tsx'
 import { ErrorPanel, HelpLink, Loading } from './primitives.tsx'
 
@@ -70,10 +71,10 @@ const STATUS_LABEL: Record<ChangeRequestDisplayStatus, string> = {
 }
 
 /** Absolute in the tooltip, relative on screen, as everywhere else in this app. */
-function Stamp({ at }: { at: string }) {
+function Stamp({ at, dateFormat }: { at: string; dateFormat: DateFormatPreference }) {
   const when = new Date(at)
   return (
-    <time dateTime={at} title={when.toLocaleString()}>
+    <time dateTime={at} title={formatDateTime(when, dateFormat)}>
       {formatRelative(when)}
     </time>
   )
@@ -203,7 +204,13 @@ function ClampedBody({ text, className }: { text: string; className?: string }) 
  * component drawing the same data both places, so a commit link fixed here is
  * fixed in both without a special case for either.
  */
-function ResolutionSummary({ resolution }: { resolution: NonNullable<ChangeRequest['resolution']> }) {
+function ResolutionSummary({
+  resolution,
+  dateFormat,
+}: {
+  resolution: NonNullable<ChangeRequest['resolution']>
+  dateFormat: DateFormatPreference
+}) {
   return (
     <p className="empty-hint request-resolution">
       <strong>{RESOLUTION_LABEL[resolution.type]}</strong>
@@ -218,7 +225,7 @@ function ResolutionSummary({ resolution }: { resolution: NonNullable<ChangeReque
         </>
       ) : null}
       {' · '}
-      {resolution.resolvedBy ?? 'a deleted account'} <Stamp at={resolution.resolvedAt} />
+      {resolution.resolvedBy ?? 'a deleted account'} <Stamp at={resolution.resolvedAt} dateFormat={dateFormat} />
       {resolution.note ? (
         <>
           <br />
@@ -435,19 +442,21 @@ function RequestEntry({
   onAmend,
   onCancel,
   onSetHidden,
+  dateFormat,
 }: {
   user: Pick<SessionUser, 'id'>
   request: ChangeRequest
   onAmend: MyChangeRequests['amend']
   onCancel: MyChangeRequests['cancel']
   onSetHidden: MyChangeRequests['setHidden']
+  dateFormat: DateFormatPreference
 }) {
   const status = changeRequestStatus(request)
 
   return (
     <li className="changelog__entry">
       <p className="changelog__when">
-        <Stamp at={request.requestedAt} />
+        <Stamp at={request.requestedAt} dateFormat={dateFormat} />
       </p>
       <h2 className="changelog__subject">
         {request.subject} <StatusBadge status={status} />
@@ -456,13 +465,15 @@ function RequestEntry({
       {request.amendments.map((amendment) => (
         <p key={amendment.id} className="changelog__body request-amendment">
           <span className="card-meta">
-            Added <Stamp at={amendment.createdAt} />
+            Added <Stamp at={amendment.createdAt} dateFormat={dateFormat} />
           </span>
           <br />
           {amendment.body}
         </p>
       ))}
-      {request.resolution ? <ResolutionSummary resolution={request.resolution} /> : null}
+      {request.resolution ? (
+        <ResolutionSummary resolution={request.resolution} dateFormat={dateFormat} />
+      ) : null}
       <RequestActions
         user={user}
         request={request}
@@ -474,7 +485,15 @@ function RequestEntry({
   )
 }
 
-function MyRequestsCard({ user, mine }: { user: SessionUser; mine: MyChangeRequests }) {
+function MyRequestsCard({
+  user,
+  mine,
+  dateFormat,
+}: {
+  user: SessionUser
+  mine: MyChangeRequests
+  dateFormat: DateFormatPreference
+}) {
   const [showHidden, setShowHidden] = useState(false)
   const hiddenCount = hiddenChangeRequestCount(mine.requests)
   const rows = sortChangeRequests(visibleChangeRequests(mine.requests, showHidden))
@@ -504,6 +523,7 @@ function MyRequestsCard({ user, mine }: { user: SessionUser; mine: MyChangeReque
               onAmend={mine.amend}
               onCancel={mine.cancel}
               onSetHidden={mine.setHidden}
+              dateFormat={dateFormat}
             />
           ))}
         </ol>
@@ -643,7 +663,13 @@ function ResolveForm({
   )
 }
 
-function AdminChangeRequestsCard({ all }: { all: AllChangeRequests }) {
+function AdminChangeRequestsCard({
+  all,
+  dateFormat,
+}: {
+  all: AllChangeRequests
+  dateFormat: DateFormatPreference
+}) {
   /*
    * Loaded once, lazily — the same async shape `WhatsNewView` uses for the same
    * chunk. A build with no git history answers with an empty list rather than
@@ -699,9 +725,9 @@ function AdminChangeRequestsCard({ all }: { all: AllChangeRequests }) {
                         hover away instead. */}
                     <time
                       dateTime={request.requestedAt}
-                      title={formatDateTime(new Date(request.requestedAt))}
+                      title={formatDateTime(new Date(request.requestedAt), dateFormat)}
                     >
-                      {formatShortDate(new Date(request.requestedAt))}
+                      {formatShortDate(new Date(request.requestedAt), dateFormat)}
                     </time>
                   </td>
                   <td role="cell" data-label="Subject">
@@ -714,7 +740,7 @@ function AdminChangeRequestsCard({ all }: { all: AllChangeRequests }) {
                   </td>
                   <td role="cell" data-label="Resolution">
                     {request.resolution ? (
-                      <ResolutionSummary resolution={request.resolution} />
+                      <ResolutionSummary resolution={request.resolution} dateFormat={dateFormat} />
                     ) : (
                       <span className="empty-hint">Not resolved yet</span>
                     )}
@@ -735,6 +761,7 @@ function AdminChangeRequestsCard({ all }: { all: AllChangeRequests }) {
 /* ---------- the page ---------- */
 
 export function ChangeRequestsView({ user }: { user: SessionUser }) {
+  const [dateFormat] = useDateFormatPreference(user.id)
   const mine = useMyChangeRequests()
   // Only fetched at all while an admin has this page open — see `useAllChangeRequests`.
   const isAdmin = user.role === 'admin'
@@ -773,7 +800,7 @@ export function ChangeRequestsView({ user }: { user: SessionUser }) {
   return (
     <>
       <SubmitCard onSubmit={submit} />
-      <MyRequestsCard user={user} mine={mine} />
+      <MyRequestsCard user={user} mine={mine} dateFormat={dateFormat} />
 
       {/* Rendered whatever state the list is in, sharing `ChangeRequestRules` with
           the help page — the same "disclosure survives an empty list" reasoning
@@ -786,7 +813,7 @@ export function ChangeRequestsView({ user }: { user: SessionUser }) {
       </details>
 
       {isAdmin ? (
-        <AdminSection refreshKey={submitCount} onResolved={mine.patch} />
+        <AdminSection refreshKey={submitCount} onResolved={mine.patch} dateFormat={dateFormat} />
       ) : null}
     </>
   )
@@ -806,9 +833,11 @@ export function ChangeRequestsView({ user }: { user: SessionUser }) {
 function AdminSection({
   refreshKey,
   onResolved,
+  dateFormat,
 }: {
   refreshKey: number
   onResolved: (request: ChangeRequest) => void
+  dateFormat: DateFormatPreference
 }) {
   const all = useAllChangeRequests(refreshKey)
 
@@ -822,5 +851,5 @@ function AdminSection({
     [allResolve, onResolved],
   )
 
-  return <AdminChangeRequestsCard all={{ ...all, resolve }} />
+  return <AdminChangeRequestsCard all={{ ...all, resolve }} dateFormat={dateFormat} />
 }

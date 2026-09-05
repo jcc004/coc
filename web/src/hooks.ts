@@ -19,6 +19,13 @@ import {
   serializeScheme,
   type ColorScheme,
 } from './color-scheme.ts'
+import {
+  dateFormatKey,
+  DEFAULT_DATE_FORMAT,
+  parseDateFormat,
+  serializeDateFormat,
+  type DateFormatPreference,
+} from './date-format.ts'
 import { helpHref, helpSection, type HelpSectionId } from './help.ts'
 import {
   clanTargetTag,
@@ -400,6 +407,70 @@ export function useColorScheme(userId: number): [ColorScheme, (next: ColorScheme
   )
 
   return [scheme, choose]
+}
+
+/* ---------- date/time format preference ---------- */
+
+const dateFormatListeners = new Set<() => void>()
+
+const dateFormatCache = new Map<string, { raw: string | null; preference: DateFormatPreference }>()
+
+/** Same reasoning as `readScheme`: parsed at most once per stored value, cached by
+ *  key so two callers reading two different accounts' keys do not thrash a
+ *  single-slot cache. */
+function readDateFormat(key: string): DateFormatPreference {
+  const raw = localStorage.getItem(key)
+  const cached = dateFormatCache.get(key)
+  if (cached && cached.raw === raw) return cached.preference
+
+  const preference = parseDateFormat(raw)
+  dateFormatCache.set(key, { raw, preference })
+  return preference
+}
+
+function subscribeToDateFormat(onChange: () => void): () => void {
+  dateFormatListeners.add(onChange)
+  // `storage` fires in the *other* tabs — the same reason `subscribeToScheme` wires
+  // it up: the account page in one tab, the app in another.
+  window.addEventListener('storage', onChange)
+  return () => {
+    dateFormatListeners.delete(onChange)
+    window.removeEventListener('storage', onChange)
+  }
+}
+
+/**
+ * The chosen date/time format: which order day/month/year print in, what
+ * separates them, and 12- vs. 24-hour time. Same shape as `useColorScheme` right
+ * above — `localStorage`, keyed per account, `useSyncExternalStore` so every
+ * component holding this hook sees a choice made in another one immediately.
+ *
+ * Unlike a color scheme there is nothing to paint onto the root element: a date
+ * format has no CSS side effect, it only changes what `format.ts`'s functions
+ * return when a caller passes this value in. So there is no effect here at all —
+ * callers read the tuple's first element and hand it to `formatDateTime` /
+ * `formatShortDate` / `formatDate` themselves.
+ */
+export function useDateFormatPreference(
+  userId: number,
+): [DateFormatPreference, (next: DateFormatPreference) => void] {
+  const key = dateFormatKey(userId)
+
+  const preference = useSyncExternalStore(
+    subscribeToDateFormat,
+    () => readDateFormat(key),
+    () => DEFAULT_DATE_FORMAT,
+  )
+
+  const choose = useCallback(
+    (next: DateFormatPreference) => {
+      localStorage.setItem(key, serializeDateFormat(next))
+      for (const listener of dateFormatListeners) listener()
+    },
+    [key],
+  )
+
+  return [preference, choose]
 }
 
 /* ---------- last visited route ---------- */

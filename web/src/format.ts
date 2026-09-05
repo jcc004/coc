@@ -1,3 +1,5 @@
+import { composeDate, composeTime, DEFAULT_DATE_FORMAT, type DateFormatPreference } from './date-format.ts'
+
 const FULL = new Intl.NumberFormat('en-US')
 const COMPACT = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
 
@@ -32,15 +34,23 @@ export function formatRelative(date: Date): string {
   return RELATIVE.format(Math.round(seconds), 'second')
 }
 
-export function formatDateTime(date: Date): string {
-  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+/**
+ * `8/24/2026, 5:42 PM` by default — the order, separator and clock all come from
+ * `preference`, a per-user choice (`useDateFormatPreference` in `hooks.ts`) rather
+ * than the browser's own locale. See `date-format.ts`'s module doc for why this is
+ * built by hand instead of via `toLocaleString`'s locale options, now that the
+ * order itself is a choice `Intl` has no lever for.
+ */
+export function formatDateTime(date: Date, preference: DateFormatPreference = DEFAULT_DATE_FORMAT): string {
+  return `${composeDate(date, preference)}, ${composeTime(date, preference)}`
 }
 
-/** `8/8/26` — a numeric column value where the day is the whole answer and a
- *  full timestamp (or even `formatDate`'s `Aug 8, 2026`) is more than the
- *  column has room to spend on it. */
-export function formatShortDate(date: Date): string {
-  return date.toLocaleDateString(undefined, { dateStyle: 'short' })
+/** `8/24/26` — a numeric column value where the day is the whole answer and a
+ *  full timestamp (or even `formatDate`'s `8/24/2026`) is more than the
+ *  column has room to spend on it. Two-digit year regardless of `preference`,
+ *  same as before this was configurable — see `composeDate`'s `shortYear`. */
+export function formatShortDate(date: Date, preference: DateFormatPreference = DEFAULT_DATE_FORMAT): string {
+  return composeDate(date, preference, { shortYear: true })
 }
 
 /**
@@ -50,8 +60,8 @@ export function formatShortDate(date: Date): string {
  * date-only string as UTC, but spelling it out here means this reads correctly even
  * if a caller ever passes a value `Date` would parse in the local zone instead.
  */
-export function formatDate(isoDate: string): string {
-  return new Date(`${isoDate}T00:00:00Z`).toLocaleDateString(undefined, { dateStyle: 'medium' })
+export function formatDate(isoDate: string, preference: DateFormatPreference = DEFAULT_DATE_FORMAT): string {
+  return composeDate(new Date(`${isoDate}T00:00:00Z`), preference)
 }
 
 /**

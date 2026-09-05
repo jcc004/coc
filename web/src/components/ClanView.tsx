@@ -178,7 +178,7 @@ export function ClanView({
         <RosterTable members={clan.memberList} user={user} />
       </Card>
 
-      <CapitalRaidsCard tag={clan.tag} />
+      <CapitalRaidsCard tag={clan.tag} user={user} />
     </>
   )
 }

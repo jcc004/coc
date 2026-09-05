@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import type { SessionUser, TradeRecord } from '@coc/shared'
 import { ApiError } from '../api.ts'
 import { cardById } from '../cards.ts'
-import { formatRelative } from '../format.ts'
-import { hrefFor, useRowLimit } from '../hooks.ts'
+import type { DateFormatPreference } from '../date-format.ts'
+import { formatDateTime, formatRelative } from '../format.ts'
+import { hrefFor, useDateFormatPreference, useRowLimit } from '../hooks.ts'
 import { useOwners } from '../owners.ts'
 import { paginate, type PagedRows, type RowLimit } from '../saved-table.ts'
 import {
@@ -75,10 +76,10 @@ function BaseLabel({ tag, label }: { tag: string; label: string }) {
 }
 
 /** Absolute in the tooltip, relative on screen — as everywhere else in the app. */
-function Stamp({ at }: { at: string }) {
+function Stamp({ at, dateFormat }: { at: string; dateFormat: DateFormatPreference }) {
   const when = new Date(at)
   return (
-    <time dateTime={at} title={when.toLocaleString()}>
+    <time dateTime={at} title={formatDateTime(when, dateFormat)}>
       {formatRelative(when)}
     </time>
   )
@@ -95,23 +96,23 @@ function Stamp({ at }: { at: string }) {
  * deleted, which is said rather than blanked: the trade is the record of
  * something that really happened and has to outlive every account it names.
  */
-function AuditLine({ trade }: { trade: TradeRecord }) {
+function AuditLine({ trade, dateFormat }: { trade: TradeRecord; dateFormat: DateFormatPreference }) {
   const gone = 'a deleted account'
 
   return (
     <span className="card-meta trade-audit">
-      Proposed by {trade.proposedBy ?? gone} <Stamp at={trade.proposedAt} />
+      Proposed by {trade.proposedBy ?? gone} <Stamp at={trade.proposedAt} dateFormat={dateFormat} />
       {trade.resolvedAt === null ? null : (
         <>
           {' · '}
           {trade.status === 'declined' ? 'declined' : 'completed'} by{' '}
-          {trade.resolvedBy ?? gone} <Stamp at={trade.resolvedAt} />
+          {trade.resolvedBy ?? gone} <Stamp at={trade.resolvedAt} dateFormat={dateFormat} />
         </>
       )}
       {trade.undoneAt === null ? null : (
         <>
           {' · '}
-          undone by {trade.undoneBy ?? gone} <Stamp at={trade.undoneAt} />
+          undone by {trade.undoneBy ?? gone} <Stamp at={trade.undoneAt} dateFormat={dateFormat} />
         </>
       )}
     </span>
@@ -320,6 +321,7 @@ export function TradeTracker({
    */
   focusTag?: string
 }) {
+  const [dateFormat] = useDateFormatPreference(user.id)
   const { status, entries, error } = useTradesState()
 
   const rows = useMemo(() => {
@@ -372,6 +374,7 @@ export function TradeTracker({
           waiting={waiting}
           labelOf={labelOf}
           user={user}
+          dateFormat={dateFormat}
           limit={limit}
           onLimit={(next) => {
             setLimit(next)
@@ -405,6 +408,7 @@ function TrackerTable({
   waiting,
   labelOf,
   user,
+  dateFormat,
   limit,
   onLimit,
   onPage,
@@ -415,6 +419,7 @@ function TrackerTable({
   waiting: number
   labelOf: (tag: string) => string
   user: Pick<SessionUser, 'id' | 'role'>
+  dateFormat: DateFormatPreference
   limit: RowLimit
   onLimit: (next: RowLimit) => void
   onPage: (next: number) => void
@@ -469,7 +474,7 @@ function TrackerTable({
                 <td role="cell" data-label="Status">
                   <StatusBadge status={trade.status} />
                   <br />
-                  <AuditLine trade={trade} />
+                  <AuditLine trade={trade} dateFormat={dateFormat} />
                 </td>
                 <td className="row-actions" role="cell" data-label="Actions">
                   <ResolveActions trade={trade} user={user} />
