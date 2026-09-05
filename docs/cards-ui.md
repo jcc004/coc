@@ -176,7 +176,7 @@ longer applies now that there is no third control to name at all.
 **No `<button>` nests inside another.** `CardTile` itself is still not a button — see its
 own doc comment in `web/src/components/CardTile.tsx` — so the tile-wide tap is a `<button>`
 that *wraps* it, the same resolving pattern the clan-totals grid already uses to make its
-own tiles pressable (`CardsView.tsx`'s `CardTotalPick`). The corner circle is a *sibling*
+own tiles pressable (`CardTotalsGrid.tsx`'s `CardTotalPick`). The corner circle is a *sibling*
 of that wrapping button, not a child of it and not a child of `CardTile`, which is what
 keeps this legal markup instead of a button nested inside a button.
 
@@ -783,7 +783,7 @@ same fact for every base at once.
 
 ### Seven boards: the View picker
 
-A **View** select at the top of the leaderboard table (`CardsView.tsx`, styled like `RowLimitSelect`
+A **View** select at the top of the leaderboard table (`CardsLeaderboardSection.tsx`, styled like `RowLimitSelect`
 and the totals panel's own `#card-total-sort`) switches between seven rankings, in this fixed order:
 **Overall**, **Rarity**, **Full rows**, **By category**, **Full decks**, **Spares on hand**,
 **Most active trader** — the whole-collection boards first, then the ones scoped to a narrower

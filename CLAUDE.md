@@ -84,8 +84,8 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
   on churning counts), which is why the CSP carries `'unsafe-inline'` (`deploy/nginx-coc.conf`). Do
   not introduce a third styling mechanism.
 - **A table's row-limit select and its pager are one control, not two.** They sit together in a
-  `<div className="roster-footer">` below the table — see `CardsView.tsx`'s leaderboard or
-  `SavedClansView.tsx`. Never put the row-limit select in the card header while the pager stays at
+  `<div className="roster-footer">` below the table — see `Leaderboard.tsx`'s `Leaderboard`
+  component or `SavedClansView.tsx`. Never put the row-limit select in the card header while the pager stays at
   the bottom; `ProgressGridView.tsx` shipped that way once and had to be moved.
 - **Stay inside this repo.** Any agent working here — including one subagent spawning another —
   operates only within `coc/`, or an isolated worktree of it. Touching another repository under
@@ -199,14 +199,23 @@ can.
   a leaf component, just no longer a *total* one.
 - **`server/src/db.ts`** — migrations are append-only and an applied one can never be edited. The
   reasoning is in the file header; read it before adding a step, and never renumber.
-- **`web/src/components/CardsView.tsx`** (990 lines when first added to this list, still growing —
-  `wc -l` it for where it stands now rather than trusting a number here, per
-  `claude-kit/rules/improving-the-kit.md` on churning counts) — the card page's controller, sharing
-  three components with the player page (`BaseCardEditor`, `CardTile`, `TradeSuggestions`). A change
-  here frequently lands there too, and two people editing it at once do not compose. It is the
-  largest component in the app by a wide margin and past the line count (`RosterTable.tsx`'s own doc
-  comment cites 660) that file was split out from `ClanView.tsx` at — a plausible next split, not yet
-  done.
+- **`web/src/components/CardsView.tsx`** was 2,327 lines before being split 2026-09-05 into
+  `Leaderboard.tsx` (the generic ranked-table machinery: types, `overallColumns`, the six static
+  `*_COLUMNS` configs, `LeaderboardTable`, `Leaderboard`), `CardsLeaderboardSection.tsx` (the
+  per-page wiring: the seven rankings' own `useMemo`s, the view/category picker state, the
+  `leaderboardBoards` config), `CardTotalsGrid.tsx`, `CardHolders.tsx`, `CardTotals.tsx` (the
+  clan-totals grid, its holders table, and the wrapper combining them), and `CardSectionNav.tsx`
+  (the jump row, back-to-top arrows, heading cross-links). `wc -l` each for where it stands now
+  rather than trusting a number here, per `claude-kit/rules/improving-the-kit.md` on churning
+  counts — `CardsView.tsx` itself was 663 lines immediately after the split, below the line count
+  (`RosterTable.tsx`'s own doc comment cites 660) that file was split out from `ClanView.tsx` at.
+  The split was verified behavior-preserving by `CardsView.test.tsx`'s existing black-box suite
+  (imports only the page's exported `CardsView`, organized by these same section boundaries)
+  passing unchanged before and after, not by new tests — none of the six new files has its own
+  adjacent test file yet, which is a real, if not new, instance of the component test-coverage gap
+  noted below. `CardsView.tsx` remains the card page's controller, still sharing three components
+  with the player page (`BaseCardEditor`, `CardTile`, `TradeSuggestions`) — a change here can still
+  land there too.
 
 The first two are recorded from incidents; the last two are reasoned from the code and have not yet
 cost anything. Add to this list when a file misleads you, and say what it did.
