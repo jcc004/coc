@@ -329,19 +329,8 @@ export function SavedClansView({ user }: { user: Pick<SessionUser, 'role'> }) {
           <h2 className="section-title" style={{ margin: 0 }}>
             Saved clans{clans.length > 0 ? ` · ${clans.length}` : ''}
           </h2>
-          <div className="card-header__tools">
-            {clans.length > 0 ? (
-              <RowLimitSelect
-                id="saved-clans-limit"
-                options={LIMIT_OPTIONS}
-                value={limit}
-                onChange={(next) => {
-                  setLimit(next)
-                  setPage(1)
-                }}
-              />
-            ) : null}
-            {clans.length > 0 && isAdmin ? (
+          {clans.length > 0 && isAdmin ? (
+            <div className="card-header__tools">
               <button
                 type="button"
                 className="icon-button"
@@ -350,8 +339,8 @@ export function SavedClansView({ user }: { user: Pick<SessionUser, 'role'> }) {
               >
                 {refreshing ? 'Refreshing…' : 'Refresh all'}
               </button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </div>
 
         {refreshProblem ? <p className="notice__hint">{refreshProblem}</p> : null}
@@ -432,7 +421,21 @@ export function SavedClansView({ user }: { user: Pick<SessionUser, 'role'> }) {
               </table>
             </div>
 
-            <Pager view={view} noun="clans" onPage={setPage} />
+            {/* At the bottom, beside the pager, exactly as the card leaderboard's and the
+                progress grid's are — see CLAUDE.md's "row limit and pager sit together"
+                local rule. */}
+            <div className="roster-footer">
+              <RowLimitSelect
+                id="saved-clans-limit"
+                options={LIMIT_OPTIONS}
+                value={limit}
+                onChange={(next) => {
+                  setLimit(next)
+                  setPage(1)
+                }}
+              />
+              <Pager view={view} noun="clans" onPage={setPage} />
+            </div>
 
             <p className="empty-hint" style={{ marginTop: 12, fontSize: 13 }}>
               Click a row to open the clan, or <strong>War</strong> for its current war. This list
