@@ -106,6 +106,45 @@ The general rules are in `claude-kit`. These are this repo's instances of them.
   project scope**), gets named to the user rather than left for the next session to rediscover from
   scratch.
 
+## Security posture decisions
+
+Three gaps against the App Defense Alliance's CASA testing guide
+(`claude-kit/rules/invariants.md`'s "New web apps get checked against the App Defense Alliance's
+CASA Testing Guide") were surfaced by a review and explicitly decided against fixing, rather than
+being oversights nobody noticed. Recorded here so a future review reads these as considered
+tradeoffs, not gaps — the same reasoning `docs/authentication.md`'s `SameSite=Lax` note already
+gives for the third one, restated here alongside the other two for the same reason.
+
+**Why the threat model changes the answer for this app specifically:** coc is a personal tool with
+about ten accounts, one operator, and no public signup path. The realistic threat is password
+reuse or phishing against one of those ten people, not a targeted attack on a high-value admin
+panel with an attacker already inside the network. Each of the three items below closes a real gap
+against CASA's literal wording, at a real build/friction cost that this threat model doesn't
+justify paying.
+
+- **No MFA on `/api/admin/*`** (CASA 3.3.1, fails as written). `requireAdmin`
+  (`server/src/auth/middleware.ts`) is an authenticated session plus `role === 'admin'`, nothing
+  more. Adding TOTP means an enrollment flow, recovery codes, and a new locked-out-admin failure
+  mode to build and maintain — real cost for a threat model this app doesn't have.
+- **No synchronizer/double-submit CSRF token** (CASA 3.1.5, partial). `SameSite=Lax` plus
+  `HttpOnly` on the session cookie (`docs/authentication.md`) is a widely-accepted defense in
+  current browsers for a same-site app with no third-party embeds or cross-origin iframes — real
+  token plumbing across every mutating route buys little beyond what `SameSite` already closes
+  here.
+- **No re-authentication step before sensitive admin actions** (CASA 2.4.1, partial). Password
+  change itself already re-verifies the current password
+  (`store.verifyUserPassword`, `auth/routes.ts`). Other sensitive actions — disabling a user,
+  changing a role, issuing a temp password — rely on the existing session plus a live
+  `stillActiveAdmin` re-check rather than a fresh challenge. That re-check is a real, if different,
+  mitigation: it re-verifies the admin's *current* session validity at the moment of the action,
+  not just at login, which defends against a stale or hijacked session doing damage even without
+  adding a password-re-entry step to routine admin work.
+
+Decided 2026-09-05, after a review flagged all three explicitly as "report back before any code
+changes" rather than mechanical fixes. Revisit if the operating model changes — more accounts, a
+public signup path, or shared admin access beyond one operator would each weaken the reasoning
+above.
+
 ## Files that bite, and how
 
 Not a hot-file list in the rework sense — this repo is days old and has no ticket history to
