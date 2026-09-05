@@ -41,6 +41,7 @@ export type HelpSectionId =
   | 'progress'
   | 'base-order'
   | 'shared'
+  | 'dates'
   | 'change-requests'
 
 export interface HelpSection {
@@ -59,7 +60,8 @@ export interface HelpSection {
  * then how the board scores, then the app's other tracked feature — weekly progress,
  * and the base order that quietly feeds three other pages — then the thing that
  * surprises people about all of it: that there is one copy of the data and it is
- * everybody's — and last, how to ask for the app itself to change.
+ * everybody's — then a display preference unrelated to any of it — and last, how to ask for the
+ * app itself to change.
  */
 export const HELP_SECTIONS: readonly HelpSection[] = [
   {
@@ -101,6 +103,11 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     id: 'shared',
     title: 'The data is shared',
     summary: 'One dataset for every account, and who last changed each row',
+  },
+  {
+    id: 'dates',
+    title: 'Dates & times',
+    summary: 'A display-only choice — order, separator, 12- or 24-hour — set once in Account',
   },
   {
     id: 'change-requests',

@@ -7,6 +7,7 @@ import {
   CardEntryRules,
   CategoryScoringRules,
   ChangeRequestRules,
+  DateFormatRules,
   DeckCompletionScoringRules,
   OwnershipRules,
   ProgressCapRules,
@@ -249,6 +250,10 @@ export function HelpView({ section }: { section: HelpSectionId | null }) {
           admin, who can issue you a one-time password from the{' '}
           <a href={hrefFor({ view: 'admin' })}>accounts page</a>.
         </p>
+      </HelpSection>
+
+      <HelpSection id="dates">
+        <DateFormatRules />
       </HelpSection>
 
       <HelpSection id="change-requests">
