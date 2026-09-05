@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { normalizeTag } from '@coc/shared'
+import { openDatabase } from '../db.ts'
+import { currentWeekStart } from './capture-snapshot.ts'
 import {
   buildColumnMap,
+  buildReportFromReads,
   classifyDatedSheets,
   columnLetterToIndex,
   extractRowCells,
   extractSheetRows,
+  findNonImportCapturedBy,
   indexToColumnLetter,
   NICKNAME_TO_TAG,
   parseDataRow,
@@ -15,7 +20,9 @@ import {
   resolveCellNumber,
   resolveCellText,
   scanDataRows,
+  type FileRead,
   type ParsedDataRow,
+  type SheetData,
 } from './backfill-history.ts'
 
 /*
@@ -725,5 +732,170 @@ describe('classifyDatedSheets', () => {
       { file: 'b.xlsx', sheetName: '2025-10-03', rows: [row('iv', 16), row('nc', 17)] },
     ]
     assert.equal(classifyDatedSheets(occurrences).get('2025-10-03'), 'frozen')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildReportFromReads — the orchestration layer `buildReport` delegates to
+// once it has finished reading real files off disk (see that function's own
+// doc comment). Tested here against synthetic `FileRead[]` input rather than
+// real `.xlsx` fixtures, since this layer's job — weekStart assignment,
+// collision detection, frozen/live sheet dedup, and the final stable sort —
+// has nothing to do with spreadsheet XML.
+// ---------------------------------------------------------------------------
+
+function knownTag(nickname: string): string {
+  const tag = NICKNAME_TO_TAG[nickname]
+  assert.ok(tag, `no NICKNAME_TO_TAG entry for "${nickname}"`)
+  return tag
+}
+
+const NC_TAG = normalizeTag(knownTag('nc'))
+const ZERO_ZERO_TAG = normalizeTag(knownTag('00'))
+
+/** One `FileRead` with a single "Current"-style sheet holding the given rows. */
+function fileRead(file: string, filenameWeekStart: string | null, rows: ParsedDataRow[]): FileRead {
+  const sheet: SheetData = {
+    sheetName: 'Current',
+    rowsFound: rows.length,
+    parsedRows: rows,
+    warnings: [],
+    gapRows: [],
+  }
+  return { file, filenameWeekStart, sheets: [sheet] }
+}
+
+describe('buildReportFromReads sorts globally by weekStart, and leaves each tag its own ascending subsequence', () => {
+  // Deliberately out of chronological order: the middle read's own weekStart
+  // (07-06) is earlier than the first read's (07-20) — the same
+  // file-order-vs-weekStart-order mismatch a frozen dated sheet can produce
+  // (see `buildReportFromReads`'s own comment on why the final sort exists).
+  const reads = [
+    fileRead('b.xlsx', '2026-07-20', [row('nc', 17), row('00', 16)]),
+    fileRead('a.xlsx', '2026-07-06', [row('nc', 16), row('00', 15)]),
+    fileRead('c.xlsx', '2026-08-03', [row('nc', 18), row('00', 17)]),
+  ]
+
+  const report = buildReportFromReads(reads, openDatabase(':memory:'))
+
+  it('sorts the whole planned list ascending by weekStart, not by file order', () => {
+    const weekStarts = report.planned.map((p) => p.weekStart)
+    assert.deepEqual(weekStarts, ['2026-07-06', '2026-07-06', '2026-07-20', '2026-07-20', '2026-08-03', '2026-08-03'])
+  })
+
+  it("leaves each tag's own subsequence ascending", () => {
+    const ncWeeks = report.planned.filter((p) => p.tag === NC_TAG).map((p) => p.weekStart)
+    const zeroZeroWeeks = report.planned.filter((p) => p.tag === ZERO_ZERO_TAG).map((p) => p.weekStart)
+    assert.deepEqual(ncWeeks, ['2026-07-06', '2026-07-20', '2026-08-03'])
+    assert.deepEqual(zeroZeroWeeks, ['2026-07-06', '2026-07-20', '2026-08-03'])
+  })
+})
+
+describe('findNonImportCapturedBy', () => {
+  it('reports null when no row exists for that tag/week at all', () => {
+    const db = openDatabase(':memory:')
+    assert.equal(findNonImportCapturedBy(db, NC_TAG, '2026-07-06'), null)
+  })
+
+  it("reports null when the existing row's captured_by is this script's own 'import' marker", () => {
+    const db = openDatabase(':memory:')
+    db.prepare(
+      'INSERT INTO base_progress (player_tag, week_start, captured_by, updated_at) VALUES (?, ?, ?, ?)',
+    ).run(NC_TAG, '2026-07-06', 'import', '2026-07-06T00:00:00.000Z')
+    assert.equal(findNonImportCapturedBy(db, NC_TAG, '2026-07-06'), null)
+  })
+
+  it("reports the existing captured_by when it is a real, non-'import' capture", () => {
+    const db = openDatabase(':memory:')
+    db.prepare(
+      'INSERT INTO base_progress (player_tag, week_start, captured_by, updated_at) VALUES (?, ?, ?, ?)',
+    ).run(NC_TAG, '2026-07-06', 'manual', '2026-07-06T00:00:00.000Z')
+    assert.equal(findNonImportCapturedBy(db, NC_TAG, '2026-07-06'), 'manual')
+  })
+})
+
+describe('buildReportFromReads catches a real collision without letting one block the rest of the run', () => {
+  const db = openDatabase(':memory:')
+  // A real, pre-existing manual capture — this is the actual collision.
+  db.prepare(
+    'INSERT INTO base_progress (player_tag, week_start, captured_by, updated_at) VALUES (?, ?, ?, ?)',
+  ).run(NC_TAG, '2026-07-06', 'manual', '2026-07-06T00:00:00.000Z')
+  // A row this same script wrote on an earlier run — must never count as a collision.
+  db.prepare(
+    'INSERT INTO base_progress (player_tag, week_start, captured_by, updated_at) VALUES (?, ?, ?, ?)',
+  ).run(ZERO_ZERO_TAG, '2026-07-06', 'import', '2026-07-06T00:00:00.000Z')
+
+  const reads = [
+    fileRead('a.xlsx', '2026-07-06', [row('nc', 17), row('00', 16)]),
+    fileRead('b.xlsx', '2026-07-13', [row('nc', 18)]), // no existing row at all — no collision
+  ]
+  const report = buildReportFromReads(reads, db)
+
+  it('flags exactly the one tag/week that collides with a real, non-import capture', () => {
+    assert.deepEqual(report.collisions, [{ tag: NC_TAG, weekStart: '2026-07-06', existingCapturedBy: 'manual' }])
+  })
+
+  it('still plans every row, including the colliding one — a collision is reported, not silently dropped', () => {
+    assert.equal(report.planned.length, 3)
+    assert.ok(report.planned.some((p) => p.tag === NC_TAG && p.weekStart === '2026-07-06'))
+  })
+})
+
+describe('buildReportFromReads — a dated sheet name seen only once defaults to live, per classifyDatedSheets', () => {
+  // A sheet literally named a date, appearing in exactly one file — nothing to
+  // compare it against, so `classifyDatedSheets` calls it "live" rather than
+  // "frozen" (see that function's own doc comment on why that is the safe
+  // default). "Live" means the sheet's own name is stale and the file it was
+  // actually saved under is the real week.
+  const datedSheet: SheetData = {
+    sheetName: '2026-06-01',
+    rowsFound: 1,
+    parsedRows: [row('nc', 15)],
+    warnings: [],
+    gapRows: [],
+  }
+  const reads: FileRead[] = [{ file: 'a.xlsx', filenameWeekStart: '2026-06-15', sheets: [datedSheet] }]
+  const report = buildReportFromReads(reads, openDatabase(':memory:'))
+
+  it("uses the file's own weekStart, not one derived from the sheet's date-shaped name", () => {
+    assert.equal(report.planned.length, 1)
+    assert.equal(report.planned[0]?.weekStart, '2026-06-15')
+  })
+
+  it('never treats the single occurrence as a frozen duplicate', () => {
+    assert.equal(
+      report.columnMapWarnings.some((w) => w.warning.includes('frozen duplicate')),
+      false,
+    )
+  })
+})
+
+describe('buildReportFromReads — a genuinely frozen dated sheet is imported once, from its first occurrence', () => {
+  // Byte-identical rows under the same date-shaped sheet name in two files —
+  // `classifyDatedSheets` calls this "frozen": the sheet's own name is the
+  // real week, and the second occurrence is a duplicate that must be skipped
+  // rather than planned a second time.
+  const frozenSheet: SheetData = {
+    sheetName: '2026-06-01',
+    rowsFound: 1,
+    parsedRows: [row('nc', 15)],
+    warnings: [],
+    gapRows: [],
+  }
+  const reads: FileRead[] = [
+    { file: 'a.xlsx', filenameWeekStart: '2026-06-15', sheets: [frozenSheet] },
+    { file: 'b.xlsx', filenameWeekStart: '2026-06-22', sheets: [frozenSheet] },
+  ]
+  const report = buildReportFromReads(reads, openDatabase(':memory:'))
+
+  it('plans it exactly once, at the sheet-name-derived weekStart rather than either file’s own date', () => {
+    assert.equal(report.planned.length, 1)
+    assert.equal(report.planned[0]?.weekStart, currentWeekStart(new Date('2026-06-01T00:00:00Z')))
+  })
+
+  it('warns that the second occurrence was skipped as a frozen duplicate', () => {
+    assert.ok(
+      report.columnMapWarnings.some((w) => w.file === 'b.xlsx' && w.warning.includes('frozen duplicate')),
+    )
   })
 })

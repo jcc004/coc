@@ -579,7 +579,7 @@ export function scanDataRows(
 // Orchestration — one workbook to a set of (tag, weekStart) upserts.
 // ---------------------------------------------------------------------------
 
-interface SheetData {
+export interface SheetData {
   sheetName: string
   rowsFound: number
   parsedRows: ParsedDataRow[]
@@ -711,7 +711,7 @@ interface PlannedUpsert {
   manual: ManualCapturePayload
 }
 
-interface CoverageReport {
+export interface CoverageReport {
   filesProcessed: number
   sheetsProcessed: number
   perFile: { file: string; sheet: string; rowsFound: number }[]
@@ -752,7 +752,7 @@ function toManualCapturePayload(row: ParsedDataRow): ManualCapturePayload {
  * row that does not exist, or that was itself written by an earlier run of
  * this same script, is not a collision.
  */
-function findNonImportCapturedBy(db: DatabaseSync, tag: string, weekStart: string): string | null {
+export function findNonImportCapturedBy(db: DatabaseSync, tag: string, weekStart: string): string | null {
   const row = db
     .prepare('SELECT captured_by FROM base_progress WHERE player_tag = ? AND week_start = ?')
     .get(tag, weekStart)
@@ -761,18 +761,60 @@ function findNonImportCapturedBy(db: DatabaseSync, tag: string, weekStart: strin
   return capturedBy === 'import' ? null : capturedBy
 }
 
-interface FileRead {
+export interface FileRead {
   file: string
   /** `null` when the filename itself did not parse — nothing else about this file is usable. */
   filenameWeekStart: string | null
   sheets: SheetData[]
 }
 
+/**
+ * Reads every real `.xlsx` off disk (phase 1: filename parsing, then
+ * `readWorkbook`'s zip/XML reading) and hands the in-memory result to
+ * {@link buildReportFromReads}, which does the actual orchestration —
+ * collision detection, `weekStart` assignment, frozen/live sheet dedup — and
+ * is the part worth testing without 42 real spreadsheets on disk. The split
+ * exists for exactly that: `buildReportFromReads` takes a plain `FileRead[]`,
+ * so a test can hand it a synthetic one instead of real files.
+ */
 function buildReport(files: string[], db: DatabaseSync): CoverageReport {
   const knownNicknames = new Set(Object.keys(NICKNAME_TO_TAG))
 
+  // Phase 1: read every workbook once, in ascending filename order, and hold
+  // everything in memory — needed before any weekStart can be assigned,
+  // because a dated sheet name's "frozen or live" classification depends on
+  // comparing its content across every file it appears in (see
+  // `classifyDatedSheets`), not just the one file being looked at.
+  const reads: FileRead[] = []
+  const skippedFileWarnings: CoverageReport['columnMapWarnings'] = []
+  for (const path of files) {
+    const file = basename(path)
+    const dateMatch = /Clashy_(\d{4}-\d{2}-\d{2})\.xlsx$/.exec(file)
+    if (!dateMatch || !dateMatch[1]) {
+      skippedFileWarnings.push({
+        file,
+        sheet: '(n/a)',
+        warning: 'filename does not match Clashy_YYYY-MM-DD.xlsx — skipped',
+      })
+      continue
+    }
+    reads.push({
+      file,
+      filenameWeekStart: currentWeekStart(new Date(`${dateMatch[1]}T00:00:00Z`)),
+      sheets: readWorkbook(path, knownNicknames),
+    })
+  }
+
+  const report = buildReportFromReads(reads, db)
+  // Filename-parse warnings belong ahead of anything from phase 2 — matches
+  // this function's own original, single-pass ordering.
+  report.columnMapWarnings = [...skippedFileWarnings, ...report.columnMapWarnings]
+  return report
+}
+
+export function buildReportFromReads(reads: readonly FileRead[], db: DatabaseSync): CoverageReport {
   const report: CoverageReport = {
-    filesProcessed: 0,
+    filesProcessed: reads.length,
     sheetsProcessed: 0,
     perFile: [],
     unmappedNicknames: [],
@@ -783,31 +825,6 @@ function buildReport(files: string[], db: DatabaseSync): CoverageReport {
     tagsSeen: new Set(),
     weekStartRange: null,
     collisions: [],
-  }
-
-  // Phase 1: read every workbook once, in ascending filename order, and hold
-  // everything in memory — needed before any weekStart can be assigned,
-  // because a dated sheet name's "frozen or live" classification depends on
-  // comparing its content across every file it appears in (see
-  // `classifyDatedSheets`), not just the one file being looked at.
-  const reads: FileRead[] = []
-  for (const path of files) {
-    const file = basename(path)
-    const dateMatch = /Clashy_(\d{4}-\d{2}-\d{2})\.xlsx$/.exec(file)
-    if (!dateMatch || !dateMatch[1]) {
-      report.columnMapWarnings.push({
-        file,
-        sheet: '(n/a)',
-        warning: 'filename does not match Clashy_YYYY-MM-DD.xlsx — skipped',
-      })
-      continue
-    }
-    report.filesProcessed += 1
-    reads.push({
-      file,
-      filenameWeekStart: currentWeekStart(new Date(`${dateMatch[1]}T00:00:00Z`)),
-      sheets: readWorkbook(path, knownNicknames),
-    })
   }
 
   const datedSheetClassification = classifyDatedSheets(
