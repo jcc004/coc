@@ -22,6 +22,7 @@ import {
   SESSION_TTL_MS,
   type AuthStore,
 } from './auth/store.ts'
+import { TEMP_PASSWORD_TTL_MS } from './auth/temp-password.ts'
 import { createBaseOrderStore } from './base-order/store.ts'
 import { createChangeRequestStore } from './change-requests/store.ts'
 import { TtlCache } from './cache.ts'
@@ -1944,6 +1945,174 @@ describe('an admin can issue a temporary password', () => {
       403,
     )
     assert.equal(harness.store.findUser(memberId)?.mustChangePassword, false)
+    harness.db.close()
+  })
+})
+
+describe('an admin-issued temporary password expires on its own', () => {
+  it('setPassword stamps an expiry when mustChangePassword is set, and clears it on a self-chosen one', async () => {
+    const harness = await createHarness()
+    const { memberId } = await withMember(harness)
+
+    const before = Date.now()
+    await harness.store.setPassword(memberId, 'an-admin-issued-one', true)
+    const stamped = harness.db
+      .prepare('SELECT password_expires_at FROM users WHERE id = ?')
+      .get(memberId)?.['password_expires_at']
+    assert.equal(typeof stamped, 'string')
+    const stampedMs = new Date(stamped as string).getTime()
+    assert.ok(stampedMs > before, 'the expiry is in the future')
+    assert.ok(
+      Math.abs(stampedMs - (before + TEMP_PASSWORD_TTL_MS)) < 5_000,
+      'the expiry is roughly now + TEMP_PASSWORD_TTL_MS',
+    )
+    assert.equal(harness.store.isTempPasswordExpired(memberId), false)
+
+    // A password the account holder chooses is not a stand-in waiting to be
+    // replaced, so it clears the expiry along with the flag.
+    await harness.store.setPassword(memberId, 'a-password-they-chose-now')
+    const cleared = harness.db
+      .prepare('SELECT password_expires_at FROM users WHERE id = ?')
+      .get(memberId)?.['password_expires_at']
+    assert.equal(cleared, null)
+    assert.equal(harness.store.isTempPasswordExpired(memberId), false)
+    harness.db.close()
+  })
+
+  it('still lets a fresh temporary password sign in', async () => {
+    const harness = await createHarness()
+    const { admin, memberId } = await withMember(harness)
+
+    const issued = await harness.app.request(
+      ...postJson(`/api/admin/users/${memberId}/temp-password`, {}, admin),
+    )
+    const { password } = (await issued.json()) as { password: string }
+
+    const fresh = await login(harness, { email: MEMBER.email, password })
+    assert.equal(fresh.response.status, 200)
+    const body = (await fresh.response.json()) as { user: { mustChangePassword: boolean } }
+    assert.equal(body.user.mustChangePassword, true)
+    harness.db.close()
+  })
+
+  it('also stamps an invite’s first password, not just a reissue', async () => {
+    // An invite (POST /api/admin/users) hands the account an admin-chosen
+    // password exactly as much as a reissue does, via createUser rather than
+    // setPassword — it would have been the one admin-issued credential this
+    // app never expires if createUser didn't stamp it too.
+    const harness = await createHarness()
+    const cookie = await loggedIn(harness)
+
+    const before = Date.now()
+    const created = await harness.app.request(
+      ...postJson(
+        '/api/admin/users',
+        { email: 'invited@example.com', password: 'admin-chosen-invite-pw' },
+        cookie,
+      ),
+    )
+    assert.equal(created.status, 201)
+    const { user } = (await created.json()) as { user: { id: number } }
+
+    const stamped = harness.db
+      .prepare('SELECT password_expires_at FROM users WHERE id = ?')
+      .get(user.id)?.['password_expires_at']
+    assert.equal(typeof stamped, 'string')
+    assert.ok(
+      Math.abs(new Date(stamped as string).getTime() - (before + TEMP_PASSWORD_TTL_MS)) < 5_000,
+      'the invite gets the same deadline a reissue would',
+    )
+    assert.equal(harness.store.isTempPasswordExpired(user.id), false)
+    harness.db.close()
+  })
+
+  it('refuses a login on one issued 49 hours ago, with a distinct error and no session', async () => {
+    const harness = await createHarness()
+    const { admin, memberId } = await withMember(harness)
+
+    const issued = await harness.app.request(
+      ...postJson(`/api/admin/users/${memberId}/temp-password`, {}, admin),
+    )
+    const { password } = (await issued.json()) as { password: string }
+
+    // Back-date the stamp past the 48-hour window — the same direct-SQL
+    // manipulation the session-TTL tests above use to simulate elapsed time.
+    harness.db.exec(
+      `UPDATE users SET password_expires_at = '${new Date(Date.now() - 49 * 60 * 60_000).toISOString()}' WHERE id = ${memberId}`,
+    )
+    assert.equal(harness.store.isTempPasswordExpired(memberId), true)
+
+    const response = await harness.app.request(
+      ...postJson('/api/auth/login', { email: MEMBER.email, password }),
+    )
+    assert.equal(response.status, 401)
+    const body = (await response.json()) as {
+      error: { reason: string; message: string; hint?: string }
+    }
+    assert.equal(body.error.reason, 'tempPasswordExpired')
+    assert.equal(body.error.message, 'Your temporary password has expired.')
+    assert.equal(body.error.hint, 'Ask an admin to issue a new one.')
+    assert.equal(response.headers.get('set-cookie'), null, 'no session is created')
+
+    // The rejection is not a session in disguise.
+    assert.equal((await harness.app.request('/api/auth/me')).status, 401)
+    harness.db.close()
+  })
+
+  it('records the rejection in the audit trail, naming the real account', async () => {
+    const harness = await createHarness()
+    const { admin, memberId } = await withMember(harness)
+
+    const issued = await harness.app.request(
+      ...postJson(`/api/admin/users/${memberId}/temp-password`, {}, admin),
+    )
+    const { password } = (await issued.json()) as { password: string }
+    harness.db.exec(
+      `UPDATE users SET password_expires_at = '${new Date(Date.now() - 49 * 60 * 60_000).toISOString()}' WHERE id = ${memberId}`,
+    )
+
+    await harness.app.request(...postJson('/api/auth/login', { email: MEMBER.email, password }))
+
+    const events = harness.store.authEvents().list({ limit: 5 })
+    const [event] = events
+    assert.ok(event)
+    assert.equal(event.kind, 'tempPasswordExpired')
+    // Unlike a plain `loginFailed`, this one is allowed to name the account: the
+    // password just verified, so there is no oracle left to protect.
+    assert.equal(event.actorUserId, memberId)
+    assert.equal(event.email, MEMBER.email)
+    harness.db.close()
+  })
+
+  it('does not retroactively end an already-open forced-change session', async () => {
+    const harness = await createHarness()
+    const { admin, memberId } = await withMember(harness)
+
+    const issued = await harness.app.request(
+      ...postJson(`/api/admin/users/${memberId}/temp-password`, {}, admin),
+    )
+    const { password } = (await issued.json()) as { password: string }
+    const { cookie } = await login(harness, { email: MEMBER.email, password })
+    assert.ok(cookie)
+
+    // The window elapses *after* the session was already established.
+    harness.db.exec(
+      `UPDATE users SET password_expires_at = '${new Date(Date.now() - 49 * 60 * 60_000).toISOString()}' WHERE id = ${memberId}`,
+    )
+
+    // The forced-change session is unaffected — expiry is checked at login, not
+    // on every request — and the account holder can still complete the change
+    // they are already mid-way through.
+    const me = await harness.app.request('/api/auth/me', { headers: { cookie } })
+    assert.equal(me.status, 200)
+    const changed = await harness.app.request(
+      ...postJson(
+        '/api/auth/password',
+        { currentPassword: password, newPassword: 'a-freshly-chosen-password' },
+        cookie,
+      ),
+    )
+    assert.equal(changed.status, 200)
     harness.db.close()
   })
 })

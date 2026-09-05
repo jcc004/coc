@@ -169,6 +169,8 @@ describe('migration from a v1 database', () => {
       'created_at',
       'disabled_at',
       'must_change_password',
+      // v17.
+      'password_expires_at',
     ])
     assert.deepEqual(columnsOf(path, 'owner_assignments'), [
       'player_tag',
@@ -488,6 +490,10 @@ CREATE TABLE chat_messages (
     staged.exec('DROP TABLE change_request_amendments')
     staged.exec('DROP TABLE change_requests')
     staged.exec('DROP TABLE change_request_views')
+    // v17's column too, or migrate() below would try to add it a second time —
+    // ALTER TABLE ADD COLUMN has no IF NOT EXISTS, and resetting user_version
+    // does not undo a column a prior full migrate() already added.
+    staged.exec('ALTER TABLE users DROP COLUMN password_expires_at')
     staged.exec('PRAGMA user_version = 4')
 
     const userId = Number(staged.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
@@ -622,6 +628,8 @@ CREATE TABLE chat_messages (
     db.exec('DROP TABLE change_request_amendments')
     db.exec('DROP TABLE change_requests')
     db.exec('DROP TABLE change_request_views')
+    // v17's column too — see the identical comment in the v5 fixture above.
+    db.exec('ALTER TABLE users DROP COLUMN password_expires_at')
     db.exec('PRAGMA user_version = 5')
 
     const insert = db.prepare(
@@ -819,6 +827,8 @@ CREATE INDEX chat_messages_user_id ON chat_messages (user_id);
     db.exec('DROP TABLE change_request_amendments')
     db.exec('DROP TABLE change_requests')
     db.exec('DROP TABLE change_request_views')
+    // v17's column too — see the identical comment in the v5 fixture above.
+    db.exec('ALTER TABLE users DROP COLUMN password_expires_at')
     db.exec('PRAGMA user_version = 6')
 
     const userId = Number(db.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
@@ -1073,6 +1083,8 @@ CREATE TABLE chat_messages (
     db.exec('DROP TABLE change_request_amendments')
     db.exec('DROP TABLE change_requests')
     db.exec('DROP TABLE change_request_views')
+    // v17's column too — see the identical comment in the v5 fixture above.
+    db.exec('ALTER TABLE users DROP COLUMN password_expires_at')
     db.exec('PRAGMA user_version = 7')
 
     const userId = Number(db.prepare('SELECT id FROM users LIMIT 1').get()?.['id'])
@@ -1262,6 +1274,8 @@ describe('migration v13 — base_progress.captured_by_user_id', () => {
     db.exec('DROP TABLE change_request_amendments')
     db.exec('DROP TABLE change_requests')
     db.exec('DROP TABLE change_request_views')
+    // v17's column too — see the identical comment in the v5 fixture above.
+    db.exec('ALTER TABLE users DROP COLUMN password_expires_at')
     db.exec('PRAGMA user_version = 12')
     db.close()
   }
@@ -1388,6 +1402,8 @@ CREATE UNIQUE INDEX trades_one_pending_per_swap
     db.exec('DROP TABLE change_request_amendments')
     db.exec('DROP TABLE change_requests')
     db.exec('DROP TABLE change_request_views')
+    // v17's column too — see the identical comment in the v5 fixture above.
+    db.exec('ALTER TABLE users DROP COLUMN password_expires_at')
     db.exec('PRAGMA user_version = 13')
 
     db.prepare(
@@ -1482,6 +1498,77 @@ CREATE UNIQUE INDEX trades_one_pending_per_swap
     const path = join(tempDir(), 'coc.db')
     const db = openDatabase(path)
     assert.ok(columnsOf(path, 'trades').includes('undone_by_user_id'))
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+    db.close()
+  })
+})
+
+describe('migration v17 — password_expires_at', () => {
+  it('adds the column as NULL and preserves the existing rows', async () => {
+    const path = join(tempDir(), 'coc.db')
+    await createV1Database(path, [{ username: 'jcc@example.com' }, { username: 'other@example.com' }])
+
+    const db = openDatabase(path)
+    const store = createAuthStore(db)
+
+    const users = store.listUsers()
+    assert.equal(users.length, 2, 'both rows survived the column being added')
+    // No existing row should be timed out of anything because the schema moved
+    // under it — a NULL expiry, like a NULL must_change_password, is a no-op.
+    assert.deepEqual(
+      db
+        .prepare('SELECT password_expires_at FROM users ORDER BY id')
+        .all()
+        .map((row) => row['password_expires_at']),
+      [null, null],
+    )
+    // …and the passwords still verify, i.e. v17 did not rebuild the table.
+    assert.ok(await store.authenticate('jcc@example.com', LEGACY_PASSWORD))
+    db.close()
+
+    assert.ok(columnsOf(path, 'users').includes('password_expires_at'))
+  })
+
+  it('is idempotent across two boots, expiry value and all', async () => {
+    const path = join(tempDir(), 'coc.db')
+    await createV1Database(path, [{ username: 'jcc@example.com' }])
+
+    const first = openDatabase(path)
+    const store = createAuthStore(first)
+    const [user] = store.listUsers()
+    assert.ok(user)
+    // Issue a temp password, so the second boot has an expiry it could destroy.
+    await store.setPassword(user.id, 'an-admin-issued-one', true)
+    const expiresAt = first
+      .prepare('SELECT password_expires_at FROM users WHERE id = ?')
+      .get(user.id)?.['password_expires_at']
+    assert.ok(typeof expiresAt === 'string' && expiresAt.length > 0)
+    first.close()
+
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+
+    /*
+     * `ALTER TABLE ADD COLUMN` has no `IF NOT EXISTS`, so a v17 that ran twice
+     * would throw rather than quietly duplicate — opening at all is half the
+     * assertion, and the stamp surviving unchanged is the other half.
+     */
+    const second = openDatabase(path)
+    assert.deepEqual(migrate(second), [], 'nothing left to apply')
+    assert.equal(
+      second.prepare('SELECT password_expires_at FROM users WHERE id = ?').get(user.id)?.[
+        'password_expires_at'
+      ],
+      expiresAt,
+      'the expiry stamp survives a restart',
+    )
+    second.close()
+    assert.equal(userVersion(path), SCHEMA_VERSION)
+  })
+
+  it('takes a fresh database straight to the head with the column present', async () => {
+    const path = join(tempDir(), 'coc.db')
+    const db = openDatabase(path)
+    assert.ok(columnsOf(path, 'users').includes('password_expires_at'))
     assert.equal(userVersion(path), SCHEMA_VERSION)
     db.close()
   })

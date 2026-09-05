@@ -869,6 +869,30 @@ CREATE TABLE change_request_views (
 `)
 }
 
+/**
+ * v17 — `password_expires_at` on `users`: the deadline an admin-issued
+ * temporary password stops working at, if the account never signs in with it.
+ *
+ * Before this, `must_change_password` (v3) was the only gate on such a
+ * password, and it only ever fires *after* a successful login — an issued but
+ * never-used temporary password had no expiry of its own and would
+ * authenticate indefinitely. See `TEMP_PASSWORD_TTL_MS`
+ * (`auth/temp-password.ts`) for the window (48 hours) and why it is that long
+ * rather than the stricter end of the range it is drawn from.
+ *
+ * A plain `ALTER TABLE ADD COLUMN`, exactly like v3's `must_change_password`:
+ * a nullable column with no default needs no rebuild, and `NULL` is exactly
+ * what every existing row wants — nobody signed in today should be timed out
+ * of anything because the schema moved under them. `auth/store.ts`'s
+ * `setPassword` writes the real value from here on: an expiry timestamp
+ * whenever it also sets `must_change_password`, and `NULL` whenever a user
+ * replaces the password themselves, since a self-chosen password is not a
+ * stand-in waiting to be replaced.
+ */
+const v17: Migration = (db) => {
+  db.exec('ALTER TABLE users ADD COLUMN password_expires_at TEXT')
+}
+
 const MIGRATIONS: Migration[] = [
   v1,
   v2,
@@ -886,6 +910,7 @@ const MIGRATIONS: Migration[] = [
   v14,
   v15,
   v16,
+  v17,
 ]
 
 /** The version a fully migrated database reports. */

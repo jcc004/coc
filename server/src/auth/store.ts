@@ -4,6 +4,7 @@ import { normalizeEmail, type AdminUser, type SessionUser, type UserRole } from 
 import { asText, asTextOrNull } from '../row.ts'
 import { createAuthEventLog, type AuthEventInput, type AuthEventLog } from './events.ts'
 import { burnPasswordWork, hashPassword, verifyPassword } from './passwords.ts'
+import { TEMP_PASSWORD_TTL_MS } from './temp-password.ts'
 
 /**
  * Everything that touches the auth tables — `users`, `sessions`, `auth_events`. The
@@ -136,7 +137,10 @@ export interface CreateUserInput {
   /**
    * Whether the new account must replace this password before it can use the app.
    * `true` for an invite, where the password was chosen by an admin rather than by
-   * the person who will be using it. Defaults to `false`, which is the first-boot
+   * the person who will be using it — which also stamps `password_expires_at` at
+   * `now + TEMP_PASSWORD_TTL_MS`, the same deadline `setPassword` gives a reissued
+   * temporary password; an invite is otherwise the one admin-issued credential
+   * this app would never expire. Defaults to `false`, which is the first-boot
    * admin: `ADMIN_PASSWORD` is set by the operator for their own account, so there
    * is nobody else's choice to get out of.
    */
@@ -162,13 +166,24 @@ export interface AuthStore {
    * Replaces the password. `mustChangePassword` is the flag an admin-issued
    * temporary password sets and a self-chosen one clears, so it is a parameter of
    * the same write rather than a second statement that could be forgotten.
-   * `undefined` for an unknown id — nothing was written. Async because it hashes.
+   * Setting it also stamps `password_expires_at` at `now + TEMP_PASSWORD_TTL_MS`;
+   * clearing it clears the expiry too, since a password the account holder chose
+   * is not a stand-in waiting to be replaced. `undefined` for an unknown id —
+   * nothing was written. Async because it hashes.
    */
   setPassword(
     id: number,
     password: string,
     mustChangePassword?: boolean,
   ): Promise<AdminUser | undefined>
+  /**
+   * Whether `id`'s temporary password — the one `must_change_password` is
+   * gating — has passed its expiry window. `false` for an account with no
+   * expiry set at all: a self-chosen password, an account that predates this
+   * column, or an unknown id. Never reads the raw timestamp out to a caller;
+   * this is the only thing anything outside this store needs to know about it.
+   */
+  isTempPasswordExpired(id: number, now?: Date): boolean
   /** Fills in a missing (or corrects an existing) email. Never touches the password. */
   setEmail(id: number, email: string): AdminUser | undefined
   setDisplayName(id: number, displayName: string): AdminUser | undefined
@@ -239,14 +254,16 @@ export function createAuthStore(db: DatabaseSync): AuthStore {
     insertUser: db.prepare(
       `INSERT INTO users
          (guid, display_name, email, password_hash, password_salt, role, created_at,
-          must_change_password)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          must_change_password, password_expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
     setDisabled: db.prepare('UPDATE users SET disabled_at = ? WHERE id = ?'),
     setPassword: db.prepare(
-      `UPDATE users SET password_hash = ?, password_salt = ?, must_change_password = ?
+      `UPDATE users SET password_hash = ?, password_salt = ?, must_change_password = ?,
+              password_expires_at = ?
         WHERE id = ?`,
     ),
+    findPasswordExpiry: db.prepare('SELECT password_expires_at FROM users WHERE id = ?'),
     setEmail: db.prepare('UPDATE users SET email = ? WHERE id = ?'),
     setDisplayName: db.prepare('UPDATE users SET display_name = ? WHERE id = ?'),
     setRole: db.prepare('UPDATE users SET role = ? WHERE id = ?'),
@@ -298,6 +315,12 @@ export function createAuthStore(db: DatabaseSync): AuthStore {
     async createUser({ email, displayName, password, role, mustChangePassword = false }) {
       const normalized = normalizeEmail(email)
       const { hash, salt } = await hashPassword(password)
+      // An invite's password is admin-chosen, same as a reissue via setPassword —
+      // it gets the identical deadline, or an invited account's very first
+      // password would be the one admin-issued credential this app never expires.
+      const expiresAt = mustChangePassword
+        ? new Date(Date.now() + TEMP_PASSWORD_TTL_MS).toISOString()
+        : null
       try {
         const result = statements.insertUser.run(
           randomUUID(),
@@ -308,6 +331,7 @@ export function createAuthStore(db: DatabaseSync): AuthStore {
           role,
           new Date().toISOString(),
           mustChangePassword ? 1 : 0,
+          expiresAt,
         )
         const created = findUser(Number(result.lastInsertRowid))
         if (!created) throw new Error('User vanished immediately after insert')
@@ -337,8 +361,20 @@ export function createAuthStore(db: DatabaseSync): AuthStore {
       // The flag rides along with the hash: a password the account holder chose
       // clears it, and one an admin issued sets it, in a single write. Splitting
       // the two would allow a state where the password moved and the flag did not.
-      statements.setPassword.run(hash, salt, mustChangePassword ? 1 : 0, id)
+      // The expiry timestamp rides along too, for the same reason — an admin-issued
+      // password gets a deadline of its own (TEMP_PASSWORD_TTL_MS) and a self-chosen
+      // one clears it, in the same write that moves the flag.
+      const expiresAt = mustChangePassword
+        ? new Date(Date.now() + TEMP_PASSWORD_TTL_MS).toISOString()
+        : null
+      statements.setPassword.run(hash, salt, mustChangePassword ? 1 : 0, expiresAt, id)
       return findUser(id)
+    },
+
+    isTempPasswordExpired(id, now = new Date()) {
+      const row = statements.findPasswordExpiry.get(id)
+      const expiresAt = row ? asTextOrNull(row['password_expires_at']) : null
+      return expiresAt !== null && expiresAt <= now.toISOString()
     },
 
     setDisplayName(id, displayName) {
