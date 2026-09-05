@@ -25,3 +25,13 @@ Dispatched (all isolated worktrees, general-purpose agent, none instructed to co
   migration), 48h TTL, login-time rejection with a clear error.
 - `adf55800832e8cef4` — fix `13-add-per-user-date-format.md`: per-user date/time format
   preference, localStorage-based (mirroring `useColorScheme`), new `DateFormatCard.tsx`.
+
+All five completed and merged. `04`/`07`/`08` reviewed and merged directly (small, single-file
+diffs). `11` and `13` were reviewed in full before merging (schema/route change and a
+wide-reaching call-site refactor, respectively) and each got one follow-up fix on top of the
+agent's own work: `11`'s expiry was extended to the invite route (`createUser`), which the
+agent's own report flagged as sharing the identical risk but outside its stated scope; `13`'s
+merge required care because its worktree branched before the `03` CSS-dedupe commit landed on
+main — a blind wholesale file copy would have silently reverted that fix, caught by re-checking
+`styles.css` after copying rather than trusting the copy. All eight commits pushed and confirmed
+live via `/api/health` and the droplet's own deploy log.
