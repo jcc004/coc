@@ -417,7 +417,15 @@ export function RosterTable({ members, user }: { members: ClanMember[]; user: Se
 
   return (
     <>
-      {selected.length > 0 ? (
+      {/*
+       * Selection, and the bulk-bar it feeds, exist for exactly one action:
+       * bulk owner assignment (`applyOwnerToSelected`, `POST /api/owners/bulk`)
+       * — an admin-only write on the server, the same as the per-row
+       * `OwnerPicker` below. A non-admin has no other use for a selected set,
+       * so the whole mechanism is admin-only here too, not just incidentally
+       * empty because the checkboxes happen to be gone.
+       */}
+      {isAdmin && selected.length > 0 ? (
         <div className="bulk-bar">
           {/* Off-page counted separately: with filters and paging, a selection can
               include members you cannot currently see, and a bulk apply would
@@ -634,20 +642,25 @@ export function RosterTable({ members, user }: { members: ClanMember[]; user: Se
         <table className="roster roster--stack" role="table">
           <thead role="rowgroup">
             <tr role="row">
-              <th className="select-cell" role="columnheader">
-                <label className="select-hit">
-                  <input
-                    ref={selectAllRef}
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={() =>
-                      dispatch({ type: 'pagePicked', tags: pageTags, selecting: !allSelected })
-                    }
-                    aria-label={`Select the ${view.rows.length} members on this page`}
-                    title={`Select the ${view.rows.length} members on this page`}
-                  />
-                </label>
-              </th>
+              {/* Selection is admin-only — see the note above the bulk-bar. A
+                  member offered a checkbox that can only ever feed a control
+                  they will never see is a control that does nothing. */}
+              {isAdmin ? (
+                <th className="select-cell" role="columnheader">
+                  <label className="select-hit">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={() =>
+                        dispatch({ type: 'pagePicked', tags: pageTags, selecting: !allSelected })
+                      }
+                      aria-label={`Select the ${view.rows.length} members on this page`}
+                      title={`Select the ${view.rows.length} members on this page`}
+                    />
+                  </label>
+                </th>
+              ) : null}
               {ROSTER_COLUMNS.map((column) => (
                 <th
                   key={column.key}
@@ -680,16 +693,18 @@ export function RosterTable({ members, user }: { members: ClanMember[]; user: Se
           <tbody role="rowgroup">
             {view.rows.map((row) => (
               <tr key={row.tag} role="row">
-                <td className="select-cell" role="cell" data-label="Select">
-                  <label className="select-hit">
-                    <input
-                      type="checkbox"
-                      checked={selectedTags.has(row.tag)}
-                      onChange={() => dispatch({ type: 'rowPicked', tag: row.tag })}
-                      aria-label={`Select ${row.name}`}
-                    />
-                  </label>
-                </td>
+                {isAdmin ? (
+                  <td className="select-cell" role="cell" data-label="Select">
+                    <label className="select-hit">
+                      <input
+                        type="checkbox"
+                        checked={selectedTags.has(row.tag)}
+                        onChange={() => dispatch({ type: 'rowPicked', tag: row.tag })}
+                        aria-label={`Select ${row.name}`}
+                      />
+                    </label>
+                  </td>
+                ) : null}
                 <td className="num" role="cell" data-label={rosterColumnLabel('clanRank')}>
                   {row.clanRank}
                 </td>

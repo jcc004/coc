@@ -246,7 +246,7 @@ describe('the header checkbox', () => {
     const members = Array.from({ length: 12 }, (_, index) =>
       member({ tag: `#T${index}`, name: `Member ${index}`, clanRank: index + 1 }),
     )
-    const user = await roster(members, [])
+    const user = await roster(members, [], sessionUser({ role: 'admin' }))
 
     await user.click(screen.getByLabelText('Select the 5 members on this page'))
 
@@ -254,5 +254,39 @@ describe('the header checkbox', () => {
        while the table was unpaged and unfiltered. Now that it is both, whole-roster
        would silently select members the filter is hiding. */
     assert.ok(screen.getByText('5 selected'))
+  })
+})
+
+describe('selection and the bulk bar, for a member', () => {
+  it('offers no checkbox, header or per-row, and no bulk bar can ever appear', async () => {
+    await roster([ALDA, BRIX], [{ tag: '#AAA', owner: 'Sam', ownerUserId: 2 }])
+
+    // Bulk owner assignment is the same admin-only write the per-row picker
+    // above already refuses a member — a checkbox that can only ever feed a
+    // control they will never see is a control that does nothing.
+    assert.equal(screen.queryByLabelText(/Select the \d+ members on this page/), null)
+    assert.equal(screen.queryByLabelText('Select Alda'), null)
+    assert.equal(screen.queryByLabelText('Select Brix'), null)
+    assert.equal(screen.queryByText(/selected$/), null)
+    assert.equal(screen.queryByLabelText('Owner to apply to selected members'), null)
+  })
+})
+
+describe('selection and the bulk bar, for an admin', () => {
+  it('still offers the header checkbox, per-row checkboxes, and the bulk bar once something is picked', async () => {
+    const user = await roster(
+      [ALDA, BRIX],
+      [{ tag: '#AAA', owner: 'Sam', ownerUserId: 2 }],
+      sessionUser({ role: 'admin' }),
+    )
+
+    // No bulk bar yet — nothing selected.
+    assert.equal(screen.queryByText(/selected$/), null)
+
+    assert.ok(screen.getByLabelText('Select the 2 members on this page'))
+    await user.click(screen.getByLabelText('Select Brix'))
+
+    assert.ok(screen.getByText('1 selected'))
+    assert.ok(screen.getByLabelText('Owner to apply to selected members'))
   })
 })
