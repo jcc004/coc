@@ -450,7 +450,6 @@ select {
 .topbar {
   grid-column: 1 / -1;
   display: flex;
-  align-items: center;
   /* The banner carries the title, its rosette, and up to five controls; wrapping
      keeps them all reachable on a phone instead of pushing the row off-screen. */
   flex-wrap: wrap;
@@ -506,7 +505,6 @@ select {
 
 .icon-button {
   background: var(--surface);
-  border-radius: var(--radius);
   padding: 7px 11px;
   cursor: pointer;
   font-size: 13px;
@@ -3493,9 +3491,6 @@ table.roster th button:hover {
   border-radius: var(--radius);
   padding: 16px 18px;
   margin-bottom: var(--gap);
-}
-.notice--error {
-  border-left-color: var(--critical);
 }
 .notice__title {
   font-weight: 600;
