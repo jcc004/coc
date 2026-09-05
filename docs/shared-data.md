@@ -239,12 +239,12 @@ can already see the Town Hall, trophies and rank you are deciding from.
 
 It is no longer a bare annotation: an owner is an **account**, and **only an admin can set one**
 (see [Who may assign an owner, and who may write a base](#who-may-assign-an-owner-and-who-may-write-a-base)).
-The server enforces that on every owner-writing route. **The web UI has not caught up yet**: the
-Owner column and the bulk bar still type a free-text name, which the server matches to an
-account by display name where it can, and a member pressing them gets a 403 rather than a
-disabled control. The outstanding UI work is the Owner cell becoming a picker over accounts,
-the bulk bar being hidden from non-admins, and card entry being disabled for a base you do not
-own.
+The server enforces that on every owner-writing route, and the web UI now matches it throughout:
+the Owner column is a picker over accounts for an admin and plain text for anyone else
+(`RosterTable.tsx`'s `OwnerPicker`/`OwnerText`), the bulk bar and its row-selection checkboxes are
+gated behind the same admin check — a member has no other use for a selected set, since bulk
+owner assignment is the only thing selection ever fed — and card entry is disabled for a base you
+do not own (`BaseCardEditor.tsx`'s `readOnlyReason`).
 
 Removing the bases table also removed the **Save** button from player profiles. Player pages
 themselves stay, and the homepage still looks players up.
