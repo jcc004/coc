@@ -21,6 +21,29 @@ const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
 export const TEMP_PASSWORD_LENGTH = 20
 
 /**
+ * How long an admin-issued temporary password keeps working if the person it
+ * was handed to never signs in with it.
+ *
+ * Before this existed, `must_change_password` was the only gate on such a
+ * password, and it only fires *after* a successful login — an issued-but-never-
+ * used temporary password authenticated forever, with no deadline of its own.
+ * That is the gap this constant closes: `auth/store.ts`'s `setPassword` stamps
+ * `users.password_expires_at` with `now + TEMP_PASSWORD_TTL_MS` whenever it sets
+ * `must_change_password`, and the login route (`auth/routes.ts`) refuses a
+ * temporary password once that deadline has passed, with a message pointing at
+ * the actual fix — ask an admin to issue a new one — rather than the generic
+ * "email or password is incorrect".
+ *
+ * 48 hours, not 24: the App Defense Alliance's CASA guide allows a 24–48 hour
+ * window for a temporary/first-use credential, and this app's admin-to-user
+ * handoff is a person reading a string down a phone or a chat, not a same-day
+ * guarantee — the more lenient end of the allowed range is the one that does
+ * not turn a slow handoff into a support request. Named as a constant, not
+ * inlined, so the choice is easy to find and easy to reconsider later.
+ */
+export const TEMP_PASSWORD_TTL_MS = 48 * 60 * 60 * 1000
+
+/**
  * Rejection sampling, not `byte % 57`.
  *
  * 256 is not a multiple of 57, so folding a whole byte would make the first 28

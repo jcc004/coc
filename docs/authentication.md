@@ -123,6 +123,26 @@ the body is the entire channel. It is never logged, never stored unhashed, never
 and the UI shows it once with a copy button and says so. Lose it and the only remedy is issuing
 another one. Issuing to yourself is supported and works.
 
+**The issued password expires on its own, whether or not anybody uses it.** `must_change_password`
+alone only ever gates the account *after* a successful login, so before this an unused temporary
+password would authenticate indefinitely — nobody would notice until it was misused. Both
+`setPassword` and `createUser` (`server/src/auth/store.ts`) now stamp `users.password_expires_at`
+(migration **v17**) at `now + TEMP_PASSWORD_TTL_MS` (48 hours —
+`server/src/auth/temp-password.ts`) whenever they also set `must_change_password` — an invite's
+first password is exactly as admin-chosen as a reissue's, so it gets the same deadline — and
+`setPassword` clears it back to `NULL` whenever a user replaces the password themselves.
+`POST /api/auth/login` checks it right after `store.authenticate` succeeds and before
+minting a session: past the deadline, the account's real password still verifies, but the login is
+refused with **401 `tempPasswordExpired`** ("Your temporary password has expired." / "Ask an admin
+to issue a new one.") instead of the generic invalid-credentials message — safe to be specific here
+because the account is no longer a guess by that point, unlike the deliberately vague `loginFailed`
+case above it. The check is login-only: an already-open forced-change session (someone who signed
+in on the temporary password before it expired and has not yet replaced it) is not retroactively
+torn down, since a temp-password session is already tightly scoped to `/me`, `/password` and
+`/logout` and expiry is a defense against an *unused* credential, not a mid-change one. 48 hours,
+not the App Defense Alliance CASA guide's stricter 24-hour floor, because this app's admin-to-user
+handoff is a person reading a string down a phone or a chat, not a same-day guarantee.
+
 The route also revokes the target's sessions — otherwise the old password would keep one alive —
 sparing the caller's own for the self-issue case, since revoking the session that is *reading*
 the one-time password would throw the value away. That spared session is not a way around the
@@ -211,7 +231,8 @@ never as a page-level message, and a failed request never reports success.
 | `guid` | `crypto.randomUUID()`, unique, not null. A stable external handle: `id` stays the integer other rows FK to, while the guid is the one safe to show or quote, since it leaks neither how many accounts exist nor in what order they were made. Shown on the account page, not editable |
 | `display_name` | Not null, free text, 1–64 characters. The human label — topbar, user list, and the attribution on every shared row. **Never a credential** |
 | `email` | Unique, `COLLATE NOCASE` so both the constraint and every lookup are case-insensitive. Trimmed and lowercased on the way in. **Nullable — and a null email means that account cannot authenticate at all**, because `WHERE email = ?` matches no NULL for any value. That is enforced by the schema rather than merely documented, and it is asserted in the tests. An admin can correct it with `PATCH /api/admin/users/:id/email`, which revokes that account's sessions |
-| `must_change_password` | Migration v3. `NOT NULL DEFAULT 0`. Set by `POST /api/admin/users/:id/temp-password`, cleared only by a successful `POST /api/auth/password`. While it is 1 the API refuses every route but `/api/auth/{me,password,logout}` and `/api/health` |
+| `must_change_password` | Migration v3. `NOT NULL DEFAULT 0`. Set by `POST /api/admin/users` (an invite) and `POST /api/admin/users/:id/temp-password` (a reissue) alike — both hand the account an admin-chosen password — cleared only by a successful `POST /api/auth/password`. While it is 1 the API refuses every route but `/api/auth/{me,password,logout}` and `/api/health` |
+| `password_expires_at` | Migration v17. Nullable, no default. Set alongside `must_change_password` — by both routes above, not just the reissue one, since an invite's password is exactly as admin-chosen as a reissue's — to `now + TEMP_PASSWORD_TTL_MS` (48h); cleared to `NULL` whenever a user replaces the password themselves. `POST /api/auth/login` refuses a login past this deadline with `tempPasswordExpired`, before a session is minted |
 
 Validation of an address is deliberately minimal — non-empty, exactly one `@`, non-empty local
 and domain parts, no whitespace (`shared/src/email.ts`, shared by the server and the login
@@ -312,6 +333,10 @@ schema changes) because v2 has to drop and re-create `users`.
   [Propose a change](proposed-changes.md#schema).
 - **v16** — `change_request_views`, one row per user: the last time they checked resolved
   requests, the other half of the account-menu badge `unseen-resolved-count` reads. Same doc as v15.
+- **v17** — `password_expires_at TEXT` on `users`, the deadline an admin-issued temporary password
+  stops working at if nobody ever signs in with it. A plain `ALTER TABLE ADD COLUMN`, like v3's:
+  nullable with no default, so `NULL` is exactly what every existing row wants. See
+  "Password recovery is admin-mediated" above for what writes and reads it.
 
 This list is the full migration history and grows by one entry each time `server/src/db.ts` gains a
 step — check `MIGRATIONS`/`SCHEMA_VERSION` there for the version currently in force rather than

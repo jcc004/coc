@@ -136,6 +136,42 @@ export function mountAuthRoutes(
       return c.json(errorBody(401, 'invalidCredentials', LOGIN_FAILED), 401)
     }
 
+    /*
+     * The password just verified — this is a real account and this is the right
+     * (temporary) password for it — but an admin-issued temporary password that
+     * nobody ever used has its own deadline (TEMP_PASSWORD_TTL_MS, temp-password.ts),
+     * independent of `must_change_password`, which only ever gates the account
+     * *after* a successful login. Checked here, before a session is minted, so an
+     * expired temporary password never gets as far as the forced-change screen.
+     *
+     * Unlike the generic message above, this one names the real cause and the
+     * real fix. That is safe specifically because the account is not a guess any
+     * more: `store.authenticate` already confirmed it exists and this is its
+     * password, so there is no oracle left to protect by staying vague.
+     *
+     * Deliberately does not touch the login limiter in either direction: the
+     * credential was correct, so this is not the guessing attempt the brake
+     * exists for, and it is never going to succeed until an admin reissues it,
+     * so there is nothing to protect by penalizing a retry either.
+     */
+    if (user.mustChangePassword && store.isTempPasswordExpired(user.id)) {
+      store.recordAuthEvent({
+        kind: 'tempPasswordExpired',
+        actorUserId: user.id,
+        email: user.email,
+        ip,
+      })
+      return c.json(
+        errorBody(
+          401,
+          'tempPasswordExpired',
+          'Your temporary password has expired.',
+          'Ask an admin to issue a new one.',
+        ),
+        401,
+      )
+    }
+
     limiter.recordSuccess(keys)
     const session = store.createSession(user.id)
     setSessionCookie(c, session.token, cookieSecure)

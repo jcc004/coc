@@ -89,6 +89,14 @@ export const MIN_PASSWORD_LENGTH = 12
  * `loginBlocked` is the rate limiter refusing an attempt before any password work —
  * distinct from `loginFailed`, because a burst of the former is the brake working
  * and a burst of the latter is the attack it was working against.
+ *
+ * `tempPasswordExpired` is distinct from `loginFailed` for the opposite reason:
+ * `loginFailed` deliberately never says whether the address it was given is real,
+ * because a login attempt might be nothing more than a guess. This kind only ever
+ * fires for a real account whose password just correctly verified — the server
+ * already knows exactly who this is — so there is no oracle left to protect by
+ * staying vague, and the login response the client actually sees names the real
+ * cause plainly.
  */
 export type AuthEventKind =
   | 'loginSucceeded'
@@ -103,6 +111,7 @@ export type AuthEventKind =
   | 'emailChanged'
   | 'displayNameChanged'
   | 'tempPasswordIssued'
+  | 'tempPasswordExpired'
 
 /**
  * One row of the trail, as `GET /api/admin/auth-events` returns it.
