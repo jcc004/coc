@@ -160,7 +160,7 @@ export function scrollBehaviorFor(prefersReducedMotion: boolean): ScrollBehavior
  * Scrolls one element into view and puts the caret on it. Returns whether there was
  * an element to find.
  *
- * The reusable half of `jumpToSection` (`CardsView.tsx`) — everything except that
+ * The reusable half of `jumpToSection` (`CardSectionNav.tsx`) — everything except that
  * function's one special case, the window-scroll substitution `cards-top` needs
  * because it is not the actual top of the page. Every other jump, on this page or
  * off it, is exactly "find this id, scroll it into view, focus it," so it lives here
