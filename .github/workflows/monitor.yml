@@ -7,12 +7,13 @@
 # that is somewhere else.
 #
 # **It is deliberately not a substitute for an uptime service.** The repository is
-# private, so Actions minutes are metered — a five-minute check is ~8,600 minutes a
-# month against a 2,000 free allowance, which is why liveness here runs every 30
-# minutes and not more often. A free uptime service checks every minute for nothing
-# and pages a phone; see deploy/README.md. What this does that such a service
-# generally does not is the certificate arithmetic below, and that is the half worth
-# having in the repository.
+# public now (public repos get unlimited free Actions minutes on standard runners,
+# so cost is no longer the constraint), and liveness here still runs every 30
+# minutes rather than every minute as a deliberate choice about alert noise, not a
+# budget one. A free uptime service checks every minute for nothing and pages a
+# phone; see deploy/README.md. What this does that such a service generally does
+# not is the certificate arithmetic below, and that is the half worth having in
+# the repository.
 #
 # **Noise is the failure mode to design against.** This project already deleted a
 # workflow that failed on every push and emailed each time — "noise that trains you to
