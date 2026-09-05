@@ -480,6 +480,31 @@ export function SharedDataRules() {
   )
 }
 
+/* ---------- dates & times ---------- */
+
+export function DateFormatRules() {
+  return (
+    <>
+      <p className="empty-hint">
+        <strong>Dates &amp; times</strong>, on <strong>Account</strong>, is a display choice only:
+        the <strong>order</strong> of day, month and year, what <strong>separates</strong> them, and
+        whether the clock reads <strong>12-hour with AM/PM</strong> or <strong>24-hour</strong>.
+        Three presets — US, ISO, European — set all three at once; each is also adjustable on its
+        own underneath.
+      </p>
+      <p className="empty-hint">
+        It changes nothing about <strong>which</strong> instant a date means or what timezone it is
+        in — only how an already-correct moment gets written out as text. Two people can pick
+        different formats and still be looking at the exact same moment.
+      </p>
+      <p className="empty-hint">
+        Kept per account, the same as the color scheme it sits beside: one shared browser does not
+        force one person's choice of clock onto whoever else signs in on it.
+      </p>
+    </>
+  )
+}
+
 /* ---------- propose a change ---------- */
 
 /**

@@ -268,6 +268,38 @@ what the file rendered before the feature existed. `useColorScheme` (`web/src/ho
 on the root element and clears them from a fixed list, keyed `coc:colors:<id>` like
 `coc:lastRoute:<id>` — one browser is shared and a scheme belongs to the person, not the machine.
 
+## Choosing a date/time format
+
+`DateFormatCard`, `ColorSchemeCard`'s sibling on `#/account`, hands the user three independent
+axes over how a date or time prints: the **order** of day, month and year (`MDY`/`DMY`/`YMD`), the
+**separator** between them, and whether the clock reads **12-hour with AM/PM** or **24-hour**.
+Three preset buttons (US, ISO, European) set all three at once for whoever already thinks in one
+of those shapes; each axis is also independently adjustable underneath, and the card's own preview
+line renders a fixed example instant (`PREVIEW_INSTANT`, 2026-08-24 17:42 — deliberately not "now",
+so a preview and a test both see the same digits) so a changed choice is visible immediately rather
+than only guessed at.
+
+This is a **display-only** preference. It changes how an already-correctly-resolved `Date` gets
+turned into a string; it has no bearing on which timezone a date is interpreted in or which instant
+it names — that resolution is unrelated logic, untouched by this feature. The two are independent
+settings on purpose, the same way this card is independent of `ColorSchemeCard`: one is "how does
+this look," the other is "what does this mean."
+
+`format.ts` used to hand every date straight to `toLocaleDateString`/`toLocaleString` with no
+locale, i.e. "whatever this browser happens to be set to" — two people looking at the same base on
+the same day could see `8/24/2026` and `24/8/2026` with no way to tell why, and no way to change it.
+Because the day/month/year *order* is now a per-user choice rather than a locale, `date-format.ts`
+composes the string by hand (zero-padded month/day, a 4-digit year, or 2-digit for the short form
+used in narrow table columns) rather than going through `Intl.DateTimeFormat`'s locale machinery,
+which only ever picks a *locale's* order, never an arbitrary one somebody names for themselves.
+
+Stored the same way `useColorScheme` stores a scheme: keyed `coc:dateFormat:<id>`, per account, so
+one shared browser doesn't force one format on everyone using it. A stored value that fails to
+parse, or has a field that isn't one of the three known values on that axis, falls back to the
+default on that field alone (`MDY`, `/`, `12h` — what `format.ts` used to produce for `en-US`, the
+most common case of the old browser-locale answer) rather than discarding the other two fields or
+throwing during render.
+
 **A choice names a hue; the shade is not the user's to pick.** It is fitted to each theme
 separately against the ground it will sit on, which is why the picker almost never has to refuse
 anything: the blue that reads at 4.5:1 on parchment is invisible on dark wood, and no single value

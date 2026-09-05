@@ -82,7 +82,10 @@ imports, so the build that writes the list and the browser that reads it back sh
 and one set of tests. `change-request-rules.ts` is the same split for "Propose a change": who may
 amend, cancel or hide a request on the requester's own list, and a request's display status —
 mirroring `server/src/change-requests/access.ts`, the same relationship `trade-tracker.ts` has to
-the server's own trade-access rules.
+the server's own trade-access rules. `date-format.ts` is `ColorSchemeCard`'s sibling for
+`DateFormatCard` — the day/month/year order, separator and 12-/24-hour choice, composed by hand
+rather than through `Intl`'s locale machinery, since the order itself is now a per-user choice
+rather than a locale's. See [Choosing a date/time format](ui.md#choosing-a-datetime-format).
 
 The progress-tracking feature follows the same rule: `progress-grid.ts` (the board's row shape
 and sort), `progress-percent.ts` (percent-to-max against the wiki-scraped reference, never the
