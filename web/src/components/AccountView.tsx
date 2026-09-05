@@ -2,8 +2,9 @@ import { useState, type FormEvent } from 'react'
 import { MIN_PASSWORD_LENGTH, type SessionUser } from '@coc/shared'
 import { api, describe } from '../api.ts'
 import { formatDateTime } from '../format.ts'
-import { hrefFor } from '../hooks.ts'
+import { hrefFor, useDateFormatPreference } from '../hooks.ts'
 import { ColorSchemeCard } from './ColorSchemeCard.tsx'
+import { DateFormatCard } from './DateFormatCard.tsx'
 import { PasswordField } from './primitives.tsx'
 
 /**
@@ -29,6 +30,8 @@ function Message({ text, tone }: { text: string; tone: 'error' | 'ok' }) {
  * report, and worth nobody being able to change.
  */
 function IdentityCard({ user }: { user: SessionUser }) {
+  const [dateFormat] = useDateFormatPreference(user.id)
+
   return (
     <section className="card">
       <h2 className="section-title">Your account</h2>
@@ -56,7 +59,7 @@ function IdentityCard({ user }: { user: SessionUser }) {
             </tr>
             <tr>
               <th scope="row">Added</th>
-              <td>{formatDateTime(new Date(user.createdAt))}</td>
+              <td>{formatDateTime(new Date(user.createdAt), dateFormat)}</td>
             </tr>
           </tbody>
         </table>
@@ -178,6 +181,7 @@ export function AccountView({ user }: { user: SessionUser }) {
       {/* Above the password form on purpose: it is the thing on this page somebody
           comes back to, where changing a password is a once-a-year errand. */}
       <ColorSchemeCard user={user} />
+      <DateFormatCard user={user} />
       <BaseOrderCard />
       <PasswordCard />
     </>

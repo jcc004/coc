@@ -57,6 +57,7 @@ import {
   hrefFor,
   useBaseScope,
   useCardColumns,
+  useDateFormatPreference,
   useMeasuredWidth,
   usePersistedChoice,
   useRowLimit,
@@ -170,8 +171,8 @@ const LAST_UPDATED_LABEL = 'Last updated'
  * age with the exact moment on its `title`, as the attribution line above the grid and
  * the build stamp in the footer both do.
  */
-function lastUpdatedContent(updatedAt: string | null): ReactNode {
-  const cell = lastUpdatedCell(updatedAt, formatRelative, formatDateTime)
+function lastUpdatedContent(updatedAt: string | null, formatExact: (date: Date) => string): ReactNode {
+  const cell = lastUpdatedCell(updatedAt, formatRelative, formatExact)
 
   return cell.never ? (
     <span className="role-pill">{cell.text}</span>
@@ -248,72 +249,81 @@ function RowMarks({ rowLevels, label }: { rowLevels: readonly RowLevel[]; label:
 /**
  * The Overall board's own columns, unchanged from before the picker existed:
  * Points, Cards, Copies, Last updated — exactly the cells the table used to hard-code.
+ *
+ * A function rather than a plain constant only because of the last column: the
+ * "Last updated" cell's exact-timestamp tooltip has to honor the viewer's own
+ * date/time format preference, which is only known inside `CardsView` — so this
+ * takes the bound formatter as an argument instead of calling `formatDateTime`
+ * with no preference at module scope, and `CardsView` builds it once via
+ * `useMemo`, keyed on the preference.
  */
-const OVERALL_COLUMNS: LeaderboardColumn<BaseStanding>[] = [
-  {
-    key: 'points',
-    label: 'Points',
-    numeric: true,
-    cell: (row) =>
-      /*
-       * Kept beside `17/60` rather than replacing it: a bare score does not say how
-       * far through the sixty a base is, and the fraction alone no longer explains
-       * why one row outranks another.
-       *
-       * The best possible score comes from the curve rather than a literal 55, so
-       * raising `MAX_CARD_COUNT` cannot leave this tooltip quoting a ceiling that no
-       * longer exists. `+ COMPLETE_SET_BONUS` for the same reason: a base at the cap
-       * on every card has, by construction, also held at least one of every card, so
-       * it always earns the bonus too — computed, not a hand-typed 3,300 or 3,350,
-       * so raising either constant cannot leave this tooltip stale.
-       */
-      row.recorded ? (
-        <span
-          title={`${formatFull(row.points)} of ${formatFull(
-            row.size * cardPoints(MAX_CARD_COUNT) + COMPLETE_SET_BONUS,
-          )} possible`}
-        >
-          {formatFull(row.points)}
-        </span>
-      ) : (
-        <span className="card-meta">—</span>
-      ),
-  },
-  {
-    key: 'cards',
-    label: 'Cards',
-    numeric: true,
-    cell: (row) =>
-      /* A base nobody has ever saved is not a base holding zero of everything — the
-         same distinction the grid's attribution line draws — so it says so in words
-         instead of printing `0/60`. */
-      row.recorded ? (
-        <div className="donation-cell">
-          <span>
-            {row.distinct}/{row.size}
+function overallColumns(formatExact: (date: Date) => string): LeaderboardColumn<BaseStanding>[] {
+  return [
+    {
+      key: 'points',
+      label: 'Points',
+      numeric: true,
+      cell: (row) =>
+        /*
+         * Kept beside `17/60` rather than replacing it: a bare score does not say how
+         * far through the sixty a base is, and the fraction alone no longer explains
+         * why one row outranks another.
+         *
+         * The best possible score comes from the curve rather than a literal 55, so
+         * raising `MAX_CARD_COUNT` cannot leave this tooltip quoting a ceiling that no
+         * longer exists. `+ COMPLETE_SET_BONUS` for the same reason: a base at the cap
+         * on every card has, by construction, also held at least one of every card, so
+         * it always earns the bonus too — computed, not a hand-typed 3,300 or 3,350,
+         * so raising either constant cannot leave this tooltip stale.
+         */
+        row.recorded ? (
+          <span
+            title={`${formatFull(row.points)} of ${formatFull(
+              row.size * cardPoints(MAX_CARD_COUNT) + COMPLETE_SET_BONUS,
+            )} possible`}
+          >
+            {formatFull(row.points)}
           </span>
-          <Meter
-            value={row.distinct}
-            max={row.size}
-            label={`${row.label} holds ${row.distinct} of ${row.size} cards`}
-          />
-        </div>
-      ) : (
-        <span className="card-meta">Nothing recorded yet</span>
-      ),
-  },
-  {
-    key: 'copies',
-    label: 'Copies',
-    numeric: true,
-    cell: (row) => (row.recorded ? row.total : '—'),
-  },
-  {
-    key: 'updated',
-    label: LAST_UPDATED_LABEL,
-    cell: (row) => lastUpdatedContent(row.updatedAt),
-  },
-]
+        ) : (
+          <span className="card-meta">—</span>
+        ),
+    },
+    {
+      key: 'cards',
+      label: 'Cards',
+      numeric: true,
+      cell: (row) =>
+        /* A base nobody has ever saved is not a base holding zero of everything — the
+           same distinction the grid's attribution line draws — so it says so in words
+           instead of printing `0/60`. */
+        row.recorded ? (
+          <div className="donation-cell">
+            <span>
+              {row.distinct}/{row.size}
+            </span>
+            <Meter
+              value={row.distinct}
+              max={row.size}
+              label={`${row.label} holds ${row.distinct} of ${row.size} cards`}
+            />
+          </div>
+        ) : (
+          <span className="card-meta">Nothing recorded yet</span>
+        ),
+    },
+    {
+      key: 'copies',
+      label: 'Copies',
+      numeric: true,
+      cell: (row) => (row.recorded ? row.total : '—'),
+    },
+    {
+      key: 'updated',
+      label: LAST_UPDATED_LABEL,
+      cell: (row) => lastUpdatedContent(row.updatedAt, formatExact),
+    },
+  ]
+}
 
 /** Rarity: the score itself, and the same distinct-cards fraction Overall's Cards
  *  column prints, against the full {@link ALL_CARDS} count — `RarityStanding` has no
@@ -1489,6 +1499,10 @@ export function CardsView({ user }: { user: SessionUser }) {
    */
   useCardRefresh()
 
+  const [dateFormat] = useDateFormatPreference(user.id)
+  const formatExact = useCallback((date: Date) => formatDateTime(date, dateFormat), [dateFormat])
+  const overallColumnsMemo = useMemo(() => overallColumns(formatExact), [formatExact])
+
   const state = useCardInventoryState()
   const bases = state.entries
   const ownersState = useOwnersState()
@@ -1726,7 +1740,7 @@ export function CardsView({ user }: { user: SessionUser }) {
         </p>
       ),
       board: (
-        <Leaderboard rows={standings} ariaLabel="Collection leaderboard" columns={OVERALL_COLUMNS} />
+        <Leaderboard rows={standings} ariaLabel="Collection leaderboard" columns={overallColumnsMemo} />
       ),
       scoringRules: <ScoringRules />,
     },

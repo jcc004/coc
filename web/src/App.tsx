@@ -382,7 +382,7 @@ export function App() {
           <ClanView key={route.tag} tag={route.tag} user={user} onLoaded={remember} />
         ) : null}
 
-        {route.view === 'war' ? <WarView key={route.tag} tag={route.tag} /> : null}
+        {route.view === 'war' ? <WarView key={route.tag} tag={route.tag} user={user} /> : null}
 
         {route.view === 'search' ? <ClanSearchView key={route.name} name={route.name} /> : null}
       </main>

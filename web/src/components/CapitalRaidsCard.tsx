@@ -2,10 +2,11 @@ import {
   parseCocTimestamp,
   type CapitalRaidSeason,
   type CapitalRaidSeasonsResponse,
+  type SessionUser,
 } from '@coc/shared'
 import { api } from '../api.ts'
 import { formatDateTime, formatFull } from '../format.ts'
-import { hrefFor, useAsync } from '../hooks.ts'
+import { hrefFor, useAsync, useDateFormatPreference } from '../hooks.ts'
 import { Card, ErrorPanel, Loading } from './primitives.tsx'
 
 const STATE_LABEL: Record<string, string> = { ongoing: 'Ongoing', ended: 'Ended' }
@@ -20,9 +21,9 @@ function weekendRange(season: CapitalRaidSeason): string {
 }
 
 /** Exact bounds on hover, since the visible range drops the year and the time. */
-function weekendTitle(season: CapitalRaidSeason): string {
-  const start = formatDateTime(parseCocTimestamp(season.startTime))
-  const end = formatDateTime(parseCocTimestamp(season.endTime))
+function weekendTitle(season: CapitalRaidSeason, formatExact: (date: Date) => string): string {
+  const start = formatExact(parseCocTimestamp(season.startTime))
+  const end = formatExact(parseCocTimestamp(season.endTime))
   return `${start} – ${end}`
 }
 
@@ -84,7 +85,13 @@ function MemberBreakdown({ season }: { season: CapitalRaidSeason }) {
   )
 }
 
-function RaidSeasons({ seasons }: { seasons: CapitalRaidSeason[] }) {
+function RaidSeasons({
+  seasons,
+  formatExact,
+}: {
+  seasons: CapitalRaidSeason[]
+  formatExact: (date: Date) => string
+}) {
   if (seasons.length === 0) {
     return (
       <p className="empty-hint">
@@ -122,7 +129,7 @@ function RaidSeasons({ seasons }: { seasons: CapitalRaidSeason[] }) {
             {seasons.map((season) => (
               <tr key={season.startTime} role="row">
                 {/* The date range is what names a weekend, so it heads the card. */}
-                <td className="stack-title" role="cell" title={weekendTitle(season)}>
+                <td className="stack-title" role="cell" title={weekendTitle(season, formatExact)}>
                   {weekendRange(season)}
                 </td>
                 <td role="cell" data-label="State">
@@ -156,11 +163,13 @@ function RaidSeasons({ seasons }: { seasons: CapitalRaidSeason[] }) {
   )
 }
 
-export function CapitalRaidsCard({ tag }: { tag: string }) {
+export function CapitalRaidsCard({ tag, user }: { tag: string; user: Pick<SessionUser, 'id'> }) {
   const state = useAsync<CapitalRaidSeasonsResponse>(
     (signal) => api.capitalRaidSeasons(tag, signal),
     [tag],
   )
+  const [dateFormat] = useDateFormatPreference(user.id)
+  const formatExact = (date: Date) => formatDateTime(date, dateFormat)
 
   return (
     <Card title="Capital raid weekends">
@@ -171,7 +180,9 @@ export function CapitalRaidsCard({ tag }: { tag: string }) {
        * already says so.
        */}
       {state.status === 'error' ? <ErrorPanel error={state.error} /> : null}
-      {state.status === 'ready' ? <RaidSeasons seasons={state.data.items} /> : null}
+      {state.status === 'ready' ? (
+        <RaidSeasons seasons={state.data.items} formatExact={formatExact} />
+      ) : null}
     </Card>
   )
 }
