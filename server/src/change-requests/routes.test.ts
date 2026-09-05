@@ -364,6 +364,33 @@ describe('GET /api/admin/change-requests', () => {
     const { requests } = (await response.json()) as { requests: ChangeRequest[] }
     assert.equal(requests.length, 2)
   })
+
+  it('attaches each request’s own amendments, in order, with none crossing over — the batched IN-query grouping', async () => {
+    const harness = await createHarness()
+    const cookieA = await signIn(harness, MEMBER_A)
+    const cookieB = await signIn(harness, MEMBER_B)
+    const cookieAdmin = await signIn(harness, ADMIN)
+
+    const fromA = await submit(harness, cookieA, 'From A')
+    const fromB = await submit(harness, cookieB, 'From B')
+    const untouched = await submit(harness, cookieA, 'No amendments')
+
+    await harness.app.request(...post(`/api/change-requests/${fromA.id}/amend`, { body: 'A first' }, cookieA))
+    await harness.app.request(...post(`/api/change-requests/${fromA.id}/amend`, { body: 'A second' }, cookieA))
+    await harness.app.request(...post(`/api/change-requests/${fromB.id}/amend`, { body: 'B only' }, cookieB))
+
+    const response = await all(harness, cookieAdmin)
+    assert.equal(response.status, 200)
+    const { requests } = (await response.json()) as { requests: ChangeRequest[] }
+
+    const byId = new Map(requests.map((request) => [request.id, request]))
+    assert.deepEqual(
+      byId.get(fromA.id)?.amendments.map((amendment) => amendment.body),
+      ['A first', 'A second'],
+    )
+    assert.deepEqual(byId.get(fromB.id)?.amendments.map((amendment) => amendment.body), ['B only'])
+    assert.deepEqual(byId.get(untouched.id)?.amendments, [])
+  })
 })
 
 describe('GET /api/admin/change-requests/pending-count', () => {

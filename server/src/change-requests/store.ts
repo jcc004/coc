@@ -207,10 +207,46 @@ export function createChangeRequestStore(db: DatabaseSync): ChangeRequestStore {
   }
 
   function list(rows: Record<string, unknown>[]): ChangeRequest[] {
-    return rows.map((row) => {
-      const amendments = statements.amendmentsFor.all(row['id'] as number).map(toAmendment)
-      return toRequest(row, amendments)
-    })
+    if (rows.length === 0) return []
+
+    // One query for every row's amendments, not one per row — the same fix
+    // `progress/store.ts`'s `getLatestForClan` applies to its own per-tag
+    // lookup: build the `IN (...)` clause with as many placeholders as there
+    // are ids, prepared fresh here rather than as a top-level `statements.*`
+    // entry since the width varies per call, and `db.prepare` is cheap next
+    // to N extra round trips. Sorted explicitly by (request_id, id) afterward
+    // rather than trusting the IN-clause's incidental row order, matching
+    // `AMENDMENT_SELECT`'s own `ORDER BY a.id` per request.
+    const ids = rows.map((row) => row['id'] as number)
+    const placeholders = Array(ids.length).fill('?').join(', ')
+    const amendmentRows = db
+      .prepare(
+        `SELECT a.request_id, a.id, a.body, a.created_at, a.created_by_user_id,
+                u.display_name AS created_by
+           FROM change_request_amendments a
+           LEFT JOIN users u ON u.id = a.created_by_user_id
+          WHERE a.request_id IN (${placeholders})
+          ORDER BY a.request_id, a.id`,
+      )
+      .all(...ids)
+
+    // `groupByBase` in `cards/store.ts` is the model this follows: a `Map`
+    // keyed by the grouping id, an `of(key)` helper that gets-or-creates the
+    // bucket, then pushing into it.
+    const byRequestId = new Map<number, ChangeRequestAmendment[]>()
+    const of = (requestId: number): ChangeRequestAmendment[] => {
+      let bucket = byRequestId.get(requestId)
+      if (!bucket) {
+        bucket = []
+        byRequestId.set(requestId, bucket)
+      }
+      return bucket
+    }
+    for (const row of amendmentRows) {
+      of(asInt(row['request_id'])).push(toAmendment(row))
+    }
+
+    return rows.map((row) => toRequest(row, byRequestId.get(row['id'] as number) ?? []))
   }
 
   function mustFind(id: number, verb: string): ChangeRequest {
