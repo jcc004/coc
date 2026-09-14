@@ -60,8 +60,9 @@ jobs:
     # would only mean two emails for one outage.
     if: github.event.schedule != '12 7 * * *'
     runs-on: ubuntu-latest
-    # Read-only, and only needed by "Deployed commit is fresh" below, which calls
-    # GitHub's compare API with the workflow's own built-in token — no new secret.
+    # Read-only, and only needed by "Deployed commit is not diverged" below, which
+    # calls GitHub's compare API with the workflow's own built-in token — no new
+    # secret.
     permissions:
       contents: read
     steps:
@@ -101,7 +102,7 @@ jobs:
           DIAG
           exit 1
 
-      - name: Deployed commit is fresh
+      - name: Deployed commit is not diverged
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -112,11 +113,18 @@ jobs:
           # without the service ever restarting (CLAUDE.md's "fast-forward happens
           # before npm ci" trap).
           #
-          # This is the check the 2026-08 incident needed and did not have: a
-          # `git filter-repo` rewrite left the droplet's clone unable to fast-forward
-          # to origin/main, so `coc-update.timer` failed silently every five minutes
-          # for days while the service stayed up serving stale code — liveness alone
-          # can never catch that shape of failure, because the service was never down.
+          # `coc-update.timer` is disabled as of 2026-09-14 — deploys are manual,
+          # via `./deploy/update.sh` (CLAUDE.md's "Deploying" section). That means
+          # "main has commits the droplet hasn't deployed yet" is the ordinary,
+          # indefinite resting state now, not a signal of anything stuck, so this
+          # step no longer ages out an `ahead` status into an error (it did, at a
+          # 30-minute threshold, back when a 15-minute timer made "still ahead" mean
+          # "the auto-deploy cycle looks broken"). What it still catches: the
+          # rewritten-history shape from the 2026-08 incident, where a
+          # `git filter-repo` rewrite left the droplet's clone unable to
+          # fast-forward to origin/main at all — that failure mode is independent of
+          # whether deploys are timer-driven or by hand, and liveness alone can never
+          # catch it, because the service was never down.
           body="$(curl -fsS --max-time 15 "$SITE/api/health" 2>/dev/null || true)"
           commit="$(printf '%s' "$body" | jq -r '.commit // empty' 2>/dev/null || true)"
 
@@ -144,20 +152,16 @@ jobs:
               echo "deployed commit $commit is current with main"
               ;;
             ahead)
-              # main has commits the droplet hasn't deployed yet — normal for up to
-              # about 15 minutes (the timer's own interval) plus however long a build
-              # takes. Only the *age* of the oldest missing commit says whether this
-              # is in-flight lag or a stuck cycle, so that is what gates pass/fail,
-              # not the count.
+              # main has commits the droplet hasn't deployed yet. With deploys manual,
+              # this can be true for as long as nobody has run update.sh since the
+              # last push — not itself a failure, just "not deployed yet" — so it is
+              # informational only. If deploys go back to being timer-driven, an
+              # age-of-oldest-commit gate belongs back here (removed 2026-09-14; see
+              # git history for the exact check).
               oldest_date="$(jq -r '.commits[0].commit.committer.date' /tmp/compare.json)"
               oldest_epoch="$(date -u -d "$oldest_date" +%s)"
               age_minutes=$(( ($(date -u +%s) - oldest_epoch) / 60 ))
               echo "deployed commit $commit is $ahead_by commit(s) behind main; oldest undeployed commit is ${age_minutes}m old"
-              if [ "$age_minutes" -gt 30 ]; then
-                echo "::error::Oldest undeployed commit is ${age_minutes}m old — comfortably past the ~15min timer interval plus build time, so the auto-deploy cycle looks stuck rather than merely lagging."
-                echo "Fix: ssh <droplet>@<droplet> 'cd /srv/coc && git fetch origin main && git reset --hard origin/main && ./deploy/update.sh --force'"
-                exit 1
-              fi
               ;;
             diverged|behind)
               echo "::error::Deployed commit $commit has $status from main — the auto-deploy cannot recover from this on its own. This is the rewritten-history shape: the deployed commit is no longer an ancestor of main, so the droplet's ff-only merge fails forever until fixed by hand."

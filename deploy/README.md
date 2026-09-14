@@ -68,7 +68,9 @@ session cookies cross the network in clear text.
   `ProtectHome=true` and the rest.
 - `coc-update.service` / `coc-update.timer` — the pull-based deploy: every fifteen
   minutes the droplet checks `origin/main` and runs `update.sh` if it has moved.
-  Sandboxed much more lightly, and the unit says why.
+  Sandboxed much more lightly, and the unit says why. **Disabled on the live droplet
+  as of 2026-09-14** (`sudo systemctl disable --now coc-update.timer`) — deploys are
+  manual now; see "Automating it" below.
 - `coc-progress-reference.service` / `.timer` and `coc-progress-snapshot.service` /
   `.timer` — the two weekly progress-tracking jobs, Tuesdays 16:00 and 17:00 UTC.
   Sandboxed as tightly as `coc.service` itself. See "Weekly progress-tracking
@@ -538,7 +540,7 @@ already has that is not the droplet.
 
 | | when | what it does |
 | --- | --- | --- |
-| `liveness` | every 30 min | `/api/health` must answer valid JSON with `ok: true`, the deployed commit it reports (if any) must not be stuck behind `main`, the page must reference a built JS bundle, and every request is made without `-k` so an invalid certificate fails it. Three attempts 20s apart before the JSON check concludes anything. |
+| `liveness` | every 30 min | `/api/health` must answer valid JSON with `ok: true`, the deployed commit it reports (if any) must not be diverged/behind `main` (see below — this is a rewritten-history check, not a staleness one, now that deploys are manual), the page must reference a built JS bundle, and every request is made without `-k` so an invalid certificate fails it. Three attempts 20s apart before the JSON check concludes anything. |
 | `certificate` | daily, 07:12 UTC | Fails at **under 21 days** remaining, and again more urgently under 7. |
 
 The certificate half is the reason this is worth having in the repo rather than only
@@ -549,7 +551,7 @@ renews at 30 days remaining, so 21 means the renewal *did not run* and there are
 weeks to find out why.
 
 **The deployed-commit half exists because liveness alone missed a real incident.**
-`coc-update.timer` fast-forwards to `origin/main` every fifteen minutes, and a
+`coc-update.timer` used to fast-forward to `origin/main` every fifteen minutes, and a
 `git filter-repo` history rewrite once left the droplet's clone unable to do that —
 `git merge --ff-only` refused forever, silently, while `coc.service` stayed up the
 whole time serving 13-commits-stale code. Liveness can never catch that shape of
@@ -559,13 +561,14 @@ running against `main`: `/api/health`'s optional `commit` field
 confirmed live — written only after a deploy's build and health check both pass, so
 unlike raw git HEAD it cannot lie about a deploy that advanced the tree but never
 restarted the service (the "fast-forward happens before `npm ci`" trap above). The
-workflow compares that commit against `main` via GitHub's compare API: `identical` is
-fine, `ahead` is fine for a while (the timer's own fifteen minutes plus however long a
-build takes — the check only fails an `ahead` state once the oldest undeployed commit
-is over 30 minutes old), and `diverged`, `behind`, or a 404 (the deployed commit is
-unknown to GitHub — exactly what a rewritten history looks like) fail immediately,
-since none of those three recovers on its own. The failure message gives the fix
-directly:
+workflow compares that commit against `main` via GitHub's compare API: `identical` and
+`ahead` are both fine (deploys are manual as of 2026-09-14 — see "Automating it"
+below — so "main has commits not yet deployed" is the ordinary resting state
+indefinitely now, not a signal of anything stuck; it is reported but never fails the
+check), and `diverged`, `behind`, or a 404 (the deployed commit is unknown to GitHub —
+exactly what a rewritten history looks like) fail immediately, since none of those
+three recovers on its own regardless of how deploys are triggered. The failure
+message gives the fix directly:
 
 ```bash
 ssh deploy@203.0.113.10 'cd /srv/coc && git fetch origin main && git reset --hard origin/main && ./deploy/update.sh --force'
@@ -770,11 +773,20 @@ The droplet checks every fifteen minutes and pulls when there is something to pu
 private key leaves your machine, nothing is held by a CI provider, and SSH need not be
 reachable from the internet at all. The cost is up to fifteen minutes of latency.
 
-**The timer is the deploy path.** For ten users, immediacy is worth less than not
-having a deploy key for your server sitting in a third-party service. Note what that
-costs: the timer will happily deploy a commit whose tests fail. CI tells you the commit
-was broken, but it does not stop the timer — so if the verify workflow goes red, push
-the fix rather than assuming production is protected.
+**The timer was the deploy path, but is disabled on the live droplet as of
+2026-09-14** (`sudo systemctl disable --now coc-update.timer`) in favor of running
+`./deploy/update.sh` by hand only when there is a real change to ship — see
+"Automating it" above for the plain manual invocation. The unit files above still
+work exactly as documented if the timer is ever re-enabled; nothing about them
+changed, only whether the droplet runs them.
+
+The reasoning that originally chose the timer over push-triggered CI still holds if
+you do re-enable it: for ten users, immediacy is worth less than not having a deploy
+key for your server sitting in a third-party service. Note what that costs: the timer
+will happily deploy a commit whose tests fail. CI tells you the commit was broken, but
+it does not stop the timer — so if the verify workflow goes red, push the fix rather
+than assuming production is protected. With deploys manual, the equivalent discipline
+is simpler: don't run `update.sh` against a commit you know `verify.yml` failed on.
 
 ### Either way, one sudoers rule
 

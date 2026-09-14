@@ -264,9 +264,20 @@ after a max of 6 months and silently needs renewing rather than being a one-time
 
 ## Deploying
 
-**Committing to `main` is deploying.** The droplet runs `coc-update.timer` every fifteen minutes,
-which fast-forwards to `origin/main` and runs `deploy/update.sh`. There is no push-triggered CI
-deploy; `verify.yml` only typechecks, lints, tests and builds.
+**Deploys are manual, as of 2026-09-14.** `coc-update.timer` (which used to fast-forward the
+droplet to `origin/main` and run `deploy/update.sh` every fifteen minutes) is disabled — `sudo
+systemctl disable --now coc-update.timer` on the droplet, confirmed `disabled`/`inactive` via
+`systemctl is-enabled`/`is-active`. Committing to `main` no longer deploys anything by itself; run
+`./deploy/update.sh` on the droplet by hand (see `.claude/droplet-access.local.md` for access) once
+a change is ready to ship. There is no push-triggered CI deploy either; `verify.yml` only
+typechecks, lints, tests and builds.
+
+The unit files (`deploy/coc-update.service` / `.timer`) are left in place, not deleted — they still
+work if the timer is ever re-enabled (`sudo systemctl enable --now coc-update.timer`), and
+`deploy/README.md` still documents them as the pull-based option. Everything below this point that
+describes the timer's *behavior* (the fast-forward-before-`npm ci` trap, the rewritten-history
+incident, `.deploy-last-good-sha`) still holds true of `deploy/update.sh` itself regardless of what
+triggers it — a manual `--force` run hits the exact same code paths.
 
 `deploy/update.sh` checks outcomes rather than exit codes, restores the previous `web/dist` if a
 build or health check fails, and supports `--rollback` / `--resume`. `deploy/README.md` is the
@@ -293,10 +304,13 @@ window: this is a stalled *deploy*, not an outage). It self-resolved only becaus
 local branch was reset to match origin by hand; there is no automatic recovery from this shape of
 failure, and `deploy/update.sh` deliberately dies rather than force-resetting on divergence. Manual
 fix: `ssh <droplet> 'cd /srv/coc && git fetch origin main && git reset --hard origin/main &&
-./deploy/update.sh --force'`. `.github/workflows/monitor.yml`'s "Deployed commit is fresh" job now
-catches this shape within about 30 minutes by comparing `/api/health`'s `commit` field against
-GitHub's compare API — it did not exist before this incident; it shipped as part of the incident's
-own recovery (`d743f5b`).
+./deploy/update.sh --force'`. `.github/workflows/monitor.yml`'s "Deployed commit is not diverged"
+job (renamed 2026-09-14 from "Deployed commit is fresh" when the timer was disabled — it no longer
+ages an `ahead` status into an error, since "not deployed yet" is the ordinary resting state under
+manual deploys now, but still fails on `diverged`/`behind`) catches this shape on its next
+30-minute scheduled run by comparing `/api/health`'s `commit` field against GitHub's compare API —
+it did not exist before this incident; it shipped as part of the incident's own recovery
+(`d743f5b`).
 
 **That same freshness check then produced a false positive for 7 hours from a second, unrelated
 bug.** `/api/health`'s `commit` field was read once at process startup from
