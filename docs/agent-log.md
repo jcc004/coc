@@ -35,3 +35,23 @@ merge required care because its worktree branched before the `03` CSS-dedupe com
 main — a blind wholesale file copy would have silently reverted that fix, caught by re-checking
 `styles.css` after copying rather than trusting the copy. All eight commits pushed and confirmed
 live via `/api/health` and the droplet's own deploy log.
+
+## 2026-09-21 — independent review of the nginx host-wide comment
+
+Pre-commit review, per `claude-kit/rules/working-style.md`'s "Review and tests need independence",
+of a comment-only diff to `deploy/nginx-coc.conf` (notes that `server_tokens` and
+`limit_req_status` are shared with every other site on the droplet). Not isolated; read-only,
+told not to contact the droplet or any browser.
+
+Dispatched (general-purpose agent, background, not instructed to edit, commit or push):
+
+- `aa668951b42b4957d` — review the diff for factual claims about nginx scope and duplicate
+  directives, whether the live-host sentence overclaims its evidence, secrets, and syntax.
+
+Completed. The first report found three wording problems in the added comment, all correct: an
+overclaim for `limit_req_status` (it only affects a site that uses `limit_req`), "could not repeat
+them" (true only at file scope; both directives are valid inside a `server {}` block), and "the only
+enabled config" (wider than the grep behind it). Fixed after a full `nginx -T` on the live host and
+a probe on nginx 1.30.4 in a container. A re-review through the same agent, continued with
+`SendMessage`, closed all three and raised two more, both fixed: the 1.30.4 result was a container's,
+not the host's, and two lines ran wide. That last edit was not reviewed a third time.
