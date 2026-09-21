@@ -55,3 +55,30 @@ enabled config" (wider than the grep behind it). Fixed after a full `nginx -T` o
 a probe on nginx 1.30.4 in a container. A re-review through the same agent, continued with
 `SendMessage`, closed all three and raised two more, both fixed: the 1.30.4 result was a container's,
 not the host's, and two lines ran wide. That last edit was not reviewed a third time.
+
+## 2026-09-21 — independent review of the development-React check in update.sh
+
+Pre-commit review, per `claude-kit/rules/working-style.md`'s "Review and tests need independence",
+of the change that replaces `deploy/update.sh`'s 450 kB size warning with a scan of the built JS for
+React's development-only text (`dev_react_markers`), with its `deploy/update-test.sh` section 23,
+`web/src/dev-react-markers.test.ts`, and three `deploy/README.md` edits. Not isolated; read-only,
+told not to contact the droplet or any browser, and to report the Node version it used.
+
+Dispatched (general-purpose agent, background, not instructed to edit, commit or push):
+
+- `aeab0de45389337f2` — review for bash/`set -e` correctness, GNU/BSD grep and bash 3.2 portability,
+  whether each new test assertion can fail, the guard test's failure modes, and doc accuracy.
+
+Completed, in two rounds. The first report ranked five findings. The real defect: the scan would
+flag `changelog-data-*.js`, which holds every kept commit's subject and body verbatim, so one commit
+quoting a marker would make every later deploy warn on a production build. Confirmed before acting:
+a kept commit's subject is in that chunk and a `No-Changelog` one is not. It also found three
+mutations of `update.sh` that the harness passed (an unquoted expansion, a whole-line `grep -x`,
+and a hidden grep read error). Fixed: the chunk is skipped, a grep read error is reported, the
+fixtures put the marker mid-line and add a clean-words fixture, and the guard test errors on a
+marker line it cannot read. The re-review, through the same agent, closed those and raised three
+more, all fixed: a check that would have failed about one run in 200 on a random temp-directory
+name (now it asserts nothing is printed between two known log lines), fixtures without the
+changelog chunk a real build always has, and a loosely pinned scan-failure path. Twelve mutations of
+`update.sh` were then each caught by the harness. That last round of test edits was verified by
+those mutations and was not re-read by an agent.
