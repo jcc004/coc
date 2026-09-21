@@ -82,9 +82,51 @@ if [[ "${1:-}" == "run" && "${2:-}" == "build" ]]; then
   # Named by commit, so "is the site serving what I just built" is a real question
   # here rather than a tautology.
   sha="$(git rev-parse --short HEAD)"
-  # ~330 kB, what a production React bundle weighs — enough to keep the
-  # development-build size alarm quiet.
-  head -c 330000 /dev/zero | tr '\0' 'x' > "web/dist/assets/index-$sha.js"
+  # ~510 kB: what the real production bundle weighs (510,579 bytes on the droplet,
+  # 2026-09-21), and past the 450 kB the old size alarm fired at. So the default stub
+  # is a production-sized bundle carrying no React text, and every deploy here that
+  # stays quiet is also a deploy that did not warn on size alone — section 23 asserts
+  # it. Knobs, all off by default:
+  #   STUB_DEV_TEXT=<string>  plants one of React's development-only strings, in the
+  #                           middle of a line (minified code carries it that way; alone
+  #                           on a line, a grep that only matches whole lines would
+  #                           find it too and pass for the wrong reason)
+  #   STUB_DEV_IN=vendor      ...in a second chunk instead of index-*.js
+  #   STUB_DEV_IN=changelog   ...in changelog-data-*.js, as a commit message quoting it
+  #   STUB_CLEAN_WORDS=1      adds ordinary English sharing single words with the
+  #                           markers ("hook", "call", "the") and the phrases only in
+  #                           lowercase, so it is clean to an exact match and not to
+  #                           a loose one
+  #   STUB_UNREADABLE=1       adds a file the scan cannot read
+  head -c 510000 /dev/zero | tr '\0' 'x' > "web/dist/assets/index-$sha.js"
+  # A real build always ships this next to index-*.js, and it sorts first. Emitting it
+  # every time keeps the harness the shape of the droplet's dist, so a scan that stops
+  # or misbehaves when it meets that file cannot go unseen.
+  printf 'x\nvar c=[{"subject":"Fix a crash","body":"An ordinary commit message."}];\nx\n' \
+    > "web/dist/assets/changelog-data-$sha.js"
+  if [[ -n "${STUB_DEV_TEXT:-}" ]]; then
+    case "${STUB_DEV_IN:-index}" in
+      vendor)
+        printf 'x\nfunction f(){throw new Error("%s. See the docs.")}\nx\n' "$STUB_DEV_TEXT" \
+          > "web/dist/assets/vendor-$sha.js" ;;
+      changelog)
+        printf 'x\nvar c=[{"subject":"Fix a crash","body":"%s. See the docs."}];\nx\n' "$STUB_DEV_TEXT" \
+          > "web/dist/assets/changelog-data-$sha.js" ;;
+      *)
+        printf '\nfunction f(){throw new Error("%s. See the docs.")}\n' "$STUB_DEV_TEXT" \
+          >> "web/dist/assets/index-$sha.js" ;;
+    esac
+  fi
+  if [[ -n "${STUB_CLEAN_WORDS:-}" ]]; then
+    # The lowercase phrases are there so that matching case-insensitively would flag
+    # this file: the markers are exact.
+    printf '\nvar t="Invalid input. Rendered more rows than expected during the previous render. The hook is a call to update the depth. Maximum value exceeded. invalid hook call; maximum update depth exceeded.";\n' \
+      >> "web/dist/assets/index-$sha.js"
+  fi
+  if [[ -n "${STUB_UNREADABLE:-}" ]]; then
+    : > "web/dist/assets/unreadable-$sha.js"
+    chmod 000 "web/dist/assets/unreadable-$sha.js"
+  fi
   printf '<script src="/assets/index-%s.js"></script>\n' "$sha" > web/dist/index.html
   cp web/public/coc/cards/*.png web/dist/coc/cards/
   exit 0
@@ -411,6 +453,114 @@ grep -q "did not finish — retrying" "$SB/d22b.log"
 check "says why it is retrying" "$?" "0"
 check "last-good now covers the commit that was stuck" "$(cat .deploy-last-good-sha)" "$stuck_sha"
 check "the site now serves the fix" "$(cat app.txt)" "v4-flaky-install"
+
+banner "23. a development React is flagged by what is in the bundle, not by how big it is"
+# The stub bundle is production-sized (~510 kB) and carries no React text. That is
+# past the 450 kB the old alarm fired at, so a deploy of it that warns is the old
+# alarm still firing on size — which is what it did on every real deploy from the day
+# the production bundle grew past its limit.
+./deploy/update.sh --force > "$SB/d23a.log" 2>&1
+check "a production-sized bundle deploys" "$?" "0"
+check "and it really is past the old 450 kB limit" \
+  "$(( $(cat web/dist/assets/index-*.js | wc -c) > 450000 ))" "1"
+grep -q "WARNING" "$SB/d23a.log"; check "and size alone does not warn" "$?" "1"
+# The line above fails on any line containing WARNING, but not on a size note worded some
+# other way. So pin the shape instead of a vocabulary: on a clean deploy nothing at all
+# is printed between "built index-…" and "dist carries …", and that is exactly where a
+# bundle warning would land, however it is worded. Not a word search over the log:
+# the log carries a random mktemp name and the machine's TMPDIR, and a pattern such as
+# `kB` turns up in one of those about once in two hundred runs.
+between="$(awk '/^ +built index-/{f=1; next} /^ +dist carries/{f=0} f' "$SB/d23a.log")"
+check "and nothing is said about the bundle between building it and checking the art" \
+  "$between" ""
+grep -qE '^ +built index-' "$SB/d23a.log" && grep -qE '^ +dist carries' "$SB/d23a.log"
+check "and both of those lines are in the log, so that was not an empty slice" "$?" "0"
+
+# Read out of update.sh rather than retyped, as section 21 does for the preamble: a
+# copy here would test the copy. The check fails if the array goes, instead of the loop
+# below quietly running zero times. Blank and comment lines are not markers.
+markers=()
+while IFS= read -r line; do markers+=("$line"); done < <(
+  awk '/^dev_react_markers=\(/{f=1; next} f && /^\)/{f=0} f && NF && !/^[[:space:]]*#/' \
+    "$REPO/deploy/update.sh" | sed "s/^ *'//; s/' *\$//"
+)
+check "found the marker list in update.sh" \
+  "$([[ ${#markers[@]} -ge 1 ]] && echo yes || echo no)" "yes"
+
+# Every marker on its own, so a dropped or mangled -e argument shows up as the one
+# marker that stops being found rather than hiding behind the others. Still a warning,
+# not a gate: the deploy goes ahead, as it did before.
+i=0
+for m in ${markers[@]+"${markers[@]}"}; do
+  i=$((i + 1))
+  STUB_DEV_TEXT="$m" ./deploy/update.sh --force > "$SB/d23-m$i.log" 2>&1
+  check "marker $i: the deploy still goes ahead" "$?" "0"
+  grep -q "development-only text" "$SB/d23-m$i.log"; check "marker $i is flagged: $m" "$?" "0"
+  # The line right after "Found in:", not the whole log: "built index-…" and "serving
+  # index-…" are in every run's log, so a looser match would pass whether or not the
+  # warning named anything.
+  grep -A1 "Found in:" "$SB/d23-m$i.log" | tail -1 | grep -q "index-"
+  check "marker $i: and the log names the file it was in" "$?" "0"
+done
+
+# Not in index-*.js. The old alarm measured only that one file; this one has to follow
+# React into whichever chunk the build puts it in.
+STUB_DEV_TEXT="${markers[0]:-}" STUB_DEV_IN=vendor ./deploy/update.sh --force > "$SB/d23-v.log" 2>&1
+check "a marker in another chunk: the deploy goes ahead" "$?" "0"
+grep -q "development-only text" "$SB/d23-v.log"; check "and it is flagged there too" "$?" "0"
+grep -A1 "Found in:" "$SB/d23-v.log" | tail -1 | grep -q "vendor-"
+check "naming that chunk" "$?" "0"
+grep -A1 "Found in:" "$SB/d23-v.log" | tail -1 | grep -q "index-"
+check "and not the clean index one" "$?" "1"
+
+# Ordinary English that shares single words with the markers ("hook", "call", "the")
+# and none of the phrases. A pattern list that got split into words, as an unquoted
+# expansion would do, matches this; the phrases do not.
+STUB_CLEAN_WORDS=1 ./deploy/update.sh --force > "$SB/d23-w.log" 2>&1
+check "words the markers share, without the phrases: the deploy goes ahead" "$?" "0"
+grep -q "WARNING" "$SB/d23-w.log"; check "and it is not flagged" "$?" "1"
+
+# changelog-data-*.js holds every kept commit's subject and body verbatim, so a commit
+# message that quotes a marker is in it for good. That is not a development React, and
+# flagging it would put the alarm back to warning on every deploy.
+STUB_DEV_TEXT="${markers[0]:-}" STUB_DEV_IN=changelog ./deploy/update.sh --force \
+  > "$SB/d23-c.log" 2>&1
+check "a marker quoted in the changelog chunk: the deploy goes ahead" "$?" "0"
+grep -q "WARNING" "$SB/d23-c.log"; check "and it is not flagged" "$?" "1"
+
+# A scan that fails must not read as a clean one. A mode-000 file makes grep exit 2,
+# which the `|| true` this replaced would have swallowed. Root reads it anyway, so the
+# check cannot run as root.
+if [[ "$(id -u)" == 0 ]]; then
+  printf '  skip the unreadable-file check: root can read a mode-000 file\n'
+else
+  STUB_UNREADABLE=1 ./deploy/update.sh --force > "$SB/d23-u.log" 2>&1
+  check "an unreadable file: the deploy still goes ahead" "$?" "0"
+  grep -q "could not finish scanning" "$SB/d23-u.log"
+  check "and it says the scan did not finish" "$?" "0"
+  # A failed scan is not a finding: nothing was planted, so it must not claim React's
+  # text was found.
+  grep -q "development-only text" "$SB/d23-u.log"
+  check "and it does not claim to have found development React" "$?" "1"
+  # The next run copies web/dist before building, which a mode-000 file would break.
+  rm -f web/dist/assets/unreadable-*.js
+
+  # Both at once: grep exits 2 for the unreadable file but still lists what it did find,
+  # and that must not be dropped because the scan as a whole failed.
+  STUB_UNREADABLE=1 STUB_DEV_TEXT="${markers[0]:-}" ./deploy/update.sh --force \
+    > "$SB/d23-uv.log" 2>&1
+  check "unreadable file and a marker: the deploy still goes ahead" "$?" "0"
+  grep -q "could not finish scanning" "$SB/d23-uv.log"
+  check "the unfinished scan is reported" "$?" "0"
+  grep -q "development-only text" "$SB/d23-uv.log"
+  check "and so is what the scan did find" "$?" "0"
+  rm -f web/dist/assets/unreadable-*.js
+fi
+
+# Back to a clean bundle, so the tree is left the way the sections after this expect.
+./deploy/update.sh --force > "$SB/d23z.log" 2>&1
+check "a clean bundle after all that is quiet again" "$(grep -c WARNING "$SB/d23z.log")" "0"
+check "nothing left in TMPDIR" "$(temp_left)" "0"
 
 banner "8. an unknown option is rejected rather than ignored"
 ./deploy/update.sh --nonsense > "$SB/d10.log" 2>&1

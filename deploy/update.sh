@@ -824,13 +824,55 @@ bundle=""
 [[ -f web/dist/index.html ]] || { restore_dist; die "Build produced no index.html."; }
 info "built $bundle"
 
-# A development React is roughly twice the size and ships dev-only warnings. The
-# build script pins NODE_ENV, so this is a regression alarm rather than a routine
-# check — it costs nothing and it caught a real one.
-bytes=$(wc -c < "web/dist/assets/$bundle")
-if (( bytes > 450000 )); then
-  info "WARNING: bundle is $bytes bytes; a production build is ~330 kB."
-  info "         That size means a development React. Check NODE_ENV."
+# A development React ships diagnostics that a production build strips, and is nearly
+# twice the size. The build script pins NODE_ENV, so this is a regression alarm rather
+# than a routine check — it costs nothing and it caught a real one.
+#
+# It looks for that text in the built JS instead of comparing a byte count. A byte
+# limit drifts as the app grows: the one this replaced was 450 kB, written against a
+# ~330 kB bundle on 2026-08-03. The production bundle grew past it (510,579 bytes on
+# 2026-09-21; a development build of the same code is 945,339), and from then on it
+# warned on every deploy, production build or not — an alarm nobody reads. The text
+# does not move with the app's size. What can move is React's own wording, which is
+# why web/src/dev-react-markers.test.ts reads this list and fails on the upgrade that
+# changes any of it, rather than leaving an alarm that can no longer fire.
+#
+# Every built .js file is scanned, not just index-*.js: if the build ever splits React
+# into its own chunk, the alarm has to follow it. The one exception is
+# changelog-data-*.js, which holds the subject and body of every kept commit verbatim
+# (vite.config.ts, __BUILD_CHANGES__). A commit message that merely quoted one of these
+# strings would make every later deploy warn on a production build, for good, because
+# history never goes away — the failure this replaced. If that chunk is ever renamed the
+# result is a spurious warning, never a missed one. Warn only, as before.
+dev_react_markers=(
+  'Invalid hook call'
+  'Rendered more hooks than during the previous render'
+  'Maximum update depth exceeded'
+)
+dev_react_args=()
+for marker in "${dev_react_markers[@]}"; do dev_react_args+=(-e "$marker"); done
+built_js=()
+for built_js_file in web/dist/assets/*.js; do
+  case "$(basename "$built_js_file")" in
+    changelog-data-*) continue ;;
+  esac
+  built_js+=("$built_js_file")
+done
+# grep exits 1 for "nothing matched" and 2 for "could not read something", and the second
+# must not read as a clean scan. Both are told apart here; `|| true` would have hidden it.
+dev_react_rc=0
+dev_react_files="$(grep -lF "${dev_react_args[@]}" "${built_js[@]}")" || dev_react_rc=$?
+if (( dev_react_rc > 1 )); then
+  info "WARNING: could not finish scanning the built JS for React's development-only"
+  info "         text (grep exited $dev_react_rc), so a development React would not be caught."
+fi
+if [[ -n "$dev_react_files" ]]; then
+  info "WARNING: the built bundle contains React's development-only text, which a"
+  info "         production build strips. That means a development React. Check NODE_ENV."
+  info "         Found in:"
+  while IFS= read -r dev_react_file; do
+    info "           $(basename "$dev_react_file")"
+  done <<< "$dev_react_files"
 fi
 
 # The art must have been copied into dist, or the tiles are broken again.

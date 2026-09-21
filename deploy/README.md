@@ -84,7 +84,7 @@ session cookies cross the network in clear text.
   `npm`, `curl` and `rsync` stubbed. Run it before changing the deploy script:
 
   ```bash
-  ./deploy/update-test.sh      # 113 checks, touches nothing real
+  ./deploy/update-test.sh      # touches nothing real; the last line is the total
   ```
 
 - `nginx-test.sh` — serves `nginx-coc.conf` for real in a container and checks what
@@ -313,8 +313,11 @@ The three traps, in the order they are likely:
    that has sourced an `.env` exporting `NODE_ENV=development` produces a *development*
    React — nearly twice the bytes, dev-only warnings, none of the production fast paths.
    It works, which is why it went unnoticed in production for a day. The build script now
-   forces `NODE_ENV=production` so the host environment cannot decide this, but the size
-   is the tell if it ever regresses: the JS bundle is ~327 kB, not ~616 kB.
+   forces `NODE_ENV=production` so the host environment cannot decide this, and `update.sh`
+   warns if it ever regresses by looking for the text only a development React carries
+   (see "What it refuses to do" below). Size is a tell too, but not one to gate on: the
+   same code is 510,579 bytes built for production and 945,339 built for development
+   (measured 2026-09-21), and a fixed limit on it rotted once already as the app grew.
 
 Restarting the service is also what applies any pending schema migration, so there is no
 separate migrate step. Back the database up first — all three files, since copying only
@@ -730,7 +733,16 @@ lists both.
 
 After building it checks that the bundle **the site is actually serving** is the one
 just built — the only test that catches Nginx pointing at a different directory. It
-also warns above 450 kB, the signature of a development React.
+also warns if any built `.js` file contains text that only React's development build
+carries (`dev_react_markers` in `update.sh`), the signature of a development React. It
+looks for that text and not a byte count because a size limit drifts as the app grows:
+the 450 kB one this replaced warned on every deploy once the production bundle passed
+it. The scan skips `changelog-data-*.js`, which holds every kept commit's message
+verbatim: a message that merely quoted one of the strings would otherwise make every
+later deploy warn. `web/src/dev-react-markers.test.ts` fails when a React upgrade
+changes that wording in React's own source, so the alarm is not left running but unable
+to fire; it does not inspect the built bundle. The warning does not stop the deploy,
+and neither does a scan that could not finish, which says so instead.
 
 If the build fails or the API does not come back healthy, the previous `web/dist` is
 restored, so the site is left as it was.
