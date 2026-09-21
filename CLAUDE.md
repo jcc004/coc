@@ -322,24 +322,32 @@ monitor paged every run in that window, each time reporting a healthy, current d
 Fixed in `cc8ea51`: the handler now reads the file fresh on every request instead of caching it at
 startup, so the field self-corrects within the same deploy cycle that changed it.
 
-### This project overrides "production is hands-off by default"
+### Droplet access: a standing grant, not yet checked against the kit's clause
 
-`claude-kit/rules/working-style.md`'s standing rule is to hand over commands for the operator to
-run rather than SSH into a live system directly. **For this project only**, that default is
-lifted: Claude may run any command directly against the production droplet, using the account
-described in `.claude/droplet-access.local.md`.
+`claude-kit/rules/working-style.md`'s "Production access is approve-first, then hands-on" is the
+rule for any live system: describe the action, wait for approval, then run it directly. **For this
+project**, a broader standing grant is recorded on top of it: Claude may run any command directly
+against the production droplet, using the account described in `.claude/droplet-access.local.md`.
+
+**Status, 2026-09-21:** that grant was written when the kit's rule was "production is hands-off by
+default", which the kit replaced on 2026-08-20; this section used to frame it as an exception to
+that rule. The same kit section now has a clause for a standing pre-approval, which counts only when
+it is a quoted, dated, direct instruction, names one action on one named environment, and sits in a
+tracked file. This grant says "any command", which is broader than one action, and is not quoted or
+dated here. Whether it meets those tests is the operator's call, not Claude's, so it is left exactly
+as written until they rule on it.
 
 That file is gitignored — it holds the droplet's address, the account name, and its sudo posture,
 none of which belongs in a repo this project shares with people who should not receive a live
 server's access details. Read it before doing any operational work on the droplet. If it is
 missing from this checkout, this session is not running as the operator — ask before attempting
-anything against the droplet rather than assuming the exception still applies.
+anything against the droplet rather than assuming the grant still applies.
 
 @.claude/droplet-access.local.md
 
 This does not relax anything else: still take a backup before a write that could lose data, still
 say plainly what a command will do before running something with real effect, and the general
 prohibitions (destructive actions without a clear, reversible path back) still hold. The point of
-this exception is removing the copy-paste round trip for routine operational work on a project
+this grant is removing the copy-paste round trip for routine operational work on a project
 with exactly one operator, not removing judgment about what a command actually does before it
 runs.
