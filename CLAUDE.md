@@ -322,20 +322,17 @@ monitor paged every run in that window, each time reporting a healthy, current d
 Fixed in `cc8ea51`: the handler now reads the file fresh on every request instead of caching it at
 startup, so the field self-corrects within the same deploy cycle that changed it.
 
-### Droplet access: a standing grant, not yet checked against the kit's clause
+### Droplet access: a standing grant
 
 `claude-kit/rules/working-style.md`'s "Production access is approve-first, then hands-on" is the
 rule for any live system: describe the action, wait for approval, then run it directly. **For this
 project**, a broader standing grant is recorded on top of it: Claude may run any command directly
 against the production droplet, using the account described in `.claude/droplet-access.local.md`.
 
-**Status, 2026-09-21:** that grant was written when the kit's rule was "production is hands-off by
-default", which the kit replaced on 2026-08-20; this section used to frame it as an exception to
-that rule. The same kit section now has a clause for a standing pre-approval, which counts only when
-it is a quoted, dated, direct instruction, names one action on one named environment, and sits in a
-tracked file. This grant says "any command", which is broader than one action, and is not quoted or
-dated here. Whether it meets those tests is the operator's call, not Claude's, so it is left exactly
-as written until they rule on it.
+**Confirmed 2026-09-21, by direct instruction.** Asked whether this grant, which says "any command"
+where the kit's standing-pre-approval clause (same section) expects one named action on one named
+environment, should stand as written, the operator answered: "yes, any command is allowed." The
+environment is the production droplet and nothing else.
 
 That file is gitignored — it holds the droplet's address, the account name, and its sudo posture,
 none of which belongs in a repo this project shares with people who should not receive a live
