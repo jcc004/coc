@@ -16,7 +16,14 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=crighjc
+User=coc
+# The account that owns /srv/coc/.env and server/data (both mode 0600), same as
+# coc.service. This unit ran as the deploy account until it was found failing every
+# week (2026-10-20): that account cannot read either file, and
+# --env-file-if-exists reports an unreadable .env as ".env not found", so the
+# symptom was a missing token (or "unable to open database file") rather than a
+# permissions error. coc.service moved to this account in 71b7964; these two timer
+# units were missed.
 
 # Same reasoning as coc.service: DATABASE_PATH defaults to ./data/coc.db, which
 # only resolves to the real database — /srv/coc/server/data/coc.db — from this
