@@ -851,6 +851,12 @@ either the CoC API or the wiki's API outbound, and nothing else. Both also use
 `DATABASE_PATH` defaults to `./data/coc.db`, which only resolves to the real
 database from that directory.
 
+**Both run as `coc`, not the deploy account**: `/srv/coc/.env` and `server/data` are
+mode 0600 and owned by `coc`, and `--env-file-if-exists` reports an unreadable `.env`
+as "not found", so the wrong account fails with a missing token or "unable to open
+database file" rather than a permissions error (`docs/incidents.md`, 2026-10-20). Read
+their journal with `sudo journalctl`; the deploy account is not in `adm`.
+
 ```bash
 sudo cp deploy/coc-progress-reference.{service,timer} /etc/systemd/system/
 sudo cp deploy/coc-progress-snapshot.{service,timer} /etc/systemd/system/

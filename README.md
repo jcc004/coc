@@ -67,6 +67,8 @@ TLS, the systemd units — is [`deploy/README.md`](deploy/README.md).
 - **[Game art and the Fan Content Policy](docs/game-art.md)** — which asset comes from where, why
   `web/public/coc/` is gitignored, absent art as the normal case rather than an error, and the
   licensing conditions that became binding when this went to public hosting.
+- **[Incidents](docs/incidents.md)** — dated record of what went wrong in production or at deploy
+  time, what was missed, and what changed; read before a deploy or a unit change.
 - **[`deploy/README.md`](deploy/README.md)** — the droplet itself: Nginx, TLS, the service and
   update units, and what CI does and does not do. Kept beside the deployment rather than here,
   and maintained with it.
